@@ -2,9 +2,32 @@ package xginx
 
 import (
 	"bytes"
+	"crypto/rand"
 	"log"
 	"testing"
 )
+
+func TestTagEncode(t *testing.T) {
+	tag := TagRecord{}
+	tag.TVer = 1
+	tag.TLoc.Set(180.14343, -85.2343434)
+	rand.Read(tag.TPK[:])
+	p := TagEncodePos{}
+	s, err := tag.EncodeTag(&p)
+	if err != nil {
+		panic(err)
+	}
+	ntag := TagRecord{}
+	err = ntag.Decode(s)
+	if err != nil {
+		panic(err)
+	}
+	if !ntag.TEqual(tag) {
+		t.Errorf("test equal error")
+	}
+	log.Println(tag.EncodeTag(&p))
+	log.Println(ntag.EncodeTag(&p))
+}
 
 func TestMaxBits(t *testing.T) {
 	for i := uint(0); i < 64; i++ {
@@ -20,9 +43,13 @@ func BenchmarkVarInt(b *testing.B) {
 	for i := -b.N; i < b.N; i++ {
 		v := VarInt(i)
 		buf.Reset()
-		v.Write(buf)
+		if err := v.Write(buf); err != nil {
+			b.Error(err)
+		}
 		v2 := VarInt(0)
-		v2.Read(buf)
+		if err := v2.Read(buf); err != nil {
+			b.Error(err)
+		}
 		if v != v2 {
 			b.Errorf("error %d %d", v, v2)
 			break
@@ -38,11 +65,4 @@ func TestUInt24(t *testing.T) {
 			t.Errorf("test error")
 		}
 	}
-}
-
-func TestLocation(t *testing.T) {
-	l1 := Location{}
-	l1.Set(180.14343, -85.2343434)
-	log.Println(l1)
-	log.Println(l1.Get())
 }
