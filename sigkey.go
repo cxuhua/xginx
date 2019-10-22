@@ -131,9 +131,9 @@ func (pk PrivateKey) PublicKey() *PublicKey {
 }
 
 type SigValue struct {
-	R        *big.Int
-	S        *big.Int
-	HashType byte //last byte
+	R    *big.Int
+	S    *big.Int
+	Type byte //last byte
 }
 
 func NewSigValue(b []byte) (*SigValue, error) {
@@ -168,7 +168,7 @@ func (sig SigValue) Encode() []byte {
 	res.WriteByte(0x02)
 	res.WriteByte(byte(len(s)))
 	res.Write(s)
-	res.WriteByte(sig.HashType)
+	res.WriteByte(sig.Type)
 	return res.Bytes()
 }
 
@@ -194,7 +194,7 @@ func (sig *SigValue) Decode(b []byte) error {
 		sig.R = new(big.Int).SetBytes(b[4 : 4+r])
 		sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
 	}
-	sig.HashType = b[len(b)-1]
+	sig.Type = b[len(b)-1]
 	return nil
 }
 

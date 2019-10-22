@@ -8,8 +8,15 @@ import (
 	"strings"
 )
 
+var (
+	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
+)
+
 //max : 60 bits
-func CompressAmount(n uint64) uint64 {
+func CompressUInt(n uint64) uint64 {
+	if n > MAX_COMPRESS_UINT {
+		panic(VarSizeErr)
+	}
 	if n == 0 {
 		return 0
 	}
@@ -29,7 +36,7 @@ func CompressAmount(n uint64) uint64 {
 }
 
 //max : 60 bits
-func DecompressAmount(x uint64) uint64 {
+func DecompressUInt(x uint64) uint64 {
 	if x == 0 {
 		return 0
 	}
@@ -47,6 +54,9 @@ func DecompressAmount(x uint64) uint64 {
 	for e != 0 {
 		n *= 10
 		e--
+	}
+	if n > MAX_COMPRESS_UINT {
+		panic(VarSizeErr)
 	}
 	return n
 }

@@ -12,16 +12,16 @@ import (
 )
 
 func TestCompressAmount(t *testing.T) {
-	for i := 0; i < 100000; i++ {
+	log.Println(CompressUInt(1000001))
+	for i := 0; i < 1000; i++ {
 		v := uint64(0)
 		binary.Read(rand.Reader, binary.LittleEndian, &v)
 		//must < 60 bits
-		v >>= 4
-		v1 := CompressAmount(v)
-		v2 := DecompressAmount(v1)
+		v = v & (uint64(1<<60) - 1)
+		v1 := CompressUInt(v)
+		v2 := DecompressUInt(v1)
 		if v2 != v {
-			t.Errorf("error %x != %x", v, v2)
-			break
+			t.Errorf("error %x != %x  %x", v, v2, v1)
 		}
 	}
 }
