@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-//56 bits
+//max : 60 bits
 func CompressAmount(n uint64) uint64 {
 	if n == 0 {
 		return 0
@@ -21,13 +21,14 @@ func CompressAmount(n uint64) uint64 {
 	if e < 9 {
 		d := (n % 10)
 		n /= 10
-		return 1 + (n*9+d-1)*10 + e
+		n = 1 + (n*9+d-1)*10 + e
 	} else {
-		return 1 + (n-1)*10 + 9
+		n = 1 + (n-1)*10 + 9
 	}
+	return n
 }
 
-//56 bits
+//max : 60 bits
 func DecompressAmount(x uint64) uint64 {
 	if x == 0 {
 		return 0
