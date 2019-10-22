@@ -86,8 +86,7 @@ func (vi *VarInt) Read(s io.ReadWriter) error {
 			break
 		}
 	}
-	sb := n&0b1 != 0
-	if sb {
+	if n&0b1 != 0 {
 		*vi = VarInt(^(n >> 1)) + 1
 	} else {
 		*vi = VarInt(n >> 1)
