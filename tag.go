@@ -190,20 +190,21 @@ type TagEncodePos struct {
 
 //终端记录
 type TagRecord struct {
-	TVer  uint8      //版本 from tag
-	TLoc  Location   //uint32-uint32 位置 from tag
-	TUID  TagUID     //标签id from tag
-	TPK   PKBytes    //标签公钥 from tag
-	TCTR  UInt24     //标签记录计数器 from tag
-	TTS   TagTT      //TT S状态 url +2,激活后OO
-	TMAC  TagMAC     //标签CMAC值 from tag url + 16
-	CPC   byte       //C pubkey count 4(bit)公钥数量-4(bit)需要的私钥数量最大15
-	CSig  []SigBytes //用户签名 from user b[0] = 1 user sig
-	CPK   []PKBytes  //用户公钥 from user
-	Nonce uint64     //随机值 server full
-	STime uint64     //uint64 create time serve full
-	SSig  SigBytes   //标签签名 b[0] = 2 tag sig server full
-	Hash  HashID     //最最终hash
+	TVer  uint8        //版本 from tag
+	TLoc  Location     //uint32-uint32 位置 from tag
+	TUID  TagUID       //标签id from tag
+	TPK   PKBytes      //标签公钥 from tag
+	TCTR  UInt24       //标签记录计数器 from tag
+	TTS   TagTT        //TT S状态 url +2,激活后OO
+	TMAC  TagMAC       //标签CMAC值 from tag url + 16
+	CPC   byte         //C pubkey count 4(bit)公钥数量-4(bit)需要的私钥数量最大15
+	CSig  []SigBytes   //用户签名 from user b[0] = 1 user sig
+	CPK   []PKBytes    //用户公钥 from user
+	Nonce uint64       //随机值 server full
+	STime uint64       //uint64 create time serve full
+	SSig  SigBytes     //标签签名 b[0] = 2 tag sig server full
+	Hash  HashID       //最最终hash
+	pos   TagEncodePos //记录偏移位置用
 }
 
 func (t TagRecord) TEqual(v TagRecord) bool {
@@ -261,7 +262,7 @@ func (tag *TagRecord) Decode(s string) error {
 	return nil
 }
 
-func (tag TagRecord) EncodeTag(pos *TagEncodePos) (string, error) {
+func (tag TagRecord) EncodeTag() (string, error) {
 	sb := &strings.Builder{}
 	hw := hex.NewEncoder(sb)
 	if _, err := hw.Write([]byte{tag.TVer}); err != nil {
@@ -273,19 +274,19 @@ func (tag TagRecord) EncodeTag(pos *TagEncodePos) (string, error) {
 	if _, err := hw.Write(tag.TPK[:]); err != nil {
 		return "", err
 	}
-	pos.UID = sb.Len()
+	tag.pos.UID = sb.Len()
 	if _, err := hw.Write(tag.TUID[:]); err != nil {
 		return "", err
 	}
-	pos.CTR = sb.Len()
+	tag.pos.CTR = sb.Len()
 	if _, err := hw.Write(tag.TCTR[:]); err != nil {
 		return "", err
 	}
-	pos.TTS = sb.Len()
+	tag.pos.TTS = sb.Len()
 	if _, err := hw.Write(tag.TTS[:]); err != nil {
 		return "", err
 	}
-	pos.MAC = sb.Len()
+	tag.pos.MAC = sb.Len()
 	if _, err := hw.Write(tag.TMAC[:]); err != nil {
 		return "", err
 	}

@@ -11,9 +11,8 @@ func TestTagEncode(t *testing.T) {
 	tag := TagRecord{}
 	tag.TVer = 1
 	tag.TLoc.Set(180.14343, -85.2343434)
-	rand.Read(tag.TPK[:])
-	p := TagEncodePos{}
-	s, err := tag.EncodeTag(&p)
+	_, _ = rand.Read(tag.TPK[:])
+	s, err := tag.EncodeTag()
 	if err != nil {
 		panic(err)
 	}
@@ -25,8 +24,8 @@ func TestTagEncode(t *testing.T) {
 	if !ntag.TEqual(tag) {
 		t.Errorf("test equal error")
 	}
-	log.Println(tag.EncodeTag(&p))
-	log.Println(ntag.EncodeTag(&p))
+	log.Println(tag.EncodeTag())
+	log.Println(ntag.EncodeTag())
 }
 
 func TestMaxBits(t *testing.T) {
