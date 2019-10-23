@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"context"
 	"log"
 	"testing"
 	"time"
@@ -17,48 +18,37 @@ var (
 	tuid = TagUID{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80}
 )
 
-func TestLoadTagInfo(t *testing.T) {
-	defer DB().Close()
-	ti, err := LoadTagInfo(tuid)
-	if err != nil {
-		panic(err)
-	}
-	log.Println(ti.CCTR.ToUInt())
-}
-
-func TestSaveTagInfo(t *testing.T) {
-	defer DB().Close()
-	pri, err := LoadPrivateKey(cpkey)
-	if err != nil {
-		panic(err)
-	}
-	ti := &TTagInfo{}
-	ti.CPKS.Set(pri.PublicKey())
-	ti.Time = time.Now().UnixNano()
-	ti.CCTR.Set(10)
-	err = ti.Save(tuid)
-	if err != nil {
-		panic(err)
-	}
-}
-
 func TestLoadTestKey(t *testing.T) {
-	defer DB().Close()
-	kv, err := LoadTagKeys(tuid)
+	err := UseSession(context.Background(), func(db DBImp) error {
+		kv, err := LoadTagInfo(tuid, db)
+		if err != nil {
+			panic(err)
+		}
+		log.Println(kv)
+		return err
+	})
 	if err != nil {
 		panic(err)
 	}
-	log.Println(kv)
 }
 
 func TestSaveTestKey(t *testing.T) {
-	defer DB().Close()
-	tk := &TTagKeys{}
-	tk.TVer = 1
-	tk.TPKS = spkey
-	tk.TLoc.Set(180.14343, -85.2343434)
-	copy(tk.Keys[0][:], tkey)
-	err := tk.Save(tuid)
+	err := UseSession(context.Background(), func(db DBImp) error {
+		loc := Location{}
+		loc.Set(180.14343, -85.2343434)
+		tk := &TTagInfo{}
+		tk.UID = tuid.Bytes()
+		tk.Ver = 1
+		tk.PKS = spkey
+		tk.Loc = loc.Get()
+		tk.CTR = 1
+		copy(tk.Keys[0][:], tkey)
+		err := tk.Save(db)
+		if err != nil {
+			panic(err)
+		}
+		return err
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -67,35 +57,41 @@ func TestSaveTestKey(t *testing.T) {
 //https:// api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B 45D28CEB0096724D
 //CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D
 func TestTagData(t *testing.T) {
-	pk, err := LoadPrivateKey(cpkey)
-	if err != nil {
-		panic(err)
-	}
-	surl := "https://api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D"
-	otag := NewTagInfo(surl)
-	if err := otag.DecodeURL(); err != nil {
-		panic(err)
-	}
+	err := UseTransaction(context.Background(), func(db DBImp) error {
+		pk, err := LoadPrivateKey(cpkey)
+		if err != nil {
+			panic(err)
+		}
+		surl := "https://api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D"
+		otag := NewTagInfo(surl)
+		//客户端服务器端都要解码
+		if err := otag.DecodeURL(); err != nil {
+			panic(err)
+		}
 
-	sigd, err := otag.GetSignData()
-	if err != nil {
-		panic(err)
-	}
-	log.Println(string(sigd))
+		sigb, err := otag.Encode()
+		if err != nil {
+			panic(err)
+		}
+		log.Println(string(sigb))
 
-	//客户端签名
-	client := &ClientBlock{}
-	client.CLoc.Set(122.33, 112.44)
-	client.Prev = HashID{1, 2}
-	client.CTime = time.Now().UnixNano()
-	if err := client.Sign(pk, sigd); err != nil {
-		panic(err)
-	}
-	log.Println(client.Encode())
-	//服务器校验上传数据
-	err = otag.Valid(client)
+		//客户端签名
+		client := &ClientBlock{}
+		client.CLoc.Set(122.33, 112.44)
+		client.Prev = HashID{1, 2, 3, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}
+		client.CTime = time.Now().UnixNano()
+		if err := client.Sign(pk, sigb); err != nil {
+			panic(err)
+		}
+		log.Println(client.Encode())
+		err = otag.Valid(db, client)
+		if err != nil {
+			return err
+		}
+		return err
+	})
 	if err != nil {
-		t.Error(err)
+		panic(err)
 	}
 }
 

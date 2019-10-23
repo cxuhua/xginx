@@ -105,7 +105,7 @@ func (db *tagcacher) Pop(n ...int) {
 func (db *tagcacher) Set(tx *TTagInfo) (*TTagInfo, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	v, err := db.xs.Set(tx.ID[:], tx)
+	v, err := db.xs.Set(tx.UID[:], tx)
 	if err != nil {
 		return nil, err
 	}

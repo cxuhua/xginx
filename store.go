@@ -1,169 +1,172 @@
 package xginx
 
 import (
-	"bytes"
-	"crypto/rand"
-	"encoding/binary"
-	"fmt"
-	"io"
+	"context"
 	"sync"
 
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/filter"
-	"github.com/syndtr/goleveldb/leveldb/opt"
+	"go.mongodb.org/mongo-driver/bson"
+
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-var (
-	dbptr *leveldb.DB = nil
-	once  sync.Once
-)
+type SetValue map[string]interface{}
+type IncValue map[string]int
 
-const (
-	DB_TAG_PREFIX = 't' //tag sign info
-	DB_KEY_PREFIX = 'k' //保存标签5个密钥
-)
+type DBImp interface {
+	context.Context
+	//get trans raw data
+	GetTag(id []byte, v interface{}) error
+	//save or update tans data
+	SetTag(id []byte, v interface{}) error
+	//exists tx
+	HasTag(id []byte) bool
+	//delete tx
+	DelTag(id []byte) error
+	//事物处理
+	Transaction(fn func(sdb DBImp) error) error
+}
 
 type TagKey [16]byte
 
-func (k *TagKey) Rand() {
-	_, _ = rand.Read(k[:])
-}
-
-type TTagKeys struct {
-	ID   TagUID    //key index
-	TVer uint32    //版本
-	TLoc Location  //位置
-	TPKS string    //标签私钥编码保存
-	Keys [5]TagKey //5个AES密钥
-}
-
-func NewTagKey(id TagUID) []byte {
-	key := make([]byte, len(id)+1)
-	key[0] = DB_KEY_PREFIX
-	copy(key[1:], id[:])
-	return key
-}
-
-func ReadString(s io.Reader) (string, error) {
-	l := uint8(0)
-	if err := binary.Read(s, Endian, &l); err != nil {
-		return "", err
-	}
-	b := make([]byte, l)
-	if err := binary.Read(s, Endian, b); err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-func LoadTagKeys(id TagUID) (*TTagKeys, error) {
-	kv := &TTagKeys{}
-	key := NewTagKey(id)
-	b, err := DB().Get(key, nil)
-	if err != nil {
-		return nil, fmt.Errorf("load tag keys error %w", err)
-	}
-	buf := bytes.NewBuffer(b)
-	if err := binary.Read(buf, Endian, &kv.TVer); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, Endian, &kv.TLoc); err != nil {
-		return nil, err
-	}
-	if s, err := ReadString(buf); err != nil {
-		return nil, err
-	} else {
-		kv.TPKS = s
-	}
-	if err := binary.Read(buf, Endian, &kv.Keys); err != nil {
-		return nil, err
-	}
-	kv.ID = id
-	return kv, nil
-}
-
-func (k TTagKeys) Save(id TagUID) error {
-	key := NewTagKey(id)
-	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, Endian, k.TVer); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, k.TLoc); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, uint8(len(k.TPKS))); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, []byte(k.TPKS)); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, k.Keys); err != nil {
-		return err
-	}
-	return DB().Put(key, buf.Bytes(), nil)
-}
-
+//保存数据库中的结构
 type TTagInfo struct {
-	ID   TagUID  //key index
-	CCTR TagCTR  //last ctr count
-	CPKS PKBytes //last sign cpks
-	Time int64   //last sign time
+	UID  []byte    `bson:"_id"`  //uid
+	Ver  uint32    `bson:"ver"`  //版本 from tag
+	Loc  []float64 `bson:"loc"`  //uint32-uint32 位置 from tag
+	PKS  string    `bson:"pks"`  //标签公钥 from tag
+	Keys [5]TagKey `bson:"keys"` //
+	CTR  uint      `bson:"ctr"`  //ctr int
 }
 
-func NewInfoKey(id TagUID) []byte {
-	key := make([]byte, len(id)+1)
-	key[0] = DB_TAG_PREFIX
-	copy(key[1:], id[:])
-	return key
+func LoadTagInfo(id TagUID, db DBImp) (*TTagInfo, error) {
+	iv := &TTagInfo{}
+	return iv, db.GetTag(id[:], iv)
 }
 
-func LoadTagInfo(id TagUID) (*TTagInfo, error) {
-	kv := &TTagInfo{}
-	key := NewInfoKey(id)
-	b, err := DB().Get(key, nil)
+func (tag TTagInfo) Save(db DBImp) error {
+	return db.SetTag(tag.UID[:], tag)
+}
+
+func (tag TTagInfo) SetCtr(ctr uint, db DBImp) error {
+	iv := SetValue{}
+	iv["ctr"] = ctr
+	return db.SetTag(tag.UID[:], iv)
+}
+
+var (
+	client *mongo.Client = nil
+	dbonce               = sync.Once{}
+)
+
+type mongoDBImp struct {
+	context.Context
+}
+
+func (m *mongoDBImp) tags() *mongo.Collection {
+	return m.database().Collection("tags")
+}
+
+func (m *mongoDBImp) client() *mongo.Client {
+	return m.Context.(mongo.SessionContext).Client()
+}
+
+func (m *mongoDBImp) database() *mongo.Database {
+	return m.client().Database("xginx")
+}
+
+func NewDBImp(ctx context.Context) DBImp {
+	return &mongoDBImp{Context: ctx}
+}
+
+//delete data
+func (m *mongoDBImp) DelTag(id []byte) error {
+	_, err := m.tags().DeleteOne(m, bson.M{"_id": id})
 	if err != nil {
-		return nil, fmt.Errorf("load tag keys error %w", err)
+		return err
 	}
-	buf := bytes.NewBuffer(b)
-	if err := binary.Read(buf, Endian, &kv.CCTR); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, Endian, &kv.CPKS); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(buf, Endian, &kv.Time); err != nil {
-		return nil, err
-	}
-	kv.ID = id
-	return kv, nil
+	return err
 }
 
-func (k TTagInfo) Save(id TagUID) error {
-	key := NewInfoKey(id)
-	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, Endian, k.CCTR); err != nil {
+//get tx data
+func (m *mongoDBImp) GetTag(id []byte, v interface{}) error {
+	ret := m.tags().FindOne(m, bson.M{"_id": id})
+	if err := ret.Err(); err != nil {
 		return err
 	}
-	if err := binary.Write(buf, Endian, k.CPKS); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, k.Time); err != nil {
-		return err
-	}
-	return DB().Put(key, buf.Bytes(), nil)
+	return ret.Decode(v)
 }
 
-func DB() *leveldb.DB {
-	once.Do(func() {
-		bf := filter.NewBloomFilter(5)
-		opts := &opt.Options{
-			Filter: bf,
+//check tx exists
+func (m *mongoDBImp) HasTag(id []byte) bool {
+	ret := m.tags().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
+}
+
+//save tans data
+func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
+	switch v.(type) {
+	case IncValue:
+		ds := bson.M{}
+		for k, v := range v.(IncValue) {
+			ds[k] = v
 		}
-		sdb, err := leveldb.OpenFile("datadir", opts)
+		if len(ds) > 0 {
+			_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
+			return err
+		}
+	case SetValue:
+		ds := bson.M{}
+		for k, v := range v.(SetValue) {
+			ds[k] = v
+		}
+		if len(ds) > 0 {
+			_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
+			return err
+		}
+	default:
+		opt := options.Update().SetUpsert(true)
+		_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
+		return err
+	}
+	return nil
+}
+
+func (m *mongoDBImp) Transaction(fn func(sdb DBImp) error) error {
+	sess := m.Context.(mongo.SessionContext)
+	_, err := sess.WithTransaction(m, func(sctx mongo.SessionContext) (i interface{}, e error) {
+		return nil, fn(NewDBImp(sctx))
+	})
+	return err
+}
+
+func InitDB(ctx context.Context) *mongo.Client {
+	dbonce.Do(func() {
+		c := options.Client().ApplyURI("mongodb://127.0.0.1:27017/")
+		cptr, err := mongo.NewClient(c)
 		if err != nil {
 			panic(err)
 		}
-		dbptr = sdb
+		err = cptr.Connect(ctx)
+		if err != nil {
+			panic(err)
+		}
+		client = cptr
 	})
-	return dbptr
+	return client
+}
+
+func UseTransaction(ctx context.Context, fn func(sdb DBImp) error) error {
+	return UseSession(ctx, func(db DBImp) error {
+		return db.Transaction(func(sdb DBImp) error {
+			return fn(sdb)
+		})
+	})
+}
+
+func UseSession(ctx context.Context, fn func(db DBImp) error) error {
+	client = InitDB(ctx)
+	return client.UseSession(ctx, func(sess mongo.SessionContext) error {
+		return fn(NewDBImp(sess))
+	})
 }

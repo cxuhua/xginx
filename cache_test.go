@@ -6,10 +6,10 @@ import (
 
 func TestCacher(t *testing.T) {
 	c := newTxs()
-	tx1 := &TTagInfo{ID: TagUID{1}}
+	tx1 := &TTagInfo{UID: []byte{1}}
 	c.Set(tx1)
 	c.Push()
-	tx2 := &TTagInfo{ID: TagUID{2}}
+	tx2 := &TTagInfo{UID: []byte{2}}
 	c.Set(tx2)
 	if v, err := c.Get(TagUID{2}); err != nil {
 		t.Errorf("get error 1")

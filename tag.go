@@ -6,10 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"io"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/cxuhua/aescmac"
 )
@@ -42,14 +41,14 @@ func (l Location) Equal(v Location) bool {
 
 //设置经纬度
 func (l *Location) Set(lng, lat float64) {
-	l[0] = uint32(lng * LocScaleValue)
-	l[1] = uint32(lat * LocScaleValue)
+	l[0] = uint32(int32(lng * LocScaleValue))
+	l[1] = uint32(int32(lat * LocScaleValue))
 }
 
-func (l *Location) Get() (float64, float64) {
-	lng := float64(l[0]) / LocScaleValue
-	lat := float64(l[1]) / LocScaleValue
-	return lng, lat
+func (l *Location) Get() []float64 {
+	lng := float64(int32(l[0])) / LocScaleValue
+	lat := float64(int32(l[1])) / LocScaleValue
+	return []float64{lng, lat}
 }
 
 func (l Location) Distance(v Location) float64 {
@@ -86,6 +85,10 @@ func (p *SigBytes) Set(sig *SigValue) {
 type HashID [32]byte
 
 type TagUID [7]byte
+
+func (id TagUID) Bytes() []byte {
+	return id[:]
+}
 
 type TagMAC [8]byte
 
@@ -130,8 +133,9 @@ type TagInfo struct {
 	TPKS  PKBytes  //标签公钥 from tag
 	TCTR  TagCTR   //标签记录计数器 from tag map
 	TMAC  TagMAC   //标签CMAC值 from tag url + 16
-	URL   string
-	Input string //cmac valid input DecodeURL set
+	URL   string   //
+	Input string   //cmac valid input DecodeURL set
+	pos   TagPos
 }
 
 func NewTagInfo(surl string) *TagInfo {
@@ -191,28 +195,25 @@ func (t *TagInfo) DecodeURL() error {
 	return nil
 }
 
-func (t *TagInfo) Valid(client *ClientBlock) error {
+func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
 	if t.Input == "" {
 		return errors.New("input miss")
 	}
-	//检测计数器
-	itag, err := LoadTagInfo(t.TUID)
-	if err == nil && itag.CCTR.ToUInt() >= t.TCTR.ToUInt() {
-		log.Println("counter error")
-	}
-	//检测cmac
-	tkey, err := LoadTagKeys(t.TUID)
+	//获取标签信息
+	itag, err := LoadTagInfo(t.TUID, db)
 	if err != nil {
 		return err
 	}
+	//检测标签计数器
+	if itag.CTR >= t.TCTR.ToUInt() {
+		return errors.New("tag counter error")
+	}
 	//暂时默认使用密钥0
-	if !aescmac.Vaild(tkey.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], t.Input) {
+	if !aescmac.Vaild(itag.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], t.Input) {
 		return errors.New("cmac valid error")
 	}
-	itag.Time = time.Now().UnixNano()
-	itag.CCTR = t.TCTR
-	itag.CPKS = client.CPKS
-	if err := itag.Save(t.TUID); err != nil {
+	//更新数据库标签计数器
+	if err := itag.SetCtr(t.TCTR.ToUInt(), db); err != nil {
 		return err
 	}
 	return nil
@@ -244,10 +245,10 @@ func (t *TagInfo) Decode(s string) error {
 }
 
 //编码成url一部分写入标签
-func (t TagInfo) Encode(pos *TagPos) (string, error) {
+func (t *TagInfo) Encode() (string, error) {
 	sb := &strings.Builder{}
 	hw := hex.NewEncoder(sb)
-	pos.TTS = pos.OFF + sb.Len()
+	t.pos.TTS = t.pos.OFF + sb.Len()
 	sb.WriteString(string(t.TTS[:]))
 	if err := binary.Write(hw, Endian, t.TVer); err != nil {
 		return "", err
@@ -255,31 +256,22 @@ func (t TagInfo) Encode(pos *TagPos) (string, error) {
 	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
 		return "", err
 	}
-	pos.UID = pos.OFF + sb.Len()
+	t.pos.UID = t.pos.OFF + sb.Len()
 	if err := binary.Write(hw, Endian, t.TUID); err != nil {
 		return "", err
 	}
 	if err := binary.Write(hw, Endian, t.TPKS); err != nil {
 		return "", err
 	}
-	pos.CTR = pos.OFF + sb.Len()
+	t.pos.CTR = t.pos.OFF + sb.Len()
 	if err := binary.Write(hw, Endian, t.TCTR); err != nil {
 		return "", err
 	}
-	pos.MAC = pos.OFF + sb.Len()
+	t.pos.MAC = t.pos.OFF + sb.Len()
 	if err := binary.Write(hw, Endian, t.TMAC); err != nil {
 		return "", err
 	}
 	return strings.ToUpper(sb.String()), nil
-}
-
-func (t TagInfo) GetSignData() ([]byte, error) {
-	pos := &TagPos{}
-	str, err := t.Encode(pos)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(str), nil
 }
 
 //client信息
@@ -292,18 +284,25 @@ type ClientBlock struct {
 	CSig  SigBytes //用户签名不包含在签名数据中
 }
 
+func (c *ClientBlock) EncodeWriter(w io.Writer) error {
+	if err := binary.Write(w, Endian, c.CLoc); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, c.Prev); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, c.CTime); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, c.CPKS); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *ClientBlock) Encode() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, Endian, c.CLoc); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buf, Endian, c.Prev); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buf, Endian, c.CTime); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buf, Endian, c.CPKS); err != nil {
+	if err := c.EncodeWriter(buf); err != nil {
 		return nil, err
 	}
 	if err := binary.Write(buf, Endian, c.CSig); err != nil {
@@ -312,30 +311,29 @@ func (c *ClientBlock) Encode() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (c *ClientBlock) Sign(pv *PrivateKey, data []byte) error {
-	buf := bytes.NewBuffer(data)
-	if err := binary.Write(buf, Endian, c.CLoc); err != nil {
+func (c *ClientBlock) Sign(pv *PrivateKey, tag string) error {
+	buf := bytes.NewBuffer([]byte(tag))
+	//设置公钥
+	c.CPKS.Set(pv.PublicKey())
+	if err := c.EncodeWriter(buf); err != nil {
 		return err
 	}
-	if err := binary.Write(buf, Endian, c.Prev); err != nil {
-		return err
-	}
-	if err := binary.Write(buf, Endian, c.CTime); err != nil {
-		return err
-	}
+	//签名
 	hv := HASH256(buf.Bytes())
 	sig, err := pv.Sign(hv)
 	if err != nil {
 		return err
 	}
-	c.CPKS.Set(pv.PublicKey())
 	c.CSig.Set(sig)
 	return nil
 }
 
 //块信息
 type TagBlock struct {
-	Client ClientBlock
-	Nonce  uint64   //随机值 server full
-	SSig   SigBytes //服务器签名
+	Nonce int64    //随机值 server full
+	SSig  SigBytes //服务器签名
+}
+
+func (c *TagBlock) Sign(pv *PrivateKey, tag []byte, client []byte) error {
+	return nil
 }
