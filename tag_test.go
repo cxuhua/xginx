@@ -109,7 +109,7 @@ func TestTagData(t *testing.T) {
 		if vv.TagBlock.STime != tb.STime {
 			return errors.New("stime cmp error")
 		}
-		log.Println(bb.Hash())
+		log.Println("LEN=", len(bb), bb.Hash())
 		return err
 	})
 	if err != nil {
