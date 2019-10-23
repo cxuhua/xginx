@@ -69,7 +69,7 @@ func TestSaveTestKey(t *testing.T) {
 func TestTagData(t *testing.T) {
 	surl := "https://api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D"
 	otag := NewTagInfo(surl)
-	err := otag.Valid()
+	err := otag.Valid(&ClientBlock{})
 	if err != nil {
 		t.Error(err)
 	}
