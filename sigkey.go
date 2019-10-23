@@ -3,7 +3,6 @@ package xginx
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -18,8 +17,7 @@ const (
 )
 
 var (
-	curve             = elliptic.P256()
-	one               = new(big.Int).SetInt64(1)
+	curve             = SECP256K1()
 	PREFIX_SECRET_KEY = []byte{128}
 )
 
@@ -29,14 +27,9 @@ type PrivateKey struct {
 
 //prefix[1] key[32] checknum[hash256-prefix-4]
 func LoadPrivateKey(s string) (*PrivateKey, error) {
-	key, err := NewPrivateKey()
-	if err != nil {
-		return nil, err
-	}
-	if err := key.Decode(s); err != nil {
-		return nil, err
-	}
-	return key, nil
+	key := &PrivateKey{}
+	err := key.Decode(s)
+	return key, err
 }
 
 func (pk *PrivateKey) Encode() string {
@@ -193,8 +186,8 @@ func (sig *SigValue) Decode(b []byte) error {
 	} else {
 		sig.R = new(big.Int).SetBytes(b[4 : 4+r])
 		sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
+		sig.Type = b[6+r+s]
 	}
-	sig.Type = b[len(b)-1]
 	return nil
 }
 
@@ -218,17 +211,14 @@ func (pk *PublicKey) FromHEX(s string) error {
 	return pk.Decode(data)
 }
 
-// y^2 = x^3 -3x + b
-// y = sqrt(x^3 -3x + b)
+// y^2 = x^3 + b
+// y   = sqrt(x^3 + b)
 func DecompressY(x *big.Int, ybit uint) *big.Int {
 	c := curve.Params()
-	var y, x3b, x3 big.Int
-	x3.SetInt64(3)
-	x3.Mul(&x3, x)
+	var y, x3b big.Int
 	x3b.Mul(x, x)
 	x3b.Mul(&x3b, x)
 	x3b.Add(&x3b, c.B)
-	x3b.Sub(&x3b, &x3)
 	x3b.Mod(&x3b, c.P)
 	y.ModSqrt(&x3b, c.P)
 	if y.Bit(0) != ybit {
@@ -236,6 +226,25 @@ func DecompressY(x *big.Int, ybit uint) *big.Int {
 	}
 	return &y
 }
+
+// y^2 = x^3 -3x + b
+// y = sqrt(x^3 -3x + b)
+//func DecompressY(x *big.Int, ybit uint) *big.Int {
+//	c := curve.Params()
+//	var y, x3b, x3 big.Int
+//	x3.SetInt64(3)
+//	x3.Mul(&x3, x)
+//	x3b.Mul(x, x)
+//	x3b.Mul(&x3b, x)
+//	x3b.Add(&x3b, c.B)
+//	x3b.Sub(&x3b, &x3)
+//	x3b.Mod(&x3b, c.P)
+//	y.ModSqrt(&x3b, c.P)
+//	if y.Bit(0) != ybit {
+//		y.Sub(c.P, &y)
+//	}
+//	return &y
+//}
 
 func (pk *PublicKey) Decode(data []byte) error {
 	byteLen := (curve.Params().BitSize + 7) >> 3

@@ -76,7 +76,7 @@ func HASH256(b []byte) []byte {
 }
 
 func SetRandInt(v interface{}) {
-	binary.Read(rand.Reader, binary.LittleEndian, v)
+	_ = binary.Read(rand.Reader, binary.LittleEndian, v)
 }
 
 func HexToBytes(s string) []byte {

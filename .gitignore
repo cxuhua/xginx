@@ -2,6 +2,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 .idea
 .DS_Store
+datadir
 # Binaries for programs and plugins
 *.exe
 *.exe~

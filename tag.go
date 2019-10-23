@@ -1,13 +1,15 @@
 package xginx
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
+	"net/url"
 	"strings"
+	"time"
+
+	"github.com/cxuhua/aescmac"
 )
 
 var (
@@ -16,25 +18,8 @@ var (
 )
 
 const (
-	VAR_INT_MAX   = VarInt(^uint64(0) >> 1)
-	VAR_MAX_BYTES = 10
-	VAR_INT_MIN   = (^VAR_INT_MAX + 1)
-
 	LocScaleValue = float64(10000000)
 )
-
-//last sigle bit
-type VarInt int64
-
-func ReadVarInt(s io.Reader) (VarInt, error) {
-	v := VarInt(0)
-	err := v.Read(s)
-	return v, err
-}
-
-func WriteVarInt(s io.Writer, v VarInt) error {
-	return v.Write(s)
-}
 
 //0-63
 func MaxBits(v uint64) uint {
@@ -47,93 +32,7 @@ func MaxBits(v uint64) uint {
 	return i
 }
 
-func (vi VarInt) IsValid() bool {
-	return vi >= VAR_INT_MIN && vi <= VAR_INT_MAX
-}
-
-func (vi VarInt) Write(s io.Writer) error {
-	if !vi.IsValid() {
-		return VarSizeErr
-	}
-	v := uint64(0)
-	sb := vi < 0
-	if sb {
-		v = uint64(-vi)<<1 | 1
-	} else {
-		v = uint64(vi) << 1
-	}
-	tmp := make([]byte, VAR_MAX_BYTES)
-	l := 0
-	for {
-		if l > 0 {
-			tmp[l] = byte(v&0x7F) | 0x80
-		} else {
-			tmp[l] = byte(v & 0x7F)
-		}
-		if v <= 0x7F {
-			break
-		}
-		v = (v >> 7) - 1
-		l++
-	}
-	for l >= 0 {
-		if err := binary.Write(s, Endian, tmp[l]); err != nil {
-			return err
-		}
-		l--
-	}
-	return nil
-}
-
-func (vi *VarInt) Read(s io.Reader) error {
-	n := uint64(0)
-	b := 0
-	for i := 0; i < VAR_MAX_BYTES; i++ {
-		ch := uint8(0)
-		if err := binary.Read(s, Endian, &ch); err != nil {
-			return fmt.Errorf("var int read error %w", err)
-		}
-		b++
-		n = (n << 7) | uint64(ch&0x7F)
-		if ch&0x80 != 0 {
-			n++
-		} else {
-			break
-		}
-	}
-	if n&0b1 != 0 {
-		*vi = VarInt(^(n >> 1)) + 1
-	} else {
-		*vi = VarInt(n >> 1)
-	}
-	if !vi.IsValid() {
-		return VarSizeErr
-	}
-	return nil
-}
-
 type Location [2]uint32
-
-//编码解码
-func (l Location) Encode(s io.Writer) error {
-	if err := binary.Write(s, Endian, l[0]); err != nil {
-		return err
-	}
-	if err := binary.Write(s, Endian, l[1]); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (l *Location) Decode(s io.Reader) error {
-	if err := binary.Read(s, Endian, &l[0]); err != nil {
-		return err
-	}
-	if err := binary.Read(s, Endian, &l[1]); err != nil {
-		return err
-	}
-	return nil
-}
 
 func (l Location) Equal(v Location) bool {
 	return l[0] == v[0] && l[1] == v[1]
@@ -156,22 +55,31 @@ func (l Location) Distance(v Location) float64 {
 }
 
 //
-type UInt24 [3]byte
+type TagCTR [3]byte
 
-func (v *UInt24) ToUInt32() uint32 {
-	b := []byte{v[0], v[1], v[2], 0x00}
-	return binary.LittleEndian.Uint32(b)
+func (c TagCTR) ToUInt() uint {
+	b4 := []byte{0, 0, 0, 0}
+	copy(b4[1:], c[:])
+	return uint(binary.BigEndian.Uint32(b4))
 }
 
-func (v *UInt24) SetUInt32(x uint32) {
-	b := []byte{0x00, 0x00, 0x00, 0x00}
-	binary.LittleEndian.PutUint32(b, x)
-	v[0], v[1], v[2] = b[0], b[1], b[2]
+func (c *TagCTR) Set(v uint) {
+	b4 := []byte{0, 0, 0, 0}
+	binary.BigEndian.PutUint32(b4, uint32(v))
+	copy(c[:], b4[1:])
 }
 
 type PKBytes [33]byte
 
-type SigBytes [73]byte
+func (p *PKBytes) Set(pk *PublicKey) {
+	copy(p[:], pk.Encode())
+}
+
+type SigBytes [75]byte
+
+func (p *SigBytes) Set(sig *SigValue) {
+	copy(p[:], sig.Encode())
+}
 
 type HashID [32]byte
 
@@ -179,116 +87,206 @@ type TagUID [7]byte
 
 type TagMAC [8]byte
 
+var (
+	TTS = []string{"I", "C", "O"}
+)
+
+func CheckTTS(b byte) bool {
+	for _, v := range TTS {
+		if b == v[0] {
+			return true
+		}
+	}
+	return false
+}
+
 type TagTT [2]byte
 
-type TagEncodePos struct {
+func (tt TagTT) IsValid() bool {
+	return CheckTTS(tt[0]) && CheckTTS(tt[1])
+}
+
+func NewTagTT(s string) TagTT {
+	return TagTT{s[0], s[1]}
+}
+
+// https://api.xginx.com/sign/
+// 01000000
+// bcb45f6b 764532cd
+// 00000000000000
+// c5e581f79ac615bd1563a7fe457aeeec2be2e2a538a4dfbe8395f0ff336d4a082f
+// 000000
+// 00
+// 00
+// 0000000000000000
+//标签信息
+type TagInfo struct {
+	TTS  TagTT    //TT S状态 url +2,激活后OO tam map
+	TVer uint32   //版本 from tag
+	TLoc Location //uint32-uint32 位置 from tag
+	TUID TagUID   //标签id from tag
+	TPKS PKBytes  //标签公钥 from tag
+	TCTR TagCTR   //标签记录计数器 from tag map
+	TMAC TagMAC   //标签CMAC值 from tag url + 16
+	URL  string
+}
+
+func NewTagInfo(surl string) *TagInfo {
+	tag := &TagInfo{}
+	tag.TVer = 1
+	tag.TTS = NewTagTT("II")
+	tag.URL = surl
+	return tag
+}
+
+func (t *TagInfo) SetTLoc(lng, lat float64) {
+	t.TLoc.Set(lng, lat)
+}
+
+func (t *TagInfo) SetTPK(pk *PublicKey) {
+	copy(t.TPKS[:], pk.Encode())
+}
+
+type TagPos struct {
+	OFF int
 	UID int
 	CTR int
 	TTS int
 	MAC int
 }
 
-//终端记录
-type TagRecord struct {
-	TVer  uint8        //版本 from tag
-	TLoc  Location     //uint32-uint32 位置 from tag
-	TUID  TagUID       //标签id from tag
-	TPK   PKBytes      //标签公钥 from tag
-	TCTR  UInt24       //标签记录计数器 from tag
-	TTS   TagTT        //TT S状态 url +2,激活后OO
-	TMAC  TagMAC       //标签CMAC值 from tag url + 16
-	CPC   byte         //C pubkey count 4(bit)公钥数量-4(bit)需要的私钥数量最大15
-	CSig  []SigBytes   //用户签名 from user b[0] = 1 user sig
-	CPK   []PKBytes    //用户公钥 from user
-	Nonce uint64       //随机值 server full
-	STime uint64       //uint64 create time serve full
-	SSig  SigBytes     //标签签名 b[0] = 2 tag sig server full
-	Hash  HashID       //最最终hash
-	pos   TagEncodePos //记录偏移位置用
+func (p TagPos) String() string {
+	return fmt.Sprintf("UID=%d CTR=%d TTS=%d MAC=%d", p.UID, p.CTR, p.TTS, p.MAC)
 }
 
-func (t TagRecord) TEqual(v TagRecord) bool {
-	if t.TVer != v.TVer {
-		return false
+const (
+	TAG_SCHEME   = "https"
+	TAG_PATH_LEN = 134
+	TAG_PATH_FIX = "/sign/"
+)
+
+func (t *TagInfo) Valid(client *ClientBlock) error {
+	if !strings.HasPrefix(t.URL, TAG_SCHEME) {
+		return errors.New("url scheme error")
 	}
-	if !t.TLoc.Equal(v.TLoc) {
-		return false
+	uv, err := url.Parse(t.URL)
+	if err != nil {
+		return err
 	}
-	if !bytes.Equal(t.TUID[:], v.TUID[:]) {
-		return false
+	if strings.ToLower(uv.Scheme) != TAG_SCHEME {
+		return errors.New("must use https")
 	}
-	if !bytes.Equal(t.TPK[:], v.TPK[:]) {
-		return false
+	if len(uv.Path) != TAG_PATH_LEN {
+		return errors.New("path length error")
 	}
-	if !bytes.Equal(t.TCTR[:], v.TCTR[:]) {
-		return false
+	hurl := uv.Path[len(TAG_PATH_FIX):]
+	if err := t.Decode(hurl); err != nil {
+		return err
 	}
-	if !bytes.Equal(t.TTS[:], v.TTS[:]) {
-		return false
+	//检测计数器
+	itag, err := LoadTagInfo(t.TUID)
+	if err == nil && itag.CCTR.ToUInt() >= t.TCTR.ToUInt() {
+		return errors.New("counter error")
 	}
-	if !bytes.Equal(t.TMAC[:], v.TMAC[:]) {
-		return false
+	//检测cmac
+	tkey, err := LoadTagKeys(t.TUID)
+	if err != nil {
+		return err
 	}
-	return true
+	//不包括cmac hex格式
+	input := uv.Host + uv.Path
+	input = input[:len(input)-len(t.TMAC)*2]
+	//暂时默认使用密钥0
+	if !aescmac.Vaild(tkey.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], input) {
+		return errors.New("cmac valid error")
+	}
+	itag.Time = time.Now().UnixNano()
+	itag.CCTR = t.TCTR
+	itag.CPKS = client.CPKS
+	if err := itag.Save(t.TUID); err != nil {
+		return err
+	}
+	//检测用户签名
+	return nil
 }
 
-func (tag *TagRecord) Decode(s string) error {
-	sb := strings.NewReader(s)
-	hr := hex.NewDecoder(sb)
-	b1 := []byte{0}
-	if _, err := hr.Read(b1); err != nil {
-		return err
-	} else {
-		tag.TVer = b1[0]
-	}
-	if err := tag.TLoc.Decode(hr); err != nil {
+func (t *TagInfo) Decode(s string) error {
+	copy(t.TTS[:], s[:2])
+	sr := strings.NewReader(s[2:])
+	hr := hex.NewDecoder(sr)
+	if err := binary.Read(hr, Endian, &t.TVer); err != nil {
 		return err
 	}
-	if _, err := hr.Read(tag.TPK[:]); err != nil {
+	if err := binary.Read(hr, Endian, &t.TLoc); err != nil {
 		return err
 	}
-	if _, err := hr.Read(tag.TUID[:]); err != nil {
+	if err := binary.Read(hr, Endian, &t.TUID); err != nil {
 		return err
 	}
-	if _, err := hr.Read(tag.TCTR[:]); err != nil {
+	if err := binary.Read(hr, Endian, &t.TPKS); err != nil {
 		return err
 	}
-	if _, err := hr.Read(tag.TTS[:]); err != nil {
+	if err := binary.Read(hr, Endian, &t.TCTR); err != nil {
 		return err
 	}
-	if _, err := hr.Read(tag.TMAC[:]); err != nil {
+	if err := binary.Read(hr, Endian, &t.TMAC); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (tag TagRecord) EncodeTag() (string, error) {
+//编码成url一部分写入标签
+func (t TagInfo) Encode(pos *TagPos) (string, error) {
 	sb := &strings.Builder{}
 	hw := hex.NewEncoder(sb)
-	if _, err := hw.Write([]byte{tag.TVer}); err != nil {
+	pos.TTS = pos.OFF + sb.Len()
+	sb.WriteString(string(t.TTS[:]))
+	if err := binary.Write(hw, Endian, t.TVer); err != nil {
 		return "", err
 	}
-	if err := tag.TLoc.Encode(hw); err != nil {
+	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
 		return "", err
 	}
-	if _, err := hw.Write(tag.TPK[:]); err != nil {
+	pos.UID = pos.OFF + sb.Len()
+	if err := binary.Write(hw, Endian, t.TUID); err != nil {
 		return "", err
 	}
-	tag.pos.UID = sb.Len()
-	if _, err := hw.Write(tag.TUID[:]); err != nil {
+	if err := binary.Write(hw, Endian, t.TPKS); err != nil {
 		return "", err
 	}
-	tag.pos.CTR = sb.Len()
-	if _, err := hw.Write(tag.TCTR[:]); err != nil {
+	pos.CTR = pos.OFF + sb.Len()
+	if err := binary.Write(hw, Endian, t.TCTR); err != nil {
 		return "", err
 	}
-	tag.pos.TTS = sb.Len()
-	if _, err := hw.Write(tag.TTS[:]); err != nil {
+	pos.MAC = pos.OFF + sb.Len()
+	if err := binary.Write(hw, Endian, t.TMAC); err != nil {
 		return "", err
 	}
-	tag.pos.MAC = sb.Len()
-	if _, err := hw.Write(tag.TMAC[:]); err != nil {
-		return "", err
+	return strings.ToUpper(sb.String()), nil
+}
+
+func (t TagInfo) GetSignHash() ([]byte, error) {
+	pos := &TagPos{}
+	str, err := t.Encode(pos)
+	if err != nil {
+		return nil, err
 	}
-	return sb.String(), nil
+	return HASH256([]byte(str)), nil
+}
+
+//client信息
+//POST 编码数据到服务器
+type ClientBlock struct {
+	CLoc  Location //用户定位信息user location
+	Prev  HashID   //上个hash
+	CTime uint64   //客户端时间，不能和服务器相差太大
+	CPKS  PKBytes  //用户公钥 from user
+	CSig  SigBytes //用户签名
+}
+
+//块信息
+type TagBlock struct {
+	Client ClientBlock
+	Nonce  uint64   //随机值 server full
+	SSig   SigBytes //服务器签名
 }
