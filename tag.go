@@ -1,10 +1,12 @@
 package xginx
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"time"
@@ -121,14 +123,15 @@ func NewTagTT(s string) TagTT {
 // 0000000000000000
 //标签信息
 type TagInfo struct {
-	TTS  TagTT    //TT S状态 url +2,激活后OO tam map
-	TVer uint32   //版本 from tag
-	TLoc Location //uint32-uint32 位置 from tag
-	TUID TagUID   //标签id from tag
-	TPKS PKBytes  //标签公钥 from tag
-	TCTR TagCTR   //标签记录计数器 from tag map
-	TMAC TagMAC   //标签CMAC值 from tag url + 16
-	URL  string
+	TTS   TagTT    //TT S状态 url +2,激活后OO tam map
+	TVer  uint32   //版本 from tag
+	TLoc  Location //uint32-uint32 位置 from tag
+	TUID  TagUID   //标签id from tag
+	TPKS  PKBytes  //标签公钥 from tag
+	TCTR  TagCTR   //标签记录计数器 from tag map
+	TMAC  TagMAC   //标签CMAC值 from tag url + 16
+	URL   string
+	Input string //cmac valid input DecodeURL set
 }
 
 func NewTagInfo(surl string) *TagInfo {
@@ -165,7 +168,7 @@ const (
 	TAG_PATH_FIX = "/sign/"
 )
 
-func (t *TagInfo) Valid(client *ClientBlock) error {
+func (t *TagInfo) DecodeURL() error {
 	if !strings.HasPrefix(t.URL, TAG_SCHEME) {
 		return errors.New("url scheme error")
 	}
@@ -183,21 +186,27 @@ func (t *TagInfo) Valid(client *ClientBlock) error {
 	if err := t.Decode(hurl); err != nil {
 		return err
 	}
+	input := uv.Host + uv.Path
+	t.Input = input[:len(input)-len(t.TMAC)*2]
+	return nil
+}
+
+func (t *TagInfo) Valid(client *ClientBlock) error {
+	if t.Input == "" {
+		return errors.New("input miss")
+	}
 	//检测计数器
 	itag, err := LoadTagInfo(t.TUID)
 	if err == nil && itag.CCTR.ToUInt() >= t.TCTR.ToUInt() {
-		return errors.New("counter error")
+		log.Println("counter error")
 	}
 	//检测cmac
 	tkey, err := LoadTagKeys(t.TUID)
 	if err != nil {
 		return err
 	}
-	//不包括cmac hex格式
-	input := uv.Host + uv.Path
-	input = input[:len(input)-len(t.TMAC)*2]
 	//暂时默认使用密钥0
-	if !aescmac.Vaild(tkey.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], input) {
+	if !aescmac.Vaild(tkey.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], t.Input) {
 		return errors.New("cmac valid error")
 	}
 	itag.Time = time.Now().UnixNano()
@@ -206,7 +215,6 @@ func (t *TagInfo) Valid(client *ClientBlock) error {
 	if err := itag.Save(t.TUID); err != nil {
 		return err
 	}
-	//检测用户签名
 	return nil
 }
 
@@ -279,9 +287,50 @@ func (t TagInfo) GetSignData() ([]byte, error) {
 type ClientBlock struct {
 	CLoc  Location //用户定位信息user location
 	Prev  HashID   //上个hash
-	CTime uint64   //客户端时间，不能和服务器相差太大
+	CTime int64    //客户端时间，不能和服务器相差太大
 	CPKS  PKBytes  //用户公钥 from user
 	CSig  SigBytes //用户签名不包含在签名数据中
+}
+
+func (c *ClientBlock) Encode() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, Endian, c.CLoc); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, Endian, c.Prev); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, Endian, c.CTime); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, Endian, c.CPKS); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, Endian, c.CSig); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (c *ClientBlock) Sign(pv *PrivateKey, data []byte) error {
+	buf := bytes.NewBuffer(data)
+	if err := binary.Write(buf, Endian, c.CLoc); err != nil {
+		return err
+	}
+	if err := binary.Write(buf, Endian, c.Prev); err != nil {
+		return err
+	}
+	if err := binary.Write(buf, Endian, c.CTime); err != nil {
+		return err
+	}
+	hv := HASH256(buf.Bytes())
+	sig, err := pv.Sign(hv)
+	if err != nil {
+		return err
+	}
+	c.CPKS.Set(pv.PublicKey())
+	c.CSig.Set(sig)
+	return nil
 }
 
 //块信息

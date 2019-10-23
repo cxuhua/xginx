@@ -67,14 +67,36 @@ func TestSaveTestKey(t *testing.T) {
 //https:// api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B 45D28CEB0096724D
 //CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D
 func TestTagData(t *testing.T) {
+	pk, err := LoadPrivateKey(cpkey)
+	if err != nil {
+		panic(err)
+	}
 	surl := "https://api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D"
 	otag := NewTagInfo(surl)
-	err := otag.Valid(&ClientBlock{})
+	if err := otag.DecodeURL(); err != nil {
+		panic(err)
+	}
+
+	sigd, err := otag.GetSignData()
+	if err != nil {
+		panic(err)
+	}
+	log.Println(string(sigd))
+
+	//客户端签名
+	client := &ClientBlock{}
+	client.CLoc.Set(122.33, 112.44)
+	client.Prev = HashID{1, 2}
+	client.CTime = time.Now().UnixNano()
+	if err := client.Sign(pk, sigd); err != nil {
+		panic(err)
+	}
+	log.Println(client.Encode())
+	//服务器校验上传数据
+	err = otag.Valid(client)
 	if err != nil {
 		t.Error(err)
 	}
-	pos := &TagPos{}
-	log.Println(otag.Encode(pos))
 }
 
 func TestMaxBits(t *testing.T) {
