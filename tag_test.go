@@ -1,7 +1,9 @@
 package xginx
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log"
 	"testing"
 	"time"
@@ -54,10 +56,14 @@ func TestSaveTestKey(t *testing.T) {
 	}
 }
 
-//https:// api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B 45D28CEB0096724D
+//https://api.xginx.com/sign/CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B 45D28CEB0096724D
 //CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D
 func TestTagData(t *testing.T) {
-	err := UseTransaction(context.Background(), func(db DBImp) error {
+	spk, err := LoadPrivateKey(spkey)
+	if err != nil {
+		panic(err)
+	}
+	err = UseTransaction(context.Background(), func(db DBImp) error {
 		pk, err := LoadPrivateKey(cpkey)
 		if err != nil {
 			panic(err)
@@ -68,12 +74,10 @@ func TestTagData(t *testing.T) {
 		if err := otag.DecodeURL(); err != nil {
 			panic(err)
 		}
-
-		sigb, err := otag.Encode()
+		sigb, err := otag.ToSigBinary()
 		if err != nil {
 			panic(err)
 		}
-		log.Println(string(sigb))
 
 		//客户端签名
 		client := &ClientBlock{}
@@ -83,11 +87,29 @@ func TestTagData(t *testing.T) {
 		if err := client.Sign(pk, sigb); err != nil {
 			panic(err)
 		}
-		log.Println(client.Encode())
 		err = otag.Valid(db, client)
 		if err != nil {
 			return err
 		}
+		tb := &TagBlock{}
+		bb, err := tb.Sign(spk, otag, client)
+		if err != nil {
+			return err
+		}
+		vv, err := bb.Decode()
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(vv.TagInfo.TPKS[:], otag.TPKS[:]) {
+			return errors.New("cmp tag tpks error")
+		}
+		if vv.ClientBlock.CTime != client.CTime {
+			return errors.New("time cmp error")
+		}
+		if vv.TagBlock.STime != tb.STime {
+			return errors.New("stime cmp error")
+		}
+		log.Println(bb.Hash())
 		return err
 	})
 	if err != nil {
