@@ -265,13 +265,13 @@ func (t TagInfo) Encode(pos *TagPos) (string, error) {
 	return strings.ToUpper(sb.String()), nil
 }
 
-func (t TagInfo) GetSignHash() ([]byte, error) {
+func (t TagInfo) GetSignData() ([]byte, error) {
 	pos := &TagPos{}
 	str, err := t.Encode(pos)
 	if err != nil {
 		return nil, err
 	}
-	return HASH256([]byte(str)), nil
+	return []byte(str), nil
 }
 
 //client信息
@@ -281,7 +281,7 @@ type ClientBlock struct {
 	Prev  HashID   //上个hash
 	CTime uint64   //客户端时间，不能和服务器相差太大
 	CPKS  PKBytes  //用户公钥 from user
-	CSig  SigBytes //用户签名
+	CSig  SigBytes //用户签名不包含在签名数据中
 }
 
 //块信息
