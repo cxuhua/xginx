@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -19,6 +20,8 @@ type DBImp interface {
 	GetTag(id []byte, v interface{}) error
 	//save or update tans data
 	SetTag(id []byte, v interface{}) error
+	//findandmodify
+	AtomicCtr(id []byte, ctr uint) error
 	//exists tx
 	HasTag(id []byte) bool
 	//delete tx
@@ -40,18 +43,25 @@ type TTagInfo struct {
 }
 
 func LoadTagInfo(id TagUID, db DBImp) (*TTagInfo, error) {
+
 	iv := &TTagInfo{}
 	return iv, db.GetTag(id[:], iv)
 }
 
-func (tag TTagInfo) Save(db DBImp) error {
-	return db.SetTag(tag.UID[:], tag)
+func (tag TTagInfo) Mackey() TagKey {
+	idx := (tag.Ver >> 28) & 0xF
+	return tag.Keys[idx]
 }
 
-func (tag TTagInfo) SetCtr(ctr uint, db DBImp) error {
-	iv := SetValue{}
-	iv["ctr"] = ctr
-	return db.SetTag(tag.UID[:], iv)
+func (tag *TTagInfo) SetMacKey(idx int) {
+	if idx < 0 || idx >= len(tag.Keys) {
+		panic(errors.New("idx out bound"))
+	}
+	tag.Ver |= uint32((idx & 0xf) << 28)
+}
+
+func (tag TTagInfo) Save(db DBImp) error {
+	return db.SetTag(tag.UID[:], tag)
 }
 
 var (
@@ -73,6 +83,14 @@ func (m *mongoDBImp) client() *mongo.Client {
 
 func (m *mongoDBImp) database() *mongo.Database {
 	return m.client().Database("xginx")
+}
+
+//设置计数器，必须比数据库中的大
+func (m *mongoDBImp) AtomicCtr(id []byte, ctr uint) error {
+	c := bson.M{"_id": id, "ctr": bson.M{"$lt": ctr}}
+	d := bson.M{"$set": bson.M{"ctr": ctr}}
+	res := m.tags().FindOneAndUpdate(m, c, d)
+	return res.Err()
 }
 
 func NewDBImp(ctx context.Context) DBImp {

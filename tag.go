@@ -224,8 +224,8 @@ func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
 		return errors.New("cmac valid error")
 	}
 	//更新数据库标签计数器
-	if err := itag.SetCtr(t.TCTR.ToUInt(), db); err != nil {
-		return err
+	if err := db.AtomicCtr(t.TUID[:], t.TCTR.ToUInt()); err != nil {
+		return fmt.Errorf("update ctr error %w", err)
 	}
 	//校验用户签名
 	sig, err := NewSigValue(client.CSig[:])

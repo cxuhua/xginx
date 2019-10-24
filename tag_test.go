@@ -20,6 +20,45 @@ var (
 	tuid = TagUID{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80}
 )
 
+func TestSig(t *testing.T) {
+
+	pk := "uxYrjiMMZ2fuXuRih6ty7UVb5ggwYApqM8qTq2BT5sxQ"
+	pk1, _ := B58Decode(pk, BitcoinAlphabet)
+
+	sg := "AN1rKvt6EFabeqmHkKsUZtWsA4YHHucwc6eUbaAnkHiRF8x9PvZNn87UQnjSekk3eXThUhmPjrFAkRR5263XiCpucWjSTQBA4"
+	sg1, _ := B58Decode(sg, BitcoinAlphabet)
+
+	hv := make([]byte, 32)
+	for i, _ := range hv {
+		hv[i] = byte(i)
+	}
+	pub, err := NewPublicKey(pk1)
+	if err != nil {
+		panic(err)
+	}
+	sig, err := NewSigValue(sg1)
+	if err != nil {
+		panic(err)
+	}
+
+	ok := pub.Verify(hv, sig)
+	log.Println(ok)
+
+	//pri, err := LoadPrivateKey(spkey)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//pb := pri.PublicKey().Encode()
+	//ps := B58Encode(pb, BitcoinAlphabet)
+	//log.Println(ps)
+	//sig, err := pri.Sign(hv)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//sigdata := sig.Encode()
+	//log.Println(len(sigdata), B58Encode(sigdata, BitcoinAlphabet))
+}
+
 func TestLoadTestKey(t *testing.T) {
 	err := UseSession(context.Background(), func(db DBImp) error {
 		kv, err := LoadTagInfo(tuid, db)
@@ -44,6 +83,7 @@ func TestSaveTestKey(t *testing.T) {
 		tk.PKS = spkey
 		tk.Loc = loc.Get()
 		tk.CTR = 1
+		tk.SetMacKey(0)
 		copy(tk.Keys[0][:], tkey)
 		err := tk.Save(db)
 		if err != nil {
@@ -63,7 +103,7 @@ func TestTagData(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = UseTransaction(context.Background(), func(db DBImp) error {
+	err = UseSession(context.Background(), func(db DBImp) error {
 		pk, err := LoadPrivateKey(cpkey)
 		if err != nil {
 			panic(err)
@@ -78,7 +118,6 @@ func TestTagData(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-
 		//客户端签名
 		client := &ClientBlock{}
 		client.CLoc.Set(122.33, 112.44)
@@ -87,6 +126,7 @@ func TestTagData(t *testing.T) {
 		if err := client.Sign(pk, sigb); err != nil {
 			panic(err)
 		}
+		//
 		err = otag.Valid(db, client)
 		if err != nil {
 			return err

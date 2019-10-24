@@ -59,7 +59,7 @@ func (pk *PrivateKey) Decode(s string) error {
 	dl = len(data)
 	pl := len(PREFIX_SECRET_KEY)
 	if (dl == pl+32 || (dl == pl+33 && data[dl-1] == 1)) && bytes.Equal(PREFIX_SECRET_KEY, data[:pl]) {
-		pk.SetBytes(data[pl : pl+32])
+		pk.SetBytes(data[pl : dl-1])
 	}
 	return nil
 }
@@ -124,9 +124,8 @@ func (pk PrivateKey) PublicKey() *PublicKey {
 }
 
 type SigValue struct {
-	R    *big.Int
-	S    *big.Int
-	Type byte //last byte
+	R *big.Int
+	S *big.Int
 }
 
 func NewSigValue(b []byte) (*SigValue, error) {
@@ -161,7 +160,6 @@ func (sig SigValue) Encode() []byte {
 	res.WriteByte(0x02)
 	res.WriteByte(byte(len(s)))
 	res.Write(s)
-	res.WriteByte(sig.Type)
 	return res.Bytes()
 }
 
@@ -186,7 +184,6 @@ func (sig *SigValue) Decode(b []byte) error {
 	} else {
 		sig.R = new(big.Int).SetBytes(b[4 : 4+r])
 		sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
-		sig.Type = b[6+r+s]
 	}
 	return nil
 }
