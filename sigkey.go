@@ -59,7 +59,7 @@ func (pk *PrivateKey) Decode(s string) error {
 	dl = len(data)
 	pl := len(PREFIX_SECRET_KEY)
 	if (dl == pl+32 || (dl == pl+33 && data[dl-1] == 1)) && bytes.Equal(PREFIX_SECRET_KEY, data[:pl]) {
-		pk.SetBytes(data[pl : pl+32])
+		pk.SetBytes(data[pl : dl-1])
 	}
 	return nil
 }

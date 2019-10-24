@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+func TestAA(t *testing.T) {
+	LoadPrivateKey("L1YSVnAhrhWoHUfgFTGauf5qkRMb3Y5knbZiGuLEhF8eiQdPv9Ya")
+}
+
 func BenchmarkVerify(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		msg := make([]byte, rand.Uint32()%500)
