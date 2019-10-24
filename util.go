@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
+
+	"golang.org/x/crypto/ripemd160"
 )
 
 var (
@@ -64,6 +66,17 @@ func DecompressUInt(x uint64) uint64 {
 func SHA256(b []byte) []byte {
 	hash := sha256.Sum256(b)
 	return hash[:]
+}
+
+func RIPEMD160(b []byte) []byte {
+	h160 := ripemd160.New()
+	h160.Write(b)
+	return h160.Sum(nil)
+}
+
+func HASH160(b []byte) []byte {
+	v1 := SHA256(b)
+	return RIPEMD160(v1)
 }
 
 func HASH256(b []byte) []byte {
