@@ -213,12 +213,20 @@ func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
 	//获取标签信息
 	itag, err := LoadTagInfo(t.TUID, db)
 	if err != nil {
-		return err
+		return fmt.Errorf("get tag info error %w", err)
+	}
+	//检测公钥是否正确
+	pk, err := itag.PubKey()
+	if err != nil {
+		return fmt.Errorf("get tag pubkey error %w", err)
+	}
+	if !pk.Equal(t.TPKS[:]) {
+		return fmt.Errorf("tag public key error")
 	}
 	//检测标签计数器
-	//if itag.CTR >= t.TCTR.ToUInt() {
-	//	return errors.New("tag counter error")
-	//}
+	if itag.CTR >= t.TCTR.ToUInt() {
+		return errors.New("tag counter error")
+	}
 	//暂时默认使用密钥0
 	if !aescmac.Vaild(itag.Keys[0][:], t.TUID[:], t.TCTR[:], t.TMAC[:], t.Input) {
 		return errors.New("cmac valid error")
@@ -328,6 +336,44 @@ func (t *TagInfo) Encode() ([]byte, error) {
 	return []byte(strings.ToUpper(sb.String())), nil
 }
 
+const (
+	VAR_STR_MAX = int(^uint8(0))
+)
+
+//最大支持255长度字节
+type VarStr string
+
+func (s *VarStr) DecodeReader(r io.Reader) error {
+	b0 := []byte{0}
+	_, err := r.Read(b0)
+	if err != nil {
+		return err
+	}
+	if b0[0] == 0 {
+		*s = ""
+		return nil
+	}
+	sb := make([]byte, b0[0])
+	_, err = r.Read(sb)
+	if err != nil {
+		return err
+	}
+	*s = VarStr(sb)
+	return nil
+}
+
+func (s VarStr) EncodeWriter(w io.Writer) error {
+	if len(s) > VAR_STR_MAX {
+		panic(errors.New("var too big long"))
+	}
+	r := []byte{byte(len(s))}
+	if len(s) > 0 {
+		r = append(r, []byte(s)...)
+	}
+	_, err := w.Write(r)
+	return err
+}
+
 //client信息
 //POST 编码数据到服务器
 type ClientBlock struct {
@@ -336,6 +382,11 @@ type ClientBlock struct {
 	CTime int64    //客户端时间，不能和服务器相差太大
 	CPKS  PKBytes  //用户公钥 from user
 	CSig  SigBytes //用户签名不包含在签名数据中
+}
+
+//cpks hash160
+func (c *ClientBlock) ClientID() []byte {
+	return HASH160(c.CPKS[:])
 }
 
 func (c *ClientBlock) DecodeReader(r io.Reader) error {

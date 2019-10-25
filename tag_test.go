@@ -17,9 +17,24 @@ var (
 	spkey = "L4h8htSsTiLh9axT9i5mzdMtpZdqQiKofdRf9bfJqurh8gbTVtS4"
 	//tag aes测试密钥
 	tkey = "JvQcZnKs2bI3RDO5"
-	//
+	//标签uid
 	tuid = TagUID{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80}
 )
+
+func TestVarStr(t *testing.T) {
+	buf := &bytes.Buffer{}
+	s := VarStr("1245677")
+	if err := s.EncodeWriter(buf); err != nil {
+		panic(err)
+	}
+	v := VarStr("")
+	if err := v.DecodeReader(buf); err != nil {
+		panic(err)
+	}
+	if v != s {
+		t.Errorf("encode decode error")
+	}
+}
 
 func TestSig(t *testing.T) {
 

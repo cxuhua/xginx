@@ -200,6 +200,11 @@ func NewPublicKey(data []byte) (*PublicKey, error) {
 	return pk, err
 }
 
+func (pk *PublicKey) Equal(sb []byte) bool {
+	pb := pk.Encode()
+	return bytes.Equal(pb, sb)
+}
+
 func (pk *PublicKey) FromHEX(s string) error {
 	data, err := hex.DecodeString(s)
 	if err != nil {
