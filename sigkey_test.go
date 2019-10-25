@@ -1,12 +1,13 @@
 package xginx
 
 import (
+	"log"
 	"math/rand"
 	"testing"
 )
 
 func TestAA(t *testing.T) {
-	LoadPrivateKey("L1YSVnAhrhWoHUfgFTGauf5qkRMb3Y5knbZiGuLEhF8eiQdPv9Ya")
+	log.Println(len("CC01000000BCB45F6B764532CD047A1732AA618002F9A4DCD3D1DD0E531F76C32A4AA8B123F299909E8FC7D94A4F22E270DA80906300005B45D28CEB0096724D"))
 }
 
 func BenchmarkVerify(b *testing.B) {

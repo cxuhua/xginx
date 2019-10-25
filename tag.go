@@ -137,7 +137,7 @@ func NewTagTT(s string) TagTT {
 // 0000000000000000
 //标签信息
 type TagInfo struct {
-	TTS   TagTT    //TT S状态 url +2,激活后OO tam map
+	TTS   TagTT    //TT状态 url +2,激活后OO tam map
 	TVer  uint32   //版本 from tag
 	TLoc  Location //uint32-uint32 位置 from tag
 	TUID  TagUID   //标签id from tag
@@ -402,14 +402,14 @@ func (c *ClientBlock) Sign(pv *PrivateKey, tag []byte) error {
 }
 
 //块信息
-type TagBlock struct {
-	Nonce int64    //随机值 server full
+type ServerBlock struct {
+	Nnoce int64    //随机值 server full
 	STime int64    //服务器时间
 	SSig  SigBytes //服务器签名
 }
 
-func (c *TagBlock) DecodeReader(r io.Reader) error {
-	if err := binary.Read(r, Endian, &c.Nonce); err != nil {
+func (c *ServerBlock) DecodeReader(r io.Reader) error {
+	if err := binary.Read(r, Endian, &c.Nnoce); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &c.STime); err != nil {
@@ -426,7 +426,7 @@ type BlockData []byte
 type BlockInfo struct {
 	TagInfo
 	ClientBlock
-	TagBlock
+	ServerBlock
 }
 
 func (d BlockData) Decode() (*BlockInfo, error) {
@@ -440,7 +440,7 @@ func (d BlockData) Decode() (*BlockInfo, error) {
 	if err := b.ClientBlock.DecodeReader(hr); err != nil {
 		return nil, err
 	}
-	if err := b.TagBlock.DecodeReader(hr); err != nil {
+	if err := b.ServerBlock.DecodeReader(hr); err != nil {
 		return nil, err
 	}
 	return b, nil
@@ -454,7 +454,7 @@ func (d BlockData) Hash() HashID {
 	return NewHashID(HASH256(d))
 }
 
-func (c *TagBlock) Sign(pv *PrivateKey, tag *TagInfo, client *ClientBlock) (BlockData, error) {
+func (c *ServerBlock) Sign(pv *PrivateKey, tag *TagInfo, client *ClientBlock) (BlockData, error) {
 	buf := &bytes.Buffer{}
 	tdata, err := tag.ToSigBinary()
 	if err != nil {
@@ -470,9 +470,9 @@ func (c *TagBlock) Sign(pv *PrivateKey, tag *TagInfo, client *ClientBlock) (Bloc
 	if _, err := buf.Write(cdata); err != nil {
 		return nil, err
 	}
-	SetRandInt(&c.Nonce)
+	SetRandInt(&c.Nnoce)
 	c.STime = time.Now().UnixNano()
-	if err := binary.Write(buf, Endian, c.Nonce); err != nil {
+	if err := binary.Write(buf, Endian, c.Nnoce); err != nil {
 		return nil, err
 	}
 	if err := binary.Write(buf, Endian, c.STime); err != nil {

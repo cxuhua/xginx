@@ -3,6 +3,7 @@ package xginx
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"log"
 	"testing"
@@ -21,6 +22,9 @@ var (
 )
 
 func TestSig(t *testing.T) {
+
+	ss := "8d2cca432167b6592843a32907bb3932"
+	log.Printf("%x %x", ss[0], ss[1])
 
 	pk := "uxYrjiMMZ2fuXuRih6ty7UVb5ggwYApqM8qTq2BT5sxQ"
 	pk1, _ := B58Decode(pk, BitcoinAlphabet)
@@ -131,7 +135,7 @@ func TestTagData(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		tb := &TagBlock{}
+		tb := &ServerBlock{}
 		bb, err := tb.Sign(spk, otag, client)
 		if err != nil {
 			return err
@@ -146,9 +150,10 @@ func TestTagData(t *testing.T) {
 		if vv.ClientBlock.CTime != client.CTime {
 			return errors.New("time cmp error")
 		}
-		if vv.TagBlock.STime != tb.STime {
+		if vv.ServerBlock.STime != tb.STime {
 			return errors.New("stime cmp error")
 		}
+		log.Printf(hex.EncodeToString(bb))
 		log.Println("LEN=", len(bb), bb.Hash())
 		return err
 	})
