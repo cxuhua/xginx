@@ -79,8 +79,9 @@ func (c *TagCTR) Set(v uint) {
 
 type PKBytes [33]byte
 
-func (p *PKBytes) Set(pk *PublicKey) {
+func (p *PKBytes) Set(pk *PublicKey) PKBytes {
 	copy(p[:], pk.Encode())
+	return *p
 }
 
 type SigBytes [75]byte
@@ -491,17 +492,6 @@ type BlockInfo struct {
 }
 
 func (b *BlockInfo) Verify() error {
-	//检测是否信任服务器签名
-	//b.ServerBlock.SPKS
-	cert, err := Conf.GetNodeCert(b.ServerBlock.SPKS)
-	if err != nil {
-		return err
-	}
-	//验证公钥是否被信任
-	if err := cert.Verify(); err != nil {
-		return err
-	}
-	//检测数据签名
 	buf := &bytes.Buffer{}
 	tb, err := b.TagInfo.ToSigBinary()
 	if err != nil {
@@ -535,6 +525,14 @@ func (b *BlockInfo) Verify() error {
 	//verify server sig
 	sig, err = NewSigValue(b.ServerBlock.SSig[:])
 	if err != nil {
+		return err
+	}
+	//获取证书
+	cert, err := conf.GetNodeCert(b.ServerBlock.SPKS)
+	if err != nil {
+		return err
+	}
+	if err := cert.Verify(); err != nil {
 		return err
 	}
 	hash = HASH256(buf.Bytes())

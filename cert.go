@@ -13,7 +13,7 @@ type Cert struct {
 	URL    VarStr      //使用域名 https://api.xginx.com
 	PubKey PKBytes     //证书公钥
 	Expire int64       //过期时间:unix 秒
-	Index  uint16      //根证书索引
+	Prev   PKBytes     //证书上级公钥
 	CSig   SigBytes    //根证书签名
 	vsig   bool        //是否验证了签名
 	priv   *PrivateKey //加载后用
@@ -28,7 +28,7 @@ func NewCert(pub *PublicKey, url string, exp time.Duration) *Cert {
 	return c
 }
 
-//开始签名证书
+//开始用idx私钥来签发证书
 func (c *Cert) Sign(idx uint16) error {
 	if len(c.URL) == 0 {
 		return errors.New("url miss")
@@ -36,9 +36,9 @@ func (c *Cert) Sign(idx uint16) error {
 	if c.Expire < time.Now().Unix() {
 		return errors.New("expire time error")
 	}
-	pri := Conf.GetRootPrivateKey(idx)
-	//设置证书索引
-	c.Index = idx
+	pri := conf.GetPrivateKey(idx)
+	//设置上级证书公钥
+	c.Prev.Set(pri.PublicKey())
 	buf := &bytes.Buffer{}
 	if err := c.Encode(buf); err != nil {
 		return err
@@ -62,7 +62,7 @@ func (c *Cert) Decode(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.Expire); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &c.Index); err != nil {
+	if err := binary.Read(r, Endian, &c.Prev); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &c.CSig); err != nil {
@@ -89,10 +89,14 @@ func (c *Cert) Verify() error {
 	if err := c.Encode(buf); err != nil {
 		return err
 	}
-	pub := Conf.GetRootPublicKey(c.Index)
 	sig, err := NewSigValue(c.CSig[:])
 	if err != nil {
 		return err
+	}
+	//获取我信任的证书校验证书数据
+	pub := conf.GetPublicKey(c.Prev)
+	if pub == nil {
+		return errors.New("public untrusted")
 	}
 	hash := HASH256(buf.Bytes())
 	if !pub.Verify(hash, sig) {
@@ -152,7 +156,7 @@ func (c *Cert) Load(s string) (*Cert, error) {
 	return c, c.Decode(buf)
 }
 
-//导出签名证书
+//导出证书
 func (c *Cert) Dump() (string, error) {
 	buf := &bytes.Buffer{}
 	if err := c.Encode(buf); err != nil {
@@ -186,7 +190,7 @@ func (c *Cert) Encode(w io.Writer) error {
 	if err := binary.Write(w, Endian, c.Expire); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, c.Index); err != nil {
+	if err := binary.Write(w, Endian, c.Prev); err != nil {
 		return err
 	}
 	return nil

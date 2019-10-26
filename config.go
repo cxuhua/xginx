@@ -1,9 +1,11 @@
 package xginx
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
+	"log"
 	"sync"
 )
 
@@ -13,45 +15,59 @@ type CertItem struct {
 }
 
 type Config struct {
-	Privates []string          `json:"pris"`  //用于签发下级证书
-	Publics  []string          `json:"pubs"`  //节点信任的公钥，用来验证本节点的证书
-	Certs    []CertItem        `json:"certs"` //节点证书,上级签发的证书，由信任的公钥进行签名验证
-	pris     []*PrivateKey     `json:"-"`     //
-	pubs     []*PublicKey      `json:"-"`
-	certmap  map[PKBytes]*Cert `json:"-"` //按公钥key保存
-	certidx  []*Cert           `json:"-"` //顺序跑村
+	Privates []string               `json:"pris"`  //用于签发下级证书
+	Publics  []string               `json:"pubs"`  //节点信任的公钥，用来验证本节点的证书
+	Certs    []CertItem             `json:"certs"` //节点证书,上级和自己签发的证书，由信任的公钥进行签名验证
+	pris     []*PrivateKey          `json:"-"`     //
+	pubs     map[PKBytes]*PublicKey `json:"-"`     //
+	certmap  map[PKBytes]*Cert      `json:"-"`     //按公钥key保存
+	certidx  []*Cert                `json:"-"`     //顺序保存
+	mu       sync.Mutex             `json:"-"`
 }
 
 //获取根证书公钥
-func (c *Config) GetRootPublicKey(idx uint16) *PublicKey {
-	return c.pubs[idx]
+func (c *Config) GetPublicKey(pk PKBytes) *PublicKey {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pubs[pk]
 }
 
 //获取根证书私钥钥
-func (c *Config) GetRootPrivateKey(idx uint16) *PrivateKey {
+func (c *Config) GetPrivateKey(idx uint16) *PrivateKey {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.pris[idx]
 }
 
-// 根据公钥获取证书
-func (c *Config) GetNodeCert(k interface{}) (*Cert, error) {
-	var cert *Cert = nil
-	switch k.(type) {
-	case uint16:
-		cert = c.certidx[k.(uint16)]
-	case int:
-		cert = c.certidx[k.(int)]
-	case PKBytes:
-		cert = c.certmap[k.(PKBytes)]
-	default:
-		return nil, errors.New("args type error")
-	}
-	if cert == nil {
+func (c *Config) GetIndexCert(idx int) (*Cert, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if idx < 0 || idx >= len(c.certidx) {
 		return nil, errors.New("not found")
 	}
-	if err := cert.Verify(); err != nil {
-		return nil, err
+	return c.certidx[idx], nil
+}
+
+// 根据公钥获取证书
+func (c *Config) GetNodeCert(pk PKBytes) (*Cert, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	cert, ok := c.certmap[pk]
+	if !ok || cert == nil {
+		return nil, errors.New("not found")
 	}
 	return cert, nil
+}
+
+func (c *Config) SetCert(cert *Cert) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.pubs[cert.Prev]; ok {
+		c.certmap[cert.PubKey] = cert
+		c.certidx = append(c.certidx, cert)
+	} else {
+		log.Println("cert untrusted", hex.EncodeToString(cert.PubKey[:]))
+	}
 }
 
 func (c *Config) Init() error {
@@ -61,30 +77,39 @@ func (c *Config) Init() error {
 			return err
 		}
 		c.pris = append(c.pris, pri)
+		//自己有私钥肯定信任自己的公钥
+		pub := pri.PublicKey()
+		pk := new(PKBytes).Set(pub)
+		if _, ok := c.pubs[pk]; !ok {
+			c.pubs[pk] = pub
+		}
 	}
 	for _, s := range c.Publics {
 		pub, err := LoadPublicKey(s)
 		if err != nil {
 			return err
 		}
-		c.pubs = append(c.pubs, pub)
+		pk := new(PKBytes).Set(pub)
+		if _, ok := c.pubs[pk]; !ok {
+			c.pubs[pk] = pub
+		}
 	}
 	for _, i := range c.Certs {
 		cert, err := LoadCert(i.Priv, i.Cert)
 		if err != nil {
 			return err
 		}
-		if _, ok := c.certmap[cert.PubKey]; ok {
+		if err := cert.Verify(); err != nil {
+			log.Println("cert untrusted", hex.EncodeToString(cert.PubKey[:]), err)
 			continue
 		}
-		c.certmap[cert.PubKey] = cert
-		c.certidx = append(c.certidx, cert)
+		c.SetCert(cert)
 	}
 	return nil
 }
 
 var (
-	Conf *Config = nil
+	conf *Config = nil
 	once         = sync.Once{}
 )
 
@@ -99,13 +124,14 @@ func LoadConfig(f string) {
 	if err != nil {
 		panic(err)
 	}
-	Conf = &Config{
+	conf = &Config{
 		certmap: map[PKBytes]*Cert{},
+		pubs:    map[PKBytes]*PublicKey{},
 	}
-	if err := json.Unmarshal(d, Conf); err != nil {
+	if err := json.Unmarshal(d, conf); err != nil {
 		panic(err)
 	}
-	if err := Conf.Init(); err != nil {
+	if err := conf.Init(); err != nil {
 		panic(err)
 	}
 }
