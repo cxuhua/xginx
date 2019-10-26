@@ -28,11 +28,11 @@ type PrivateKey struct {
 //prefix[1] key[32] checknum[hash256-prefix-4]
 func LoadPrivateKey(s string) (*PrivateKey, error) {
 	key := &PrivateKey{}
-	err := key.Decode(s)
+	err := key.Load(s)
 	return key, err
 }
 
-func (pk *PrivateKey) Encode() string {
+func (pk *PrivateKey) Dump() string {
 	pb := pk.D.Bytes()
 	buf := &bytes.Buffer{}
 	buf.Write(PREFIX_SECRET_KEY)
@@ -43,7 +43,7 @@ func (pk *PrivateKey) Encode() string {
 	return B58Encode(buf.Bytes(), BitcoinAlphabet)
 }
 
-func (pk *PrivateKey) Decode(s string) error {
+func (pk *PrivateKey) Load(s string) error {
 	data, err := B58Decode(s, BitcoinAlphabet)
 	if err != nil {
 		return err
@@ -293,6 +293,33 @@ func (pk *PublicKey) Verify(hash []byte, sig *SigValue) bool {
 	pub.Curve = curve
 	pub.X, pub.Y = pk.X, pk.Y
 	return ecdsa.Verify(pub, hash, sig.R, sig.S)
+}
+
+func LoadPublicKey(s string) (*PublicKey, error) {
+	return new(PublicKey).Load(s)
+}
+
+func (pk *PublicKey) Load(s string) (*PublicKey, error) {
+	b, err := B58Decode(s, BitcoinAlphabet)
+	if err != nil {
+		return nil, err
+	}
+	l := len(b)
+	if l < 16 {
+		return nil, errors.New("pub length error")
+	}
+	hv := HASH256(b[:l-4])
+	if !bytes.Equal(hv[:4], b[l-4:]) {
+		return nil, errors.New("check sum error")
+	}
+	return pk, pk.Decode(b[:l-4])
+}
+
+func (pk *PublicKey) Dump() string {
+	b := pk.Encode()
+	hv := HASH256(b)
+	b = append(b, hv[:4]...)
+	return B58Encode(b, BitcoinAlphabet)
 }
 
 func (pk *PublicKey) Encode() []byte {

@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"time"
-
-	"github.com/patrickmn/go-cache"
 
 	"go.mongodb.org/mongo-driver/bson"
 
@@ -35,17 +32,11 @@ type DBImp interface {
 
 type TagKey [16]byte
 
-var (
-	//标签公钥缓存
-	pkCache = cache.New(time.Hour*2, time.Hour*6)
-)
-
 //保存数据库中的结构
 type TTagInfo struct {
 	UID  []byte    `bson:"_id"`  //uid
 	Ver  uint32    `bson:"ver"`  //版本 from tag
 	Loc  []float64 `bson:"loc"`  //uint32-uint32 位置 from tag
-	PKS  string    `bson:"pks"`  //标签私钥 from tag
 	Keys [5]TagKey `bson:"keys"` //
 	CTR  uint      `bson:"ctr"`  //ctr int
 }
@@ -55,23 +46,9 @@ func LoadTagInfo(id TagUID, db DBImp) (*TTagInfo, error) {
 	return iv, db.GetTag(id[:], iv)
 }
 
-func (tag TTagInfo) PubKey() (*PublicKey, error) {
-	v, ok := pkCache.Get(tag.PKS)
-	if ok {
-		return v.(*PublicKey), nil
-	}
-	pri, err := LoadPrivateKey(tag.PKS)
-	if err != nil {
-		return nil, err
-	}
-	pub := pri.PublicKey()
-	pkCache.Set(tag.PKS, pub, time.Hour*4)
-	return pub, nil
-}
-
-func (tag TTagInfo) Mackey() TagKey {
+func (tag TTagInfo) Mackey() []byte {
 	idx := (tag.Ver >> 28) & 0xF
-	return tag.Keys[idx]
+	return tag.Keys[idx][:]
 }
 
 func (tag *TTagInfo) SetMacKey(idx int) {
