@@ -25,6 +25,12 @@ type PrivateKey struct {
 	D *big.Int
 }
 
+func (p *PrivateKey) Clone() *PrivateKey {
+	np := &PrivateKey{}
+	np.D = new(big.Int).SetBytes(p.D.Bytes())
+	return np
+}
+
 //prefix[1] key[32] checknum[hash256-prefix-4]
 func LoadPrivateKey(s string) (*PrivateKey, error) {
 	key := &PrivateKey{}

@@ -5,19 +5,100 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"sync"
 	"time"
 )
 
-//2级证书
+//证书池
+type CertPool struct {
+	mu    sync.Mutex
+	certs map[PKBytes]*Cert
+}
+
+func (cp *CertPool) Set(cert *Cert) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	cp.certs[cert.PubKey] = cert
+}
+
+//指定公钥校验签名
+func (cp *CertPool) Verify(pk PKBytes, sig *SigValue, msg []byte) error {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	cert, ok := cp.certs[pk]
+	if !ok {
+		return errors.New("miss public key")
+	}
+	if cert.IsExpire() {
+		return errors.New("cert expire")
+	}
+	if err := cert.Verify(); err != nil {
+		return err
+	}
+	if !cert.pubv.Verify(msg, sig) {
+		return errors.New("verify error")
+	}
+	return nil
+}
+
+func (cp *CertPool) SignCert() (*Cert, error) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	for _, v := range cp.certs {
+		if v.priv == nil {
+			continue
+		}
+		if v.IsExpire() {
+			continue
+		}
+		if err := v.Verify(); err != nil {
+			continue
+		}
+		return v, nil
+	}
+	return nil, errors.New("sign cert miss")
+}
+
+func NewCertPool() *CertPool {
+	cp := &CertPool{}
+	cp.certs = map[PKBytes]*Cert{}
+	return cp
+}
+
 type Cert struct {
-	URL    VarStr      //使用域名 https://api.xginx.com
+	URL    VarStr      //使用域名 api.xginx.com
 	PubKey PKBytes     //证书公钥
 	Expire int64       //过期时间:unix 秒
-	Prev   PKBytes     //证书上级公钥
-	CSig   SigBytes    //根证书签名
+	Prev   PKBytes     //对应config中信任的公钥,必须在config信任列表中
+	CSig   SigBytes    //公钥签名，信任的公钥检测签名，通过说明证书有效，如果不过期
 	vsig   bool        //是否验证了签名
-	priv   *PrivateKey //加载后用
-	pubv   *PublicKey  //加载后用
+	priv   *PrivateKey //如果有可用来签名数据
+	pubv   *PublicKey  //如果有可用来验证签名
+}
+
+func (c *Cert) IsExpire() bool {
+	return time.Now().Unix() > c.Expire
+}
+
+func (c *Cert) Clone() (*Cert, error) {
+	if c.IsExpire() {
+		return nil, errors.New("cert expire")
+	}
+	nc := &Cert{}
+	nc.URL = c.URL
+	nc.PubKey = c.PubKey
+	nc.Expire = c.Expire
+	nc.Prev = c.Prev
+	nc.CSig = c.CSig
+	pub, err := NewPublicKey(nc.PubKey[:])
+	if err != nil {
+		return nil, err
+	}
+	nc.pubv = pub
+	if c.priv != nil {
+		nc.priv = c.priv.Clone()
+	}
+	return nc, nil
 }
 
 func NewCert(pub *PublicKey, url string, exp time.Duration) *Cert {
@@ -132,7 +213,7 @@ func LoadCert(ss string, ps string) (*Cert, error) {
 	if err == nil {
 		cert.priv = pri
 	}
-	if cert.pubv != nil && cert.priv != nil && !pri.PublicKey().Equal(cert.PubKey[:]) {
+	if cert.pubv != nil && cert.priv != nil && !cert.priv.PublicKey().Equal(cert.PubKey[:]) {
 		return nil, errors.New("public private map error")
 	}
 	if err := cert.Verify(); err != nil {

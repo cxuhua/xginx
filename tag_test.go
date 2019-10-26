@@ -124,7 +124,8 @@ func TestVerfyData(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if err := b.Verify(); err != nil {
+	pool := conf.ClonePool()
+	if err := b.Verify(pool); err != nil {
 		t.Error(err)
 	}
 }
@@ -161,16 +162,9 @@ func TestTagData(t *testing.T) {
 			return err
 		}
 		tb := &ServerBlock{}
-		//使用证书1签名数据
-		cert, err := conf.GetIndexCert(0)
-		if err != nil {
-			return err
-		}
-		//看是否是有效的证书
-		if err := cert.Verify(); err != nil {
-			return err
-		}
-		bb, err := tb.Sign(cert, otag, client)
+		//从证书池获取可用证书签名
+		pool := conf.ClonePool()
+		bb, err := tb.Sign(pool, otag, client)
 		if err != nil {
 			return err
 		}

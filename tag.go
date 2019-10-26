@@ -491,7 +491,7 @@ type BlockInfo struct {
 	ServerBlock
 }
 
-func (b *BlockInfo) Verify() error {
+func (b *BlockInfo) Verify(pool *CertPool) error {
 	buf := &bytes.Buffer{}
 	tb, err := b.TagInfo.ToSigBinary()
 	if err != nil {
@@ -527,19 +527,7 @@ func (b *BlockInfo) Verify() error {
 	if err != nil {
 		return err
 	}
-	//获取证书
-	cert, err := conf.GetNodeCert(b.ServerBlock.SPKS)
-	if err != nil {
-		return err
-	}
-	if err := cert.Verify(); err != nil {
-		return err
-	}
-	hash = HASH256(buf.Bytes())
-	if !cert.PublicKey().Verify(hash, sig) {
-		return errors.New("verify server data sig error")
-	}
-	return nil
+	return pool.Verify(b.ServerBlock.SPKS, sig, HASH256(buf.Bytes()))
 }
 
 func NewBlockInfo(b []byte) (*BlockInfo, error) {
@@ -580,9 +568,10 @@ func (d BlockData) Hash() HashID {
 	return NewHashID(HASH256(d))
 }
 
-func (c *ServerBlock) Sign(cert *Cert, tag *TagInfo, client *ClientBlock) (BlockData, error) {
-	if err := cert.Verify(); err != nil {
-		return nil, fmt.Errorf("sign server bock error %w", err)
+func (c *ServerBlock) Sign(pool *CertPool, tag *TagInfo, client *ClientBlock) (BlockData, error) {
+	cert, err := pool.SignCert()
+	if err != nil {
+		return nil, err
 	}
 	buf := &bytes.Buffer{}
 	tdata, err := tag.ToSigBinary()
