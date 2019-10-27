@@ -664,10 +664,6 @@ func VerifyBlockInfo(pool *CertPool, bs []byte) (*TBlockInfo, error) {
 	if err := cli.DecodeReader(buf); err != nil {
 		return nil, err
 	}
-	cb := bs[:len(bs)-buf.Len()]
-	if err := cli.Verify(pool, cb); err != nil {
-		return nil, err
-	}
 	ser := &ServerBlock{}
 	if err := ser.DecodeReader(buf); err != nil {
 		return nil, err
