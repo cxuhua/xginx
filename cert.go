@@ -69,7 +69,7 @@ type Cert struct {
 	URL    VarStr      //使用域名 api.xginx.com
 	PubKey PKBytes     //证书公钥
 	Expire int64       //过期时间:unix 秒
-	Prev   PKBytes     //对应config中信任的公钥,必须在config信任列表中
+	VPub   PKBytes     //验证公钥，对应config中信任的公钥,必须在config信任列表中
 	CSig   SigBytes    //公钥签名，信任的公钥检测签名，通过说明证书有效，如果不过期
 	vsig   bool        //是否验证了签名
 	priv   *PrivateKey //如果有可用来签名数据
@@ -88,7 +88,7 @@ func (c *Cert) Clone() (*Cert, error) {
 	nc.URL = c.URL
 	nc.PubKey = c.PubKey
 	nc.Expire = c.Expire
-	nc.Prev = c.Prev
+	nc.VPub = c.VPub
 	nc.CSig = c.CSig
 	pub, err := NewPublicKey(nc.PubKey[:])
 	if err != nil {
@@ -119,7 +119,7 @@ func (c *Cert) Sign(idx uint16) error {
 	}
 	pri := conf.GetPrivateKey(idx)
 	//设置上级证书公钥
-	c.Prev.Set(pri.PublicKey())
+	c.VPub.Set(pri.PublicKey())
 	buf := &bytes.Buffer{}
 	if err := c.Encode(buf); err != nil {
 		return err
@@ -143,7 +143,7 @@ func (c *Cert) Decode(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.Expire); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &c.Prev); err != nil {
+	if err := binary.Read(r, Endian, &c.VPub); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &c.CSig); err != nil {
@@ -175,7 +175,7 @@ func (c *Cert) Verify() error {
 		return err
 	}
 	//获取我信任的证书校验证书数据
-	pub := conf.GetPublicKey(c.Prev)
+	pub := conf.GetPublicKey(c.VPub)
 	if pub == nil {
 		return errors.New("public untrusted")
 	}
@@ -271,7 +271,7 @@ func (c *Cert) Encode(w io.Writer) error {
 	if err := binary.Write(w, Endian, c.Expire); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, c.Prev); err != nil {
+	if err := binary.Write(w, Endian, c.VPub); err != nil {
 		return err
 	}
 	return nil

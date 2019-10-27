@@ -15,15 +15,17 @@ type CertItem struct {
 
 //配置加载后只读
 type Config struct {
-	Privates []string               `json:"pris"`  //用于签发下级证书
-	Publics  []string               `json:"pubs"`  //节点信任的公钥，用来验证本节点的证书
-	Certs    []CertItem             `json:"certs"` //节点证书,上级和自己签发的证书，由信任的公钥进行签名验证
-	pris     []*PrivateKey          `json:"-"`     //
-	pubs     map[PKBytes]*PublicKey `json:"-"`     //
-	certs    []*Cert                `json:"-"`     //顺序保存
+	ListenPort int                    `json:"listen_port"` //服务端口和ip
+	ListenIp   string                 `json:"listen_ip"`   //服务ip
+	Privates   []string               `json:"pris"`        //用于签发下级证书
+	Publics    []string               `json:"pubs"`        //节点信任的公钥，用来验证本节点的证书
+	Certs      []CertItem             `json:"certs"`       //节点证书,上级和自己签发的证书，由信任的公钥进行签名验证
+	pris       []*PrivateKey          `json:"-"`           //
+	pubs       map[PKBytes]*PublicKey `json:"-"`           //
+	certs      []*Cert                `json:"-"`           //顺序保存
 }
 
-func (c *Config) ClonePool() *CertPool {
+func (c *Config) NewCertPool() *CertPool {
 	cp := NewCertPool()
 	for _, v := range c.certs {
 		cc, err := v.Clone()
@@ -52,7 +54,6 @@ func (c *Config) Init() error {
 			return err
 		}
 		c.pris = append(c.pris, pri)
-		//自己有私钥肯定信任自己的公钥
 		pub := pri.PublicKey()
 		pk := new(PKBytes).Set(pub)
 		if _, ok := c.pubs[pk]; !ok {
@@ -78,7 +79,7 @@ func (c *Config) Init() error {
 			log.Println("cert untrusted", hex.EncodeToString(cert.PubKey[:]), err)
 			continue
 		}
-		if _, ok := c.pubs[cert.Prev]; ok {
+		if _, ok := c.pubs[cert.VPub]; ok {
 			c.certs = append(c.certs, cert)
 		}
 	}

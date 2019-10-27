@@ -6,6 +6,6 @@ type Node struct {
 
 func NewNode() *Node {
 	n := &Node{}
-	n.pool = conf.ClonePool()
+	n.pool = conf.NewCertPool()
 	return n
 }

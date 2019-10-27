@@ -16,6 +16,7 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
+	SetBlock(id []byte, v interface{}) error
 	//get trans raw data
 	GetTag(id []byte, v interface{}) error
 	//save or update tans data
@@ -30,6 +31,34 @@ type DBImp interface {
 	Transaction(fn func(sdb DBImp) error) error
 }
 
+//块数据,打卡记录
+
+type BlockKey HashID
+
+type TBlockInfo struct {
+	Hash  []byte   `bson:"_id"`   //block hash
+	TTS   []byte   `bson:"tts"`   //TT状态 url +2,激活后OO tam map
+	TVer  uint32   `bson:"ver"`   //版本 from tag
+	TLoc  []uint32 `bson:"tloc"`  //uint32-uint32 位置 from tag
+	TUID  []byte   `bson:"tuid"`  //标签id from tag
+	TCTR  uint     `bson:"tctr"`  //标签记录计数器 from tag map
+	TMAC  []byte   `bson:"tmac"`  //标签CMAC值 from tag url + 16
+	CLoc  []uint32 `bson:"cloc"`  //用户定位信息user location
+	Prev  []byte   `bson:"prev"`  //上个hash
+	CTime int64    `bson:"ctime"` //客户端时间，不能和服务器相差太大
+	CPks  []byte   `bson:"cpks"`  //用户公钥
+	CSig  []byte   `bson:"csig"`  //用户签名
+	Nonce int64    `bson:"nonce"` //随机值 server full
+	STime int64    `bson:"stime"` //服务器时间
+	SPks  []byte   `bson:"spks"`  //服务器公钥
+	SSig  []byte   `bson:"ssig"`  //服务器签名
+}
+
+func (b *TBlockInfo) Save(db DBImp) error {
+	return db.SetBlock(b.Hash[:], b)
+}
+
+//标签数据
 type TagKey [16]byte
 
 //保存数据库中的结构
@@ -69,6 +98,14 @@ var (
 
 type mongoDBImp struct {
 	context.Context
+}
+
+func (m *mongoDBImp) collection(t string) *mongo.Collection {
+	return m.database().Collection(t)
+}
+
+func (m *mongoDBImp) blocks() *mongo.Collection {
+	return m.database().Collection("blocks")
 }
 
 func (m *mongoDBImp) tags() *mongo.Collection {
@@ -119,8 +156,8 @@ func (m *mongoDBImp) HasTag(id []byte) bool {
 	return ret.Err() == nil
 }
 
-//save tans data
-func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
+func (m *mongoDBImp) set(t string, id []byte, v interface{}) error {
+	tbl := m.collection(t)
 	switch v.(type) {
 	case IncValue:
 		ds := bson.M{}
@@ -128,7 +165,7 @@ func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
 			ds[k] = v
 		}
 		if len(ds) > 0 {
-			_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
+			_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
 			return err
 		}
 	case SetValue:
@@ -137,15 +174,24 @@ func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
 			ds[k] = v
 		}
 		if len(ds) > 0 {
-			_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
+			_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
 			return err
 		}
 	default:
 		opt := options.Update().SetUpsert(true)
-		_, err := m.tags().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
+		_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
 		return err
 	}
 	return nil
+}
+
+func (m *mongoDBImp) SetBlock(id []byte, v interface{}) error {
+	return m.set("blocks", id, v)
+}
+
+//save tans data
+func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
+	return m.set("tags", id, v)
 }
 
 func (m *mongoDBImp) Transaction(fn func(sdb DBImp) error) error {
