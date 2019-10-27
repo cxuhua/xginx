@@ -41,6 +41,7 @@ func (cp *CertPool) Verify(pk PKBytes, sig *SigValue, msg []byte) error {
 	return nil
 }
 
+//获取一个可用于签名的私钥
 func (cp *CertPool) SignCert() (*Cert, error) {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
@@ -121,7 +122,7 @@ func (c *Cert) Sign(idx uint16) error {
 	//设置上级证书公钥
 	c.VPub.Set(pri.PublicKey())
 	buf := &bytes.Buffer{}
-	if err := c.Encode(buf); err != nil {
+	if err := c.EncodeWriter(buf); err != nil {
 		return err
 	}
 	hash := HASH256(buf.Bytes())
@@ -167,7 +168,7 @@ func (c *Cert) Verify() error {
 		return errors.New("cert expire")
 	}
 	buf := &bytes.Buffer{}
-	if err := c.Encode(buf); err != nil {
+	if err := c.EncodeWriter(buf); err != nil {
 		return err
 	}
 	sig, err := NewSigValue(c.CSig[:])
@@ -243,9 +244,6 @@ func (c *Cert) Dump() (string, error) {
 	if err := c.Encode(buf); err != nil {
 		return "", err
 	}
-	if err := binary.Write(buf, Endian, c.CSig); err != nil {
-		return "", err
-	}
 	b := buf.Bytes()
 	hv := HASH256(b)
 	b = append(b, hv[:4]...)
@@ -255,13 +253,23 @@ func (c *Cert) Dump() (string, error) {
 
 func (c *Cert) ToSigBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
-	if err := c.Encode(buf); err != nil {
+	if err := c.EncodeWriter(buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
 func (c *Cert) Encode(w io.Writer) error {
+	if err := c.EncodeWriter(w); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, c.CSig); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Cert) EncodeWriter(w io.Writer) error {
 	if err := c.URL.EncodeWriter(w); err != nil {
 		return err
 	}

@@ -32,7 +32,6 @@ func TestSignVerify(t *testing.T) {
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
 	}
-
 	pk2, err := LoadPrivateKey(pk1.Dump())
 	if err != nil {
 		t.Error(err)
@@ -49,7 +48,6 @@ func TestSignVerify(t *testing.T) {
 	if !pub1.Verify(hash, sig2) {
 		t.Errorf("Verify 1 error")
 	}
-
 	pub2, err := NewPublicKey(pub1.Encode())
 	if err != nil {
 		t.Errorf("encode pub2 error %v", err)
@@ -57,5 +55,4 @@ func TestSignVerify(t *testing.T) {
 	if !pub2.Verify(hash, sig1) {
 		t.Errorf("Verify 2 error")
 	}
-
 }
