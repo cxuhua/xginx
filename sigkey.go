@@ -74,8 +74,9 @@ func (pk *PrivateKey) IsValid() bool {
 	return pk.PublicKey().IsValid()
 }
 
-func (pk *PrivateKey) SetBytes(b []byte) {
+func (pk *PrivateKey) SetBytes(b []byte) *PrivateKey {
 	pk.D = new(big.Int).SetBytes(b)
+	return pk
 }
 
 func (pk PrivateKey) String() string {

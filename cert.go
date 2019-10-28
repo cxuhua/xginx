@@ -5,101 +5,21 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"sync"
 	"time"
 )
 
-//证书池
-type CertPool struct {
-	mu    sync.Mutex
-	certs map[PKBytes]*Cert
-}
-
-func (cp *CertPool) Set(cert *Cert) {
-	cp.mu.Lock()
-	defer cp.mu.Unlock()
-	cp.certs[cert.PubKey] = cert
-}
-
-//指定公钥校验签名
-func (cp *CertPool) Verify(pk PKBytes, sig *SigValue, msg []byte) error {
-	cp.mu.Lock()
-	defer cp.mu.Unlock()
-	cert, ok := cp.certs[pk]
-	if !ok {
-		return errors.New("miss public key")
-	}
-	if cert.IsExpire() {
-		return errors.New("cert expire")
-	}
-	if err := cert.Verify(); err != nil {
-		return err
-	}
-	if !cert.pubv.Verify(msg, sig) {
-		return errors.New("verify error")
-	}
-	return nil
-}
-
-//获取一个可用于签名的私钥
-func (cp *CertPool) SignCert() (*Cert, error) {
-	cp.mu.Lock()
-	defer cp.mu.Unlock()
-	for _, v := range cp.certs {
-		if v.priv == nil {
-			continue
-		}
-		if v.IsExpire() {
-			continue
-		}
-		if err := v.Verify(); err != nil {
-			continue
-		}
-		return v, nil
-	}
-	return nil, errors.New("sign cert miss")
-}
-
-func NewCertPool() *CertPool {
-	cp := &CertPool{}
-	cp.certs = map[PKBytes]*Cert{}
-	return cp
-}
-
 type Cert struct {
-	Name   VarStr      //使用域名 api.xginx.com
-	PubKey PKBytes     //证书公钥
-	Expire int64       //过期时间:unix 秒
-	VPub   PKBytes     //验证公钥，对应config中信任的公钥,必须在config信任列表中
-	CSig   SigBytes    //公钥签名，信任的公钥检测签名，通过说明证书有效，如果不过期
-	vsig   bool        //是否验证了签名
-	priv   *PrivateKey //如果有可用来签名数据
-	pubv   *PublicKey  //如果有可用来验证签名
+	Name   VarStr   //证书名称
+	PubKey PKBytes  //证书公钥
+	Expire int64    //过期时间:unix 秒
+	CSig   SigBytes //公钥签名，信任的公钥检测签名，通过说明证书有效，如果不过期
+	VPub   PKBytes  //验证公钥，对应config中信任的公钥,必须在config信任列表中
+	vsig   bool     //是否验证了签名
+	pubv   *PublicKey
 }
 
 func (c *Cert) IsExpire() bool {
 	return time.Now().Unix() > c.Expire
-}
-
-func (c *Cert) Clone() (*Cert, error) {
-	if c.IsExpire() {
-		return nil, errors.New("cert expire")
-	}
-	nc := &Cert{}
-	nc.Name = c.Name
-	nc.PubKey = c.PubKey
-	nc.Expire = c.Expire
-	nc.VPub = c.VPub
-	nc.CSig = c.CSig
-	pub, err := NewPublicKey(nc.PubKey[:])
-	if err != nil {
-		return nil, err
-	}
-	nc.pubv = pub
-	if c.priv != nil {
-		nc.priv = c.priv.Clone()
-	}
-	return nc, nil
 }
 
 func NewCert(pub *PublicKey, name string, exp time.Duration) *Cert {
@@ -110,16 +30,15 @@ func NewCert(pub *PublicKey, name string, exp time.Duration) *Cert {
 	return c
 }
 
-//开始用idx私钥来签发证书
-func (c *Cert) Sign(idx uint16) error {
+//开始用pri私钥来签发证书
+func (c *Cert) Sign(pri *PrivateKey) error {
 	if len(c.Name) == 0 {
 		return errors.New("name miss")
 	}
 	if c.Expire < time.Now().Unix() {
 		return errors.New("expire time error")
 	}
-	pri := conf.GetPrivateKey(idx)
-	//设置上级证书公钥
+	//设置证书验证公钥
 	c.VPub.Set(pri.PublicKey())
 	buf := &bytes.Buffer{}
 	if err := c.EncodeWriter(buf); err != nil {
@@ -191,36 +110,13 @@ func (c *Cert) Verify() error {
 	return nil
 }
 
-//获取对应的私钥
-func (c *Cert) PrivateKey() *PrivateKey {
-	return c.priv
-}
-
 //获取对应的公钥
 func (c *Cert) PublicKey() *PublicKey {
 	return c.pubv
 }
 
-func LoadCert(ss string, ps string) (*Cert, error) {
-	cert, err := new(Cert).Load(ps)
-	if err != nil {
-		return nil, err
-	}
-	cert.pubv, err = NewPublicKey(cert.PubKey[:])
-	if err != nil {
-		return nil, err
-	}
-	pri, err := LoadPrivateKey(ss)
-	if err == nil {
-		cert.priv = pri
-	}
-	if cert.pubv != nil && cert.priv != nil && !cert.priv.PublicKey().Equal(cert.PubKey[:]) {
-		return nil, errors.New("public private map error")
-	}
-	if err := cert.Verify(); err != nil {
-		return nil, err
-	}
-	return cert, nil
+func LoadCert(ss string) (*Cert, error) {
+	return new(Cert).Load(ss)
 }
 
 //加载证书
@@ -235,7 +131,17 @@ func (c *Cert) Load(s string) (*Cert, error) {
 		return nil, errors.New("check sum error")
 	}
 	buf := bytes.NewReader(b[:l-4])
-	return c, c.Decode(buf)
+	if err := c.Decode(buf); err != nil {
+		return nil, err
+	}
+	c.pubv, err = NewPublicKey(c.PubKey[:])
+	if err != nil {
+		return nil, err
+	}
+	if err := c.Verify(); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 //导出证书

@@ -79,6 +79,11 @@ func HASH160(b []byte) []byte {
 	return RIPEMD160(v1)
 }
 
+func HASH256P4(b []byte) []byte {
+	hv := HASH256(b)
+	return hv[:4]
+}
+
 func HASH256(b []byte) []byte {
 	s2 := sha256.New()
 	s2.Write(b)

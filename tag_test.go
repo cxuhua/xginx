@@ -3,7 +3,8 @@ package xginx
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
+	"errors"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -116,25 +117,6 @@ func TestMakeTagURL(t *testing.T) {
 	log.Println(string(s), err, tag.pos)
 }
 
-//最终数据
-//434301000000e450c80cb0b59bf4047a1732aa618000005db58047478e511696a013ea4880fb04430000000000000000000000000000000000000000000000000000000000000000442a8b76f670d115037bf0b06cdc10b371886ea3454677cd6bb61ad8a3152418301a107ecd74f941ac304402203f130f323d2750460ac09b4b9d02ff6beb5f2883a1afa374572c860c72b4ac1102207f1e88274fbf5fce3476d1bb0e9cdc0257246b2271e4bc57d9ef5c1be267c9bc0000000000d2749ebf12dfa32564c0677af670d11502d63d8d3ce68653c1505295ae7907b084216e91e2ac8afbd241d5a5959c5544223046022100ce70a86bdc134125c326add7a081cf5f7400dac9296c0f6ac2a79e07c8736827022100a0052a5e1cd398d8251ff4c42d77d396dc02be02ecdbfdddb48da78b00adba88000000
-//hash = dab3c131a5072b16faa9149033fadd0cfdf00eba7d7264981d8ac0556f98446a
-func TestVerfyData(t *testing.T) {
-	//验证数据块
-	pool := conf.NewCertPool()
-	_, err := VerifyBlockInfo(pool, HexDecode("434301000000e450c80cb0b59bf4047a1732aa618000005db58047478e511696a013ea4880fb04430000000000000000000000000000000000000000000000000000000000000000442a8b76f670d115037bf0b06cdc10b371886ea3454677cd6bb61ad8a3152418301a107ecd74f941ac304402203f130f323d2750460ac09b4b9d02ff6beb5f2883a1afa374572c860c72b4ac1102207f1e88274fbf5fce3476d1bb0e9cdc0257246b2271e4bc57d9ef5c1be267c9bc0000000000d2749ebf12dfa32564c0677af670d11502d63d8d3ce68653c1505295ae7907b084216e91e2ac8afbd241d5a5959c5544223046022100ce70a86bdc134125c326add7a081cf5f7400dac9296c0f6ac2a79e07c8736827022100a0052a5e1cd398d8251ff4c42d77d396dc02be02ecdbfdddb48da78b00adba88000000"))
-	if err != nil {
-		panic(err)
-	}
-
-	//err = UseSession(context.Background(), func(db DBImp) error {
-	//	return b.Save(db)
-	//})
-	if err != nil {
-		panic(err)
-	}
-}
-
 //https://api.xginx.com/sign/CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
 //CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
 func TestTagData(t *testing.T) {
@@ -167,14 +149,21 @@ func TestTagData(t *testing.T) {
 			return err
 		}
 		tb := &ServerBlock{}
-		//从证书池获取可用证书签名
-		pool := conf.NewCertPool()
-		bb, err := tb.Sign(pool, otag, client)
+		//获取一个可签名的私钥
+		spri := conf.GetPrivateKey()
+		if spri == nil {
+			return errors.New("private key mss")
+		}
+		//用私钥0签名数据
+		bb, err := tb.Sign(spri, otag, client)
 		if err != nil {
 			return err
 		}
-		log.Printf(hex.EncodeToString(bb))
-		return err
+		bl, err := VerifyBlockInfo(conf, bb)
+		if err != nil {
+			return fmt.Errorf("verify sign data error %w", err)
+		}
+		return bl.Save(db)
 	})
 	if err != nil {
 		panic(err)

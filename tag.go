@@ -109,6 +109,22 @@ func (p *SigBytes) Set(sig *SigValue) {
 
 type HashID [32]byte
 
+var (
+	ZeroHash = HashID{}
+)
+
+func (v HashID) EqualBytes(b []byte) bool {
+	return bytes.Equal(b, v[:])
+}
+
+func (v HashID) Equal(b HashID) bool {
+	return bytes.Equal(b[:], v[:])
+}
+
+func (v HashID) IsZero() bool {
+	return bytes.Equal(ZeroHash[:], v[:])
+}
+
 func (v *HashID) Set(b []byte) {
 	copy(v[:], b)
 }
@@ -417,7 +433,7 @@ type ClientBlock struct {
 }
 
 //b=待签名数据，tag数据+client数据
-func (c *ClientBlock) Verify(pool *CertPool, b []byte) error {
+func (c *ClientBlock) Verify(b []byte) error {
 	if len(b) < len(c.CPks)+len(c.CSig) {
 		return errors.New("data size error")
 	}
@@ -559,7 +575,7 @@ func (c *ServerBlock) DecodeReader(r io.Reader) error {
 }
 
 //b=校验数据
-func (s *ServerBlock) Verify(pool *CertPool, b []byte) error {
+func (s *ServerBlock) Verify(conf *Config, b []byte) error {
 	if len(b) < len(s.SPks)+len(s.SSig) {
 		return errors.New("data size error")
 	}
@@ -568,14 +584,10 @@ func (s *ServerBlock) Verify(pool *CertPool, b []byte) error {
 		return err
 	}
 	hash := HASH256(b[:len(b)-len(s.SSig)])
-	return pool.Verify(s.SPks, sig, hash)
+	return conf.Verify(s.SPks, sig, hash)
 }
 
-func (c *ServerBlock) Sign(pool *CertPool, tag *TagInfo, client *ClientBlock) ([]byte, error) {
-	cert, err := pool.SignCert()
-	if err != nil {
-		return nil, err
-	}
+func (c *ServerBlock) Sign(pri *PrivateKey, tag *TagInfo, client *ClientBlock) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	tdata, err := tag.ToSigBinary()
 	if err != nil {
@@ -596,7 +608,7 @@ func (c *ServerBlock) Sign(pool *CertPool, tag *TagInfo, client *ClientBlock) ([
 	//设置服务器时间
 	c.STime = time.Now().UnixNano()
 	//设置签名公钥
-	c.SPks.Set(cert.PublicKey())
+	c.SPks.Set(pri.PublicKey())
 	if err := binary.Write(buf, Endian, c.Nonce); err != nil {
 		return nil, err
 	}
@@ -608,7 +620,7 @@ func (c *ServerBlock) Sign(pool *CertPool, tag *TagInfo, client *ClientBlock) ([
 	}
 	//计算服务器签名
 	hv := HASH256(buf.Bytes())
-	sig, err := cert.PrivateKey().Sign(hv)
+	sig, err := pri.Sign(hv)
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +663,7 @@ func (b *TBlockInfo) Encode(w io.Writer) error {
 }
 
 //校验块数据并返回对象
-func VerifyBlockInfo(pool *CertPool, bs []byte) (*TBlockInfo, error) {
+func VerifyBlockInfo(conf *Config, bs []byte) (*TBlockInfo, error) {
 	if len(bs) > 512 {
 		return nil, errors.New("data error")
 	}
@@ -668,7 +680,7 @@ func VerifyBlockInfo(pool *CertPool, bs []byte) (*TBlockInfo, error) {
 	if err := ser.DecodeReader(buf); err != nil {
 		return nil, err
 	}
-	if err := ser.Verify(pool, bs); err != nil {
+	if err := ser.Verify(conf, bs); err != nil {
 		return nil, err
 	}
 	v := &TBlockInfo{}
