@@ -67,7 +67,7 @@ func NewCertPool() *CertPool {
 }
 
 type Cert struct {
-	URL    VarStr      //使用域名 api.xginx.com
+	Name   VarStr      //使用域名 api.xginx.com
 	PubKey PKBytes     //证书公钥
 	Expire int64       //过期时间:unix 秒
 	VPub   PKBytes     //验证公钥，对应config中信任的公钥,必须在config信任列表中
@@ -86,7 +86,7 @@ func (c *Cert) Clone() (*Cert, error) {
 		return nil, errors.New("cert expire")
 	}
 	nc := &Cert{}
-	nc.URL = c.URL
+	nc.Name = c.Name
 	nc.PubKey = c.PubKey
 	nc.Expire = c.Expire
 	nc.VPub = c.VPub
@@ -102,9 +102,9 @@ func (c *Cert) Clone() (*Cert, error) {
 	return nc, nil
 }
 
-func NewCert(pub *PublicKey, url string, exp time.Duration) *Cert {
+func NewCert(pub *PublicKey, name string, exp time.Duration) *Cert {
 	c := &Cert{}
-	c.URL = VarStr(url)
+	c.Name = VarStr(name)
 	c.PubKey.Set(pub)
 	c.Expire = time.Now().Add(exp).Unix()
 	return c
@@ -112,8 +112,8 @@ func NewCert(pub *PublicKey, url string, exp time.Duration) *Cert {
 
 //开始用idx私钥来签发证书
 func (c *Cert) Sign(idx uint16) error {
-	if len(c.URL) == 0 {
-		return errors.New("url miss")
+	if len(c.Name) == 0 {
+		return errors.New("name miss")
 	}
 	if c.Expire < time.Now().Unix() {
 		return errors.New("expire time error")
@@ -135,7 +135,7 @@ func (c *Cert) Sign(idx uint16) error {
 }
 
 func (c *Cert) Decode(r io.Reader) error {
-	if err := c.URL.DecodeReader(r); err != nil {
+	if err := c.Name.DecodeReader(r); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &c.PubKey); err != nil {
@@ -178,7 +178,7 @@ func (c *Cert) Verify() error {
 	//获取我信任的证书校验证书数据
 	pub := conf.GetPublicKey(c.VPub)
 	if pub == nil {
-		return errors.New("public untrusted")
+		return errors.New("public key untrusted")
 	}
 	hash := HASH256(buf.Bytes())
 	if !pub.Verify(hash, sig) {
@@ -270,7 +270,7 @@ func (c *Cert) Encode(w io.Writer) error {
 }
 
 func (c *Cert) EncodeWriter(w io.Writer) error {
-	if err := c.URL.EncodeWriter(w); err != nil {
+	if err := c.Name.EncodeWriter(w); err != nil {
 		return err
 	}
 	if err := binary.Write(w, Endian, c.PubKey[:]); err != nil {

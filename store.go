@@ -50,8 +50,8 @@ type TBlockInfo struct {
 	CSig  []byte   `bson:"csig"`  //用户签名
 	Nonce int64    `bson:"nonce"` //随机值 server full
 	STime int64    `bson:"stime"` //服务器时间
-	SPks  []byte   `bson:"spks"`  //服务器公钥
-	SSig  []byte   `bson:"ssig"`  //服务器签名
+	SPks  []byte   `bson:"spks"`  //公钥
+	SSig  []byte   `bson:"ssig"`  //签名
 }
 
 func (b *TBlockInfo) Save(db DBImp) error {
