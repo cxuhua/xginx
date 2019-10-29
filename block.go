@@ -18,7 +18,7 @@ type BlockInfo struct {
 type UnitDisBase struct {
 	ClientID  Hash160  //指定用户id
 	Custom    VarBytes //4-100字节的自定义数据
-	TagDisSum VarUInt  //标签定位记录单元新增和
+	TagDisSum VarUInt  //标签定位记录单元新增和 Bodys 单元距离和
 	CliDisSum VarUInt  //用户定位
 }
 
