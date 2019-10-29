@@ -147,7 +147,8 @@ func (p *SigBytes) Set(sig *SigValue) {
 	copy(p[:], sig.Encode())
 }
 
-type Hash160 [20]byte
+//公钥hash160
+type UserID [20]byte
 
 type HashID [32]byte
 
