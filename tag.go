@@ -643,8 +643,8 @@ func (c *ServerBlock) Sign(pri *PrivateKey, tag *TagInfo, client *ClientBlock) (
 	return buf.Bytes(), nil
 }
 
-func (b *TBlockInfo) Encode(w io.Writer) (*BlockInfo, error) {
-	bi := &BlockInfo{}
+func (b *TUnitBlock) Encode(w io.Writer) (*UnitBlock, error) {
+	bi := &UnitBlock{}
 	if err := bi.Encode(w); err != nil {
 		return nil, err
 	}
@@ -666,13 +666,13 @@ func (b *TBlockInfo) Encode(w io.Writer) (*BlockInfo, error) {
 	return bi, nil
 }
 
-type BlockInfo struct {
+type UnitBlock struct {
 	TagInfo
 	ClientBlock
 	ServerBlock
 }
 
-func (b BlockInfo) Encode(w io.Writer) error {
+func (b UnitBlock) Encode(w io.Writer) error {
 	if err := b.TagInfo.Encode(w); err != nil {
 		return err
 	}
@@ -685,7 +685,7 @@ func (b BlockInfo) Encode(w io.Writer) error {
 	return nil
 }
 
-func (b *BlockInfo) Decode(r io.Reader) error {
+func (b *UnitBlock) Decode(r io.Reader) error {
 	if err := b.TagInfo.Decode(r); err != nil {
 		return err
 	}
@@ -699,16 +699,16 @@ func (b *BlockInfo) Decode(r io.Reader) error {
 }
 
 //校验块数据并返回对象
-func VerifyBlockInfo(conf *Config, bs []byte) (*TBlockInfo, error) {
+func VerifyBlockInfo(conf *Config, bs []byte) (*TUnitBlock, error) {
 	if len(bs) > 512 {
 		return nil, errors.New("data error")
 	}
 	buf := bytes.NewBuffer(bs)
-	b := BlockInfo{}
+	b := UnitBlock{}
 	if err := b.Decode(buf); err != nil {
 		return nil, err
 	}
-	v := &TBlockInfo{}
+	v := &TUnitBlock{}
 	v.Hash = HASH256(bs)
 	v.TTS = b.TTS[:]
 	v.TVer = b.TVer

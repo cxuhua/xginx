@@ -38,11 +38,12 @@ type DBImp interface {
 	Transaction(fn func(sdb DBImp) error) error
 }
 
-//块数据,打卡记录
+//单元块数据,打卡记录
+//块中的一小部分
 
 type BlockKey HashID
 
-type TBlockInfo struct {
+type TUnitBlock struct {
 	Hash  []byte   `bson:"_id"`   //block hash
 	TTS   []byte   `bson:"tts"`   //TT状态 url +2,激活后OO tam map
 	TVer  uint32   `bson:"ver"`   //版本 from tag
@@ -61,7 +62,7 @@ type TBlockInfo struct {
 	SSig  []byte   `bson:"ssig"`  //签名
 }
 
-func (b *TBlockInfo) Save(db DBImp) error {
+func (b *TUnitBlock) Save(db DBImp) error {
 	return db.SetBlock(b.Hash[:], b)
 }
 
