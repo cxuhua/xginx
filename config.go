@@ -34,7 +34,6 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	//当前节点版本
 	Ver        uint32                  `json:"version"`     //版本
 	Publics    []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
 	ListenPort int                     `json:"listen_port"` //服务端口和ip
@@ -45,8 +44,8 @@ type Config struct {
 	pris       map[PKBytes]*PrivateKey `json:"-"`           //
 	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
 	certs      map[PKBytes]*Cert       `json:"-"`           //
-	verhash    HashID
-	mu         sync.RWMutex
+	verhash    HashID                  `json:"-"`           //
+	mu         sync.RWMutex            `json:"-"`           //
 }
 
 func (c *Config) GetListenAddr() NetAddr {
@@ -132,8 +131,11 @@ func (c *Config) DecodeCerts(b []byte) error {
 		if err := cert.Verify(); err != nil {
 			continue
 		}
-		c.certs[cert.PubKey] = cert
+		if _, has := c.certs[cert.PubKey]; !has {
+			c.certs[cert.PubKey] = cert
+		}
 	}
+	log.Println("decode cert num=", num)
 	return nil
 }
 
@@ -211,8 +213,8 @@ func (c *Config) Init() error {
 			return err
 		}
 	}
-	hash := HASH256(buf.Bytes())
-	copy(c.verhash[:], hash)
+	//获取版本hash
+	copy(c.verhash[:], HASH256(buf.Bytes()))
 	//加载证书
 	for _, s := range c.Certs {
 		cert, err := LoadCert(s)
@@ -233,6 +235,10 @@ func (c *Config) Init() error {
 var (
 	conf *Config = nil
 )
+
+func NodeConfig() *Config {
+	return conf
+}
 
 func init() {
 	//加载版本v10000配置文件

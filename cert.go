@@ -12,7 +12,7 @@ type Cert struct {
 	Name   VarStr   //证书名称
 	PubKey PKBytes  //证书公钥
 	Expire int64    //过期时间:unix 秒
-	CSig   SigBytes //公钥签名，信任的公钥检测签名，通过说明证书有效，如果不过期
+	CSig   SigBytes //签名，信任的公钥检测签名，通过说明证书有效，如果不过期
 	VPub   PKBytes  //验证公钥，对应config中信任的公钥,必须在config信任列表中
 	vsig   bool     //是否验证了签名
 	pubv   *PublicKey

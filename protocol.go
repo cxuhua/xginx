@@ -8,11 +8,14 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"time"
 )
 
 //协议包标识
 const (
 	NT_VERSION = uint8(1)
+	NT_PING    = uint8(2)
+	NT_PONG    = uint8(3)
 )
 
 //协议消息
@@ -25,6 +28,12 @@ type MsgIO interface {
 type NetAddr struct {
 	ip   net.IP
 	port uint16
+}
+
+func NetAddrForm(s string) NetAddr {
+	n := NetAddr{}
+	_ = n.From(s)
+	return n
 }
 
 func (n *NetAddr) From(s string) error {
@@ -83,6 +92,50 @@ func (v *NetAddr) Decode(r IReader) error {
 	return nil
 }
 
+type MsgPing struct {
+	Time int64
+}
+
+func (v MsgPing) Type() uint8 {
+	return NT_PING
+}
+
+func (v MsgPing) NewPong() *MsgPong {
+	return &MsgPong{Time: v.Time}
+}
+
+func (v MsgPing) Encode(w IWriter) error {
+	return binary.Write(w, Endian, v.Time)
+}
+
+func (v *MsgPing) Decode(r IReader) error {
+	return binary.Read(r, Endian, &v.Time)
+}
+
+func NewMsgPing() *MsgPing {
+	return &MsgPing{Time: time.Now().UnixNano()}
+}
+
+type MsgPong struct {
+	Time int64
+}
+
+func (v MsgPong) Type() uint8 {
+	return NT_PONG
+}
+
+func (v MsgPong) Ping() int {
+	return int((time.Now().UnixNano() - v.Time) / 1000000)
+}
+
+func (v MsgPong) Encode(w IWriter) error {
+	return binary.Write(w, Endian, v.Time)
+}
+
+func (v *MsgPong) Decode(r IReader) error {
+	return binary.Read(r, Endian, &v.Time)
+}
+
 //版本消息包
 type MsgVersion struct {
 	MsgIO
@@ -90,6 +143,19 @@ type MsgVersion struct {
 	Addr  NetAddr  //节点地址
 	Certs VarBytes //节点证书
 	Hash  HashID   //节点版本hash
+}
+
+func NewMsgVersion() *MsgVersion {
+	certs, err := conf.EncodeCerts()
+	if err != nil {
+		panic(err)
+	}
+	m := &MsgVersion{}
+	m.Ver = conf.Ver
+	m.Certs = certs
+	m.Addr = conf.GetNetAddr()
+	m.Hash = conf.VerHash()
+	return m
 }
 
 func (v MsgVersion) Type() uint8 {
@@ -177,12 +243,16 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 	switch v.Type {
 	case NT_VERSION:
 		m = &MsgVersion{}
+	case NT_PING:
+		m = &MsgPing{}
+	case NT_PONG:
+		m = &MsgPong{}
 	}
 	if m == nil {
-		return nil, errors.New("not process")
+		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
 	}
 	if err := m.Decode(buf); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("message type=%d decode error %w", v.Type, err)
 	}
 	return m, nil
 }

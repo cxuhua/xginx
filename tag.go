@@ -293,6 +293,10 @@ func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
 	return nil
 }
 
+func (t *TagInfo) Decode(hr io.Reader) error {
+	return t.DecodeReader(hr)
+}
+
 func (t *TagInfo) DecodeReader(hr io.Reader) error {
 	if err := binary.Read(hr, Endian, &t.TTS); err != nil {
 		return err
@@ -457,6 +461,10 @@ func (c *ClientBlock) ClientID() []byte {
 	return HASH160(c.CPks[:])
 }
 
+func (c *ClientBlock) Decode(r io.Reader) error {
+	return c.DecodeReader(r)
+}
+
 func (c *ClientBlock) DecodeReader(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.CLoc); err != nil {
 		return err
@@ -558,6 +566,10 @@ func (c *ServerBlock) EncodeWriter(w io.Writer) error {
 	return nil
 }
 
+func (c *ServerBlock) Decode(r io.Reader) error {
+	return c.DecodeReader(r)
+}
+
 func (c *ServerBlock) DecodeReader(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.Nonce); err != nil {
 		return err
@@ -631,32 +643,56 @@ func (c *ServerBlock) Sign(pri *PrivateKey, tag *TagInfo, client *ClientBlock) (
 	return buf.Bytes(), nil
 }
 
-func (b *TBlockInfo) Encode(w io.Writer) error {
-	tag := &TagInfo{}
-	tag.TTS.Set(b.TTS)
-	tag.TVer = b.TVer
-	tag.TLoc.SetLoc(b.TLoc)
-	tag.TUID.Set(b.TUID)
-	tag.TCTR.Set(b.TCTR)
-	tag.TMAC.Set(b.TMAC)
-	if err := tag.Encode(w); err != nil {
+func (b *TBlockInfo) Encode(w io.Writer) (*BlockInfo, error) {
+	bi := &BlockInfo{}
+	if err := bi.Encode(w); err != nil {
+		return nil, err
+	}
+	bi.TTS.Set(b.TTS)
+	bi.TVer = b.TVer
+	bi.TLoc.SetLoc(b.TLoc)
+	bi.TUID.Set(b.TUID)
+	bi.TCTR.Set(b.TCTR)
+	bi.TMAC.Set(b.TMAC)
+	bi.CLoc.SetLoc(b.CLoc)
+	bi.Prev.Set(b.Prev)
+	bi.CTime = b.CTime
+	bi.CPks.SetBytes(b.CPks)
+	bi.CSig.SetBytes(b.CSig)
+	bi.Nonce = b.Nonce
+	bi.STime = b.STime
+	bi.SPks.SetBytes(b.SPks)
+	bi.SSig.SetBytes(b.SSig)
+	return bi, nil
+}
+
+type BlockInfo struct {
+	TagInfo
+	ClientBlock
+	ServerBlock
+}
+
+func (b BlockInfo) Encode(w io.Writer) error {
+	if err := b.TagInfo.Encode(w); err != nil {
 		return err
 	}
-	cli := &ClientBlock{}
-	cli.CLoc.SetLoc(b.CLoc)
-	cli.Prev.Set(b.Prev)
-	cli.CTime = b.CTime
-	cli.CPks.SetBytes(b.CPks)
-	cli.CSig.SetBytes(b.CSig)
-	if err := cli.Encode(w); err != nil {
+	if err := b.ClientBlock.Encode(w); err != nil {
 		return err
 	}
-	ser := &ServerBlock{}
-	ser.Nonce = b.Nonce
-	ser.STime = b.STime
-	ser.SPks.SetBytes(b.SPks)
-	ser.SSig.SetBytes(b.SSig)
-	if err := ser.Encode(w); err != nil {
+	if err := b.ServerBlock.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *BlockInfo) Decode(r io.Reader) error {
+	if err := b.TagInfo.Decode(r); err != nil {
+		return err
+	}
+	if err := b.ClientBlock.Decode(r); err != nil {
+		return err
+	}
+	if err := b.ServerBlock.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -668,37 +704,26 @@ func VerifyBlockInfo(conf *Config, bs []byte) (*TBlockInfo, error) {
 		return nil, errors.New("data error")
 	}
 	buf := bytes.NewBuffer(bs)
-	tag := &TagInfo{}
-	if err := tag.DecodeReader(buf); err != nil {
-		return nil, err
-	}
-	cli := &ClientBlock{}
-	if err := cli.DecodeReader(buf); err != nil {
-		return nil, err
-	}
-	ser := &ServerBlock{}
-	if err := ser.DecodeReader(buf); err != nil {
-		return nil, err
-	}
-	if err := ser.Verify(conf, bs); err != nil {
+	b := BlockInfo{}
+	if err := b.Decode(buf); err != nil {
 		return nil, err
 	}
 	v := &TBlockInfo{}
 	v.Hash = HASH256(bs)
-	v.TTS = tag.TTS[:]
-	v.TVer = tag.TVer
-	v.TLoc = tag.TLoc.ToUInt()
-	v.TUID = tag.TUID[:]
-	v.TCTR = tag.TCTR.ToUInt()
-	v.TMAC = tag.TMAC[:]
-	v.CLoc = cli.CLoc.ToUInt()
-	v.Prev = cli.Prev[:]
-	v.CTime = cli.CTime
-	v.CPks = cli.CPks[:]
-	v.CSig = cli.CSig[:]
-	v.Nonce = ser.Nonce
-	v.STime = ser.STime
-	v.SPks = ser.SPks[:]
-	v.SSig = ser.SSig[:]
+	v.TTS = b.TTS[:]
+	v.TVer = b.TVer
+	v.TLoc = b.TLoc.ToUInt()
+	v.TUID = b.TUID[:]
+	v.TCTR = b.TCTR.ToUInt()
+	v.TMAC = b.TMAC[:]
+	v.CLoc = b.CLoc.ToUInt()
+	v.Prev = b.Prev[:]
+	v.CTime = b.CTime
+	v.CPks = b.CPks[:]
+	v.CSig = b.CSig[:]
+	v.Nonce = b.Nonce
+	v.STime = b.STime
+	v.SPks = b.SPks[:]
+	v.SSig = b.SSig[:]
 	return v, nil
 }

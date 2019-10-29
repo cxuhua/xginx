@@ -93,6 +93,13 @@ func HASH256(b []byte) []byte {
 	return s2.Sum(nil)
 }
 
+//ret >= min,ret <= max
+func Rand(min uint, max uint) uint {
+	v := uint(0)
+	SetRandInt(&v)
+	return (min + v%(max+1-min))
+}
+
 func SetRandInt(v interface{}) {
 	_ = binary.Read(rand.Reader, binary.LittleEndian, v)
 }

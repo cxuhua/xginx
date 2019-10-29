@@ -16,6 +16,13 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
+	//删除块
+	DelBlock(id []byte) error
+	//获取块
+	GetBlock(id []byte, v interface{}) error
+	//存在
+	HasBlock(id []byte) bool
+	//保存块
 	SetBlock(id []byte, v interface{}) error
 	//get trans raw data
 	GetTag(id []byte, v interface{}) error
@@ -183,6 +190,30 @@ func (m *mongoDBImp) set(t string, id []byte, v interface{}) error {
 		return err
 	}
 	return nil
+}
+
+//删除块
+func (m *mongoDBImp) DelBlock(id []byte) error {
+	_, err := m.blocks().DeleteOne(m, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	return err
+}
+
+//获取块
+func (m *mongoDBImp) GetBlock(id []byte, v interface{}) error {
+	ret := m.blocks().FindOne(m, bson.M{"_id": id})
+	if err := ret.Err(); err != nil {
+		return err
+	}
+	return ret.Decode(v)
+}
+
+//存在
+func (m *mongoDBImp) HasBlock(id []byte) bool {
+	ret := m.blocks().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
 }
 
 func (m *mongoDBImp) SetBlock(id []byte, v interface{}) error {
