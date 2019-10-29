@@ -5,6 +5,8 @@
   "listen_ip": "0.0.0.0",
   "remote_ip": "192.168.31.198",
   "time_dis": 60,
+  "halving": 210000,
+  "dis_range": [500,2000],
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",

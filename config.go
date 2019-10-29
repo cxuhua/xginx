@@ -34,6 +34,8 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	DisRange   []uint                  `json:"dis_range"` //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
+	Halving    uint                    `json:"halving"`   //210000
 	Flags      string                  `json:"flags"`
 	Ver        uint32                  `json:"version"`     //版本
 	Publics    []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
