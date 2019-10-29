@@ -11,7 +11,7 @@ type BlockInfo struct {
 	Bits      uint32
 	Nonce     uint32
 	DisBase   UnitDisBase
-	Bodys     []UnitBody //n个记录单元,至少由一个记录
+	Bodys     []UnitBody //n个记录单元,至少有一个记录
 }
 
 //区块打包者奖励条目
