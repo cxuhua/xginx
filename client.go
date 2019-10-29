@@ -30,7 +30,7 @@ type Client struct {
 	err    interface{}
 	ss     *Server
 	lis    IClient
-	mVer   *MsgVersion
+	mVer   *MsgVersion //对方版本信息
 	ping   int
 }
 
@@ -71,8 +71,11 @@ func (c *Client) processMsg(db DBImp, m MsgIO) error {
 		}
 		//返回服务器版本信息
 		if c.IsIn() {
+			wm.Service = c.ss.Service()
 			c.SendMsg(wm)
 		}
+		//保存连接地址
+		c.ss.addrs.Set(msg.Addr)
 		c.mVer = msg
 	} else if c.IsIn() {
 		c.processMsgIn(db, m)
@@ -95,8 +98,9 @@ func (c *Client) stop() {
 	if c.Conn != nil {
 		_ = c.Conn.Close()
 	}
-	if c.ss != nil {
-		c.ss.DelClient(c)
+	c.ss.DelClient(c)
+	if c.mVer != nil {
+		c.ss.addrs.Del(c.mVer.Addr)
 	}
 	if c.lis != nil {
 		c.lis.OnClose()
@@ -131,9 +135,7 @@ func (c *Client) Loop() {
 
 func (c *Client) loop() {
 	defer c.stop()
-	if c.ss != nil {
-		c.ss.AddClient(c)
-	}
+	c.ss.AddClient(c)
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {

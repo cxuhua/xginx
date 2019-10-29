@@ -2,8 +2,36 @@ package xginx
 
 import (
 	"bytes"
+	"io"
+	"log"
 	"testing"
 )
+
+type ATest struct {
+}
+
+func (a ATest) Type() uint8 {
+	return 100
+}
+
+func (a ATest) Encode(w io.Writer) error {
+	return nil
+}
+
+func (a *ATest) Decode(w io.Reader) error {
+	return nil
+}
+
+type BC ATest
+
+func (a BC) Type() uint8 {
+	return 101
+}
+
+func TestMsgExt(t *testing.T) {
+	b := &BC{}
+	log.Println(b.Type())
+}
 
 func TestMsgVersion(t *testing.T) {
 	certs, err := conf.EncodeCerts()
@@ -13,6 +41,7 @@ func TestMsgVersion(t *testing.T) {
 	msg := &MsgVersion{}
 	msg.Ver = conf.Ver
 	msg.Certs = certs
+	msg.Service = SERVICE_SIG_TAG | SERVICE_SIG_DATA
 	msg.Addr = conf.GetNetAddr()
 	msg.Hash = conf.VerHash()
 	buf := &bytes.Buffer{}
@@ -32,6 +61,9 @@ func TestMsgVersion(t *testing.T) {
 	}
 	if m2.Ver != conf.Ver {
 		t.Errorf("ver error")
+	}
+	if m2.Service != msg.Service {
+		t.Errorf("service error")
 	}
 	if !m2.Hash.Equal(conf.VerHash()) {
 		t.Errorf("hash error")
@@ -60,6 +92,9 @@ func TestMsgVersion(t *testing.T) {
 	}
 	if m4.Ver != conf.Ver {
 		t.Errorf("ver error")
+	}
+	if m4.Service != msg.Service {
+		t.Errorf("service error")
 	}
 	if !m4.Hash.Equal(conf.VerHash()) {
 		t.Errorf("ver hash disaccord")

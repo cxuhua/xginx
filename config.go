@@ -34,6 +34,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	Flags      string                  `json:"flags"`
 	Ver        uint32                  `json:"version"`     //版本
 	Publics    []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
 	ListenPort int                     `json:"listen_port"` //服务端口和ip
@@ -41,6 +42,7 @@ type Config struct {
 	RemoteIp   string                  `json:"remote_ip"`   //远程连接ip
 	Privates   []string                `json:"pris"`        //用于签名的私钥
 	Certs      []string                `json:"certs"`       //已经签名的证书
+	TimeDis    float64                 `json:"time_dis"`    //时间误差 秒
 	pris       map[PKBytes]*PrivateKey `json:"-"`           //
 	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
 	certs      map[PKBytes]*Cert       `json:"-"`           //
@@ -77,11 +79,20 @@ func (c *Config) EncodeCerts() ([]byte, error) {
 	if _, err := buf.Write(vhash[:]); err != nil {
 		return nil, err
 	}
-	num := uint8(len(c.certs))
+	num := uint8(0)
+	for _, v := range c.certs {
+		if err := v.Verify(); err != nil {
+			continue
+		}
+		num++
+	}
 	if err := binary.Write(buf, Endian, num); err != nil {
 		return nil, err
 	}
 	for _, v := range c.certs {
+		if err := v.Verify(); err != nil {
+			continue
+		}
 		tmp := &bytes.Buffer{}
 		if err := v.Encode(tmp); err != nil {
 			return nil, err
@@ -129,6 +140,7 @@ func (c *Config) DecodeCerts(b []byte) error {
 			return err
 		}
 		if err := cert.Verify(); err != nil {
+			log.Println("cert verify error", err, "skip cert", cert.Name)
 			continue
 		}
 		if _, has := c.certs[cert.PubKey]; !has {

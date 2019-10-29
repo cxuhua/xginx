@@ -21,6 +21,15 @@ var (
 	tuid = TagUID{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80}
 )
 
+func TestLocation_Distance(t *testing.T) {
+	loc1 := Location{}
+	loc1.Set(116.368904, 39.923423)
+	loc2 := Location{}
+	loc2.Set(116.387271, 39.922501)
+	dis := loc1.Distance(loc2)
+	log.Println(uint64(dis))
+}
+
 func TestVarStr(t *testing.T) {
 	buf := &bytes.Buffer{}
 	s := VarStr("1245677")

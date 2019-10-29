@@ -24,7 +24,7 @@ func main() {
 	time.Sleep(time.Second * 1)
 
 	d := xginx.NetAddrForm("127.0.0.1:9333")
-	c := xginx.NewClient(ctx)
+	c := s.NewClient()
 	err = c.Open(d)
 
 	log.Println(err)
@@ -38,6 +38,6 @@ func main() {
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	log.Println("recv sig :", sig, ",system exited")
-	cancel()
+	s.Stop()
 	s.Wait()
 }

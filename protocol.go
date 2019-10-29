@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"bytes"
+	sha2562 "crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -13,9 +14,11 @@ import (
 
 //协议包标识
 const (
-	NT_VERSION = uint8(1)
-	NT_PING    = uint8(2)
-	NT_PONG    = uint8(3)
+	NT_VERSION   = uint8(1)
+	NT_PING      = uint8(2)
+	NT_PONG      = uint8(3)
+	NT_GET_ADDRS = uint8(4)
+	NT_ADDRS     = uint8(5)
 )
 
 //协议消息
@@ -23,6 +26,21 @@ type MsgIO interface {
 	Type() uint8
 	Encode(w IWriter) error
 	Decode(r IReader) error
+}
+
+type EmptyMsg struct {
+}
+
+func (e EmptyMsg) Type() uint8 {
+	return 0
+}
+
+func (e EmptyMsg) Encode(w IWriter) error {
+	return nil
+}
+
+func (e EmptyMsg) Decode(r IReader) error {
+	return nil
 }
 
 type NetAddr struct {
@@ -136,13 +154,19 @@ func (v *MsgPong) Decode(r IReader) error {
 	return binary.Read(r, Endian, &v.Time)
 }
 
+const (
+	SERVICE_SIG_TAG  = 1 << 0 //标签签名服务
+	SERVICE_SIG_DATA = 1 << 1 //数据存储
+)
+
 //版本消息包
 type MsgVersion struct {
 	MsgIO
-	Ver   uint32   //版本
-	Addr  NetAddr  //节点地址
-	Certs VarBytes //节点证书
-	Hash  HashID   //节点版本hash
+	Ver     uint32   //版本
+	Service uint32   //服务
+	Addr    NetAddr  //节点地址
+	Certs   VarBytes //节点证书
+	Hash    HashID   //节点版本hash
 }
 
 func NewMsgVersion() *MsgVersion {
@@ -166,6 +190,9 @@ func (v MsgVersion) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, v.Ver); err != nil {
 		return err
 	}
+	if err := binary.Write(w, Endian, v.Service); err != nil {
+		return err
+	}
 	if err := v.Addr.Encode(w); err != nil {
 		return err
 	}
@@ -180,6 +207,9 @@ func (v MsgVersion) Encode(w IWriter) error {
 
 func (v *MsgVersion) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &v.Ver); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &v.Service); err != nil {
 		return err
 	}
 	if err := v.Addr.Decode(r); err != nil {
@@ -212,8 +242,12 @@ func (c *NetStream) WriteMsg(m MsgIO) error {
 	if err := m.Encode(buf); err != nil {
 		return err
 	}
+	flags := [4]byte{}
+	copy(flags[:], conf.Flags)
 	pd := &NetPackage{
+		Flags: flags,
 		Type:  m.Type(),
+		Ver:   conf.Ver,
 		Bytes: buf.Bytes(),
 	}
 	return pd.Encode(c)
@@ -232,47 +266,50 @@ func (c *NetStream) WriteByte(b byte) error {
 }
 
 type NetPackage struct {
+	Flags [4]byte  //标识
 	Type  uint8    //包类型
+	Ver   uint32   //版本
 	Bytes VarBytes //数据长度
 	Sum   [4]byte  //校验和hash256 前4字节
 }
 
-func (v NetPackage) ToMsgIO() (MsgIO, error) {
-	var m MsgIO = nil
-	buf := bytes.NewReader(v.Bytes)
-	switch v.Type {
-	case NT_VERSION:
-		m = &MsgVersion{}
-	case NT_PING:
-		m = &MsgPing{}
-	case NT_PONG:
-		m = &MsgPong{}
-	}
-	if m == nil {
-		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
-	}
-	if err := m.Decode(buf); err != nil {
-		return nil, fmt.Errorf("message type=%d decode error %w", v.Type, err)
-	}
-	return m, nil
-}
-
 func (v NetPackage) Encode(w IWriter) error {
+	if _, err := w.Write(v.Flags[:]); err != nil {
+		return err
+	}
 	if err := w.WriteByte(v.Type); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
 		return err
 	}
-	b := append([]byte{v.Type}, v.Bytes...)
-	if _, err := w.Write(HASH256P4(b)); err != nil {
+	if _, err := w.Write(v.Hash()); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (v *NetPackage) Hash() []byte {
+	hasher := sha2562.New()
+	hasher.Write(v.Flags[:])
+	hasher.Write([]byte{v.Type})
+	_ = binary.Write(hasher, Endian, v.Ver)
+	hasher.Write(v.Bytes)
+	sum := hasher.Sum(nil)
+	return sum[:4]
+}
+
 func (v *NetPackage) Decode(r IReader) error {
+	if _, err := r.Read(v.Flags[:]); err != nil {
+		return err
+	}
 	if err := binary.Read(r, Endian, &v.Type); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Decode(r); err != nil {
@@ -281,8 +318,7 @@ func (v *NetPackage) Decode(r IReader) error {
 	if _, err := r.Read(v.Sum[:]); err != nil {
 		return err
 	}
-	b := append([]byte{v.Type}, v.Bytes...)
-	if !bytes.Equal(v.Sum[:], HASH256P4(b)) {
+	if !bytes.Equal(v.Sum[:], v.Hash()) {
 		return errors.New("check sum error")
 	}
 	return nil
@@ -303,6 +339,42 @@ type Stream interface {
 	IWriter
 }
 
+type VarUInt uint64
+
+func (v VarUInt) ToInt() int {
+	return int(v)
+}
+
+func (v VarUInt) Encode(w IWriter) error {
+	lb := make([]byte, binary.MaxVarintLen64)
+	l := binary.PutUvarint(lb, uint64(v))
+	return binary.Write(w, Endian, lb[:l])
+}
+
+func (v *VarUInt) Decode(r IReader) error {
+	vv, err := binary.ReadUvarint(r)
+	*v = VarUInt(vv)
+	return err
+}
+
+type VarInt int64
+
+func (v VarInt) ToInt() int {
+	return int(v)
+}
+
+func (v VarInt) Encode(w IWriter) error {
+	lb := make([]byte, binary.MaxVarintLen64)
+	l := binary.PutVarint(lb, int64(v))
+	return binary.Write(w, Endian, lb[:l])
+}
+
+func (v *VarInt) Decode(r IReader) error {
+	vv, err := binary.ReadVarint(r)
+	*v = VarInt(vv)
+	return err
+}
+
 type VarBytes []byte
 
 func (v VarBytes) Equal(b VarBytes) bool {
@@ -316,6 +388,9 @@ func (v VarBytes) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, lb[:l]); err != nil {
 		return err
 	}
+	if len(v) == 0 {
+		return nil
+	}
 	if err := binary.Write(w, Endian, v); err != nil {
 		return err
 	}
@@ -326,6 +401,9 @@ func (v *VarBytes) Decode(r IReader) error {
 	l, err := binary.ReadUvarint(r)
 	if err != nil {
 		return err
+	}
+	if l == 0 {
+		return nil
 	}
 	if l > 1024*1024*4 {
 		return errors.New("bytes length too long")

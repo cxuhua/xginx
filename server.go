@@ -7,7 +7,42 @@ import (
 	"sync"
 )
 
+type NetAddrMap struct {
+	addrs map[string]NetAddr
+	mu    sync.Mutex
+}
+
+func (m *NetAddrMap) Set(addr NetAddr) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.addrs[addr.String()] = addr
+}
+
+func (m *NetAddrMap) NewMsgAddrs() *MsgAddrs {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	msg := &MsgAddrs{}
+	for _, v := range m.addrs {
+		msg.Add(v)
+	}
+	return msg
+}
+
+func (m *NetAddrMap) Del(addr NetAddr) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.addrs, addr.String())
+}
+
+func NewNetAddrMap() *NetAddrMap {
+	return &NetAddrMap{
+		addrs: map[string]NetAddr{},
+		mu:    sync.Mutex{},
+	}
+}
+
 type Server struct {
+	service uint32
 	lis     net.Listener
 	addr    *net.TCPAddr
 	ctx     context.Context
@@ -16,6 +51,7 @@ type Server struct {
 	err     interface{}
 	wg      sync.WaitGroup
 	clients map[string]*Client //连接的所有client
+	addrs   *NetAddrMap        //连接我的ip地址和我连接出去的
 }
 
 //广播消息
@@ -41,7 +77,7 @@ func (s *Server) AddClient(c *Client) {
 	s.clients[c.addr.String()] = c
 }
 
-func (s *Server) stop() {
+func (s *Server) Stop() {
 	s.cancel()
 }
 
@@ -53,28 +89,27 @@ func (s *Server) Wait() {
 	s.wg.Wait()
 }
 
+func (s *Server) NewClient() *Client {
+	c := NewClient(s.ctx)
+	c.ss = s
+	return c
+}
+
+func (s *Server) Service() uint32 {
+	return s.service
+}
+
 func (s *Server) run() {
 	log.Println(s.addr.Network(), "server startup", s.addr)
 	defer func() {
 		if err := recover(); err != nil {
 			s.err = err
-			log.Println("server err=", s.err, "close")
+			s.cancel()
 		}
 	}()
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				s.err = err
-			}
-			s.cancel()
-		}()
-		for {
-			select {
-			case <-s.ctx.Done():
-				_ = s.lis.Close()
-				break
-			}
-		}
+		<-s.ctx.Done()
+		_ = s.lis.Close()
 	}()
 	for {
 		conn, err := s.lis.Accept()
@@ -91,7 +126,7 @@ func (s *Server) run() {
 		c.typ = ClientIn
 		c.ss = s
 		log.Println("new connection", conn.RemoteAddr())
-		go c.loop()
+		c.Loop()
 	}
 }
 
@@ -105,5 +140,7 @@ func NewServer(ctx context.Context, conf *Config) (*Server, error) {
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[string]*Client{}
+	s.addrs = NewNetAddrMap()
+	s.service = SERVICE_SIG_DATA | SERVICE_SIG_TAG
 	return s, nil
 }

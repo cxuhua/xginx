@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -67,8 +68,47 @@ func (l *Location) Get() []float64 {
 	return []float64{lng, lat}
 }
 
+const (
+	EARTH_RADIUS = float64(6378137)
+)
+
+func rad(d float64) (r float64) {
+	r = d * math.Pi / 180.0
+	return
+}
+
 func (l Location) Distance(v Location) float64 {
-	return 0
+	lv := l.Get()
+	lon1, lat1 := rad(lv[0]), rad(lv[1])
+	vv := v.Get()
+	lon2, lat2 := rad(vv[0]), rad(vv[1])
+	if lat1 < 0 {
+		lat1 = math.Pi/2 + math.Abs(lat1)
+	}
+	if lat1 > 0 {
+		lat1 = math.Pi/2 - math.Abs(lat1)
+	}
+	if lon1 < 0 {
+		lon1 = math.Pi*2 - math.Abs(lon1)
+	}
+	if lat2 < 0 {
+		lat2 = math.Pi/2 + math.Abs(lat2)
+	}
+	if lat2 > 0 {
+		lat2 = math.Pi/2 - math.Abs(lat2)
+	}
+	if lon2 < 0 {
+		lon2 = math.Pi*2 - math.Abs(lon2)
+	}
+	x1 := EARTH_RADIUS * math.Cos(lon1) * math.Sin(lat1)
+	y1 := EARTH_RADIUS * math.Sin(lon1) * math.Sin(lat1)
+	z1 := EARTH_RADIUS * math.Cos(lat1)
+	x2 := EARTH_RADIUS * math.Cos(lon2) * math.Sin(lat2)
+	y2 := EARTH_RADIUS * math.Sin(lon2) * math.Sin(lat2)
+	z2 := EARTH_RADIUS * math.Cos(lat2)
+	d := math.Sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2) + (z1-z2)*(z1-z2))
+	theta := math.Acos((EARTH_RADIUS*EARTH_RADIUS + EARTH_RADIUS*EARTH_RADIUS - d*d) / (2 * EARTH_RADIUS * EARTH_RADIUS))
+	return theta * EARTH_RADIUS
 }
 
 //
@@ -106,6 +146,8 @@ func (p *SigBytes) SetBytes(b []byte) {
 func (p *SigBytes) Set(sig *SigValue) {
 	copy(p[:], sig.Encode())
 }
+
+type Hash160 [20]byte
 
 type HashID [32]byte
 
@@ -248,6 +290,10 @@ func (t *TagInfo) DecodeURL() error {
 }
 
 func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
+	//时间相差不能太大
+	if client.TimeDis() > conf.TimeDis*float64(time.Second) {
+		return errors.New("client time error")
+	}
 	if t.input == "" {
 		return errors.New("input miss")
 	}
@@ -431,9 +477,15 @@ func (s VarStr) EncodeWriter(w io.Writer) error {
 type ClientBlock struct {
 	CLoc  Location //用户定位信息user location
 	Prev  HashID   //上个hash
-	CTime int64    //客户端时间，不能和服务器相差太大
+	CTime int64    //客户端时间，不能和服务器相差太大 单位：纳秒
 	CPks  PKBytes  //用户公钥
 	CSig  SigBytes //用户签名
+}
+
+//时间差
+func (c ClientBlock) TimeDis() float64 {
+	v := float64(time.Now().UnixNano()) - float64(c.CTime)
+	return math.Abs(v)
 }
 
 //b=待签名数据，tag数据+client数据
@@ -538,7 +590,7 @@ func (c *ClientBlock) Sign(pv *PrivateKey, tag []byte) error {
 //块信息
 type ServerBlock struct {
 	Nonce int64    //随机值 server full
-	STime int64    //服务器时间
+	STime int64    //服务器时间 单位：纳秒
 	SPks  PKBytes  //服务器公钥
 	SSig  SigBytes //服务器签名
 }
