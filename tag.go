@@ -148,6 +148,10 @@ func (p *SigBytes) Set(sig *SigValue) {
 //公钥hash160
 type UserID [20]byte
 
+func (v *UserID) Set(b []byte) {
+	copy(v[:], b)
+}
+
 func (v UserID) Equal(b UserID) bool {
 	return bytes.Equal(v[:], b[:])
 }
@@ -229,6 +233,7 @@ type TagInfo struct {
 	TTS   TagTT    //TT状态 url +2,激活后OO tam map
 	TVer  uint32   //版本 from tag
 	TLoc  Location //uint32-uint32 位置 from tag
+	TPKH  UserID   //标签所有者公钥的hash160，标记标签所有者
 	TUID  TagUID   //标签id from tag
 	TCTR  TagCTR   //标签记录计数器 from tag map
 	TMAC  TagMAC   //标签CMAC值 from tag url + 16
@@ -362,6 +367,9 @@ func (t *TagInfo) DecodeReader(hr io.Reader) error {
 	if err := binary.Read(hr, Endian, &t.TLoc); err != nil {
 		return err
 	}
+	if err := binary.Read(hr, Endian, &t.TPKH); err != nil {
+		return err
+	}
 	if err := binary.Read(hr, Endian, &t.TUID); err != nil {
 		return err
 	}
@@ -386,6 +394,9 @@ func (t *TagInfo) EncodeWriter(hw io.Writer) error {
 		return err
 	}
 	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
+		return err
+	}
+	if err := binary.Write(hw, Endian, t.TPKH); err != nil {
 		return err
 	}
 	if err := binary.Write(hw, Endian, t.TUID); err != nil {
@@ -721,6 +732,7 @@ func (b *TUnit) Encode(w io.Writer) (*UnitBlock, error) {
 	bi.TTS.Set(b.TTS)
 	bi.TVer = b.TVer
 	bi.TLoc.SetLoc(b.TLoc)
+	bi.TPKH.Set(b.TPKH)
 	bi.TUID.Set(b.TUID)
 	bi.TCTR.Set(b.TCTR)
 	bi.TMAC.Set(b.TMAC)
@@ -742,7 +754,7 @@ type UnitBlock struct {
 	SerPart
 }
 
-func (pv UnitBlock) TLocSub(cv UnitBlock) float64 {
+func (pv UnitBlock) TTLocDis(cv UnitBlock) float64 {
 	return cv.TLoc.Distance(pv.TLoc)
 }
 
@@ -755,7 +767,7 @@ func (b UnitBlock) TimeSub() float64 {
 	return math.Abs(float64(b.CTime-b.STime)) / float64(time.Second)
 }
 
-func (b UnitBlock) LocSub() float64 {
+func (b UnitBlock) CTLocDis() float64 {
 	return b.CLoc.Distance(b.TLoc)
 }
 
@@ -811,6 +823,7 @@ func VerifyBlockInfo(conf *Config, bs []byte) (*TUnit, error) {
 	v.TTS = b.TTS[:]
 	v.TVer = b.TVer
 	v.TLoc = b.TLoc.ToUInt()
+	v.TPKH = b.TPKH[:]
 	v.TUID = b.TUID[:]
 	v.TCTR = b.TCTR.ToUInt()
 	v.TMAC = b.TMAC[:]

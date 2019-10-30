@@ -161,6 +161,9 @@ func (v *TxIn) Decode(r IReader) error {
 }
 
 //是否基本单元，txs的第一个一定是base，输出为奖励计算的距离
+//所得奖励的70%给区块矿工，30%按标签贡献分给标签所有者
+//涉及两个标签，两标签平分
+//所有奖励向下取整
 func (in TxIn) IsBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0
 }
@@ -294,53 +297,66 @@ type Unit struct {
 	Distance  VarUInt     //
 }
 
+var (
+	SUMUID = UserID{}
+)
+
 //多个连续的记录信息，记录client链,至少有两个记录
 //两个点之间的服务器时间差超过1天将忽略距离 SpanTime(秒）设置
 //定位点与标签点差距超过1km，距离递减 GetDisRate 计算
 //以上都不影响链的链接，只是会减少距离提成
 //标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
 //所有distance之和就是clientid的总的distance
-func CalcDistance(items []UnitBlock) (float64, error) {
+func CalcDistance(miner UserID, items []UnitBlock) (map[UserID]float64, error) {
+	dmap := map[UserID]float64{}
 	if len(items) < 2 {
-		return 0, errors.New("items count error")
+		return dmap, errors.New("items count error")
 	}
-	ssum := float64(0)
+	rate := conf.GetMinerRate()
 	for i := 1; i < len(items); i++ {
 		cv := items[i+0]
 		pv := items[i-1]
 		if cv.IsFirst() {
-			return 0, errors.New("curr point error")
+			return dmap, errors.New("curr point error")
 		}
 		//记录时间差太多忽略这个点
 		if cv.TimeSub() > conf.TimeErr {
 			continue
 		}
 		if !cv.Prev.Equal(pv.Hash()) {
-			return 0, errors.New("prev hash error")
+			return dmap, errors.New("prev hash error")
 		}
 		//两次记录时间必须连续
 		st := pv.STimeSub(cv)
 		if st < 0 {
-			return ssum, errors.New("stime error")
+			return dmap, errors.New("stime error")
 		}
 		//两次记录时间差不能太大
 		if st > conf.SpanTime {
 			continue
 		}
 		//获取当前点定位差
-		csl := cv.LocSub()
+		csl := cv.CTLocDis()
 		//上一点的定位差
-		psl := pv.LocSub()
+		psl := pv.CTLocDis()
 		//定位不准范围太大将影响距离的计算
 		csr := GetDisRate(csl)
 		psr := GetDisRate(psl)
-		dis := pv.TLocSub(cv) * csr * psr
-		ssum += dis
+		dis := pv.TTLocDis(cv) * csr * psr
+		dmap[SUMUID] += dis
+		//矿工获得
+		mdis := dis * rate
+		//标签所有者获得,两标签平分
+		tdis := (dis - mdis) * 0.5
+		dmap[cv.TPKH] += tdis
+		dmap[pv.TPKH] += tdis
+		//保存矿工获得的总量
+		dmap[miner] += mdis
 	}
-	return ssum, nil
+	return dmap, nil
 }
 
-func (v *Unit) Check() error {
+func (v *Unit) Check(miner UserID) error {
 	//检测上一个has
 	if len(v.Items) < 2 {
 		return errors.New("items count too slow")
@@ -362,10 +378,11 @@ func (v *Unit) Check() error {
 			return err
 		}
 	}
-	dis, err := CalcDistance(items)
+	dmap, err := CalcDistance(miner, items)
 	if err != nil {
 		return err
 	}
+	dis := dmap[SUMUID]
 	if dis < 0 || dis > EARTH_RADIUS {
 		return errors.New("distance range error")
 	}

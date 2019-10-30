@@ -34,7 +34,8 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	PowTime    uint                    `json:"pow_time"` //14 * 24 * 60 * 60=1209600
+	MinerRate  int                     `json:"miner_rate"` //70获得70%，剩余的奖励给标签所有者
+	PowTime    uint                    `json:"pow_time"`   //14 * 24 * 60 * 60=1209600
 	PowLimit   string                  `json:"pow_limit"`
 	SpanTime   float64                 `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
 	DisRange   []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
@@ -54,6 +55,10 @@ type Config struct {
 	pubshash   HashID                  `json:"-"`           //
 	mu         sync.RWMutex            `json:"-"`           //
 	NodeID     UserID                  `json:"-"`           //启动时临时生成
+}
+
+func (c *Config) GetMinerRate() float64 {
+	return float64(c.MinerRate) / 100.0
 }
 
 func (c *Config) GetListenAddr() NetAddr {

@@ -42,10 +42,11 @@ type DBSession interface {
 type UnitKey HashID
 
 type TUnit struct {
-	Hash  []byte   `bson:"_id"`   //block hash
-	TTS   []byte   `bson:"tts"`   //TT状态 url +2,激活后OO tam map
-	TVer  uint32   `bson:"ver"`   //版本 from tag
-	TLoc  []uint32 `bson:"tloc"`  //uint32-uint32 位置 from tag
+	Hash  []byte   `bson:"_id"`  //block hash
+	TTS   []byte   `bson:"tts"`  //TT状态 url +2,激活后OO tam map
+	TVer  uint32   `bson:"ver"`  //版本 from tag
+	TLoc  []uint32 `bson:"tloc"` //uint32-uint32 位置 from tag
+	TPKH  []byte   `bson:"tpkh"`
 	TUID  []byte   `bson:"tuid"`  //标签id from tag
 	TCTR  uint     `bson:"tctr"`  //标签记录计数器 from tag map
 	TMAC  []byte   `bson:"tmac"`  //标签CMAC值 from tag url + 16
