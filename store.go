@@ -3,12 +3,6 @@ package xginx
 import (
 	"context"
 	"errors"
-	"sync"
-
-	"go.mongodb.org/mongo-driver/bson"
-
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type SetValue map[string]interface{}
@@ -16,26 +10,30 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
-	//删除块
+	//删除记录
 	DelUnit(id []byte) error
-	//获取块
+	//获取记录
 	GetUnit(id []byte, v interface{}) error
-	//存在
+	//是否存在记录
 	HasUnit(id []byte) bool
-	//保存块
+	//保存记录
 	SetUnit(id []byte, v interface{}) error
 	//get trans raw data
 	GetTag(id []byte, v interface{}) error
 	//save or update tans data
 	SetTag(id []byte, v interface{}) error
-	//findandmodify
+	//更新计数器
 	SetCtr(id []byte, ctr uint) error
-	//exists tx
+	//exists
 	HasTag(id []byte) bool
-	//delete tx
+	//delete
 	DelTag(id []byte) error
-	//事物处理
+	//事务处理
 	Transaction(fn func(sdb DBImp) error) error
+}
+
+type DBSession interface {
+	UseSession(ctx context.Context, fn func(db DBImp) error) error
 }
 
 //单元块数据,打卡记录
@@ -66,6 +64,10 @@ func (b *TUnit) Save(db DBImp) error {
 	return db.SetUnit(b.Hash[:], b)
 }
 
+var (
+	store DBSession = &mongoDBSession{}
+)
+
 //标签数据
 type TagKey [16]byte
 
@@ -74,7 +76,7 @@ type TTagInfo struct {
 	UID  []byte    `bson:"_id"`  //uid
 	Ver  uint32    `bson:"ver"`  //版本 from tag
 	Loc  []float64 `bson:"loc"`  //uint32-uint32 位置 from tag
-	Keys [5]TagKey `bson:"keys"` //
+	Keys [5]TagKey `bson:"keys"` //ntag424 5keys
 	CTR  uint      `bson:"ctr"`  //ctr int
 }
 
@@ -97,178 +99,4 @@ func (tag *TTagInfo) SetMacKey(idx int) {
 
 func (tag TTagInfo) Save(db DBImp) error {
 	return db.SetTag(tag.UID[:], tag)
-}
-
-var (
-	client *mongo.Client = nil
-	dbonce               = sync.Once{}
-)
-
-type mongoDBImp struct {
-	context.Context
-}
-
-func (m *mongoDBImp) collection(t string) *mongo.Collection {
-	return m.database().Collection(t)
-}
-
-func (m *mongoDBImp) txs() *mongo.Collection {
-	return m.database().Collection("txs")
-}
-
-func (m *mongoDBImp) blocks() *mongo.Collection {
-	return m.database().Collection("blocks")
-}
-
-func (m *mongoDBImp) units() *mongo.Collection {
-	return m.database().Collection("units")
-}
-
-func (m *mongoDBImp) tags() *mongo.Collection {
-	return m.database().Collection("tags")
-}
-
-func (m *mongoDBImp) client() *mongo.Client {
-	return m.Context.(mongo.SessionContext).Client()
-}
-
-func (m *mongoDBImp) database() *mongo.Database {
-	return m.client().Database("xginx")
-}
-
-//设置计数器，必须比数据库中的大
-func (m *mongoDBImp) SetCtr(id []byte, ctr uint) error {
-	c := bson.M{"_id": id, "ctr": bson.M{"$lt": ctr}}
-	d := bson.M{"$set": bson.M{"ctr": ctr}}
-	res := m.tags().FindOneAndUpdate(m, c, d)
-	return res.Err()
-}
-
-func NewDBImp(ctx context.Context) DBImp {
-	return &mongoDBImp{Context: ctx}
-}
-
-//delete data
-func (m *mongoDBImp) DelTag(id []byte) error {
-	_, err := m.tags().DeleteOne(m, bson.M{"_id": id})
-	if err != nil {
-		return err
-	}
-	return err
-}
-
-//get tx data
-func (m *mongoDBImp) GetTag(id []byte, v interface{}) error {
-	ret := m.tags().FindOne(m, bson.M{"_id": id})
-	if err := ret.Err(); err != nil {
-		return err
-	}
-	return ret.Decode(v)
-}
-
-//check tx exists
-func (m *mongoDBImp) HasTag(id []byte) bool {
-	ret := m.tags().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
-	return ret.Err() == nil
-}
-
-func (m *mongoDBImp) set(t string, id []byte, v interface{}) error {
-	tbl := m.collection(t)
-	switch v.(type) {
-	case IncValue:
-		ds := bson.M{}
-		for k, v := range v.(IncValue) {
-			ds[k] = v
-		}
-		if len(ds) > 0 {
-			_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
-			return err
-		}
-	case SetValue:
-		ds := bson.M{}
-		for k, v := range v.(SetValue) {
-			ds[k] = v
-		}
-		if len(ds) > 0 {
-			_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
-			return err
-		}
-	default:
-		opt := options.Update().SetUpsert(true)
-		_, err := tbl.UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
-		return err
-	}
-	return nil
-}
-
-//删除块
-func (m *mongoDBImp) DelUnit(id []byte) error {
-	_, err := m.units().DeleteOne(m, bson.M{"_id": id})
-	if err != nil {
-		return err
-	}
-	return err
-}
-
-//获取块
-func (m *mongoDBImp) GetUnit(id []byte, v interface{}) error {
-	ret := m.units().FindOne(m, bson.M{"_id": id})
-	if err := ret.Err(); err != nil {
-		return err
-	}
-	return ret.Decode(v)
-}
-
-//存在
-func (m *mongoDBImp) HasUnit(id []byte) bool {
-	ret := m.units().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
-	return ret.Err() == nil
-}
-
-func (m *mongoDBImp) SetUnit(id []byte, v interface{}) error {
-	return m.set("units", id, v)
-}
-
-//save tans data
-func (m *mongoDBImp) SetTag(id []byte, v interface{}) error {
-	return m.set("tags", id, v)
-}
-
-func (m *mongoDBImp) Transaction(fn func(sdb DBImp) error) error {
-	sess := m.Context.(mongo.SessionContext)
-	_, err := sess.WithTransaction(m, func(sctx mongo.SessionContext) (i interface{}, e error) {
-		return nil, fn(NewDBImp(sctx))
-	})
-	return err
-}
-
-func InitDB(ctx context.Context) *mongo.Client {
-	dbonce.Do(func() {
-		c := options.Client().ApplyURI("mongodb://127.0.0.1:27017/")
-		cptr, err := mongo.NewClient(c)
-		if err != nil {
-			panic(err)
-		}
-		err = cptr.Connect(ctx)
-		if err != nil {
-			panic(err)
-		}
-		client = cptr
-	})
-	return client
-}
-
-func UseTransaction(ctx context.Context, fn func(sdb DBImp) error) error {
-	return UseSession(ctx, func(db DBImp) error {
-		return db.Transaction(func(sdb DBImp) error {
-			return fn(sdb)
-		})
-	})
-}
-
-func UseSession(ctx context.Context, fn func(db DBImp) error) error {
-	client = InitDB(ctx)
-	return client.UseSession(ctx, func(sess mongo.SessionContext) error {
-		return fn(NewDBImp(sess))
-	})
 }

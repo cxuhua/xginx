@@ -181,7 +181,7 @@ func (c *Client) loop() {
 				panic(fmt.Errorf("write msg error %v", err))
 			}
 		case rp := <-c.rc:
-			err := UseSession(c.ctx, func(db DBImp) error {
+			err := store.UseSession(c.ctx, func(db DBImp) error {
 				return c.processMsg(db, rp)
 			})
 			if err != nil {

@@ -84,7 +84,7 @@ func TestSig(t *testing.T) {
 }
 
 func TestLoadTestKey(t *testing.T) {
-	err := UseSession(context.Background(), func(db DBImp) error {
+	err := store.UseSession(context.Background(), func(db DBImp) error {
 		kv, err := LoadTagInfo(tuid, db)
 		if err != nil {
 			panic(err)
@@ -98,7 +98,7 @@ func TestLoadTestKey(t *testing.T) {
 }
 
 func TestSaveTestKey(t *testing.T) {
-	err := UseSession(context.Background(), func(db DBImp) error {
+	err := store.UseSession(context.Background(), func(db DBImp) error {
 		loc := Location{}
 		loc.Set(180.14343, -85.2343434)
 		tk := &TTagInfo{}
@@ -129,7 +129,7 @@ func TestMakeTagURL(t *testing.T) {
 //https://api.xginx.com/sign/CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
 //CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
 func TestTagData(t *testing.T) {
-	err := UseSession(context.Background(), func(db DBImp) error {
+	err := store.UseSession(context.Background(), func(db DBImp) error {
 		surl := "https://api.xginx.com/sign/CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696"
 		otag := NewTagInfo(surl)
 		//客户端服务器端都要解码
