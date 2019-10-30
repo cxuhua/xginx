@@ -49,7 +49,7 @@ type Config struct {
 	pris       map[PKBytes]*PrivateKey `json:"-"`           //
 	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
 	certs      map[PKBytes]*Cert       `json:"-"`           //
-	verhash    HashID                  `json:"-"`           //
+	pubshash   HashID                  `json:"-"`           //
 	mu         sync.RWMutex            `json:"-"`           //
 	NodeID     UserID                  `json:"-"`           //启动时临时生成
 }
@@ -78,7 +78,7 @@ func (c *Config) GetNetAddr() NetAddr {
 func (c *Config) EncodeCerts() ([]byte, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	vhash := c.VerHash()
+	vhash := c.PubsHash()
 	buf := &bytes.Buffer{}
 	if _, err := buf.Write(vhash[:]); err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (c *Config) EncodeCerts() ([]byte, error) {
 func (c *Config) DecodeCerts(b []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	vhash := c.VerHash()
+	vhash := c.PubsHash()
 	buf := bytes.NewReader(b)
 	hash := HashID{}
 	if _, err := buf.Read(hash[:]); err != nil {
@@ -157,8 +157,8 @@ func (c *Config) DecodeCerts(b []byte) error {
 
 //两个客户端hash公钥配置必须一致
 //节点不能任意添加信任公钥
-func (c *Config) VerHash() HashID {
-	return c.verhash
+func (c *Config) PubsHash() HashID {
+	return c.pubshash
 }
 
 func (c *Config) SetCert(cert *Cert) (*Cert, error) {
@@ -231,7 +231,7 @@ func (c *Config) Init() error {
 		}
 	}
 	//获取版本hash
-	copy(c.verhash[:], HASH256(buf.Bytes()))
+	copy(c.pubshash[:], HASH256(buf.Bytes()))
 	//加载证书
 	for _, s := range c.Certs {
 		cert, err := LoadCert(s)

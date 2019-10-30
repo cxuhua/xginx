@@ -162,12 +162,12 @@ const (
 //版本消息包
 type MsgVersion struct {
 	MsgIO
-	Ver     uint32   //版本
-	NodeID  UserID   //节点id
-	Service uint32   //服务
-	Addr    NetAddr  //节点地址
-	Certs   VarBytes //节点证书
-	Hash    HashID   //节点版本hash
+	Ver      uint32   //版本
+	NodeID   UserID   //节点id
+	Service  uint32   //服务
+	Addr     NetAddr  //节点地址
+	Certs    VarBytes //节点证书
+	PubsHash HashID   //节点版本hash
 }
 
 func NewMsgVersion() *MsgVersion {
@@ -180,7 +180,7 @@ func NewMsgVersion() *MsgVersion {
 	m.Ver = conf.Ver
 	m.Certs = certs
 	m.Addr = conf.GetNetAddr()
-	m.Hash = conf.VerHash()
+	m.PubsHash = conf.PubsHash()
 	return m
 }
 
@@ -204,7 +204,7 @@ func (v MsgVersion) Encode(w IWriter) error {
 	if err := v.Certs.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Hash); err != nil {
+	if err := binary.Write(w, Endian, v.PubsHash); err != nil {
 		return err
 	}
 	return nil
@@ -226,7 +226,7 @@ func (v *MsgVersion) Decode(r IReader) error {
 	if err := v.Certs.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Hash); err != nil {
+	if err := binary.Read(r, Endian, &v.PubsHash); err != nil {
 		return err
 	}
 	return nil
