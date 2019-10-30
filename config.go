@@ -34,17 +34,18 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	DisRange   []uint                  `json:"dis_range"` //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
-	Halving    uint                    `json:"halving"`   //210000
-	Flags      string                  `json:"flags"`
-	Ver        uint32                  `json:"version"`     //版本
+	SpanTime   int                     `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
+	DisRange   []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
+	Halving    uint                    `json:"halving"`     //210000
+	Flags      string                  `json:"flags"`       //协议头标记
+	Ver        uint32                  `json:"version"`     //节点版本
 	Publics    []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
 	ListenPort int                     `json:"listen_port"` //服务端口和ip
 	ListenIp   string                  `json:"listen_ip"`   //服务ip
-	RemoteIp   string                  `json:"remote_ip"`   //远程连接ip
+	RemoteIp   string                  `json:"remote_ip"`   //节点远程连接ip
 	Privates   []string                `json:"pris"`        //用于签名的私钥
 	Certs      []string                `json:"certs"`       //已经签名的证书
-	TimeDis    float64                 `json:"time_dis"`    //时间误差 秒
+	TimeDis    float64                 `json:"time_dis"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
 	pris       map[PKBytes]*PrivateKey `json:"-"`           //
 	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
 	certs      map[PKBytes]*Cert       `json:"-"`           //

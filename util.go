@@ -28,7 +28,7 @@ func GetDisRate(km float64) float64 {
 	return 1.0 - (km-min)/(max-min)
 }
 
-//计算分成比例,至少1%
+//计算分成比例,至少0.1%
 func GetRewardRate(h uint) float64 {
 	halvings := h / conf.Halving
 	if halvings > 32 {

@@ -7,6 +7,7 @@
   "time_dis": 60,
   "halving": 210000,
   "dis_range": [500,2000],
+  "span_time": 3600,
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",

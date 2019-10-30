@@ -7,14 +7,14 @@ package xginx
 //txs交易部分和比特币类似
 //块大小限制为4M大小
 type BlockInfo struct {
-	Ver       uint32
-	Prev      HashID
-	Merkle    HashID //Merkle tree root
-	Timestamp uint32
-	Bits      uint32
-	Nonce     uint32
-	Bodys     []UnitBody //n个记录单元,至少有1个记录
-	Txs       []UnitTX   //距离交易，类似比特币,第一个coinbase交易
+	Ver    uint32     //block ver
+	Prev   HashID     //pre block hash
+	Merkle HashID     //txs Merkle tree root
+	Time   uint32     //时间戳
+	Bits   uint32     //难度
+	Nonce  uint32     //随机值
+	Bys    []UnitBody //n个记录单元,至少有1个记录
+	Txs    []UnitTX   //距离交易，类似比特币,第一个coinbase交易
 }
 
 //交易输入
@@ -31,7 +31,7 @@ func (in UnitTxIn) IsBase() bool {
 
 //交易输出
 type UnitTxOut struct {
-	Value  VarUInt //距离奖励 GetRewardRate 计算比例
+	Value  VarUInt //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
 	Script Script  //锁定脚本
 }
 
@@ -44,12 +44,12 @@ type UnitTX struct {
 
 //条目
 type UnitBody struct {
-	ClientID  UserID  //用户公钥的hash160
-	PrevHash  HashID  //上个块hash
-	PrevIndex VarUInt //上个块所在Bodys索引
+	ClientID UserID  //用户公钥的hash160
+	PrevHash HashID  //上个块hash
+	PrevIdx  VarUInt //上个块所在Bys索引
 	//多个连续的记录信息，记录client链,至少有两个记录
-	//两个点之间的时间超过1天将忽略距离
-	//定位点与标签点差距超过1km，距离递减 获得1-距离/10的比例,10km后完全获得不了距离了 GetDisRate 计算
+	//两个点之间的时间差超过1天将忽略距离 SpanTime(秒）设置
+	//定位点与标签点差距超过1km，距离递减 GetDisRate 计算
 	//以上都不影响链的链接，只是会减少距离提成
 	Items []UnitBlock
 	//标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
