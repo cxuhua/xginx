@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -34,17 +35,33 @@ type Client struct {
 	ping   int
 }
 
+//
+func (c *Client) Equal(b *Client) bool {
+	return c.NodeID().Equal(b.NodeID())
+}
+
 //服务器端处理包
 func (c *Client) processMsgIn(db DBImp, m MsgIO) {
 
 }
 
+//是否是连入的
 func (c *Client) IsIn() bool {
 	return c.typ == ClientIn
 }
 
+//是否是连出的
 func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
+}
+
+//获取对方节点id
+func (c *Client) NodeID() UserID {
+	if c.mVer == nil {
+		return NewNodeID()
+	} else {
+		return c.mVer.NodeID
+	}
 }
 
 //客户端处理包
@@ -55,28 +72,31 @@ func (c *Client) processMsgOut(db DBImp, m MsgIO) {
 func (c *Client) processMsg(db DBImp, m MsgIO) error {
 	if m.Type() == NT_PONG {
 		msg := m.(*MsgPong)
-		//网络延迟（毫秒)
 		c.ping = msg.Ping()
-		log.Println("PING", c.ping)
 	} else if m.Type() == NT_PING {
 		msg := m.(*MsgPing)
 		c.SendMsg(msg.NewPong())
 	} else if m.Type() == NT_VERSION {
-		wm := NewMsgVersion()
+		osg := NewMsgVersion()
 		msg := m.(*MsgVersion)
 		//解码证书失败直接返回错误
 		if err := conf.DecodeCerts(msg.Certs); err != nil {
-			c.stop()
+			c.Close()
 			return err
+		}
+		//保存连接地址和版本信息
+		c.ss.addrs.Set(msg.Addr)
+		c.mVer = msg
+		//防止两节点重复连接，并且防止自己连接自己
+		if c.ss.HasClient(msg.NodeID, c) {
+			c.Close()
+			return errors.New("has connection,closed")
 		}
 		//返回服务器版本信息
 		if c.IsIn() {
-			wm.Service = c.ss.Service()
-			c.SendMsg(wm)
+			osg.Service = c.ss.Service()
+			c.SendMsg(osg)
 		}
-		//保存连接地址
-		c.ss.addrs.Set(msg.Addr)
-		c.mVer = msg
 	} else if c.IsIn() {
 		c.processMsgIn(db, m)
 	} else if c.IsOut() {
@@ -98,7 +118,6 @@ func (c *Client) stop() {
 	if c.Conn != nil {
 		_ = c.Conn.Close()
 	}
-	c.ss.DelClient(c)
 	if c.mVer != nil {
 		c.ss.addrs.Del(c.mVer.Addr)
 	}
@@ -134,8 +153,9 @@ func (c *Client) Loop() {
 }
 
 func (c *Client) loop() {
+	c.ss.wg.Add(1)
+	defer c.ss.wg.Done()
 	defer c.stop()
-	c.ss.AddClient(c)
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
@@ -146,12 +166,13 @@ func (c *Client) loop() {
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {
-				panic(fmt.Errorf("read msg error %v", err))
+				panic(fmt.Errorf("read msg error %w", err))
 			}
 			c.rc <- m
 		}
 	}()
 	ptimer := time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
+	vtimer := time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	for {
 		select {
 		case wp := <-c.wc:
@@ -165,6 +186,11 @@ func (c *Client) loop() {
 			})
 			if err != nil {
 				log.Println("process msg", rp.Type(), "error", err)
+			}
+		case <-vtimer.C:
+			if c.mVer == nil {
+				c.Close()
+				log.Println("msgversion timeout,closed")
 			}
 		case <-ptimer.C:
 			if c.mVer == nil {
@@ -184,12 +210,4 @@ func (c *Client) SendMsg(m MsgIO) {
 
 func (c *Client) Close() {
 	c.cancel()
-}
-
-func NewClient(ctx context.Context) *Client {
-	c := &Client{}
-	c.ctx, c.cancel = context.WithCancel(ctx)
-	c.wc = make(chan MsgIO, 32)
-	c.rc = make(chan MsgIO, 32)
-	return c
 }

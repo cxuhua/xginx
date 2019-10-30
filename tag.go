@@ -150,11 +150,48 @@ func (p *SigBytes) Set(sig *SigValue) {
 //公钥hash160
 type UserID [20]byte
 
+func (v UserID) Equal(b UserID) bool {
+	return bytes.Equal(v[:], b[:])
+}
+
+func (v UserID) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *UserID) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
+
+type HashCacher struct {
+	hash HashID
+	set  bool
+}
+
+func (h *HashCacher) Hash(b []byte) HashID {
+	if h.set {
+		return h.hash
+	}
+	copy(h.hash[:], HASH256(b))
+	h.set = true
+	return h.hash
+}
+
 type HashID [32]byte
 
 var (
 	ZeroHash = HashID{}
 )
+
+func (v HashID) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+func (v *HashID) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
 
 func (v HashID) EqualBytes(b []byte) bool {
 	return bytes.Equal(b, v[:])
@@ -290,7 +327,7 @@ func (t *TagInfo) DecodeURL() error {
 	return nil
 }
 
-func (t *TagInfo) Valid(db DBImp, client *ClientBlock) error {
+func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 	//时间相差不能太大
 	if client.TimeDis() > conf.TimeDis*float64(time.Second) {
 		return errors.New("client time error")
@@ -475,7 +512,7 @@ func (s VarStr) EncodeWriter(w io.Writer) error {
 
 //client信息
 //POST 编码数据到服务器
-type ClientBlock struct {
+type CliPart struct {
 	CLoc  Location //用户定位信息user location
 	Prev  HashID   //上个hash
 	CTime int64    //客户端时间，不能和服务器相差太大 单位：纳秒
@@ -483,14 +520,19 @@ type ClientBlock struct {
 	CSig  SigBytes //用户签名
 }
 
+//是否是第一个记录
+func (c CliPart) IsFirst() bool {
+	return c.Prev.IsZero()
+}
+
 //时间差
-func (c ClientBlock) TimeDis() float64 {
+func (c CliPart) TimeDis() float64 {
 	v := float64(time.Now().UnixNano()) - float64(c.CTime)
 	return math.Abs(v)
 }
 
 //b=待签名数据，tag数据+client数据
-func (c *ClientBlock) Verify(b []byte) error {
+func (c *CliPart) Verify(b []byte) error {
 	if len(b) < len(c.CPks)+len(c.CSig) {
 		return errors.New("data size error")
 	}
@@ -510,15 +552,17 @@ func (c *ClientBlock) Verify(b []byte) error {
 }
 
 //cpks hash160
-func (c *ClientBlock) ClientID() []byte {
-	return HASH160(c.CPks[:])
+func (c *CliPart) ClientID() UserID {
+	uid := UserID{}
+	copy(uid[:], HASH160(c.CPks[:]))
+	return uid
 }
 
-func (c *ClientBlock) Decode(r io.Reader) error {
+func (c *CliPart) Decode(r io.Reader) error {
 	return c.DecodeReader(r)
 }
 
-func (c *ClientBlock) DecodeReader(r io.Reader) error {
+func (c *CliPart) DecodeReader(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.CLoc); err != nil {
 		return err
 	}
@@ -537,7 +581,7 @@ func (c *ClientBlock) DecodeReader(r io.Reader) error {
 	return nil
 }
 
-func (c *ClientBlock) Encode(w io.Writer) error {
+func (c *CliPart) Encode(w io.Writer) error {
 	if err := c.EncodeWriter(w); err != nil {
 		return err
 	}
@@ -547,7 +591,7 @@ func (c *ClientBlock) Encode(w io.Writer) error {
 	return nil
 }
 
-func (c *ClientBlock) EncodeWriter(w io.Writer) error {
+func (c *CliPart) EncodeWriter(w io.Writer) error {
 	if err := binary.Write(w, Endian, c.CLoc); err != nil {
 		return err
 	}
@@ -563,7 +607,7 @@ func (c *ClientBlock) EncodeWriter(w io.Writer) error {
 	return nil
 }
 
-func (c *ClientBlock) ToSigBinary() ([]byte, error) {
+func (c *CliPart) ToSigBinary() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := c.Encode(buf); err != nil {
 		return nil, err
@@ -571,7 +615,7 @@ func (c *ClientBlock) ToSigBinary() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (c *ClientBlock) Sign(pv *PrivateKey, tag []byte) error {
+func (c *CliPart) Sign(pv *PrivateKey, tag []byte) error {
 	buf := bytes.NewBuffer(tag)
 	//设置公钥
 	c.CPks.Set(pv.PublicKey())
@@ -589,14 +633,14 @@ func (c *ClientBlock) Sign(pv *PrivateKey, tag []byte) error {
 }
 
 //块信息
-type ServerBlock struct {
+type SerPart struct {
 	Nonce int64    //随机值 server full
 	STime int64    //服务器时间 单位：纳秒
 	SPks  PKBytes  //服务器公钥
 	SSig  SigBytes //服务器签名
 }
 
-func (c *ServerBlock) Encode(w io.Writer) error {
+func (c *SerPart) Encode(w io.Writer) error {
 	if err := c.EncodeWriter(w); err != nil {
 		return err
 	}
@@ -606,7 +650,7 @@ func (c *ServerBlock) Encode(w io.Writer) error {
 	return nil
 }
 
-func (c *ServerBlock) EncodeWriter(w io.Writer) error {
+func (c *SerPart) EncodeWriter(w io.Writer) error {
 	if err := binary.Write(w, Endian, &c.Nonce); err != nil {
 		return err
 	}
@@ -619,11 +663,11 @@ func (c *ServerBlock) EncodeWriter(w io.Writer) error {
 	return nil
 }
 
-func (c *ServerBlock) Decode(r io.Reader) error {
+func (c *SerPart) Decode(r io.Reader) error {
 	return c.DecodeReader(r)
 }
 
-func (c *ServerBlock) DecodeReader(r io.Reader) error {
+func (c *SerPart) DecodeReader(r io.Reader) error {
 	if err := binary.Read(r, Endian, &c.Nonce); err != nil {
 		return err
 	}
@@ -640,7 +684,7 @@ func (c *ServerBlock) DecodeReader(r io.Reader) error {
 }
 
 //b=校验数据
-func (s *ServerBlock) Verify(conf *Config, b []byte) error {
+func (s *SerPart) Verify(conf *Config, b []byte) error {
 	if len(b) < len(s.SPks)+len(s.SSig) {
 		return errors.New("data size error")
 	}
@@ -652,7 +696,7 @@ func (s *ServerBlock) Verify(conf *Config, b []byte) error {
 	return conf.Verify(s.SPks, sig, hash)
 }
 
-func (c *ServerBlock) Sign(pri *PrivateKey, tag *TagInfo, client *ClientBlock) ([]byte, error) {
+func (c *SerPart) Sign(pri *PrivateKey, tag *TagInfo, client *CliPart) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	tdata, err := tag.ToSigBinary()
 	if err != nil {
@@ -696,7 +740,7 @@ func (c *ServerBlock) Sign(pri *PrivateKey, tag *TagInfo, client *ClientBlock) (
 	return buf.Bytes(), nil
 }
 
-func (b *TUnitBlock) Encode(w io.Writer) (*UnitBlock, error) {
+func (b *TUnit) Encode(w io.Writer) (*UnitBlock, error) {
 	bi := &UnitBlock{}
 	if err := bi.Encode(w); err != nil {
 		return nil, err
@@ -721,18 +765,35 @@ func (b *TUnitBlock) Encode(w io.Writer) (*UnitBlock, error) {
 
 type UnitBlock struct {
 	TagInfo
-	ClientBlock
-	ServerBlock
+	CliPart
+	SerPart
+}
+
+func (pv UnitBlock) TLocSub(cv UnitBlock) float64 {
+	return cv.TLoc.Distance(pv.TLoc)
+}
+
+func (pv UnitBlock) STimeSub(cv UnitBlock) float64 {
+	return float64(cv.STime-pv.STime) / float64(time.Second)
+}
+
+//获取记录点与服务器时间差
+func (b UnitBlock) TimeSub() float64 {
+	return math.Abs(float64(b.CTime-b.STime)) / float64(time.Second)
+}
+
+func (b UnitBlock) LocSub() float64 {
+	return b.CLoc.Distance(b.TLoc)
 }
 
 func (b UnitBlock) Encode(w io.Writer) error {
 	if err := b.TagInfo.Encode(w); err != nil {
 		return err
 	}
-	if err := b.ClientBlock.Encode(w); err != nil {
+	if err := b.CliPart.Encode(w); err != nil {
 		return err
 	}
-	if err := b.ServerBlock.Encode(w); err != nil {
+	if err := b.SerPart.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -742,17 +803,25 @@ func (b *UnitBlock) Decode(r io.Reader) error {
 	if err := b.TagInfo.Decode(r); err != nil {
 		return err
 	}
-	if err := b.ClientBlock.Decode(r); err != nil {
+	if err := b.CliPart.Decode(r); err != nil {
 		return err
 	}
-	if err := b.ServerBlock.Decode(r); err != nil {
+	if err := b.SerPart.Decode(r); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (b UnitBlock) Hash() HashID {
+	buf := &bytes.Buffer{}
+	_ = b.Encode(buf)
+	id := HashID{}
+	copy(id[:], HASH256(buf.Bytes()))
+	return id
+}
+
 //校验块数据并返回对象
-func VerifyBlockInfo(conf *Config, bs []byte) (*TUnitBlock, error) {
+func VerifyBlockInfo(conf *Config, bs []byte) (*TUnit, error) {
 	if len(bs) > 512 {
 		return nil, errors.New("data error")
 	}
@@ -761,7 +830,10 @@ func VerifyBlockInfo(conf *Config, bs []byte) (*TUnitBlock, error) {
 	if err := b.Decode(buf); err != nil {
 		return nil, err
 	}
-	v := &TUnitBlock{}
+	if err := b.SerPart.Verify(conf, bs); err != nil {
+		return nil, err
+	}
+	v := &TUnit{}
 	v.Hash = HASH256(bs)
 	v.TTS = b.TTS[:]
 	v.TVer = b.TVer

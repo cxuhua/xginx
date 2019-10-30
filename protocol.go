@@ -163,6 +163,7 @@ const (
 type MsgVersion struct {
 	MsgIO
 	Ver     uint32   //版本
+	NodeID  UserID   //节点id
 	Service uint32   //服务
 	Addr    NetAddr  //节点地址
 	Certs   VarBytes //节点证书
@@ -175,6 +176,7 @@ func NewMsgVersion() *MsgVersion {
 		panic(err)
 	}
 	m := &MsgVersion{}
+	m.NodeID = conf.NodeID
 	m.Ver = conf.Ver
 	m.Certs = certs
 	m.Addr = conf.GetNetAddr()
@@ -188,6 +190,9 @@ func (v MsgVersion) Type() uint8 {
 
 func (v MsgVersion) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, v.Ver); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, v.NodeID); err != nil {
 		return err
 	}
 	if err := binary.Write(w, Endian, v.Service); err != nil {
@@ -207,6 +212,9 @@ func (v MsgVersion) Encode(w IWriter) error {
 
 func (v *MsgVersion) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &v.Ver); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &v.NodeID); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &v.Service); err != nil {

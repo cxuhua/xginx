@@ -145,7 +145,7 @@ func TestTagData(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		client := &ClientBlock{}
+		client := &CliPart{}
 		client.CLoc.Set(122.33, 112.44)
 		client.Prev = HashID{}
 		client.CTime = time.Now().UnixNano()
@@ -157,7 +157,7 @@ func TestTagData(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		tb := &ServerBlock{}
+		tb := &SerPart{}
 		//获取一个可签名的私钥
 		spri := conf.GetPrivateKey()
 		if spri == nil {

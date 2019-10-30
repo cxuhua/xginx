@@ -1,10 +1,14 @@
 package xginx
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"log"
 	"net"
 	"sync"
+	"time"
 )
 
 type NetAddrMap struct {
@@ -50,31 +54,42 @@ type Server struct {
 	mu      sync.RWMutex
 	err     interface{}
 	wg      sync.WaitGroup
-	clients map[string]*Client //连接的所有client
+	clients map[UserID]*Client //连接的所有client
 	addrs   *NetAddrMap        //连接我的ip地址和我连接出去的
 }
 
-//广播消息
-func (s *Server) BroadMsg(m MsgIO) {
+//如果c不空不会广播给c
+func (s *Server) BroadMsg(c *Client, m MsgIO) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, v := range s.clients {
+		if c != nil && v.Equal(c) {
+			continue
+		}
 		v.SendMsg(m)
 	}
 }
 
-func (s *Server) DelClient(c *Client) {
+func (s *Server) HasClient(id UserID, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.wg.Done()
-	delete(s.clients, c.addr.String())
+	_, ok := s.clients[id]
+	if !ok {
+		s.clients[id] = c
+	}
+	return ok
 }
 
-func (s *Server) AddClient(c *Client) {
+func (s *Server) DelClient(id UserID, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.wg.Add(1)
-	s.clients[c.addr.String()] = c
+	delete(s.clients, id)
+}
+
+func (s *Server) AddClient(id UserID, c *Client) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.clients[id] = c
 }
 
 func (s *Server) Stop() {
@@ -90,8 +105,10 @@ func (s *Server) Wait() {
 }
 
 func (s *Server) NewClient() *Client {
-	c := NewClient(s.ctx)
-	c.ss = s
+	c := &Client{ss: s}
+	c.ctx, c.cancel = context.WithCancel(s.ctx)
+	c.wc = make(chan MsgIO, 32)
+	c.rc = make(chan MsgIO, 32)
 	return c
 }
 
@@ -116,18 +133,29 @@ func (s *Server) run() {
 		if err != nil {
 			panic(err)
 		}
-		c := NewClient(s.ctx)
+		c := s.NewClient()
 		c.NetStream = &NetStream{Conn: conn}
-		if err := c.addr.From(conn.RemoteAddr().String()); err != nil {
-			log.Println("set client addr error", err)
+		err = c.addr.From(conn.RemoteAddr().String())
+		if err != nil {
 			_ = conn.Close()
 			continue
 		}
 		c.typ = ClientIn
-		c.ss = s
 		log.Println("new connection", conn.RemoteAddr())
 		c.Loop()
 	}
+}
+
+//生成一个临时id全网唯一
+func NewNodeID() UserID {
+	id := UserID{}
+	_ = binary.Read(rand.Reader, Endian, id[:])
+	buf := &bytes.Buffer{}
+	buf.Write(id[:])
+	buf.Write([]byte(conf.RemoteIp))
+	_ = binary.Write(buf, Endian, time.Now().UnixNano())
+	copy(id[:], HASH160(buf.Bytes()))
+	return id
 }
 
 func NewServer(ctx context.Context, conf *Config) (*Server, error) {
@@ -139,7 +167,7 @@ func NewServer(ctx context.Context, conf *Config) (*Server, error) {
 	}
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	s.clients = map[string]*Client{}
+	s.clients = map[UserID]*Client{}
 	s.addrs = NewNetAddrMap()
 	s.service = SERVICE_SIG_DATA | SERVICE_SIG_TAG
 	return s, nil

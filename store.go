@@ -17,13 +17,13 @@ type IncValue map[string]int
 type DBImp interface {
 	context.Context
 	//删除块
-	DelBlock(id []byte) error
+	DelUnit(id []byte) error
 	//获取块
-	GetBlock(id []byte, v interface{}) error
+	GetUnit(id []byte, v interface{}) error
 	//存在
-	HasBlock(id []byte) bool
+	HasUnit(id []byte) bool
 	//保存块
-	SetBlock(id []byte, v interface{}) error
+	SetUnit(id []byte, v interface{}) error
 	//get trans raw data
 	GetTag(id []byte, v interface{}) error
 	//save or update tans data
@@ -41,9 +41,9 @@ type DBImp interface {
 //单元块数据,打卡记录
 //块中的一小部分
 
-type BlockKey HashID
+type UnitKey HashID
 
-type TUnitBlock struct {
+type TUnit struct {
 	Hash  []byte   `bson:"_id"`   //block hash
 	TTS   []byte   `bson:"tts"`   //TT状态 url +2,激活后OO tam map
 	TVer  uint32   `bson:"ver"`   //版本 from tag
@@ -62,8 +62,8 @@ type TUnitBlock struct {
 	SSig  []byte   `bson:"ssig"`  //签名
 }
 
-func (b *TUnitBlock) Save(db DBImp) error {
-	return db.SetBlock(b.Hash[:], b)
+func (b *TUnit) Save(db DBImp) error {
+	return db.SetUnit(b.Hash[:], b)
 }
 
 //标签数据
@@ -112,8 +112,16 @@ func (m *mongoDBImp) collection(t string) *mongo.Collection {
 	return m.database().Collection(t)
 }
 
+func (m *mongoDBImp) txs() *mongo.Collection {
+	return m.database().Collection("txs")
+}
+
 func (m *mongoDBImp) blocks() *mongo.Collection {
 	return m.database().Collection("blocks")
+}
+
+func (m *mongoDBImp) units() *mongo.Collection {
+	return m.database().Collection("units")
 }
 
 func (m *mongoDBImp) tags() *mongo.Collection {
@@ -194,8 +202,8 @@ func (m *mongoDBImp) set(t string, id []byte, v interface{}) error {
 }
 
 //删除块
-func (m *mongoDBImp) DelBlock(id []byte) error {
-	_, err := m.blocks().DeleteOne(m, bson.M{"_id": id})
+func (m *mongoDBImp) DelUnit(id []byte) error {
+	_, err := m.units().DeleteOne(m, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}
@@ -203,8 +211,8 @@ func (m *mongoDBImp) DelBlock(id []byte) error {
 }
 
 //获取块
-func (m *mongoDBImp) GetBlock(id []byte, v interface{}) error {
-	ret := m.blocks().FindOne(m, bson.M{"_id": id})
+func (m *mongoDBImp) GetUnit(id []byte, v interface{}) error {
+	ret := m.units().FindOne(m, bson.M{"_id": id})
 	if err := ret.Err(); err != nil {
 		return err
 	}
@@ -212,13 +220,13 @@ func (m *mongoDBImp) GetBlock(id []byte, v interface{}) error {
 }
 
 //存在
-func (m *mongoDBImp) HasBlock(id []byte) bool {
-	ret := m.blocks().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+func (m *mongoDBImp) HasUnit(id []byte) bool {
+	ret := m.units().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
 	return ret.Err() == nil
 }
 
-func (m *mongoDBImp) SetBlock(id []byte, v interface{}) error {
-	return m.set("blocks", id, v)
+func (m *mongoDBImp) SetUnit(id []byte, v interface{}) error {
+	return m.set("units", id, v)
 }
 
 //save tans data

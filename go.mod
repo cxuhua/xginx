@@ -9,7 +9,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0
-	github.com/willf/bitset v1.1.10 // indirect
+	github.com/willf/bitset v1.1.10
 	github.com/willf/bloom v2.0.3+incompatible // indirect
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c // indirect
 	github.com/xdg/stringprep v1.0.0 // indirect
