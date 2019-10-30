@@ -45,7 +45,7 @@ type Config struct {
 	RemoteIp   string                  `json:"remote_ip"`   //节点远程连接ip
 	Privates   []string                `json:"pris"`        //用于签名的私钥
 	Certs      []string                `json:"certs"`       //已经签名的证书
-	TimeDis    float64                 `json:"time_dis"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
+	TimeErr    float64                 `json:"time_err"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
 	pris       map[PKBytes]*PrivateKey `json:"-"`           //
 	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
 	certs      map[PKBytes]*Cert       `json:"-"`           //

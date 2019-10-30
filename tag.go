@@ -43,6 +43,10 @@ func MaxBits(v uint64) uint {
 
 type Location [2]uint32
 
+func (l Location) IsZero() bool {
+	return l[0] == 0 || l[1] == 0
+}
+
 func (l Location) Equal(v Location) bool {
 	return l[0] == v[0] && l[1] == v[1]
 }
@@ -328,8 +332,12 @@ func (t *TagInfo) DecodeURL() error {
 }
 
 func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
+	//定位信息不能为空
+	if client.CLoc.IsZero() {
+		return errors.New("cloc error")
+	}
 	//时间相差不能太大
-	if client.TimeDis() > conf.TimeDis*float64(time.Second) {
+	if client.TimeErr() > conf.TimeErr {
 		return errors.New("client time error")
 	}
 	if t.input == "" {
@@ -349,7 +357,7 @@ func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 		return errors.New("cmac valid error")
 	}
 	//更新数据库标签计数器
-	if err := db.AtomicCtr(t.TUID[:], t.TCTR.ToUInt()); err != nil {
+	if err := db.SetCtr(t.TUID[:], t.TCTR.ToUInt()); err != nil {
 		return fmt.Errorf("update counter error %w", err)
 	}
 	//校验用户签名
@@ -526,9 +534,9 @@ func (c CliPart) IsFirst() bool {
 }
 
 //时间差
-func (c CliPart) TimeDis() float64 {
+func (c CliPart) TimeErr() float64 {
 	v := float64(time.Now().UnixNano()) - float64(c.CTime)
-	return math.Abs(v)
+	return math.Abs(v) / float64(time.Second)
 }
 
 //b=待签名数据，tag数据+client数据

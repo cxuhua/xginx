@@ -312,7 +312,7 @@ func CalcDistance(items []UnitBlock) (float64, error) {
 			return 0, errors.New("curr point error")
 		}
 		//记录时间差太多忽略这个点
-		if cv.TimeSub() > conf.TimeDis {
+		if cv.TimeSub() > conf.TimeErr {
 			continue
 		}
 		if !cv.Prev.Equal(pv.Hash()) {

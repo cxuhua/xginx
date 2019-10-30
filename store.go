@@ -29,7 +29,7 @@ type DBImp interface {
 	//save or update tans data
 	SetTag(id []byte, v interface{}) error
 	//findandmodify
-	AtomicCtr(id []byte, ctr uint) error
+	SetCtr(id []byte, ctr uint) error
 	//exists tx
 	HasTag(id []byte) bool
 	//delete tx
@@ -137,7 +137,7 @@ func (m *mongoDBImp) database() *mongo.Database {
 }
 
 //设置计数器，必须比数据库中的大
-func (m *mongoDBImp) AtomicCtr(id []byte, ctr uint) error {
+func (m *mongoDBImp) SetCtr(id []byte, ctr uint) error {
 	c := bson.M{"_id": id, "ctr": bson.M{"$lt": ctr}}
 	d := bson.M{"$set": bson.M{"ctr": ctr}}
 	res := m.tags().FindOneAndUpdate(m, c, d)
