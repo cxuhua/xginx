@@ -43,7 +43,7 @@ func TestMsgVersion(t *testing.T) {
 	msg.Certs = certs
 	msg.Service = SERVICE_SIG_TAG | SERVICE_SIG_DATA
 	msg.Addr = conf.GetNetAddr()
-	msg.Hash = conf.VerHash()
+	msg.PubsHash = conf.PubsHash()
 	buf := &bytes.Buffer{}
 	err = msg.Encode(buf)
 	if err != nil {
@@ -65,7 +65,7 @@ func TestMsgVersion(t *testing.T) {
 	if m2.Service != msg.Service {
 		t.Errorf("service error")
 	}
-	if !m2.Hash.Equal(conf.VerHash()) {
+	if !m2.PubsHash.Equal(conf.PubsHash()) {
 		t.Errorf("hash error")
 	}
 	np := NetPackage{
@@ -96,7 +96,7 @@ func TestMsgVersion(t *testing.T) {
 	if m4.Service != msg.Service {
 		t.Errorf("service error")
 	}
-	if !m4.Hash.Equal(conf.VerHash()) {
+	if !m4.PubsHash.Equal(conf.PubsHash()) {
 		t.Errorf("ver hash disaccord")
 	}
 }

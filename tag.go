@@ -24,12 +24,6 @@ const (
 	LocScaleValue = float64(10000000)
 )
 
-func NewHashID(v []byte) HashID {
-	id := HashID{}
-	copy(id[:], v)
-	return id
-}
-
 //0-63
 func MaxBits(v uint64) uint {
 	i := uint(63)
@@ -182,40 +176,9 @@ func (h *HashCacher) Hash(b []byte) HashID {
 	return h.hash
 }
 
-type HashID [32]byte
-
 var (
 	ZeroHash = HashID{}
 )
-
-func (v HashID) Encode(w IWriter) error {
-	_, err := w.Write(v[:])
-	return err
-}
-func (v *HashID) Decode(r IReader) error {
-	_, err := r.Read(v[:])
-	return err
-}
-
-func (v HashID) EqualBytes(b []byte) bool {
-	return bytes.Equal(b, v[:])
-}
-
-func (v HashID) Equal(b HashID) bool {
-	return bytes.Equal(b[:], v[:])
-}
-
-func (v HashID) IsZero() bool {
-	return bytes.Equal(ZeroHash[:], v[:])
-}
-
-func (v *HashID) Set(b []byte) {
-	copy(v[:], b)
-}
-
-func (v HashID) String() string {
-	return hex.EncodeToString(v[:])
-}
 
 type TagUID [7]byte
 
@@ -552,6 +515,7 @@ func (c *CliPart) Verify(b []byte) error {
 	if err != nil {
 		return err
 	}
+	//csig不包含在cli签名数据中
 	hash := HASH256(b[:len(b)-len(c.CSig)])
 	if !pub.Verify(hash, sig) {
 		return errors.New("sig verify error")
@@ -700,6 +664,7 @@ func (s *SerPart) Verify(conf *Config, b []byte) error {
 	if err != nil {
 		return err
 	}
+	//ssig不包含在签名数据中
 	hash := HASH256(b[:len(b)-len(s.SSig)])
 	return conf.Verify(s.SPks, sig, hash)
 }

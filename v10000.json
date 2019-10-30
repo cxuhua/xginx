@@ -8,6 +8,8 @@
   "halving": 210000,
   "dis_range": [500,2000],
   "span_time": 3600,
+  "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "pow_time":1209600,
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",
