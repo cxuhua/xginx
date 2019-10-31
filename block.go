@@ -320,10 +320,14 @@ func (v Alloc) Scale() (float64, float64, float64) {
 	return m / 10.0, t / 10.0, c / 10.0
 }
 
+//3个值之和应该为10
 func (v Alloc) Check() error {
-	v1, v2, v3 := v.Scale()
-	if v1+v2+v3 > 1.0 {
-		return errors.New("scale set error v=" + fmt.Sprintf("%f", v1+v2+v3))
+	m := (v >> 5) & 0b111
+	t := (v >> 2) & 0b111
+	c := v & 0b11
+	av := m + t + c
+	if av != 10 {
+		return errors.New("value error,scale sum=10")
 	}
 	return nil
 }
@@ -338,7 +342,6 @@ const (
 
 //条目
 type Units struct {
-	Scale     Alloc   //当前单元比例分配方式 矿工，标签所有者，用户，具体由矿工设置
 	ClientID  UserID  //用户公钥的hash160
 	PrevBlock HashID  //上个块hash
 	PrevIndex VarUInt //上个块所在Units索引
@@ -347,16 +350,14 @@ type Units struct {
 }
 
 type DisCalcer struct {
-	scale  Alloc
 	total  float64            //总距离
 	vmap   map[UserID]float64 //标签获得
 	miner  float64            //矿工极品的
 	client float64            //用户获得
 }
 
-func NewDisCalcer(scale Alloc) *DisCalcer {
+func NewDisCalcer() *DisCalcer {
 	return &DisCalcer{
-		scale:  scale,
 		total:  0,
 		vmap:   map[UserID]float64{},
 		miner:  0,
@@ -366,7 +367,6 @@ func NewDisCalcer(scale Alloc) *DisCalcer {
 
 func (calcer DisCalcer) String() string {
 	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("Scale=%b\n", calcer.scale))
 	sb.WriteString(fmt.Sprintf("Total=%d\n", calcer.Distance()))
 	sb.WriteString(fmt.Sprintf("Miner=%d\n", uint64(calcer.miner)))
 	sb.WriteString(fmt.Sprintf("Client=%d\n", uint64(calcer.client)))
@@ -396,16 +396,17 @@ func (calcer DisCalcer) Distance() VarUInt {
 //所有distance之和就是clientid的总的distance
 func (calcer *DisCalcer) Calc(items []Unit) error {
 	//检测分配比例
-	if err := calcer.scale.Check(); err != nil {
-		return err
-	}
 	calcer.Reset()
 	if len(items) < 2 {
 		return errors.New("items count error")
 	}
-	mr, tr, cr := calcer.scale.Scale()
 	for i := 1; i < len(items); i++ {
 		cv := items[i+0]
+		//使用当前标签设定的分配比例
+		if err := cv.TASV.Check(); err != nil {
+			return fmt.Errorf("item asv error %w", err)
+		}
+		mr, tr, cr := cv.TASV.Scale()
 		pv := items[i-1]
 		if !cv.ClientID().Equal(pv.ClientID()) {
 			return errors.New("client error")
@@ -479,7 +480,7 @@ func (v *Units) Check(db DBImp) error {
 			return err
 		}
 	}
-	calcer := NewDisCalcer(v.Scale)
+	calcer := NewDisCalcer()
 	err := calcer.Calc(items)
 	if err != nil {
 		return err
@@ -492,9 +493,6 @@ func (v *Units) Check(db DBImp) error {
 }
 
 func (v Units) Encode(w IWriter) error {
-	if err := v.Scale.Encode(w); err != nil {
-		return err
-	}
 	if err := v.ClientID.Encode(w); err != nil {
 		return err
 	}
@@ -520,9 +518,6 @@ func (v Units) Encode(w IWriter) error {
 }
 
 func (v *Units) Decode(r IReader) error {
-	if err := v.Scale.Decode(r); err != nil {
-		return err
-	}
 	if err := v.ClientID.Decode(r); err != nil {
 		return err
 	}

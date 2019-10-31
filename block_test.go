@@ -15,7 +15,7 @@ func TestValueScale(t *testing.T) {
 }
 
 func TestCalcDistance(t *testing.T) {
-	calcer := NewDisCalcer(S631)
+	calcer := NewDisCalcer()
 	now := time.Now().UnixNano()
 	//i1 first
 	i1 := Unit{}
@@ -24,6 +24,7 @@ func TestCalcDistance(t *testing.T) {
 	i1.CLoc.Set(104.0671670437, 30.5573090657)
 	i1.STime = now
 	i1.TPKH = UserID{1}
+	i1.TASV = S631
 
 	i2 := Unit{}
 	i2.Prev = i1.Hash()
@@ -32,6 +33,7 @@ func TestCalcDistance(t *testing.T) {
 	i2.CLoc.Set(104.0615880489, 30.5536596605)
 	i2.STime = now + int64(time.Hour)
 	i2.TPKH = UserID{2}
+	i2.TASV = S622
 
 	i3 := Unit{}
 	i3.Prev = i2.Hash()
@@ -41,6 +43,7 @@ func TestCalcDistance(t *testing.T) {
 	i3.CLoc.Set(104.0671670437, 30.5573090657)
 	i3.STime = now + int64(time.Hour*2)
 	i3.TPKH = UserID{3}
+	i3.TASV = S721
 
 	is := []Unit{i1, i2, i3}
 	err := calcer.Calc(is)

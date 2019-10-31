@@ -234,6 +234,7 @@ type TagInfo struct {
 	TTS   TagTT    //TT状态 url +2,激活后OO tam map
 	TVer  uint32   //版本 from tag
 	TLoc  Location //uint32-uint32 位置 from tag
+	TASV  Alloc    //积分分配比例,由标签持有者确定，写入后不可修改
 	TPKH  UserID   //标签所有者公钥的hash160，标记标签所有者
 	TUID  TagUID   //标签id from tag
 	TCTR  TagCTR   //标签记录计数器 from tag map
@@ -247,6 +248,7 @@ func NewTagInfo(url ...string) *TagInfo {
 	tag := &TagInfo{}
 	tag.TVer = 1
 	tag.TTS = NewTagTT("II")
+	tag.TASV = S631
 	if len(url) > 0 {
 		tag.url = url[0]
 	}
@@ -367,6 +369,9 @@ func (t *TagInfo) DecodeReader(hr io.Reader) error {
 	if err := binary.Read(hr, Endian, &t.TLoc); err != nil {
 		return err
 	}
+	if err := binary.Read(hr, Endian, &t.TASV); err != nil {
+		return err
+	}
 	if err := binary.Read(hr, Endian, &t.TPKH); err != nil {
 		return err
 	}
@@ -394,6 +399,9 @@ func (t *TagInfo) EncodeWriter(hw io.Writer) error {
 		return err
 	}
 	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
+		return err
+	}
+	if err := binary.Write(hw, Endian, t.TASV); err != nil {
 		return err
 	}
 	if err := binary.Write(hw, Endian, t.TPKH); err != nil {
@@ -429,6 +437,9 @@ func (t *TagInfo) ToSigBinary() ([]byte, error) {
 
 //编码成url一部分写入标签
 func (t *TagInfo) EncodeHex() ([]byte, error) {
+	if err := t.TASV.Check(); err != nil {
+		return nil, err
+	}
 	sb := &strings.Builder{}
 	hw := hex.NewEncoder(sb)
 	t.pos.TTS = t.pos.OFF + sb.Len()
@@ -437,6 +448,9 @@ func (t *TagInfo) EncodeHex() ([]byte, error) {
 		return nil, err
 	}
 	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(hw, Endian, t.TASV); err != nil {
 		return nil, err
 	}
 	if err := binary.Write(hw, Endian, t.TPKH); err != nil {

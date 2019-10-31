@@ -301,16 +301,12 @@ var (
 	conf *Config = nil
 )
 
-func Init() {
+func init() {
 	LoadConfig("v10000.json") //测试配置文件
 }
 
 func Close() {
 	conf.Close()
-}
-
-func NodeConfig() *Config {
-	return conf
 }
 
 func LoadConfig(f string) {

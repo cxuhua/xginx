@@ -37,16 +37,19 @@ type xhttp struct {
 
 // 签名服务
 func signAction(c *gin.Context) {
-	url := conf.HttpScheme + "://" + c.Request.Host + c.Request.RequestURI
-	tag := NewTagInfo(url)
-	//客户端服务器端都要解码
-	if err := tag.DecodeURL(); err != nil {
-		panic(err)
-	}
-	cli := &CliPart{}
-	if err := cli.Decode(c.Request.Body); err != nil {
-		panic(err)
-	}
+	data, err := c.GetRawData()
+	log.Println(data, err)
+	c.Data(http.StatusOK, "application/octet-stream", data)
+	//url := conf.HttpScheme + "://" + c.Request.Host + c.Request.RequestURI
+	//tag := NewTagInfo(url)
+	////客户端服务器端都要解码
+	//if err := tag.DecodeURL(); err != nil {
+	//	panic(err)
+	//}
+	//cli := &CliPart{}
+	//if err := cli.Decode(c.Request.Body); err != nil {
+	//	panic(err)
+	//}
 }
 
 //在使用DBHandler之后可调用
@@ -59,7 +62,7 @@ func (h *xhttp) init(m *gin.Engine) {
 	//添加测试标签
 	h.tbf.Add([]byte{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80})
 	//签名接口
-	m.GET("/sign/:hex", h.TagFilter(), h.DBHandler(), signAction)
+	m.POST("/sign/:hex", h.TagFilter(), h.DBHandler(), signAction)
 }
 
 //数据库

@@ -11,7 +11,6 @@ import (
 )
 
 func main() {
-	gv.Init()
 	defer gv.Close()
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())
