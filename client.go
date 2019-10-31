@@ -29,7 +29,7 @@ type Client struct {
 	rc     chan MsgIO
 	addr   NetAddr
 	err    interface{}
-	ss     *Server
+	ss     *TcpServer
 	lis    IClient
 	mVer   *MsgVersion //对方版本信息
 	ping   int
@@ -153,9 +153,9 @@ func (c *Client) Loop() {
 }
 
 func (c *Client) loop() {
+	defer c.stop()
 	c.ss.wg.Add(1)
 	defer c.ss.wg.Done()
-	defer c.stop()
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {

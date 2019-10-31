@@ -11,6 +11,37 @@ import (
 	"time"
 )
 
+type IServer interface {
+	Start(ctx context.Context)
+	Stop()
+	Wait()
+}
+
+var (
+	Server IServer = &server{}
+)
+
+type server struct {
+	ser *TcpServer
+}
+
+func (s *server) Wait() {
+	s.ser.Wait()
+}
+
+func (s *server) Stop() {
+	s.ser.Stop()
+}
+
+func (s *server) Start(ctx context.Context) {
+	ser, err := NewTcpServer(ctx, conf)
+	if err != nil {
+		panic(err)
+	}
+	s.ser = ser
+	s.ser.Run()
+}
+
 type NetAddrMap struct {
 	addrs map[string]NetAddr
 	mu    sync.Mutex
@@ -45,7 +76,7 @@ func NewNetAddrMap() *NetAddrMap {
 	}
 }
 
-type Server struct {
+type TcpServer struct {
 	service uint32
 	lis     net.Listener
 	addr    *net.TCPAddr
@@ -59,7 +90,7 @@ type Server struct {
 }
 
 //如果c不空不会广播给c
-func (s *Server) BroadMsg(c *Client, m MsgIO) {
+func (s *TcpServer) BroadMsg(c *Client, m MsgIO) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, v := range s.clients {
@@ -70,7 +101,7 @@ func (s *Server) BroadMsg(c *Client, m MsgIO) {
 	}
 }
 
-func (s *Server) HasClient(id UserID, c *Client) bool {
+func (s *TcpServer) HasClient(id UserID, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.clients[id]
@@ -80,31 +111,31 @@ func (s *Server) HasClient(id UserID, c *Client) bool {
 	return ok
 }
 
-func (s *Server) DelClient(id UserID, c *Client) {
+func (s *TcpServer) DelClient(id UserID, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.clients, id)
 }
 
-func (s *Server) AddClient(id UserID, c *Client) {
+func (s *TcpServer) AddClient(id UserID, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[id] = c
 }
 
-func (s *Server) Stop() {
+func (s *TcpServer) Stop() {
 	s.cancel()
 }
 
-func (s *Server) Run() {
+func (s *TcpServer) Run() {
 	go s.run()
 }
 
-func (s *Server) Wait() {
+func (s *TcpServer) Wait() {
 	s.wg.Wait()
 }
 
-func (s *Server) NewClient() *Client {
+func (s *TcpServer) NewClient() *Client {
 	c := &Client{ss: s}
 	c.ctx, c.cancel = context.WithCancel(s.ctx)
 	c.wc = make(chan MsgIO, 32)
@@ -112,11 +143,11 @@ func (s *Server) NewClient() *Client {
 	return c
 }
 
-func (s *Server) Service() uint32 {
+func (s *TcpServer) Service() uint32 {
 	return s.service
 }
 
-func (s *Server) run() {
+func (s *TcpServer) run() {
 	log.Println(s.addr.Network(), "server startup", s.addr)
 	defer func() {
 		if err := recover(); err != nil {
@@ -158,8 +189,8 @@ func NewNodeID() UserID {
 	return id
 }
 
-func NewServer(ctx context.Context, conf *Config) (*Server, error) {
-	s := &Server{}
+func NewTcpServer(ctx context.Context, conf *Config) (*TcpServer, error) {
+	s := &TcpServer{}
 	s.addr = conf.GetListenAddr().ToTcpAddr()
 	lis, err := net.ListenTCP(s.addr.Network(), s.addr)
 	if err != nil {

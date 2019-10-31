@@ -10,7 +10,9 @@
   "span_time": 3600,
   "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,
-  "miner_rate": 70,
+  "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
+  "http_port": 9334,
+  "http_scheme": "http",
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",

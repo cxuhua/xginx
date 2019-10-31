@@ -100,7 +100,7 @@ func TestLoadTestKey(t *testing.T) {
 func TestSaveTestKey(t *testing.T) {
 	err := store.UseSession(context.Background(), func(db DBImp) error {
 		loc := Location{}
-		loc.Set(180.14343, -85.2343434)
+		loc.Set(116.368904, 39.923423)
 		tk := &TTagInfo{}
 		tk.UID = tuid.Bytes()
 		tk.Ver = 1
@@ -120,17 +120,21 @@ func TestSaveTestKey(t *testing.T) {
 }
 
 func TestMakeTagURL(t *testing.T) {
+	pk := "uxYrjiMMZ2fuXuRih6ty7UVb5ggwYApqM8qTq2BT5sxQ"
+	pk1, _ := B58Decode(pk, BitcoinAlphabet)
+	pub, _ := NewPublicKey(pk1)
 	tag := NewTagInfo()
-	tag.TLoc.Set(21.44545, -19.1122)
+	tag.TLoc.Set(116.368904, 39.923423)
+	tag.TPKH.SetPK(pub)
 	s, err := tag.EncodeHex()
 	log.Println(string(s), err, tag.pos)
 }
 
-//https://api.xginx.com/sign/CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
-//CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696
+//https://api.xginx.com/sign/CC01000000507C5C45B6D4CB17DEC3AE1EDE36775302EF0330C5295F714ACF8089047A1732AA618000005F31398B20ECFCC029
+//CC01000000507C5C45B6D4CB17DEC3AE1EDE36775302EF0330C5295F714ACF8089047A1732AA618000005F31398B20ECFCC029
 func TestTagData(t *testing.T) {
 	err := store.UseSession(context.Background(), func(db DBImp) error {
-		surl := "https://api.xginx.com/sign/CC01000000E450C80CB0B59BF4047A1732AA618000005DB58047478E511696"
+		surl := "https://api.xginx.com/sign/CC01000000507C5C45B6D4CB17DEC3AE1EDE36775302EF0330C5295F714ACF8089047A1732AA618000005F31398B20ECFCC029"
 		otag := NewTagInfo(surl)
 		//客户端服务器端都要解码
 		if err := otag.DecodeURL(); err != nil {

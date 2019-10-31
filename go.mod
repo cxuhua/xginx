@@ -5,12 +5,14 @@ go 1.13
 require (
 	github.com/cxuhua/aescmac v1.0.1
 	github.com/dchest/siphash v1.2.1 // indirect
+	github.com/gin-gonic/gin v1.4.0
 	github.com/go-stack/stack v1.8.0 // indirect
+	github.com/mattn/go-colorable v0.1.4
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/willf/bitset v1.1.10
-	github.com/willf/bloom v2.0.3+incompatible // indirect
+	github.com/willf/bloom v2.0.3+incompatible
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c // indirect
 	github.com/xdg/stringprep v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.1.2

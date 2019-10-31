@@ -277,6 +277,7 @@ func (b UIHash) Rshift(shift uint) UIHash {
 	return b
 }
 
+//<<
 func (b UIHash) Lshift(shift uint) UIHash {
 	x := b
 	for i := 0; i < UIHashWidth; i++ {

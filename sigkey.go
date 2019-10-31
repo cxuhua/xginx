@@ -291,6 +291,13 @@ func (pk *PublicKey) Decode(data []byte) error {
 	return nil
 }
 
+func (pb *PublicKey) Hash() UserID {
+	b := pb.Encode()
+	uid := UserID{}
+	copy(uid[:], HASH160(b))
+	return uid
+}
+
 func (pb *PublicKey) IsValid() bool {
 	return curve.IsOnCurve(pb.X, pb.Y)
 }

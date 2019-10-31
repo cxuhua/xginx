@@ -3,7 +3,10 @@ package xginx
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 //一个块由n个条目组成
@@ -13,14 +16,14 @@ import (
 //txs交易部分和比特币类似
 //块大小限制为4M大小
 type BlockInfo struct {
-	Ver    uint32 //block ver
-	Prev   HashID //pre block hash
-	Merkle HashID //txs Merkle tree hash + Units hash
-	Time   uint32 //时间戳
-	Bits   uint32 //难度
-	Nonce  uint32 //随机值
-	Units  []Unit //记录单元 没有记录单元将不会获得奖励
-	Txs    []TX   //交易记录，类似比特币
+	Ver    uint32  //block ver
+	Prev   HashID  //pre block hash
+	Merkle HashID  //txs Merkle tree hash + Units hash
+	Time   uint32  //时间戳
+	Bits   uint32  //难度
+	Nonce  uint32  //随机值
+	Units  []Units //记录单元 没有记录单元将不会获得奖励
+	Txs    []TX    //交易记录，类似比特币
 }
 
 func (v *BlockInfo) Check() error {
@@ -90,7 +93,7 @@ func (v *BlockInfo) Decode(r IReader) error {
 	if err := unum.Decode(r); err != nil {
 		return err
 	}
-	v.Units = make([]Unit, unum)
+	v.Units = make([]Units, unum)
 	for i, _ := range v.Units {
 		err := v.Units[i].Decode(r)
 		if err != nil {
@@ -206,9 +209,21 @@ func (v *TxOut) Decode(r IReader) error {
 
 //交易
 type TX struct {
-	Ver  VarUInt //版本
-	Ins  []TxIn  //输入
-	Outs []TxOut //输出
+	Ver    VarUInt    //版本
+	Ins    []TxIn     //输入
+	Outs   []TxOut    //输出
+	hasher HashCacher //hash缓存
+}
+
+func (tx *TX) Hash() HashID {
+	if hash, ok := tx.hasher.IsSet(); ok {
+		return hash
+	}
+	h := HashID{}
+	buf := &bytes.Buffer{}
+	_ = tx.Encode(buf)
+	copy(h[:], HASH256(buf.Bytes()))
+	return tx.hasher.Hash(buf.Bytes())
 }
 
 func (v TX) Check() error {
@@ -288,18 +303,90 @@ func (v *TX) Decode(r IReader) error {
 	return nil
 }
 
-//条目
-type Unit struct {
-	ClientID  UserID      //用户公钥的hash160
-	PrevHash  HashID      //上个块hash
-	PrevIndex VarUInt     //上个块所在Units索引
-	Items     []UnitBlock //
-	Distance  VarUInt     //
+type Alloc uint8
+
+func (v Alloc) Encode(w IWriter) error {
+	return binary.Write(w, Endian, v)
 }
 
-var (
-	SUMUID = UserID{}
+func (v *Alloc) Decode(r IReader) error {
+	return binary.Read(r, Endian, &v)
+}
+
+func (v Alloc) Scale() (float64, float64, float64) {
+	m := float64((v >> 5) & 0b111)
+	t := float64((v >> 2) & 0b111)
+	c := float64(v & 0b11)
+	return m / 10.0, t / 10.0, c / 10.0
+}
+
+func (v Alloc) Check() error {
+	v1, v2, v3 := v.Scale()
+	if v1+v2+v3 > 1.0 {
+		return errors.New("scale set error v=" + fmt.Sprintf("%f", v1+v2+v3))
+	}
+	return nil
+}
+
+const (
+	S631 = 0b110_011_01
+	S622 = 0b110_010_10
+	S640 = 0b110_100_00
+	S550 = 0b101_101_00
+	S721 = 0b111_010_01
 )
+
+//条目
+type Units struct {
+	Scale     Alloc   //当前单元比例分配方式 矿工，标签所有者，用户，具体由矿工设置
+	ClientID  UserID  //用户公钥的hash160
+	PrevBlock HashID  //上个块hash
+	PrevIndex VarUInt //上个块所在Units索引
+	Items     []Unit  //
+	Distance  VarUInt //
+}
+
+type DisCalcer struct {
+	scale  Alloc
+	total  float64            //总距离
+	vmap   map[UserID]float64 //标签获得
+	miner  float64            //矿工极品的
+	client float64            //用户获得
+}
+
+func NewDisCalcer(scale Alloc) *DisCalcer {
+	return &DisCalcer{
+		scale:  scale,
+		total:  0,
+		vmap:   map[UserID]float64{},
+		miner:  0,
+		client: 0,
+	}
+}
+
+func (calcer DisCalcer) String() string {
+	sb := strings.Builder{}
+	sb.WriteString(fmt.Sprintf("Scale=%b\n", calcer.scale))
+	sb.WriteString(fmt.Sprintf("Total=%d\n", calcer.Distance()))
+	sb.WriteString(fmt.Sprintf("Miner=%d\n", uint64(calcer.miner)))
+	sb.WriteString(fmt.Sprintf("Client=%d\n", uint64(calcer.client)))
+	for k, v := range calcer.vmap {
+		sb.WriteString(fmt.Sprintf("Tag=%s Value=%d\n", hex.EncodeToString(k[:]), uint64(v)))
+	}
+	return sb.String()
+}
+
+func (calcer *DisCalcer) Reset() {
+	calcer.total = 0
+	calcer.miner = 0
+	calcer.client = 0
+	calcer.vmap = map[UserID]float64{}
+}
+
+//获取总距离
+func (calcer DisCalcer) Distance() VarUInt {
+	return VarUInt(calcer.total)
+}
 
 //多个连续的记录信息，记录client链,至少有两个记录
 //两个点之间的服务器时间差超过1天将忽略距离 SpanTime(秒）设置
@@ -307,29 +394,36 @@ var (
 //以上都不影响链的链接，只是会减少距离提成
 //标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
 //所有distance之和就是clientid的总的distance
-func CalcDistance(miner UserID, items []UnitBlock) (map[UserID]float64, error) {
-	dmap := map[UserID]float64{}
-	if len(items) < 2 {
-		return dmap, errors.New("items count error")
+func (calcer *DisCalcer) Calc(items []Unit) error {
+	//检测分配比例
+	if err := calcer.scale.Check(); err != nil {
+		return err
 	}
-	rate := conf.GetMinerRate()
+	calcer.Reset()
+	if len(items) < 2 {
+		return errors.New("items count error")
+	}
+	mr, tr, cr := calcer.scale.Scale()
 	for i := 1; i < len(items); i++ {
 		cv := items[i+0]
 		pv := items[i-1]
+		if !cv.ClientID().Equal(pv.ClientID()) {
+			return errors.New("client error")
+		}
 		if cv.IsFirst() {
-			return dmap, errors.New("curr point error")
+			return errors.New("curr point error")
 		}
 		//记录时间差太多忽略这个点
 		if cv.TimeSub() > conf.TimeErr {
 			continue
 		}
 		if !cv.Prev.Equal(pv.Hash()) {
-			return dmap, errors.New("prev hash error")
+			return errors.New("prev hash error")
 		}
 		//两次记录时间必须连续
 		st := pv.STimeSub(cv)
 		if st < 0 {
-			return dmap, errors.New("stime error")
+			return errors.New("stime error")
 		}
 		//两次记录时间差不能太大
 		if st > conf.SpanTime {
@@ -343,58 +437,68 @@ func CalcDistance(miner UserID, items []UnitBlock) (map[UserID]float64, error) {
 		csr := GetDisRate(csl)
 		psr := GetDisRate(psl)
 		dis := pv.TTLocDis(cv) * csr * psr
-		dmap[SUMUID] += dis
+		//所有和不能超过总量
+		calcer.total += dis
 		//矿工获得
-		mdis := dis * rate
+		mdis := dis * mr
 		//标签所有者获得,两标签平分
-		tdis := (dis - mdis) * 0.5
-		dmap[cv.TPKH] += tdis
-		dmap[pv.TPKH] += tdis
+		tdis := (dis * tr) * 0.5
+		calcer.vmap[cv.TPKH] += tdis
+		calcer.vmap[pv.TPKH] += tdis
+		cdis := dis * cr
+		calcer.client += cdis
 		//保存矿工获得的总量
-		dmap[miner] += mdis
+		calcer.miner += mdis
 	}
-	return dmap, nil
+	return nil
 }
 
-func (v *Unit) Check(miner UserID) error {
+func (v *Units) Check(db DBImp) error {
 	//检测上一个has
 	if len(v.Items) < 2 {
 		return errors.New("items count too slow")
 	}
-	items := make([]UnitBlock, 0)
-	//不是第一个将上获取上一个点并加入items之前
+	items := make([]Unit, 0)
+	//不是第一个将获取上一个点并加入items之前
 	if !v.Items[0].IsFirst() {
 		//
 	}
+	buf := &bytes.Buffer{}
 	items = append(items, v.Items...)
-	for _, v := range items {
-		buf := &bytes.Buffer{}
-		err := v.Encode(buf)
+	for _, uv := range items {
+		if !v.ClientID.Equal(uv.ClientID()) {
+			return errors.New("client id error")
+		}
+		buf.Reset()
+		err := uv.Encode(buf)
 		if err != nil {
 			return err
 		}
-		err = v.SerPart.Verify(conf, buf.Bytes())
+		err = uv.SerPart.Verify(conf, buf.Bytes())
 		if err != nil {
 			return err
 		}
 	}
-	dmap, err := CalcDistance(miner, items)
+	calcer := NewDisCalcer(v.Scale)
+	err := calcer.Calc(items)
 	if err != nil {
 		return err
 	}
-	dis := dmap[SUMUID]
-	if dis < 0 || dis > EARTH_RADIUS {
+	if calcer.total < 0 || calcer.total > EARTH_RADIUS {
 		return errors.New("distance range error")
 	}
-	v.Distance = VarUInt((dis))
+	v.Distance = calcer.Distance()
 	return nil
 }
 
-func (v Unit) Encode(w IWriter) error {
+func (v Units) Encode(w IWriter) error {
+	if err := v.Scale.Encode(w); err != nil {
+		return err
+	}
 	if err := v.ClientID.Encode(w); err != nil {
 		return err
 	}
-	if err := v.PrevHash.Encode(w); err != nil {
+	if err := v.PrevBlock.Encode(w); err != nil {
 		return err
 	}
 	if err := v.PrevIndex.Encode(w); err != nil {
@@ -415,11 +519,14 @@ func (v Unit) Encode(w IWriter) error {
 	return nil
 }
 
-func (v *Unit) Decode(r IReader) error {
+func (v *Units) Decode(r IReader) error {
+	if err := v.Scale.Decode(r); err != nil {
+		return err
+	}
 	if err := v.ClientID.Decode(r); err != nil {
 		return err
 	}
-	if err := v.PrevHash.Decode(r); err != nil {
+	if err := v.PrevBlock.Decode(r); err != nil {
 		return err
 	}
 	if err := v.PrevIndex.Decode(r); err != nil {
@@ -429,7 +536,7 @@ func (v *Unit) Decode(r IReader) error {
 	if err := inum.Decode(r); err != nil {
 		return err
 	}
-	v.Items = make([]UnitBlock, inum)
+	v.Items = make([]Unit, inum)
 	for i, _ := range v.Items {
 		err := v.Items[i].Decode(r)
 		if err != nil {

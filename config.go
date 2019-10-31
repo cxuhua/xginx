@@ -9,7 +9,12 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"sync"
+
+	"github.com/mattn/go-colorable"
+
+	"github.com/gin-gonic/gin"
 )
 
 func LoadPrivateKeys(file string) []*PrivateKey {
@@ -34,8 +39,11 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	MinerRate  int                     `json:"miner_rate"` //70获得70%，剩余的奖励给标签所有者
-	PowTime    uint                    `json:"pow_time"`   //14 * 24 * 60 * 60=1209600
+	HttpScheme string                  `json:"http_scheme"` //http
+	LogFile    string                  `json:"log_file"`    //日志文件
+	HttpPort   int                     `json:"http_port"`   //http服务器端口
+	MinerPKey  string                  `json:"miner_pkey"`  //矿工产出私钥
+	PowTime    uint                    `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
 	PowLimit   string                  `json:"pow_limit"`
 	SpanTime   float64                 `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
 	DisRange   []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
@@ -55,10 +63,12 @@ type Config struct {
 	pubshash   HashID                  `json:"-"`           //
 	mu         sync.RWMutex            `json:"-"`           //
 	NodeID     UserID                  `json:"-"`           //启动时临时生成
+	minerpk    *PublicKey              `json:"-"`           //私钥
+	logFile    *os.File                `json:"-"`           //日志文件
 }
 
-func (c *Config) GetMinerRate() float64 {
-	return float64(c.MinerRate) / 100.0
+func (c *Config) GetMinerPubKey() *PublicKey {
+	return c.minerpk
 }
 
 func (c *Config) GetListenAddr() NetAddr {
@@ -209,7 +219,38 @@ func (c *Config) GetPrivateKey() *PrivateKey {
 	return nil
 }
 
+func (c *Config) Close() {
+	if c.logFile != nil {
+		_ = c.logFile.Close()
+	}
+}
+
 func (c *Config) Init() error {
+	//设置日志输出
+	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
+	if c.LogFile != "" {
+		file, err := os.OpenFile(c.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+		if err != nil {
+			panic(err)
+		}
+		c.logFile = file
+		log.SetOutput(file)
+		log.SetFlags(logflags)
+		gin.DefaultWriter = file
+		gin.DefaultErrorWriter = file
+	} else {
+		c.logFile = nil
+		log.SetOutput(os.Stdout)
+		log.SetFlags(logflags)
+		gin.DefaultWriter = colorable.NewColorableStdout()
+		gin.DefaultErrorWriter = colorable.NewColorableStderr()
+	}
+	//加载矿工私钥
+	pk, err := LoadPublicKey(c.MinerPKey)
+	if err == nil {
+		c.minerpk = pk
+	}
+	//随机生成节点ID
 	c.NodeID = NewNodeID()
 	//加载私钥
 	for _, s := range c.Privates {
@@ -260,13 +301,16 @@ var (
 	conf *Config = nil
 )
 
-func NodeConfig() *Config {
-	return conf
+func Init() {
+	LoadConfig("v10000.json") //测试配置文件
 }
 
-func init() {
-	//加载版本v10000配置文件
-	LoadConfig("v10000.json") //测试配置文件
+func Close() {
+	conf.Close()
+}
+
+func NodeConfig() *Config {
+	return conf
 }
 
 func LoadConfig(f string) {

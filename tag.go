@@ -22,6 +22,7 @@ var (
 
 const (
 	LocScaleValue = float64(10000000)
+	EARTH_RADIUS  = float64(6378137)
 )
 
 //0-63
@@ -66,10 +67,6 @@ func (l *Location) Get() []float64 {
 	return []float64{lng, lat}
 }
 
-const (
-	EARTH_RADIUS = float64(6378137)
-)
-
 func rad(d float64) (r float64) {
 	r = d * math.Pi / 180.0
 	return
@@ -77,17 +74,17 @@ func rad(d float64) (r float64) {
 
 func (l Location) Distance(v Location) float64 {
 	lv := l.Get()
-	lon1, lat1 := rad(lv[0]), rad(lv[1])
+	lng1, lat1 := rad(lv[0]), rad(lv[1])
 	vv := v.Get()
-	lon2, lat2 := rad(vv[0]), rad(vv[1])
+	lng2, lat2 := rad(vv[0]), rad(vv[1])
 	if lat1 < 0 {
 		lat1 = math.Pi/2 + math.Abs(lat1)
 	}
 	if lat1 > 0 {
 		lat1 = math.Pi/2 - math.Abs(lat1)
 	}
-	if lon1 < 0 {
-		lon1 = math.Pi*2 - math.Abs(lon1)
+	if lng1 < 0 {
+		lng1 = math.Pi*2 - math.Abs(lng1)
 	}
 	if lat2 < 0 {
 		lat2 = math.Pi/2 + math.Abs(lat2)
@@ -95,14 +92,14 @@ func (l Location) Distance(v Location) float64 {
 	if lat2 > 0 {
 		lat2 = math.Pi/2 - math.Abs(lat2)
 	}
-	if lon2 < 0 {
-		lon2 = math.Pi*2 - math.Abs(lon2)
+	if lng2 < 0 {
+		lng2 = math.Pi*2 - math.Abs(lng2)
 	}
-	x1 := EARTH_RADIUS * math.Cos(lon1) * math.Sin(lat1)
-	y1 := EARTH_RADIUS * math.Sin(lon1) * math.Sin(lat1)
+	x1 := EARTH_RADIUS * math.Cos(lng1) * math.Sin(lat1)
+	y1 := EARTH_RADIUS * math.Sin(lng1) * math.Sin(lat1)
 	z1 := EARTH_RADIUS * math.Cos(lat1)
-	x2 := EARTH_RADIUS * math.Cos(lon2) * math.Sin(lat2)
-	y2 := EARTH_RADIUS * math.Sin(lon2) * math.Sin(lat2)
+	x2 := EARTH_RADIUS * math.Cos(lng2) * math.Sin(lat2)
+	y2 := EARTH_RADIUS * math.Sin(lng2) * math.Sin(lat2)
 	z2 := EARTH_RADIUS * math.Cos(lat2)
 	d := math.Sqrt((x1-x2)*(x1-x2) + (y1-y2)*(y1-y2) + (z1-z2)*(z1-z2))
 	theta := math.Acos((EARTH_RADIUS*EARTH_RADIUS + EARTH_RADIUS*EARTH_RADIUS - d*d) / (2 * EARTH_RADIUS * EARTH_RADIUS))
@@ -148,6 +145,10 @@ func (p *SigBytes) Set(sig *SigValue) {
 //公钥hash160
 type UserID [20]byte
 
+func (v *UserID) SetPK(pk *PublicKey) {
+	*v = pk.Hash()
+}
+
 func (v *UserID) Set(b []byte) {
 	copy(v[:], b)
 }
@@ -171,6 +172,10 @@ type HashCacher struct {
 	set  bool
 }
 
+func (h HashCacher) IsSet() (HashID, bool) {
+	return h.hash, h.set
+}
+
 func (h *HashCacher) Hash(b []byte) HashID {
 	if h.set {
 		return h.hash
@@ -179,10 +184,6 @@ func (h *HashCacher) Hash(b []byte) HashID {
 	h.set = true
 	return h.hash
 }
-
-var (
-	ZeroHash = HashID{}
-)
 
 type TagUID [7]byte
 
@@ -269,7 +270,6 @@ func (p TagPos) String() string {
 }
 
 const (
-	TAG_SCHEME   = "https"
 	TAG_PATH_FIX = "/sign/"
 )
 
@@ -277,15 +277,15 @@ func (t *TagInfo) DecodeURL() error {
 	if len(t.url) > 512 {
 		return errors.New("url too long")
 	}
-	if !strings.HasPrefix(t.url, TAG_SCHEME) {
+	if !strings.HasPrefix(t.url, conf.HttpScheme) {
 		return errors.New("url scheme error")
 	}
 	uv, err := url.Parse(t.url)
 	if err != nil {
 		return err
 	}
-	if strings.ToLower(uv.Scheme) != TAG_SCHEME {
-		return errors.New("must use https")
+	if strings.ToLower(uv.Scheme) != conf.HttpScheme {
+		return errors.New("must use " + conf.HttpScheme)
 	}
 	if len(uv.Path) > 256 {
 		return errors.New("path too long")
@@ -437,6 +437,9 @@ func (t *TagInfo) EncodeHex() ([]byte, error) {
 		return nil, err
 	}
 	if err := binary.Write(hw, Endian, t.TLoc); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(hw, Endian, t.TPKH); err != nil {
 		return nil, err
 	}
 	t.pos.UID = t.pos.OFF + sb.Len()
@@ -712,8 +715,8 @@ func (c *SerPart) Sign(pri *PrivateKey, tag *TagInfo, client *CliPart) ([]byte, 
 		return nil, err
 	}
 	//计算服务器签名
-	hv := HASH256(buf.Bytes())
-	sig, err := pri.Sign(hv)
+	hash := HASH256(buf.Bytes())
+	sig, err := pri.Sign(hash)
 	if err != nil {
 		return nil, err
 	}
@@ -724,8 +727,8 @@ func (c *SerPart) Sign(pri *PrivateKey, tag *TagInfo, client *CliPart) ([]byte, 
 	return buf.Bytes(), nil
 }
 
-func (b *TUnit) Encode(w io.Writer) (*UnitBlock, error) {
-	bi := &UnitBlock{}
+func (b *TUnit) Encode(w io.Writer) (*Unit, error) {
+	bi := &Unit{}
 	if err := bi.Encode(w); err != nil {
 		return nil, err
 	}
@@ -748,30 +751,31 @@ func (b *TUnit) Encode(w io.Writer) (*UnitBlock, error) {
 	return bi, nil
 }
 
-type UnitBlock struct {
+type Unit struct {
 	TagInfo
 	CliPart
 	SerPart
+	hasher HashCacher
 }
 
-func (pv UnitBlock) TTLocDis(cv UnitBlock) float64 {
+func (pv Unit) TTLocDis(cv Unit) float64 {
 	return cv.TLoc.Distance(pv.TLoc)
 }
 
-func (pv UnitBlock) STimeSub(cv UnitBlock) float64 {
+func (pv Unit) STimeSub(cv Unit) float64 {
 	return float64(cv.STime-pv.STime) / float64(time.Second)
 }
 
 //获取记录点与服务器时间差
-func (b UnitBlock) TimeSub() float64 {
+func (b Unit) TimeSub() float64 {
 	return math.Abs(float64(b.CTime-b.STime)) / float64(time.Second)
 }
 
-func (b UnitBlock) CTLocDis() float64 {
+func (b Unit) CTLocDis() float64 {
 	return b.CLoc.Distance(b.TLoc)
 }
 
-func (b UnitBlock) Encode(w io.Writer) error {
+func (b Unit) Encode(w io.Writer) error {
 	if err := b.TagInfo.Encode(w); err != nil {
 		return err
 	}
@@ -784,7 +788,7 @@ func (b UnitBlock) Encode(w io.Writer) error {
 	return nil
 }
 
-func (b *UnitBlock) Decode(r io.Reader) error {
+func (b *Unit) Decode(r io.Reader) error {
 	if err := b.TagInfo.Decode(r); err != nil {
 		return err
 	}
@@ -797,12 +801,13 @@ func (b *UnitBlock) Decode(r io.Reader) error {
 	return nil
 }
 
-func (b UnitBlock) Hash() HashID {
+func (b *Unit) Hash() HashID {
+	if hash, ok := b.hasher.IsSet(); ok {
+		return hash
+	}
 	buf := &bytes.Buffer{}
 	_ = b.Encode(buf)
-	id := HashID{}
-	copy(id[:], HASH256(buf.Bytes()))
-	return id
+	return b.hasher.Hash(buf.Bytes())
 }
 
 //校验块数据并返回对象
@@ -811,7 +816,7 @@ func VerifyBlockInfo(conf *Config, bs []byte) (*TUnit, error) {
 		return nil, errors.New("data error")
 	}
 	buf := bytes.NewBuffer(bs)
-	b := UnitBlock{}
+	b := Unit{}
 	if err := b.Decode(buf); err != nil {
 		return nil, err
 	}
