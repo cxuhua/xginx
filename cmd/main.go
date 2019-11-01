@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 
@@ -12,11 +13,12 @@ import (
 )
 
 func createFistBlock() {
+	runtime.GOMAXPROCS(4)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	wg := &sync.WaitGroup{}
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 64; i++ {
 		wg.Add(1)
 		go gv.CreateGenesisBlock(wg, ctx, cancel)
 	}
