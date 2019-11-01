@@ -16,18 +16,6 @@ func TestGetDisRate(t *testing.T) {
 	log.Println(v == 0.5)
 }
 
-func TestGetRewardRate(t *testing.T) {
-	v := GetRewardRate(0)
-	if v != 1.0 {
-		t.Errorf("error 1")
-	}
-	log.Println(v)
-	v = GetRewardRate(210000)
-	log.Println(v)
-	v = GetRewardRate(210000 * 32)
-	log.Println(v)
-}
-
 func TestCompressAmount(t *testing.T) {
 	log.Println(CompressUInt(1000001))
 	for i := 0; i < 1000; i++ {

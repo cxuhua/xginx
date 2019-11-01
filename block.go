@@ -650,7 +650,7 @@ func (calcer *TokenCalcer) Calc(items []*Unit) error {
 		csr := cv.CTLocDisRate()
 		//上一点的定位差
 		psr := pv.CTLocDisRate()
-		//计算距离奖励
+		//计算距离奖励 rr为递减
 		dis := pv.TTLocDis(cv) * csr * psr
 		//所有和不能超过总量
 		calcer.total += dis
