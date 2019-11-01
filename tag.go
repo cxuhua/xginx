@@ -172,6 +172,10 @@ type HashCacher struct {
 	set  bool
 }
 
+func (h *HashCacher) Reset() {
+	h.set = false
+}
+
 func (h HashCacher) IsSet() (HashID, bool) {
 	return h.hash, h.set
 }
@@ -763,11 +767,11 @@ type Unit struct {
 	hasher HashCacher
 }
 
-func (pv Unit) TTLocDis(cv Unit) float64 {
+func (pv Unit) TTLocDis(cv *Unit) float64 {
 	return cv.TLoc.Distance(pv.TLoc)
 }
 
-func (pv Unit) STimeSub(cv Unit) float64 {
+func (pv Unit) STimeSub(cv *Unit) float64 {
 	return float64(cv.STime-pv.STime) / float64(time.Second)
 }
 
@@ -778,6 +782,11 @@ func (b Unit) TimeSub() float64 {
 
 func (b Unit) CTLocDis() float64 {
 	return b.CLoc.Distance(b.TLoc)
+}
+
+//获取定位不准产生的惩罚比例
+func (b Unit) CTLocDisRate() float64 {
+	return GetDisRate(b.CTLocDis())
 }
 
 func (b Unit) Encode(w io.Writer) error {

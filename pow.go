@@ -18,6 +18,7 @@ func CheckProofOfWork(hash HashID, bits uint32) bool {
 		return false
 	}
 	limit := NewUIHash(conf.PowLimit)
+
 	if h.Cmp(limit) > 0 {
 		return false
 	}

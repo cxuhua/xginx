@@ -1,8 +1,12 @@
 package xginx
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"sync"
+
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -26,8 +30,11 @@ func (m *mongoDBStore) txs() *mongo.Collection {
 	return m.database().Collection("txs")
 }
 
-func (m *mongoDBStore) blocks() *mongo.Collection {
-	return m.database().Collection("blocks")
+func (m *mongoDBStore) blocks() (*gridfs.Bucket, error) {
+	opts := options.GridFSBucket()
+	opts.SetName("blocks")
+	opts.SetChunkSizeBytes(1024 * 1024) //1M
+	return gridfs.NewBucket(m.database(), opts)
 }
 
 func (m *mongoDBStore) units() *mongo.Collection {
@@ -44,6 +51,65 @@ func (m *mongoDBStore) client() *mongo.Client {
 
 func (m *mongoDBStore) database() *mongo.Database {
 	return m.client().Database("xginx")
+}
+
+func (m *mongoDBStore) HasBlock(id []byte) bool {
+	bucket, err := m.blocks()
+	if err != nil {
+		return false
+	}
+	opts := options.GridFSFind()
+	opts.SetLimit(1)
+	cur, err := bucket.Find(bson.M{"_id": id}, opts)
+	if err != nil {
+		return false
+	}
+	defer cur.Close(m)
+	return cur.Next(m)
+}
+
+func (m *mongoDBStore) DelBlock(id []byte) error {
+	bucket, err := m.blocks()
+	if err != nil {
+		return err
+	}
+	return bucket.Delete(id)
+}
+
+//获取块信息
+func (m *mongoDBStore) GetBlock(id []byte, v interface{}) error {
+	bucket, err := m.blocks()
+	if err != nil {
+		return err
+	}
+	buf := &bytes.Buffer{}
+	_, err = bucket.DownloadToStream(id, buf)
+	if err != nil {
+		return err
+	}
+	b, ok := v.(*BlockInfo)
+	if !ok {
+		return errors.New("v type error")
+	}
+	return b.Decode(buf)
+}
+
+//保存块用gridfs
+func (m *mongoDBStore) SetBlock(id []byte, meta interface{}, bb []byte) error {
+	bucket, err := m.blocks()
+	if err != nil {
+		return err
+	}
+	hash := NewHashID(id)
+	opts := options.GridFSUpload()
+	opts.SetMetadata(meta)
+	ups, err := bucket.OpenUploadStreamWithID(id, hash.String(), opts)
+	if err != nil {
+		return err
+	}
+	defer ups.Close()
+	_, err = ups.Write(bb)
+	return err
 }
 
 //设置计数器，必须比数据库中的大

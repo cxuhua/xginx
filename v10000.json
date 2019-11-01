@@ -13,6 +13,7 @@
   "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
   "http_port": 9334,
   "http_scheme": "http",
+  "genesis_block": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",

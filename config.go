@@ -39,32 +39,34 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	HttpScheme string                  `json:"http_scheme"` //http
-	LogFile    string                  `json:"log_file"`    //日志文件
-	HttpPort   int                     `json:"http_port"`   //http服务器端口
-	MinerPKey  string                  `json:"miner_pkey"`  //矿工产出私钥
-	PowTime    uint                    `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
-	PowLimit   string                  `json:"pow_limit"`
-	SpanTime   float64                 `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
-	DisRange   []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
-	Halving    uint                    `json:"halving"`     //210000
-	Flags      string                  `json:"flags"`       //协议头标记
-	Ver        uint32                  `json:"version"`     //节点版本
-	Publics    []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
-	ListenPort int                     `json:"listen_port"` //服务端口和ip
-	ListenIp   string                  `json:"listen_ip"`   //服务ip
-	RemoteIp   string                  `json:"remote_ip"`   //节点远程连接ip
-	Privates   []string                `json:"pris"`        //用于签名的私钥
-	Certs      []string                `json:"certs"`       //已经签名的证书
-	TimeErr    float64                 `json:"time_err"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
-	pris       map[PKBytes]*PrivateKey `json:"-"`           //
-	pubs       map[PKBytes]*PublicKey  `json:"-"`           //
-	certs      map[PKBytes]*Cert       `json:"-"`           //
-	pubshash   HashID                  `json:"-"`           //
-	mu         sync.RWMutex            `json:"-"`           //
-	NodeID     UserID                  `json:"-"`           //启动时临时生成
-	minerpk    *PublicKey              `json:"-"`           //私钥
-	logFile    *os.File                `json:"-"`           //日志文件
+	GenesisBlock string                  `json:"genesis_block"` //第一个区块
+	HttpScheme   string                  `json:"http_scheme"`   //http
+	LogFile      string                  `json:"log_file"`      //日志文件
+	HttpPort     int                     `json:"http_port"`     //http服务器端口
+	MinerPKey    string                  `json:"miner_pkey"`    //矿工产出私钥
+	PowTime      uint                    `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
+	PowLimit     string                  `json:"pow_limit"`
+	SpanTime     float64                 `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
+	DisRange     []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
+	Halving      uint                    `json:"halving"`     //210000
+	Flags        string                  `json:"flags"`       //协议头标记
+	Ver          uint32                  `json:"version"`     //节点版本
+	Publics      []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
+	ListenPort   int                     `json:"listen_port"` //服务端口和ip
+	ListenIp     string                  `json:"listen_ip"`   //服务ip
+	RemoteIp     string                  `json:"remote_ip"`   //节点远程连接ip
+	Privates     []string                `json:"pris"`        //用于签名的私钥
+	Certs        []string                `json:"certs"`       //已经签名的证书
+	TimeErr      float64                 `json:"time_err"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
+	pris         map[PKBytes]*PrivateKey `json:"-"`           //
+	pubs         map[PKBytes]*PublicKey  `json:"-"`           //
+	certs        map[PKBytes]*Cert       `json:"-"`           //
+	pubshash     HashID                  `json:"-"`           //
+	mu           sync.RWMutex            `json:"-"`           //
+	NodeID       UserID                  `json:"-"`           //启动时临时生成
+	minerpk      *PublicKey              `json:"-"`           //私钥
+	logFile      *os.File                `json:"-"`           //日志文件
+	genesisId    HashID                  `json:"-"`           //第一个区块id
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {
@@ -225,6 +227,10 @@ func (c *Config) Close() {
 	}
 }
 
+func (c *Config) IsGenesisId(id HashID) bool {
+	return c.genesisId.Equal(id)
+}
+
 func (c *Config) Init() error {
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
@@ -245,6 +251,8 @@ func (c *Config) Init() error {
 		gin.DefaultWriter = colorable.NewColorableStdout()
 		gin.DefaultErrorWriter = colorable.NewColorableStderr()
 	}
+	//设置第一个区块id
+	c.genesisId = NewHashID(c.GenesisBlock)
 	//加载矿工私钥
 	pk, err := LoadPublicKey(c.MinerPKey)
 	if err == nil {

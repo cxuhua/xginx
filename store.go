@@ -10,6 +10,14 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
+	//删除块
+	DelBlock(id []byte) error
+	//是否存在
+	HasBlock(id []byte) bool
+	//获取区块数据
+	GetBlock(id []byte, v interface{}) error
+	//保存区块数据
+	SetBlock(id []byte, meta interface{}, bb []byte) error
 	//删除记录
 	DelUnit(id []byte) error
 	//获取记录
@@ -34,6 +42,17 @@ type DBImp interface {
 
 type DBSession interface {
 	UseSession(ctx context.Context, fn func(db DBImp) error) error
+}
+
+type TBMeta struct {
+	Ver    uint32 `bson:"ver"`    //block ver
+	Prev   []byte `bson:"prev"`   //pre block hash
+	Merkle []byte `bson:"merkle"` //txs Merkle tree hash + Units hash
+	Time   uint32 `bson:"time"`   //时间戳
+	Bits   uint32 `bson:"bits"`   //难度
+	Nonce  uint32 `bson:"nonce"`  //随机值
+	Uts    uint32 `bson:"uts"`    //Units数量
+	Txs    uint32 `bson:"txs"`    //tx数量
 }
 
 //单元块数据,打卡记录
