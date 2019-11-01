@@ -5,12 +5,28 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	gv "github.com/cxuhua/xginx"
 )
 
+func createFistBlock() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	wg := &sync.WaitGroup{}
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go gv.CreateGenesisBlock(wg, ctx, cancel)
+	}
+	wg.Wait()
+}
+
 func main() {
+
+	createFistBlock()
+
 	defer gv.Close()
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())

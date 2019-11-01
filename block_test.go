@@ -1,72 +1,12 @@
 package xginx
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"log"
 	"testing"
 	"time"
 )
-
-func TestCreateGenesisBlock(t *testing.T) {
-	pub, err := LoadPublicKey("8aKby6XxwmoaiYt6gUbS1u2RHco37iHfh6sAPstME33Qh6ujd9")
-	if err != nil {
-		panic(err)
-	}
-	b := &BlockInfo{
-		Ver:    1,
-		Prev:   HashID{},
-		Merkle: HashID{},
-		Time:   uint32(time.Now().Unix()),
-		Bits:   0x1d00ffff,
-		Uts:    []*Units{},
-		Txs:    []*TX{},
-	}
-
-	tx := &TX{}
-	tx.Ver = 1
-
-	in := &TxIn{}
-	in.Script = BaseScript([]byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
-	tx.Ins = []*TxIn{in}
-
-	out := &TxOut{}
-	out.Value = 529
-	out.Script = LockedScript(pub)
-	tx.Outs = []*TxOut{out}
-
-	tx.Hash()
-	b.Txs = []*TX{tx}
-
-	//生成merkle root id
-	if err := b.MerkleRoot(); err != nil {
-		panic(err)
-	}
-
-	buf := &bytes.Buffer{}
-	SetRandInt(&b.Nonce)
-	err = b.EncodeHeader(buf)
-	if err != nil {
-		panic(err)
-	}
-	bb := buf.Bytes()
-	nhash := HashID{}
-	for i := uint64(0); ; i++ {
-		Endian.PutUint32(bb[len(bb)-4:], b.Nonce)
-		copy(nhash[:], HASH256(bb))
-		if CheckProofOfWork(nhash, b.Bits) {
-			log.Printf("%x %v\n", b.Nonce, nhash)
-			break
-		}
-		if i%100000 == 0 {
-			SetRandInt(&b.Nonce)
-			log.Println(i, nhash, b.Nonce)
-			continue
-		}
-		b.Nonce++
-	}
-}
 
 func TestSaveBlockInfo(t *testing.T) {
 	b := &BlockInfo{}
