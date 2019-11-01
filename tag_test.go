@@ -3,6 +3,7 @@ package xginx
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -16,9 +17,9 @@ var (
 	//服务器测试私钥
 	spkey = "L4h8htSsTiLh9axT9i5mzdMtpZdqQiKofdRf9bfJqurh8gbTVtS4"
 	//tag aes测试密钥
-	tkey = "JvQcZnKs2bI3RDO5"
+	tkey = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} //"JvQcZnKs2bI3RDO5"
 	//标签uid
-	tuid = TagUID{0x04, 0x7A, 0x17, 0x32, 0xAA, 0x61, 0x80}
+	tuid = TagUID{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80}
 )
 
 func TestLocation_Distance(t *testing.T) {
@@ -98,6 +99,10 @@ func TestLoadTestKey(t *testing.T) {
 }
 
 func TestSaveTestKey(t *testing.T) {
+	pk := "uxYrjiMMZ2fuXuRih6ty7UVb5ggwYApqM8qTq2BT5sxQ"
+	pk1, _ := B58Decode(pk, BitcoinAlphabet)
+	pub, _ := NewPublicKey(pk1)
+	hash := pub.Hash()
 	err := store.UseSession(context.Background(), func(db DBImp) error {
 		loc := Location{}
 		loc.Set(116.368904, 39.923423)
@@ -106,6 +111,8 @@ func TestSaveTestKey(t *testing.T) {
 		tk.Ver = 1
 		tk.Loc = loc.Get()
 		tk.CTR = 1
+		tk.ASV = S622
+		tk.PKH = hash[:]
 		tk.SetMacKey(0)
 		copy(tk.Keys[0][:], tkey)
 		err := tk.Save(db)
@@ -135,13 +142,13 @@ func TestMakeTagURL(t *testing.T) {
 //II01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089000000000000000000000000000000000000
 func TestTagData(t *testing.T) {
 	err := store.UseSession(context.Background(), func(db DBImp) error {
-		surl := "http://api.xginx.com/sign/II01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089000000000000000000000000000000000000"
+		surl := "http://192.168.31.177:9334/sign/OO01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089047D1432AA6180000010C930ABEAFC1D8553"
 		otag := NewTagInfo(surl)
 		//客户端服务器端都要解码
 		if err := otag.DecodeURL(); err != nil {
 			panic(err)
 		}
-		sigb, err := otag.ToSigBinary()
+		sigb, err := otag.ToSigBytes()
 		if err != nil {
 			panic(err)
 		}
@@ -154,9 +161,11 @@ func TestTagData(t *testing.T) {
 		client.CLoc.Set(122.33, 112.44)
 		client.Prev = HashID{}
 		client.CTime = time.Now().UnixNano()
-		if err := client.Sign(pk, sigb); err != nil {
+		cb, err := client.Sign(pk, sigb)
+		if err != nil {
 			panic(err)
 		}
+		log.Println(hex.EncodeToString(cb))
 		//校验客户端数据
 		err = otag.Valid(db, client)
 		if err != nil {

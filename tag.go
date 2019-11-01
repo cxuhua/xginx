@@ -339,7 +339,7 @@ func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 	if err != nil {
 		return fmt.Errorf("pub error %w", err)
 	}
-	data, err := t.ToSigBinary()
+	data, err := t.ToSigBytes()
 	if err != nil {
 		return err
 	}
@@ -429,7 +429,7 @@ func (t *TagInfo) DecodeHex(s []byte) error {
 
 //将标签encode数据转换为二进制签名数据
 //开头两字节直接转，因为不是hex编码
-func (t *TagInfo) ToSigBinary() ([]byte, error) {
+func (t *TagInfo) ToSigBytes() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	err := t.Encode(buf)
 	return buf.Bytes(), err
@@ -607,7 +607,7 @@ func (c *CliPart) EncodeWriter(w io.Writer) error {
 	return nil
 }
 
-func (c *CliPart) ToSigBinary() ([]byte, error) {
+func (c *CliPart) ToSigBytes() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := c.Encode(buf); err != nil {
 		return nil, err
@@ -615,21 +615,25 @@ func (c *CliPart) ToSigBinary() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (c *CliPart) Sign(pv *PrivateKey, tag []byte) error {
+func (c *CliPart) Sign(pv *PrivateKey, tag []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(tag)
 	//设置公钥
 	c.CPks.Set(pv.PublicKey())
 	if err := c.EncodeWriter(buf); err != nil {
-		return err
+		return nil, err
 	}
 	//签名
 	hv := HASH256(buf.Bytes())
 	sig, err := pv.Sign(hv)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	c.CSig.Set(sig)
-	return nil
+	buf.Reset()
+	if err := c.Encode(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 //块信息
@@ -697,35 +701,21 @@ func (s *SerPart) Verify(conf *Config, b []byte) error {
 	return conf.Verify(s.SPks, sig, hash)
 }
 
-func (c *SerPart) Sign(pri *PrivateKey, tag *TagInfo, client *CliPart) ([]byte, error) {
+func (ser *SerPart) Sign(pri *PrivateKey, tag *TagInfo, cli *CliPart) ([]byte, error) {
 	buf := &bytes.Buffer{}
-	tdata, err := tag.ToSigBinary()
-	if err != nil {
+	if err := tag.Encode(buf); err != nil {
 		return nil, err
 	}
-	if _, err := buf.Write(tdata); err != nil {
-		return nil, err
-	}
-	cdata, err := client.ToSigBinary()
-	if err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(cdata); err != nil {
+	if err := cli.Encode(buf); err != nil {
 		return nil, err
 	}
 	//设置随机值
-	SetRandInt(&c.Nonce)
+	SetRandInt(&ser.Nonce)
 	//设置服务器时间
-	c.STime = time.Now().UnixNano()
+	ser.STime = time.Now().UnixNano()
 	//设置签名公钥
-	c.SPks.Set(pri.PublicKey())
-	if err := binary.Write(buf, Endian, c.Nonce); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buf, Endian, c.STime); err != nil {
-		return nil, err
-	}
-	if err := binary.Write(buf, Endian, c.SPks); err != nil {
+	ser.SPks.Set(pri.PublicKey())
+	if err := ser.EncodeWriter(buf); err != nil {
 		return nil, err
 	}
 	//计算服务器签名
@@ -734,8 +724,9 @@ func (c *SerPart) Sign(pri *PrivateKey, tag *TagInfo, client *CliPart) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	c.SSig.Set(sig)
-	if err := binary.Write(buf, Endian, c.SSig); err != nil {
+	ser.SSig.Set(sig)
+	//签名数据
+	if err := binary.Write(buf, Endian, ser.SSig); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil

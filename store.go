@@ -77,6 +77,8 @@ type TTagInfo struct {
 	UID  []byte    `bson:"_id"`  //uid
 	Ver  uint32    `bson:"ver"`  //版本 from tag
 	Loc  []float64 `bson:"loc"`  //uint32-uint32 位置 from tag
+	ASV  uint8     `bson:"asv"`  //分配比例
+	PKH  []byte    `bson:"pkh"`  //所属公钥hash160
 	Keys [5]TagKey `bson:"keys"` //ntag424 5keys
 	CTR  uint      `bson:"ctr"`  //ctr int
 }
