@@ -313,6 +313,7 @@ func (v *Alloc) Decode(r IReader) error {
 	return binary.Read(r, Endian, &v)
 }
 
+//矿工，标签，用户，获得积分比例
 func (v Alloc) Scale() (float64, float64, float64) {
 	m := float64((v >> 5) & 0b111)
 	t := float64((v >> 2) & 0b111)
