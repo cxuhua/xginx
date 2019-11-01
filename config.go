@@ -67,6 +67,7 @@ type Config struct {
 	minerpk      *PublicKey              `json:"-"`           //私钥
 	logFile      *os.File                `json:"-"`           //日志文件
 	genesisId    HashID                  `json:"-"`           //第一个区块id
+	LimitHash    UIHash                  `json:"-"`           //最小工作难度
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {
@@ -258,6 +259,7 @@ func (c *Config) Init() error {
 	if err == nil {
 		c.minerpk = pk
 	}
+	c.LimitHash = NewUIHash(c.PowLimit)
 	//随机生成节点ID
 	c.NodeID = NewNodeID()
 	//加载私钥

@@ -17,9 +17,7 @@ func CheckProofOfWork(hash HashID, bits uint32) bool {
 	if o {
 		return false
 	}
-	limit := NewUIHash(conf.PowLimit)
-
-	if h.Cmp(limit) > 0 {
+	if h.Cmp(conf.LimitHash) > 0 {
 		return false
 	}
 	ch := hash.ToUHash()
