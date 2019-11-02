@@ -22,9 +22,10 @@ var (
 	tuid = TagUID{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80}
 )
 
+//latitude=30.558675,longitude=104.033261
 func TestLocation_Distance(t *testing.T) {
 	loc1 := Location{}
-	loc1.Set(116.368904, 39.923423)
+	loc1.Set(104.033261, 30.558675)
 	loc2 := Location{}
 	loc2.Set(116.387271, 39.922501)
 	dis := loc1.Distance(loc2)
