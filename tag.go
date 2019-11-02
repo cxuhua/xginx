@@ -798,6 +798,14 @@ func (pv Unit) TTLocDis(cv *Unit) float64 {
 	return cv.TLoc.Distance(pv.TLoc)
 }
 
+//获取两点之间的速度
+//km/h
+func (pv Unit) TTSpeed(cv *Unit) float64 {
+	dis := cv.TLoc.Distance(pv.TLoc) / 1000
+	tv := float64(cv.STime-pv.STime) / float64(time.Hour)
+	return dis / tv
+}
+
 func (pv Unit) STimeSub(cv *Unit) float64 {
 	return float64(cv.STime-pv.STime) / float64(time.Second)
 }
