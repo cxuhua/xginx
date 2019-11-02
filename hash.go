@@ -103,7 +103,11 @@ func (h *UINT256) SetValue(v interface{}) {
 		*h = ui
 	case []byte:
 		sv := v.([]byte)
-		vl := ((len(sv) + 3) / 4)
+		sl := len(sv)
+		if sl > UINT256Width*4 {
+			sl = UINT256Width * 4
+		}
+		vl := ((sl + 3) / 4)
 		bv := make([]byte, vl*4)
 		copy(bv, sv)
 		ui := UINT256{}
@@ -379,7 +383,7 @@ func NewHash256(v interface{}) Hash256 {
 		bs := v.([]byte)
 		l := len(bs)
 		if l > len(b) {
-			panic(SizeError)
+			l = len(b)
 		}
 		copy(b[len(b)-l:], bs)
 	case string:

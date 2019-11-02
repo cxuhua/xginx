@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) {
@@ -19,11 +21,13 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 		panic(err)
 	}
 
+	tv := uint32(time.Now().Unix())
+
 	b := &BlockInfo{
 		Ver:    1,
 		Prev:   Hash256{},
 		Merkle: Hash256{},
-		Time:   1572669878,
+		Time:   tv,
 		Bits:   0x1d00ffff,
 		Nonce:  0x58f3e185,
 		Uts:    []*Units{},
@@ -56,17 +60,18 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	if err != nil {
 		panic(err)
 	}
-	bb := buf.Bytes()
+	heaerbytes := buf.Bytes()
 	nhash := Hash256{}
 	for i := uint64(0); ; i++ {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			Endian.PutUint32(bb[len(bb)-4:], b.Nonce)
-			copy(nhash[:], HASH256(bb))
+			//写入随机数
+			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
+			copy(nhash[:], HASH256(heaerbytes))
 			if CheckProofOfWork(nhash, b.Bits) {
-				log.Printf("%x %v\n", b.Nonce, nhash)
+				log.Printf("%x %v %x\n", b.Nonce, nhash, tv)
 				cancel()
 				break
 			}
@@ -354,13 +359,89 @@ type TxOut struct {
 	Script Script  //锁定脚本
 }
 
+//获取竞价脚本
+func (v TxOut) ToAuctionScript() (*AuctionScript, error) {
+	typ := v.Script.Type()
+	//其他类型可消费
+	if typ != SCRIPT_AUCNOREV_TYPE && typ != SCRIPT_AUCTION_TYPE {
+		return nil, errors.New("type error")
+	}
+	if v.Script.Len() > 256 {
+		return nil, errors.New("script length too long")
+	}
+	ass, err := v.Script.ToAuction()
+	if err != nil {
+		return nil, err
+	}
+	if err := ass.Verify(v.Value); err != nil {
+		return nil, err
+	}
+	return ass, nil
+}
+
+//获取区块中所有指定类型的拍卖输出
+func (b *BlockInfo) FindAucScript(typ uint8, obj Hash160) []*AuctionScript {
+	ass := []*AuctionScript{}
+	//获取区块中所有和obj相关的竞价输出
+	for _, tx := range b.Txs {
+		for _, out := range tx.Outs {
+			as, err := out.ToAuctionScript()
+			if err != nil {
+				continue
+			}
+			if as.Type != typ {
+				continue
+			}
+			if !as.ObjId.Equal(obj) {
+				continue
+			}
+			//保存输出积分
+			as.value = out.Value
+			ass = append(ass, as)
+		}
+	}
+	return ass
+}
+
+//竞价模式下最高出价检测
+//返回是否是最高出价，返回错误标识不能消费
+func (v TxOut) IsBidHighest(obj Hash160, b *BlockInfo) (bool, error) {
+	//获取脚本类型
+	typ := v.Script.Type()
+	//忽略非竞价类型的脚本
+	if typ != SCRIPT_AUCNOREV_TYPE && typ != SCRIPT_AUCTION_TYPE {
+		return false, nil
+	}
+	css, err := v.ToAuctionScript()
+	if err != nil {
+		return false, err
+	}
+	//查找合适的脚本
+	ass := b.FindAucScript(css.Type, obj)
+	if len(ass) == 0 {
+		return false, errors.New("not found auction script")
+	}
+	sort.Slice(ass, func(i, j int) bool {
+		if ass[i].value == ass[j].value && ass[i].Time == ass[j].Time {
+			//出价相同 时间相同 按公钥大数比较
+			return ass[i].BidPks.Cmp(ass[j].BidPks) > 0
+		} else if ass[i].value == ass[j].value {
+			//出价相同的情况下按时间
+			return ass[i].Time < ass[j].Time
+		} else {
+			//出价高获胜
+			return ass[i].value > ass[j].value
+		}
+	})
+	ihv := ass[0].Equal(*css)
+	//如果是最高并且不可消费
+	if ihv && typ == SCRIPT_AUCNOREV_TYPE {
+		return true, errors.New("auc no rev type can't cost")
+	}
+	return ihv, nil
+}
+
 func (v TxOut) Check() error {
-	if !v.Script.IsLockedcript() {
-		return errors.New("txout script type error")
-	}
-	if v.Value > 100000000 {
-		return errors.New("txout value too big")
-	}
 	return nil
 }
 

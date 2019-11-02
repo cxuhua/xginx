@@ -1,8 +1,21 @@
 package xginx
 
 import (
+	"log"
 	"testing"
 )
+
+func TestPksToUINT256(t *testing.T) {
+	pri, err := NewPrivateKey()
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	pks := PKBytes{}
+	pks.Set(pri.PublicKey())
+	u := NewUINT256(pks[:])
+	log.Println(u)
+}
 
 func TestUINT256Make(t *testing.T) {
 	xx := NewUINT256(0xff311223344)

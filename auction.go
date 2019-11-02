@@ -1,6 +1,10 @@
 package xginx
 
-import "bytes"
+import (
+	"bytes"
+	"encoding/binary"
+	"errors"
+)
 
 //消费积分进行拍卖规则
 //每个拍卖项生成唯一hash160(拍卖id)
@@ -18,37 +22,127 @@ type AuctionScript struct {
 	Type   uint8    //类型 SCRIPT_RECOVER_TYPE
 	Owner  Hash160  //竞价失败后积分可由此id消费,如果类型是SCRIPT_RECOVER_TYPE并且出价最高积分将永远不能转出
 	ObjId  Hash160  //物品id
-	BidPkh Hash160  //此次叫价id，由叫价人生成密钥对，私钥生成此id
+	Time   int64    //出价时间，如果价格一致先出价获得
+	BidPks PKBytes  //此次叫价公钥，由叫价人生成密钥对
 	BidSig SigBytes //叫价人签名，签名还要包括输出积分TxOut.Value
+	value  VarUInt  //当前对应的输出积分
+}
+
+func (ss AuctionScript) Equal(vv AuctionScript) bool {
+	eq := ss.Type == vv.Type && ss.Owner.Equal(vv.Owner) && ss.ObjId.Equal(vv.ObjId)
+	eq = eq && bytes.Equal(ss.BidPks[:], vv.BidPks[:])
+	eq = eq && bytes.Equal(ss.BidSig[:], vv.BidSig[:])
+	return eq
+}
+
+func (ss AuctionScript) EncodeWriter(w IWriter) error {
+	if err := binary.Write(w, Endian, ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Owner.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.ObjId.Encode(w); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, ss.Time); err != nil {
+		return err
+	}
+	if err := ss.BidPks.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ss AuctionScript) Encode(w IWriter) error {
+	if err := ss.EncodeWriter(w); err != nil {
+		return err
+	}
+	if err := ss.BidSig.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ss *AuctionScript) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Owner.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.ObjId.Decode(r); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &ss.Time); err != nil {
+		return err
+	}
+	if err := ss.BidPks.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.BidSig.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ss AuctionScript) ToScript() (Script, error) {
+	buf := &bytes.Buffer{}
+	if err := ss.Encode(buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (s Script) ToAuction() (*AuctionScript, error) {
+	buf := bytes.NewReader(s)
+	ss := &AuctionScript{}
+	if err := ss.Decode(buf); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
+//校验签名
+func (ss AuctionScript) Verify(value VarUInt) error {
+	pub, err := NewPublicKey(ss.BidPks[:])
+	if err != nil {
+		return err
+	}
+	sig, err := NewSigValue(ss.BidSig[:])
+	if err != nil {
+		return err
+	}
+	buf := &bytes.Buffer{}
+	if err := value.Encode(buf); err != nil {
+		return err
+	}
+	if err := ss.EncodeWriter(buf); err != nil {
+		return err
+	}
+	hash := HASH256(buf.Bytes())
+	if !pub.Verify(hash, sig) {
+		return errors.New("verify auction script error")
+	}
+	return nil
 }
 
 //生成拍卖消费脚本
-//pbk 叫价私钥
-func (ss *AuctionScript) ToScript(value VarUInt, pbk *PrivateKey) (Script, error) {
+//签名数据
+func (ss *AuctionScript) Sign(value VarUInt, pbk *PrivateKey) error {
+	ss.BidPks.Set(pbk.PublicKey())
 	buf := &bytes.Buffer{}
 	if err := value.Encode(buf); err != nil {
-		return nil, err
+		return err
 	}
-	if err := buf.WriteByte(ss.Type); err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(ss.Owner[:]); err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(ss.ObjId[:]); err != nil {
-		return nil, err
-	}
-	if _, err := buf.Write(ss.BidPkh[:]); err != nil {
-		return nil, err
+	if err := ss.EncodeWriter(buf); err != nil {
+		return err
 	}
 	hash := HASH256(buf.Bytes())
 	sig, err := pbk.Sign(hash)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	ss.BidSig.Set(sig)
-	if _, err := buf.Write(ss.BidSig[:]); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return nil
 }

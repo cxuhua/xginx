@@ -123,6 +123,22 @@ func (c *TagCTR) Set(v uint) {
 
 type PKBytes [33]byte
 
+func (v PKBytes) Cmp(b PKBytes) int {
+	vu := NewUINT256(v[:])
+	bu := NewUINT256(b[:])
+	return vu.Cmp(bu)
+}
+
+func (v PKBytes) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *PKBytes) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
+
 func (p *PKBytes) SetBytes(b []byte) {
 	copy(p[:], b)
 }
@@ -133,6 +149,16 @@ func (p *PKBytes) Set(pk *PublicKey) PKBytes {
 }
 
 type SigBytes [75]byte
+
+func (v SigBytes) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *SigBytes) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
 
 func (p *SigBytes) SetBytes(b []byte) {
 	copy(p[:], b)

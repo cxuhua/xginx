@@ -8,7 +8,7 @@ const (
 	//标准交易
 	SCRIPT_LOCKED_TYPE = uint8(2) //hash160(pubkey)
 	//竞价成功不可消费类型
-	SCRIPT_RECOVER_TYPE = uint8(3) //hash160(pubkey)
+	SCRIPT_AUCNOREV_TYPE = uint8(3) //hash160(pubkey)
 	//竞价成功可以消费类型
 	SCRIPT_AUCTION_TYPE = uint8(4) //hash160(pubkey)
 )
