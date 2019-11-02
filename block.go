@@ -10,7 +10,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 )
 
 func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) {
@@ -19,11 +18,12 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	if err != nil {
 		panic(err)
 	}
+
 	b := &BlockInfo{
 		Ver:    1,
 		Prev:   HashID{},
 		Merkle: HashID{},
-		Time:   uint32(time.Now().Unix()),
+		Time:   1572669878,
 		Bits:   0x1d00ffff,
 		Uts:    []*Units{},
 		Txs:    []*TX{},
