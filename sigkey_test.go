@@ -9,7 +9,7 @@ func BenchmarkVerify(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		msg := make([]byte, rand.Uint32()%500)
 		rand.Read(msg)
-		hash := HASH256([]byte(msg))
+		hash := Hash256([]byte(msg))
 		pk1, err := NewPrivateKey()
 		if err != nil {
 			b.Errorf("DecodePrivateKey error %v", err)
@@ -27,7 +27,7 @@ func BenchmarkVerify(b *testing.B) {
 
 func TestSignVerify(t *testing.T) {
 	msg := "Very deterministic message"
-	hash := HASH256([]byte(msg))
+	hash := Hash256([]byte(msg))
 	pk1, err := NewPrivateKey()
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)

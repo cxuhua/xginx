@@ -7,7 +7,7 @@ import (
 )
 
 func TestPow(t *testing.T) {
-	hash := NewHash256("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
+	hash := NewHASH256("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 	b := CheckProofOfWork(hash, 0x1d00ffff)
 	log.Println(b)
 }
@@ -36,12 +36,12 @@ func TestCalculateWorkRequired(t *testing.T) {
 
 //Check whether a block hash satisfies the proof-of-work requirement specified by nBits
 func TestCheckProofOfWork(t *testing.T) {
-	h := NewHash256("00000000000003010530e33a849b27ded874202911e9e63263cb49245744fb9e")
+	h := NewHASH256("00000000000003010530e33a849b27ded874202911e9e63263cb49245744fb9e")
 	b := CheckProofOfWork(h, 0x1a0575ef)
 	if !b {
 		t.Errorf("test failed")
 	}
-	b = CheckProofOfWork(NewHash256("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"), 0x1d00ffff)
+	b = CheckProofOfWork(NewHASH256("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"), 0x1d00ffff)
 	if !b {
 		t.Errorf("test 0 height block failed")
 	}

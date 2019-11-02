@@ -5,7 +5,7 @@ import (
 )
 
 // Check whether a block hash satisfies the proof-of-work requirement specified by nBits
-func CheckProofOfWork(hash Hash256, bits uint32) bool {
+func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	h := UINT256{}
 	n, o := h.SetCompact(bits)
 	if n {

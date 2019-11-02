@@ -159,7 +159,7 @@ func TestTagData(t *testing.T) {
 		}
 		client := &CliPart{}
 		client.CLoc.Set(122.33, 112.44)
-		client.Prev = Hash256{}
+		client.Prev = HASH256{}
 		client.CTime = time.Now().UnixNano()
 		cb, err := client.Sign(pk, sigb)
 		if err != nil {

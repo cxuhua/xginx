@@ -61,12 +61,12 @@ type Config struct {
 	pris         map[PKBytes]*PrivateKey `json:"-"`         //
 	pubs         map[PKBytes]*PublicKey  `json:"-"`         //
 	certs        map[PKBytes]*Cert       `json:"-"`         //
-	pubshash     Hash256                 `json:"-"`         //
+	pubshash     HASH256                 `json:"-"`         //
 	mu           sync.RWMutex            `json:"-"`         //
-	NodeID       Hash160                 `json:"-"`         //启动时临时生成
+	NodeID       HASH160                 `json:"-"`         //启动时临时生成
 	minerpk      *PublicKey              `json:"-"`         //私钥
 	logFile      *os.File                `json:"-"`         //日志文件
-	genesisId    Hash256                 `json:"-"`         //第一个区块id
+	genesisId    HASH256                 `json:"-"`         //第一个区块id
 	LimitHash    UINT256                 `json:"-"`         //最小工作难度
 }
 
@@ -139,7 +139,7 @@ func (c *Config) DecodeCerts(b []byte) error {
 	defer c.mu.Unlock()
 	vhash := c.PubsHash()
 	buf := bytes.NewReader(b)
-	hash := Hash256{}
+	hash := HASH256{}
 	if _, err := buf.Read(hash[:]); err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (c *Config) DecodeCerts(b []byte) error {
 
 //两个客户端hash公钥配置必须一致
 //节点不能任意添加信任公钥
-func (c *Config) PubsHash() Hash256 {
+func (c *Config) PubsHash() HASH256 {
 	return c.pubshash
 }
 
@@ -227,7 +227,7 @@ func (c *Config) Close() {
 	}
 }
 
-func (c *Config) IsGenesisId(id Hash256) bool {
+func (c *Config) IsGenesisId(id HASH256) bool {
 	return c.genesisId.Equal(id)
 }
 
@@ -252,7 +252,7 @@ func (c *Config) Init() error {
 		gin.DefaultErrorWriter = colorable.NewColorableStderr()
 	}
 	//设置第一个区块id
-	c.genesisId = NewHash256(c.GenesisBlock)
+	c.genesisId = NewHASH256(c.GenesisBlock)
 	//加载矿工私钥
 	pk, err := LoadPublicKey(c.MinerPKey)
 	if err == nil {
@@ -288,7 +288,7 @@ func (c *Config) Init() error {
 		}
 	}
 	//获取版本hash
-	copy(c.pubshash[:], HASH256(buf.Bytes()))
+	copy(c.pubshash[:], Hash256(buf.Bytes()))
 	//加载证书
 	for _, s := range c.Certs {
 		cert, err := LoadCert(s)

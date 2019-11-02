@@ -9,18 +9,18 @@ import (
 )
 
 var (
-	amap = map[Hash256]int{}
+	amap = map[HASH256]int{}
 )
 
 func TestByteMap(t *testing.T) {
-	id1 := Hash256{0}
+	id1 := HASH256{0}
 	log.Println(id1)
 	amap[id1] = 1
 
-	id2 := Hash256{1}
+	id2 := HASH256{1}
 	amap[id2] = 2
 
-	log.Println(amap[Hash256{0}], amap[Hash256{1}])
+	log.Println(amap[HASH256{0}], amap[HASH256{1}])
 }
 
 func TestNewBitSet(t *testing.T) {
@@ -33,9 +33,9 @@ func TestNewBitSet(t *testing.T) {
 }
 
 func TestMerkleArray(t *testing.T) {
-	a := []Hash256{}
+	a := []HASH256{}
 	for i := 0; i < 21; i++ {
-		tmp := Hash256{byte(i)}
+		tmp := HASH256{byte(i)}
 		a = append(a, tmp)
 	}
 	bs := bitset.New(uint(len(a)))

@@ -163,11 +163,11 @@ const (
 type MsgVersion struct {
 	MsgIO
 	Ver      uint32   //版本
-	NodeID   Hash160  //节点id
+	NodeID   HASH160  //节点id
 	Service  uint32   //服务
 	Addr     NetAddr  //节点地址
 	Certs    VarBytes //节点证书
-	PubsHash Hash256  //节点版本hash
+	PubsHash HASH256  //节点版本hash
 }
 
 func NewMsgVersion() *MsgVersion {
@@ -278,7 +278,7 @@ type NetPackage struct {
 	Type  uint8    //包类型
 	Ver   uint32   //版本
 	Bytes VarBytes //数据长度
-	Sum   [4]byte  //校验和hash256 前4字节
+	Sum   [4]byte  //校验和HASH256 前4字节
 }
 
 func (v NetPackage) Encode(w IWriter) error {

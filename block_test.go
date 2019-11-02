@@ -16,8 +16,8 @@ func TestCreateGenesisBlock(t *testing.T) {
 
 	b := &BlockInfo{
 		Ver:    1,
-		Prev:   Hash256{},
-		Merkle: Hash256{},
+		Prev:   HASH256{},
+		Merkle: HASH256{},
 		Time:   1572669878,
 		Bits:   0x1d00ffff,
 		Nonce:  0x58f3e185,
@@ -111,7 +111,7 @@ func TestCalcDistance(t *testing.T) {
 	i1.CTime = now
 	i1.CLoc.Set(104.0671670437, 30.5573090657)
 	i1.STime = now
-	i1.TPKH = Hash160{1}
+	i1.TPKH = HASH160{1}
 	i1.TASV = S631
 
 	i2 := &Unit{}
@@ -120,7 +120,7 @@ func TestCalcDistance(t *testing.T) {
 	i2.CTime = now + int64(time.Hour)
 	i2.CLoc.Set(104.0615880489, 30.5536596605)
 	i2.STime = now + int64(time.Hour)
-	i2.TPKH = Hash160{2}
+	i2.TPKH = HASH160{2}
 	i2.TASV = S622
 
 	i3 := &Unit{}
@@ -130,7 +130,7 @@ func TestCalcDistance(t *testing.T) {
 	i3.CTime = now + int64(time.Hour*2)
 	i3.CLoc.Set(104.0671670437, 30.5573090657)
 	i3.STime = now + int64(time.Hour*2)
-	i3.TPKH = Hash160{3}
+	i3.TPKH = HASH160{3}
 	i3.TASV = S721
 
 	is := []*Unit{i1, i2, i3}

@@ -25,8 +25,8 @@ var (
 	Miner IMiner = &minerEngine{
 		uc:  make(chan *Unit, 50),
 		tc:  make(chan *TX, 50),
-		uxs: map[Hash256]*Unit{},
-		txs: map[Hash256]*TX{},
+		uxs: map[HASH256]*Unit{},
+		txs: map[HASH256]*TX{},
 		dok: make(chan bool),
 	}
 )
@@ -38,9 +38,9 @@ type minerEngine struct {
 	cancel context.CancelFunc
 	uc     chan *Unit
 	tc     chan *TX
-	uxs    map[Hash256]*Unit
+	uxs    map[HASH256]*Unit
 	umu    sync.RWMutex
-	txs    map[Hash256]*TX
+	txs    map[HASH256]*TX
 	tmu    sync.RWMutex
 	dok    chan bool
 }

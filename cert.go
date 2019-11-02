@@ -44,7 +44,7 @@ func (c *Cert) Sign(pri *PrivateKey) error {
 	if err := c.EncodeWriter(buf); err != nil {
 		return err
 	}
-	hash := HASH256(buf.Bytes())
+	hash := Hash256(buf.Bytes())
 	sig, err := pri.Sign(hash)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func (c *Cert) Verify() error {
 	if pub == nil {
 		return errors.New("public key untrusted")
 	}
-	hash := HASH256(buf.Bytes())
+	hash := Hash256(buf.Bytes())
 	if !pub.Verify(hash, sig) {
 		return errors.New("verify cert failed")
 	}
@@ -126,7 +126,7 @@ func (c *Cert) Load(s string) (*Cert, error) {
 		return nil, err
 	}
 	l := len(b)
-	hv := HASH256(b[:l-4])
+	hv := Hash256(b[:l-4])
 	if !bytes.Equal(b[l-4:], hv[:4]) {
 		return nil, errors.New("check sum error")
 	}
@@ -151,7 +151,7 @@ func (c *Cert) Dump() (string, error) {
 		return "", err
 	}
 	b := buf.Bytes()
-	hv := HASH256(b)
+	hv := Hash256(b)
 	b = append(b, hv[:4]...)
 	s := B58Encode(b, BitcoinAlphabet)
 	return s, nil

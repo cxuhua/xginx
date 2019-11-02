@@ -25,8 +25,8 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 
 	b := &BlockInfo{
 		Ver:    1,
-		Prev:   Hash256{},
-		Merkle: Hash256{},
+		Prev:   HASH256{},
+		Merkle: HASH256{},
 		Time:   tv,
 		Bits:   0x1d00ffff,
 		Nonce:  0x58f3e185,
@@ -61,7 +61,7 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 		panic(err)
 	}
 	heaerbytes := buf.Bytes()
-	nhash := Hash256{}
+	nhash := HASH256{}
 	for i := uint64(0); ; i++ {
 		select {
 		case <-ctx.Done():
@@ -69,7 +69,7 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 		default:
 			//写入随机数
 			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
-			copy(nhash[:], HASH256(heaerbytes))
+			copy(nhash[:], Hash256(heaerbytes))
 			if CheckProofOfWork(nhash, b.Bits) {
 				log.Printf("%x %v %x\n", b.Nonce, nhash, tv)
 				cancel()
@@ -92,8 +92,8 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 //块大小限制为4M大小
 type BlockInfo struct {
 	Ver    uint32     //block ver
-	Prev   Hash256    //pre block hash
-	Merkle Hash256    //txs Merkle tree hash + Units hash
+	Prev   HASH256    //pre block hash
+	Merkle HASH256    //txs Merkle tree hash + Units hash
 	Time   uint32     //时间戳
 	Bits   uint32     //难度
 	Nonce  uint32     //随机值
@@ -104,7 +104,7 @@ type BlockInfo struct {
 	merher HashCacher //mer hash 缓存
 }
 
-func (v *BlockInfo) UTSHash() Hash256 {
+func (v *BlockInfo) UTSHash() HASH256 {
 	if h, b := v.utsher.IsSet(); b {
 		return h
 	}
@@ -125,7 +125,7 @@ func (v *BlockInfo) SetMerkle() error {
 	if _, b := v.merher.IsSet(); b {
 		return nil
 	}
-	ids := []Hash256{}
+	ids := []HASH256{}
 	for _, tv := range v.Txs {
 		ids = append(ids, tv.Hash())
 	}
@@ -145,7 +145,7 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-func (b *BlockInfo) Hash() Hash256 {
+func (b *BlockInfo) Hash() HASH256 {
 	if id, ok := b.hasher.IsSet(); ok {
 		return id
 	}
@@ -161,7 +161,7 @@ func (b *BlockInfo) IsGenesis() bool {
 }
 
 //加载区块
-func LoadBlock(db DBImp, id Hash256) (*BlockInfo, error) {
+func LoadBlock(db DBImp, id HASH256) (*BlockInfo, error) {
 	if b, err := CBlock.Get(id[:]); err == nil {
 		return b.(*BlockInfo), nil
 	}
@@ -177,7 +177,7 @@ func LoadBlock(db DBImp, id Hash256) (*BlockInfo, error) {
 	return v, nil
 }
 
-//Hash256 meta,bytes
+//HASH256 meta,bytes
 func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 	meta := &TBMeta{
 		Ver:    b.Ver,
@@ -193,7 +193,7 @@ func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 	if err := b.Encode(buf); err != nil {
 		return nil, nil, nil, err
 	}
-	hash := HASH256(buf.Bytes())
+	hash := Hash256(buf.Bytes())
 	return hash, meta, buf.Bytes(), nil
 }
 
@@ -298,7 +298,7 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  Hash256 //输出交易hash
+	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //解锁脚本
 }
@@ -380,7 +380,7 @@ func (v TxOut) ToAuctionScript() (*AuctionScript, error) {
 }
 
 //获取区块中所有指定类型的拍卖输出
-func (b *BlockInfo) FindAucScript(typ uint8, obj Hash160) []*AuctionScript {
+func (b *BlockInfo) FindAucScript(typ uint8, obj HASH160) []*AuctionScript {
 	ass := []*AuctionScript{}
 	//获取区块中所有和obj相关的竞价输出
 	for _, tx := range b.Txs {
@@ -405,7 +405,7 @@ func (b *BlockInfo) FindAucScript(typ uint8, obj Hash160) []*AuctionScript {
 
 //竞价模式下最高出价检测
 //返回是否是最高出价，返回错误标识不能消费
-func (v TxOut) IsBidHighest(obj Hash160, b *BlockInfo) (bool, error) {
+func (v TxOut) IsBidHighest(obj HASH160, b *BlockInfo) (bool, error) {
 	//获取脚本类型
 	typ := v.Script.Type()
 	//忽略非竞价类型的脚本
@@ -473,14 +473,14 @@ type TX struct {
 	hasher HashCacher //hash缓存
 }
 
-func (tx *TX) Hash() Hash256 {
+func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
 	}
-	h := Hash256{}
+	h := HASH256{}
 	buf := &bytes.Buffer{}
 	_ = tx.Encode(buf)
-	copy(h[:], HASH256(buf.Bytes()))
+	copy(h[:], Hash256(buf.Bytes()))
 	return tx.hasher.Hash(buf.Bytes())
 }
 
@@ -646,14 +646,14 @@ type ITokenCalcer interface {
 	//用户获得的积分
 	Client() VarUInt
 	//标签获得的积分
-	Tags() map[Hash160]VarUInt
+	Tags() map[HASH160]VarUInt
 	//重置
 	Reset()
 }
 
 type TokenCalcer struct {
 	total  float64             //总的的积分
-	vmap   map[Hash160]float64 //标签获得的积分
+	vmap   map[HASH160]float64 //标签获得的积分
 	miner  float64             //矿工奖励的积分
 	client float64             //用户获得的积分
 }
@@ -661,7 +661,7 @@ type TokenCalcer struct {
 func NewTokenCalcer() *TokenCalcer {
 	return &TokenCalcer{
 		total:  0,
-		vmap:   map[Hash160]float64{},
+		vmap:   map[HASH160]float64{},
 		miner:  0,
 		client: 0,
 	}
@@ -682,7 +682,7 @@ func (calcer *TokenCalcer) Reset() {
 	calcer.total = 0
 	calcer.miner = 0
 	calcer.client = 0
-	calcer.vmap = map[Hash160]float64{}
+	calcer.vmap = map[HASH160]float64{}
 }
 
 func (calcer *TokenCalcer) Total() VarUInt {
@@ -700,8 +700,8 @@ func (calcer *TokenCalcer) Client() VarUInt {
 }
 
 //标签获得的积分
-func (calcer *TokenCalcer) Tags() map[Hash160]VarUInt {
-	ret := map[Hash160]VarUInt{}
+func (calcer *TokenCalcer) Tags() map[HASH160]VarUInt {
+	ret := map[HASH160]VarUInt{}
 	for k, v := range calcer.vmap {
 		ret[k] = VarUInt(v)
 	}
@@ -715,11 +715,10 @@ func (calcer *TokenCalcer) Tags() map[Hash160]VarUInt {
 //标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
 //所有distance之和就是clientid的总的distance
 func (calcer *TokenCalcer) Calc(items []*Unit) error {
-	//检测分配比例
-	calcer.Reset()
 	if len(items) < 2 {
 		return errors.New("items count error")
 	}
+	calcer.Reset()
 	for i := 1; i < len(items); i++ {
 		cv := items[i+0]
 		//使用当前标签设定的分配比例

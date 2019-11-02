@@ -19,7 +19,7 @@ func TestPksToUINT256(t *testing.T) {
 
 func TestUINT256Make(t *testing.T) {
 	xx := NewUINT256(0xff311223344)
-	yy := NewHash256("ff311223344").ToUHash()
+	yy := NewHASH256("ff311223344").ToUHash()
 	if !xx.Equal(yy) {
 		t.Errorf("test xx yy equal")
 	}
@@ -95,8 +95,8 @@ func TestSetCompact(t *testing.T) {
 }
 
 func TestHashEqual(t *testing.T) {
-	v1 := NewHash256("0101000000000000000000000000000000000000000000000000000000001234")
-	v2 := v1.ToUHash().ToHash256()
+	v1 := NewHASH256("0101000000000000000000000000000000000000000000000000000000001234")
+	v2 := v1.ToUHash().ToHASH256()
 	if !v1.Equal(v2) {
 		t.Errorf("test Equal failed")
 	}

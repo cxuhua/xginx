@@ -85,7 +85,7 @@ type TcpServer struct {
 	mu      sync.RWMutex
 	err     interface{}
 	wg      sync.WaitGroup
-	clients map[Hash160]*Client //连接的所有client
+	clients map[HASH160]*Client //连接的所有client
 	addrs   *NetAddrMap         //连接我的ip地址和我连接出去的
 }
 
@@ -101,7 +101,7 @@ func (s *TcpServer) BroadMsg(c *Client, m MsgIO) {
 	}
 }
 
-func (s *TcpServer) HasClient(id Hash160, c *Client) bool {
+func (s *TcpServer) HasClient(id HASH160, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.clients[id]
@@ -111,13 +111,13 @@ func (s *TcpServer) HasClient(id Hash160, c *Client) bool {
 	return ok
 }
 
-func (s *TcpServer) DelClient(id Hash160, c *Client) {
+func (s *TcpServer) DelClient(id HASH160, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.clients, id)
 }
 
-func (s *TcpServer) AddClient(id Hash160, c *Client) {
+func (s *TcpServer) AddClient(id HASH160, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[id] = c
@@ -178,14 +178,14 @@ func (s *TcpServer) run() {
 }
 
 //生成一个临时id全网唯一
-func NewNodeID() Hash160 {
-	id := Hash160{}
+func NewNodeID() HASH160 {
+	id := HASH160{}
 	_ = binary.Read(rand.Reader, Endian, id[:])
 	buf := &bytes.Buffer{}
 	buf.Write(id[:])
 	buf.Write([]byte(conf.TcprIp))
 	_ = binary.Write(buf, Endian, time.Now().UnixNano())
-	copy(id[:], HASH160(buf.Bytes()))
+	copy(id[:], Hash160(buf.Bytes()))
 	return id
 }
 
@@ -198,7 +198,7 @@ func NewTcpServer(ctx context.Context, conf *Config) (*TcpServer, error) {
 	}
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	s.clients = map[Hash160]*Client{}
+	s.clients = map[HASH160]*Client{}
 	s.addrs = NewNetAddrMap()
 	s.service = SERVICE_SIG_DATA | SERVICE_SIG_TAG
 	return s, nil

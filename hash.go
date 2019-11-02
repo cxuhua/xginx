@@ -17,22 +17,22 @@ var (
 )
 
 //bytes hash
-type Hash256 [32]byte
+type HASH256 [32]byte
 
-func (v Hash256) Encode(w IWriter) error {
+func (v HASH256) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
-func (v *Hash256) Decode(r IReader) error {
+func (v *HASH256) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
-func (v Hash256) EqualBytes(b []byte) bool {
+func (v HASH256) EqualBytes(b []byte) bool {
 	return bytes.Equal(b, v[:])
 }
 
-func (v *Hash256) Set(b []byte) {
+func (v *HASH256) Set(b []byte) {
 	copy(v[:], b)
 }
 
@@ -120,11 +120,11 @@ func (h *UINT256) SetValue(v interface{}) {
 	}
 }
 
-func (h Hash256) GetUint64(idx int) uint64 {
+func (h HASH256) GetUint64(idx int) uint64 {
 	return Endian.Uint64(h[idx*8 : idx*8+8])
 }
 
-func (h Hash256) ToUHash() UINT256 {
+func (h HASH256) ToUHash() UINT256 {
 	x := UINT256{}
 	for i := 0; i < UINT256Width; i++ {
 		x[i] = Endian.Uint32(h[i*4 : i*4+4])
@@ -338,8 +338,8 @@ func (b UINT256) Compact(negative bool) uint32 {
 	return uint32(compact)
 }
 
-func (h UINT256) ToHash256() Hash256 {
-	x := Hash256{}
+func (h UINT256) ToHASH256() HASH256 {
+	x := HASH256{}
 	for i := 0; i < UINT256Width; i++ {
 		b4 := []byte{0, 0, 0, 0}
 		Endian.PutUint32(b4, h[i])
@@ -348,26 +348,26 @@ func (h UINT256) ToHash256() Hash256 {
 	return x
 }
 
-func (h Hash256) String() string {
+func (h HASH256) String() string {
 	sv := h.Swap()
 	return hex.EncodeToString(sv[:])
 }
 
-func (b Hash256) IsZero() bool {
+func (b HASH256) IsZero() bool {
 	bz := make([]byte, len(b))
 	return bytes.Equal(b[:], bz)
 }
 
-func (b Hash256) Equal(v Hash256) bool {
+func (b HASH256) Equal(v HASH256) bool {
 	return bytes.Equal(b[:], v[:])
 }
 
-func (b Hash256) Bytes() []byte {
+func (b HASH256) Bytes() []byte {
 	return b[:]
 }
 
-func (b Hash256) Swap() Hash256 {
-	v := Hash256{}
+func (b HASH256) Swap() HASH256 {
+	v := HASH256{}
 	j := 0
 	for i := len(b) - 1; i >= 0; i-- {
 		v[j] = b[i]
@@ -376,8 +376,8 @@ func (b Hash256) Swap() Hash256 {
 	return v
 }
 
-func NewHash256(v interface{}) Hash256 {
-	b := Hash256{}
+func NewHASH256(v interface{}) HASH256 {
+	b := HASH256{}
 	switch v.(type) {
 	case []byte:
 		bs := v.([]byte)

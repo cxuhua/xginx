@@ -6,11 +6,11 @@ const (
 	SCRIPT_BASE_TYPE   = uint8(0) //coinbase input 0
 	SCRIPT_UNLOCK_TYPE = uint8(1) //pubkey sigvalue
 	//标准交易
-	SCRIPT_LOCKED_TYPE = uint8(2) //hash160(pubkey)
+	SCRIPT_LOCKED_TYPE = uint8(2) //HASH160(pubkey)
 	//竞价成功不可消费类型
-	SCRIPT_AUCNOREV_TYPE = uint8(3) //hash160(pubkey)
+	SCRIPT_AUCNOREV_TYPE = uint8(3) //HASH160(pubkey)
 	//竞价成功可以消费类型
-	SCRIPT_AUCTION_TYPE = uint8(4) //hash160(pubkey)
+	SCRIPT_AUCTION_TYPE = uint8(4) //HASH160(pubkey)
 )
 
 type Script []byte
@@ -66,7 +66,7 @@ func UnlockScript(pub *PublicKey, sig *SigValue) Script {
 
 func LockedScript(pub *PublicKey) Script {
 	s := Script{SCRIPT_LOCKED_TYPE}
-	hash := HASH160(pub.Encode())
+	hash := Hash160(pub.Encode())
 	s = append(s, hash...)
 	return s
 }

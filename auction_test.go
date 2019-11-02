@@ -10,7 +10,7 @@ func TestAuctionScript(t *testing.T) {
 
 	b := &BlockInfo{Txs: []*TX{}}
 
-	objId := Hash160{100}
+	objId := HASH160{100}
 
 	//第一个竞价者
 	pri1, err := NewPrivateKey()
@@ -24,7 +24,7 @@ func TestAuctionScript(t *testing.T) {
 	ss1 := &AuctionScript{}
 	ss1.Type = SCRIPT_AUCTION_TYPE
 	ss1.Time = time.Now().UnixNano()
-	ss1.Owner = Hash160{1}
+	ss1.Owner = HASH160{1}
 	ss1.ObjId = objId
 	if err := ss1.Sign(out1.Value, pri1); err != nil {
 		t.Error(err)
@@ -52,7 +52,7 @@ func TestAuctionScript(t *testing.T) {
 	ss2 := &AuctionScript{}
 	ss2.Type = SCRIPT_AUCTION_TYPE
 	ss2.Time = time.Now().UnixNano()
-	ss2.Owner = Hash160{1}
+	ss2.Owner = HASH160{1}
 	ss2.ObjId = objId
 	if err := ss2.Sign(out2.Value, pri2); err != nil {
 		t.Error(err)

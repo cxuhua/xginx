@@ -168,33 +168,33 @@ func (p *SigBytes) Set(sig *SigValue) {
 	copy(p[:], sig.Encode())
 }
 
-//公钥hash160
-type Hash160 [20]byte
+//公钥HASH160
+type HASH160 [20]byte
 
-func (v *Hash160) SetPK(pk *PublicKey) {
+func (v *HASH160) SetPK(pk *PublicKey) {
 	*v = pk.Hash()
 }
 
-func (v *Hash160) Set(b []byte) {
+func (v *HASH160) Set(b []byte) {
 	copy(v[:], b)
 }
 
-func (v Hash160) Equal(b Hash160) bool {
+func (v HASH160) Equal(b HASH160) bool {
 	return bytes.Equal(v[:], b[:])
 }
 
-func (v Hash160) Encode(w IWriter) error {
+func (v HASH160) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
 
-func (v *Hash160) Decode(r IReader) error {
+func (v *HASH160) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
 type HashCacher struct {
-	hash Hash256
+	hash HASH256
 	set  bool
 }
 
@@ -202,15 +202,15 @@ func (h *HashCacher) Reset() {
 	h.set = false
 }
 
-func (h HashCacher) IsSet() (Hash256, bool) {
+func (h HashCacher) IsSet() (HASH256, bool) {
 	return h.hash, h.set
 }
 
-func (h *HashCacher) Hash(b []byte) Hash256 {
+func (h *HashCacher) Hash(b []byte) HASH256 {
 	if h.set {
 		return h.hash
 	}
-	copy(h.hash[:], HASH256(b))
+	copy(h.hash[:], Hash256(b))
 	h.set = true
 	return h.hash
 }
@@ -265,7 +265,7 @@ type TagInfo struct {
 	TVer  uint32   //版本 from tag
 	TLoc  Location //uint32-uint32 位置 from tag
 	TASV  Alloc    //积分分配比例,由标签持有者确定，写入后不可修改
-	TPKH  Hash160  //标签所有者公钥的hash160，标记标签所有者
+	TPKH  HASH160  //标签所有者公钥的HASH160，标记标签所有者
 	TUID  TagUID   //标签id from tag
 	TCTR  TagCTR   //标签记录计数器 from tag map
 	TMAC  TagMAC   //标签CMAC值 from tag url + 16
@@ -378,7 +378,7 @@ func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 		return err
 	}
 	//校验客户签名
-	hv := HASH256(buf.Bytes())
+	hv := Hash256(buf.Bytes())
 	if !pub.Verify(hv, sig) {
 		return fmt.Errorf("client sig verify error")
 	}
@@ -543,7 +543,7 @@ func (s VarStr) EncodeWriter(w io.Writer) error {
 //POST 编码数据到服务器
 type CliPart struct {
 	CLoc  Location //用户定位信息user location
-	Prev  Hash256  //上个hash
+	Prev  HASH256  //上个hash
 	CTime int64    //客户端时间，不能和服务器相差太大 单位：纳秒
 	CPks  PKBytes  //用户公钥
 	CSig  SigBytes //用户签名
@@ -574,17 +574,17 @@ func (c *CliPart) Verify(b []byte) error {
 		return err
 	}
 	//csig不包含在cli签名数据中
-	hash := HASH256(b[:len(b)-len(c.CSig)])
+	hash := Hash256(b[:len(b)-len(c.CSig)])
 	if !pub.Verify(hash, sig) {
 		return errors.New("sig verify error")
 	}
 	return nil
 }
 
-//cpks hash160
-func (c *CliPart) ClientID() Hash160 {
-	uid := Hash160{}
-	copy(uid[:], HASH160(c.CPks[:]))
+//cpks HASH160
+func (c *CliPart) ClientID() HASH160 {
+	uid := HASH160{}
+	copy(uid[:], Hash160(c.CPks[:]))
 	return uid
 }
 
@@ -653,7 +653,7 @@ func (c *CliPart) Sign(pv *PrivateKey, tag []byte) ([]byte, error) {
 		return nil, err
 	}
 	//签名
-	hv := HASH256(buf.Bytes())
+	hv := Hash256(buf.Bytes())
 	sig, err := pv.Sign(hv)
 	if err != nil {
 		return nil, err
@@ -727,7 +727,7 @@ func (s *SerPart) Verify(conf *Config, b []byte) error {
 		return err
 	}
 	//ssig不包含在签名数据中
-	hash := HASH256(b[:len(b)-len(s.SSig)])
+	hash := Hash256(b[:len(b)-len(s.SSig)])
 	return conf.Verify(s.SPks, sig, hash)
 }
 
@@ -749,7 +749,7 @@ func (ser *SerPart) Sign(pri *PrivateKey, tag *TagInfo, cli *CliPart) ([]byte, e
 		return nil, err
 	}
 	//计算服务器签名
-	hash := HASH256(buf.Bytes())
+	hash := Hash256(buf.Bytes())
 	sig, err := pri.Sign(hash)
 	if err != nil {
 		return nil, err
@@ -842,7 +842,7 @@ func (b *Unit) Decode(r io.Reader) error {
 	return nil
 }
 
-func (b *Unit) Hash() Hash256 {
+func (b *Unit) Hash() HASH256 {
 	if hash, ok := b.hasher.IsSet(); ok {
 		return hash
 	}
@@ -865,7 +865,7 @@ func VerifyUnit(conf *Config, bs []byte) (*TUnit, error) {
 		return nil, err
 	}
 	v := &TUnit{}
-	v.Hash = HASH256(bs)
+	v.Hash = Hash256(bs)
 	v.TTS = b.TTS[:]
 	v.TVer = b.TVer
 	v.TLoc = b.TLoc.ToUInt()

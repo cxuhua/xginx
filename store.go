@@ -58,7 +58,7 @@ type TBMeta struct {
 //单元块数据,打卡记录
 //块中的一小部分
 
-type UnitKey Hash256
+type UnitKey HASH256
 
 type TUnit struct {
 	Hash  []byte   `bson:"_id"`   //block hash
@@ -98,7 +98,7 @@ type TTagInfo struct {
 	Ver  uint32    `bson:"ver"`  //版本 from tag
 	Loc  []float64 `bson:"loc"`  //uint32-uint32 位置 from tag
 	ASV  uint8     `bson:"asv"`  //分配比例
-	PKH  []byte    `bson:"pkh"`  //所属公钥hash160
+	PKH  []byte    `bson:"pkh"`  //所属公钥HASH160
 	Keys [5]TagKey `bson:"keys"` //ntag424 5keys
 	CTR  uint      `bson:"ctr"`  //ctr int
 }

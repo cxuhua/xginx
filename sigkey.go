@@ -31,7 +31,7 @@ func (p *PrivateKey) Clone() *PrivateKey {
 	return np
 }
 
-//prefix[1] key[32] checknum[hash256-prefix-4]
+//prefix[1] key[32] checknum[HASH256-prefix-4]
 func LoadPrivateKey(s string) (*PrivateKey, error) {
 	key := &PrivateKey{}
 	err := key.Load(s)
@@ -44,7 +44,7 @@ func (pk *PrivateKey) Dump() string {
 	buf.Write(PREFIX_SECRET_KEY)
 	buf.Write(pb)
 	buf.WriteByte(1)
-	hv := HASH256(buf.Bytes())
+	hv := Hash256(buf.Bytes())
 	buf.Write(hv[:4])
 	return B58Encode(buf.Bytes(), BitcoinAlphabet)
 }
@@ -58,7 +58,7 @@ func (pk *PrivateKey) Load(s string) error {
 		return errors.New("size error")
 	}
 	dl := len(data)
-	hv := HASH256(data[:dl-4])
+	hv := Hash256(data[:dl-4])
 	if bytes.Equal(hv[:4], data[dl-4:]) {
 		data = data[:dl-4]
 	}
@@ -291,10 +291,10 @@ func (pk *PublicKey) Decode(data []byte) error {
 	return nil
 }
 
-func (pb *PublicKey) Hash() Hash160 {
+func (pb *PublicKey) Hash() HASH160 {
 	b := pb.Encode()
-	uid := Hash160{}
-	copy(uid[:], HASH160(b))
+	uid := HASH160{}
+	copy(uid[:], Hash160(b))
 	return uid
 }
 
@@ -322,7 +322,7 @@ func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 	if l < 16 {
 		return nil, errors.New("pub length error")
 	}
-	hv := HASH256(b[:l-4])
+	hv := Hash256(b[:l-4])
 	if !bytes.Equal(hv[:4], b[l-4:]) {
 		return nil, errors.New("check sum error")
 	}
@@ -331,7 +331,7 @@ func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 
 func (pk *PublicKey) Dump() string {
 	b := pk.Encode()
-	hv := HASH256(b)
+	hv := Hash256(b)
 	b = append(b, hv[:4]...)
 	return B58Encode(b, BitcoinAlphabet)
 }

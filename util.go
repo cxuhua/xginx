@@ -75,28 +75,23 @@ func DecompressUInt(x uint64) uint64 {
 	return n
 }
 
-func SHA256(b []byte) []byte {
+func Sha256(b []byte) []byte {
 	hash := sha256.Sum256(b)
 	return hash[:]
 }
 
-func RIPEMD160(b []byte) []byte {
+func Ripemd160(b []byte) []byte {
 	h160 := ripemd160.New()
 	h160.Write(b)
 	return h160.Sum(nil)
 }
 
-func HASH160(b []byte) []byte {
-	v1 := SHA256(b)
-	return RIPEMD160(v1)
+func Hash160(b []byte) []byte {
+	v1 := Sha256(b)
+	return Ripemd160(v1)
 }
 
-func HASH256P4(b []byte) []byte {
-	hv := HASH256(b)
-	return hv[:4]
-}
-
-func HASH256(b []byte) []byte {
+func Hash256(b []byte) []byte {
 	s2 := sha256.New()
 	s2.Write(b)
 	v1 := s2.Sum(nil)
