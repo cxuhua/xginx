@@ -46,7 +46,8 @@ type Config struct {
 	MinerPKey    string                  `json:"miner_pkey"`    //矿工产出私钥
 	PowTime      uint                    `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
 	PowLimit     string                  `json:"pow_limit"`
-	SpanTime     float64                 `json:"span_time"` //两次记录时间差超过这个时间将被忽略距离计算
+	SpanTime     float64                 `json:"span_time"` //两次记录时间差超过这个时间将被忽略距离计算，单位小时
+	MaxSpeed     float64                 `json:"max_speed"` //最大速度 km/h
 	DisRange     []uint                  `json:"dis_range"` //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
 	Halving      uint                    `json:"halving"`   //210000
 	Flags        string                  `json:"flags"`     //协议头标记

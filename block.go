@@ -746,7 +746,12 @@ func (calcer *TokenCalcer) Calc(items []*Unit) error {
 			return errors.New("stime error")
 		}
 		//两次记录时间差太大将被忽略
-		if st > conf.SpanTime {
+		if st > conf.SpanTime*3600.0 {
+			continue
+		}
+		//忽略超人的存在，速度太快
+		sp := pv.TTSpeed(cv)
+		if sp < 0 || sp > conf.MaxSpeed {
 			continue
 		}
 		//获取当前点定位差
