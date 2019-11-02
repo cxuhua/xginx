@@ -163,11 +163,11 @@ const (
 type MsgVersion struct {
 	MsgIO
 	Ver      uint32   //版本
-	NodeID   UserID   //节点id
+	NodeID   Hash160  //节点id
 	Service  uint32   //服务
 	Addr     NetAddr  //节点地址
 	Certs    VarBytes //节点证书
-	PubsHash HashID   //节点版本hash
+	PubsHash Hash256  //节点版本hash
 }
 
 func NewMsgVersion() *MsgVersion {

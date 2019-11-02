@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	UIHashWidth = 256 / 32
+	UINT256Width = 256 / 32
 )
 
 var (
@@ -17,50 +17,50 @@ var (
 )
 
 //bytes hash
-type HashID [32]byte
+type Hash256 [32]byte
 
-func (v HashID) Encode(w IWriter) error {
+func (v Hash256) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
-func (v *HashID) Decode(r IReader) error {
+func (v *Hash256) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
-func (v HashID) EqualBytes(b []byte) bool {
+func (v Hash256) EqualBytes(b []byte) bool {
 	return bytes.Equal(b, v[:])
 }
 
-func (v *HashID) Set(b []byte) {
+func (v *Hash256) Set(b []byte) {
 	copy(v[:], b)
 }
 
 //unsigned int hash
-type UIHash [UIHashWidth]uint32
+type UINT256 [UINT256Width]uint32
 
-func NewUIHash(v interface{}) UIHash {
-	n := UIHash{}
+func NewUINT256(v interface{}) UINT256 {
+	n := UINT256{}
 	n.SetValue(v)
 	return n
 }
 
-func (h UIHash) Equal(v UIHash) bool {
+func (h UINT256) Equal(v UINT256) bool {
 	return h.Cmp(v) == 0
 }
 
-func (h UIHash) ToDouble() float64 {
+func (h UINT256) ToDouble() float64 {
 	ret := float64(0)
 	fact := float64(1)
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		ret += fact * float64(h[i])
 		fact *= 4294967296.0
 	}
 	return ret
 }
 
-func (h *UIHash) SetValue(v interface{}) {
-	*h = UIHash{}
+func (h *UINT256) SetValue(v interface{}) {
+	*h = UINT256{}
 	switch v.(type) {
 	case uint32:
 		h[0] = v.(uint32)
@@ -96,7 +96,7 @@ func (h *UIHash) SetValue(v interface{}) {
 		for i := 0; i < len(sv); i++ {
 			bv[i] = sv[len(sv)-i-1]
 		}
-		ui := UIHash{}
+		ui := UINT256{}
 		for i := 0; i < vl; i++ {
 			ui[i] = Endian.Uint32(bv[i*4 : i*4+4])
 		}
@@ -106,7 +106,7 @@ func (h *UIHash) SetValue(v interface{}) {
 		vl := ((len(sv) + 3) / 4)
 		bv := make([]byte, vl*4)
 		copy(bv, sv)
-		ui := UIHash{}
+		ui := UINT256{}
 		for i := 0; i < vl; i++ {
 			ui[i] = Endian.Uint32(bv[i*4 : i*4+4])
 		}
@@ -116,19 +116,19 @@ func (h *UIHash) SetValue(v interface{}) {
 	}
 }
 
-func (h HashID) GetUint64(idx int) uint64 {
+func (h Hash256) GetUint64(idx int) uint64 {
 	return Endian.Uint64(h[idx*8 : idx*8+8])
 }
 
-func (h HashID) ToUHash() UIHash {
-	x := UIHash{}
-	for i := 0; i < UIHashWidth; i++ {
+func (h Hash256) ToUHash() UINT256 {
+	x := UINT256{}
+	for i := 0; i < UINT256Width; i++ {
 		x[i] = Endian.Uint32(h[i*4 : i*4+4])
 	}
 	return x
 }
 
-func (h UIHash) IsZero() bool {
+func (h UINT256) IsZero() bool {
 	for _, v := range h {
 		if v != 0 {
 			return false
@@ -137,9 +137,9 @@ func (h UIHash) IsZero() bool {
 	return true
 }
 
-func (h UIHash) String() string {
+func (h UINT256) String() string {
 	s := ""
-	for i := UIHashWidth - 1; i >= 0; i-- {
+	for i := UINT256Width - 1; i >= 0; i-- {
 		b4 := []byte{0, 0, 0, 0}
 		Endian.PutUint32(b4, h[i])
 		s += fmt.Sprintf("%.2x%.2x%.2x%.2x", b4[3], b4[2], b4[1], b4[0])
@@ -147,12 +147,12 @@ func (h UIHash) String() string {
 	return s
 }
 
-func (b UIHash) Low64() uint64 {
+func (b UINT256) Low64() uint64 {
 	return uint64(b[0]) | (uint64(b[1]) << 32)
 }
 
-func (b UIHash) Bits() uint {
-	for pos := UIHashWidth - 1; pos >= 0; pos-- {
+func (b UINT256) Bits() uint {
+	for pos := UINT256Width - 1; pos >= 0; pos-- {
 		if b[pos] != 0 {
 			for bits := uint(31); bits > 0; bits-- {
 				if b[pos]&uint32(1<<bits) != 0 {
@@ -165,10 +165,10 @@ func (b UIHash) Bits() uint {
 	return 0
 }
 
-func (h UIHash) MulUInt32(v uint32) UIHash {
-	a := UIHash{}
+func (h UINT256) MulUInt32(v uint32) UINT256 {
+	a := UINT256{}
 	carry := uint64(0)
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		n := carry + uint64(v)*uint64(h[i])
 		a[i] = uint32(n & 0xffffffff)
 		carry = n >> 32
@@ -177,11 +177,11 @@ func (h UIHash) MulUInt32(v uint32) UIHash {
 }
 
 // c = a * b
-func (h UIHash) Mul(v UIHash) UIHash {
-	a := UIHash{}
-	for j := 0; j < UIHashWidth; j++ {
+func (h UINT256) Mul(v UINT256) UINT256 {
+	a := UINT256{}
+	for j := 0; j < UINT256Width; j++ {
 		carry := uint64(0)
-		for i := 0; i+j < UIHashWidth; i++ {
+		for i := 0; i+j < UINT256Width; i++ {
 			n := carry + uint64(a[i+j]) + uint64(h[j])*uint64(v[i])
 			a[i+j] = uint32(n & 0xffffffff)
 			carry = n >> 32
@@ -191,19 +191,19 @@ func (h UIHash) Mul(v UIHash) UIHash {
 }
 
 //a = ^h
-func (h UIHash) Neg() UIHash {
-	a := UIHash{}
-	for i := 0; i < UIHashWidth; i++ {
+func (h UINT256) Neg() UINT256 {
+	a := UINT256{}
+	for i := 0; i < UINT256Width; i++ {
 		a[i] = ^h[i]
 	}
-	return a.Add(NewUIHash(1))
+	return a.Add(NewUINT256(1))
 }
 
 // >0 =  >
 // <0 =  <
 // =0 =  =
-func (h UIHash) Cmp(b UIHash) int {
-	for i := UIHashWidth - 1; i >= 0; i-- {
+func (h UINT256) Cmp(b UINT256) int {
+	for i := UINT256Width - 1; i >= 0; i-- {
 		if h[i] < b[i] {
 			return -1
 		}
@@ -215,15 +215,15 @@ func (h UIHash) Cmp(b UIHash) int {
 }
 
 //a = b - c
-func (h UIHash) Sub(b UIHash) UIHash {
+func (h UINT256) Sub(b UINT256) UINT256 {
 	return h.Add(b.Neg())
 }
 
 //a = b + c
-func (h UIHash) Add(b UIHash) UIHash {
-	a := UIHash{}
+func (h UINT256) Add(b UINT256) UINT256 {
+	a := UINT256{}
 	carry := uint64(0)
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		n := carry + uint64(h[i]) + uint64(b[i])
 		a[i] = uint32(n & 0xffffffff)
 		carry = n >> 32
@@ -233,8 +233,8 @@ func (h UIHash) Add(b UIHash) UIHash {
 
 // a = b /c
 
-func (h UIHash) Div(b UIHash) UIHash {
-	a := UIHash{}
+func (h UINT256) Div(b UINT256) UINT256 {
+	a := UINT256{}
 	num := h
 	div := b
 	nbits := num.Bits()
@@ -259,14 +259,14 @@ func (h UIHash) Div(b UIHash) UIHash {
 }
 
 //>>
-func (b UIHash) Rshift(shift uint) UIHash {
+func (b UINT256) Rshift(shift uint) UINT256 {
 	x := b
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		b[i] = 0
 	}
 	k := int(shift / 32)
 	shift = shift % 32
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		if i-k-1 >= 0 && shift != 0 {
 			b[i-k-1] |= (x[i] << (32 - shift))
 		}
@@ -278,18 +278,18 @@ func (b UIHash) Rshift(shift uint) UIHash {
 }
 
 //<<
-func (b UIHash) Lshift(shift uint) UIHash {
+func (b UINT256) Lshift(shift uint) UINT256 {
 	x := b
-	for i := 0; i < UIHashWidth; i++ {
+	for i := 0; i < UINT256Width; i++ {
 		b[i] = 0
 	}
 	k := int(shift / 32)
 	shift = shift % 32
-	for i := 0; i < UIHashWidth; i++ {
-		if i+k+1 < UIHashWidth && shift != 0 {
+	for i := 0; i < UINT256Width; i++ {
+		if i+k+1 < UINT256Width && shift != 0 {
 			b[i+k+1] |= (x[i] >> (32 - shift))
 		}
-		if i+k < UIHashWidth {
+		if i+k < UINT256Width {
 			b[i+k] |= (x[i] << shift)
 		}
 	}
@@ -297,14 +297,14 @@ func (b UIHash) Lshift(shift uint) UIHash {
 }
 
 //return Negative,Overflow
-func (b *UIHash) SetCompact(c uint32) (bool, bool) {
+func (b *UINT256) SetCompact(c uint32) (bool, bool) {
 	size := c >> 24
 	word := c & 0x007fffff
 	if size <= 3 {
 		word >>= 8 * (3 - size)
-		*b = NewUIHash(word)
+		*b = NewUINT256(word)
 	} else {
-		*b = NewUIHash(word)
+		*b = NewUINT256(word)
 		*b = b.Lshift(8 * uint(size-3))
 	}
 	negative := word != 0 && (c&0x00800000) != 0
@@ -312,7 +312,7 @@ func (b *UIHash) SetCompact(c uint32) (bool, bool) {
 	return negative, overflow
 }
 
-func (b UIHash) Compact(negative bool) uint32 {
+func (b UINT256) Compact(negative bool) uint32 {
 	size := (b.Bits() + 7) / 8
 	compact := uint64(0)
 	if size <= 3 {
@@ -334,9 +334,9 @@ func (b UIHash) Compact(negative bool) uint32 {
 	return uint32(compact)
 }
 
-func (h UIHash) ToHashID() HashID {
-	x := HashID{}
-	for i := 0; i < UIHashWidth; i++ {
+func (h UINT256) ToHash256() Hash256 {
+	x := Hash256{}
+	for i := 0; i < UINT256Width; i++ {
 		b4 := []byte{0, 0, 0, 0}
 		Endian.PutUint32(b4, h[i])
 		copy(x[i*4+0:i*4+4], b4)
@@ -344,26 +344,26 @@ func (h UIHash) ToHashID() HashID {
 	return x
 }
 
-func (h HashID) String() string {
+func (h Hash256) String() string {
 	sv := h.Swap()
 	return hex.EncodeToString(sv[:])
 }
 
-func (b HashID) IsZero() bool {
+func (b Hash256) IsZero() bool {
 	bz := make([]byte, len(b))
 	return bytes.Equal(b[:], bz)
 }
 
-func (b HashID) Equal(v HashID) bool {
+func (b Hash256) Equal(v Hash256) bool {
 	return bytes.Equal(b[:], v[:])
 }
 
-func (b HashID) Bytes() []byte {
+func (b Hash256) Bytes() []byte {
 	return b[:]
 }
 
-func (b HashID) Swap() HashID {
-	v := HashID{}
+func (b Hash256) Swap() Hash256 {
+	v := Hash256{}
 	j := 0
 	for i := len(b) - 1; i >= 0; i-- {
 		v[j] = b[i]
@@ -372,8 +372,8 @@ func (b HashID) Swap() HashID {
 	return v
 }
 
-func NewHashID(v interface{}) HashID {
-	b := HashID{}
+func NewHash256(v interface{}) Hash256 {
+	b := Hash256{}
 	switch v.(type) {
 	case []byte:
 		bs := v.([]byte)

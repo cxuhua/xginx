@@ -11,7 +11,6 @@ import (
 
 func TestPostSignData(t *testing.T) {
 	surl := "http://192.168.31.177:9334/sign/OO01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089047D1432AA6180000010C930ABEAFC1D8553"
-	log.Println(len(surl))
 	otag := NewTagInfo(surl)
 	//客户端服务器端都要解码
 	if err := otag.DecodeURL(); err != nil {
@@ -28,7 +27,7 @@ func TestPostSignData(t *testing.T) {
 	}
 	client := &CliPart{}
 	client.CLoc.Set(122.33, 112.44)
-	client.Prev = HashID{}
+	client.Prev = Hash256{}
 	client.CTime = time.Now().UnixNano()
 	cb, err := client.Sign(pk, sigb)
 	if err != nil {
@@ -38,6 +37,7 @@ func TestPostSignData(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	log.Println(res.StatusCode)
 	data, err := ioutil.ReadAll(res.Body)
-	log.Println(data, err)
+	log.Println(string(data), err)
 }

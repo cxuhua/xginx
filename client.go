@@ -56,7 +56,7 @@ func (c *Client) IsOut() bool {
 }
 
 //获取对方节点id
-func (c *Client) NodeID() UserID {
+func (c *Client) NodeID() Hash160 {
 	if c.mVer == nil {
 		return NewNodeID()
 	} else {

@@ -100,7 +100,7 @@ func (m *mongoDBStore) SetBlock(id []byte, meta interface{}, bb []byte) error {
 	if err != nil {
 		return err
 	}
-	hash := NewHashID(id)
+	hash := NewHash256(id)
 	opts := options.GridFSUpload()
 	opts.SetMetadata(meta)
 	ups, err := bucket.OpenUploadStreamWithID(id, hash.String(), opts)

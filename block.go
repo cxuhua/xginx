@@ -21,11 +21,12 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 
 	b := &BlockInfo{
 		Ver:    1,
-		Prev:   HashID{},
-		Merkle: HashID{},
+		Prev:   Hash256{},
+		Merkle: Hash256{},
 		Time:   1572669878,
 		Bits:   0x1d00ffff,
-		Uts:    []*Unit{},
+		Nonce:  0x58f3e185,
+		Uts:    []*Units{},
 		Txs:    []*TX{},
 	}
 
@@ -45,7 +46,7 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	b.Txs = []*TX{tx}
 
 	//生成merkle root id
-	if err := b.MerkleRoot(); err != nil {
+	if err := b.SetMerkle(); err != nil {
 		panic(err)
 	}
 
@@ -56,7 +57,7 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 		panic(err)
 	}
 	bb := buf.Bytes()
-	nhash := HashID{}
+	nhash := Hash256{}
 	for i := uint64(0); ; i++ {
 		select {
 		case <-ctx.Done():
@@ -79,27 +80,26 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	}
 }
 
-//一个块由n个条目组成
-
+//一个记录单元必须同一个用户连续的链数据
 //块信息
 //Bodys记录中不能用相同的clientid，items必须时间上连续，hash能前后衔接
 //txs交易部分和比特币类似
 //块大小限制为4M大小
 type BlockInfo struct {
 	Ver    uint32     //block ver
-	Prev   HashID     //pre block hash
-	Merkle HashID     //txs Merkle tree hash + Units hash
+	Prev   Hash256    //pre block hash
+	Merkle Hash256    //txs Merkle tree hash + Units hash
 	Time   uint32     //时间戳
 	Bits   uint32     //难度
 	Nonce  uint32     //随机值
-	Uts    []*Unit    //记录单元 没有记录单元将不会获得奖励
+	Uts    []*Units   //记录单元 没有记录单元将不会获得奖励
 	Txs    []*TX      //交易记录，类似比特币
 	hasher HashCacher //hash 缓存
 	utsher HashCacher //uts 缓存
 	merher HashCacher //mer hash 缓存
 }
 
-func (v *BlockInfo) UtsHash() HashID {
+func (v *BlockInfo) UTSHash() Hash256 {
 	if h, b := v.utsher.IsSet(); b {
 		return h
 	}
@@ -116,11 +116,11 @@ func (v *BlockInfo) UtsHash() HashID {
 	return v.utsher.Hash(buf.Bytes())
 }
 
-func (v *BlockInfo) MerkleRoot() error {
+func (v *BlockInfo) SetMerkle() error {
 	if _, b := v.merher.IsSet(); b {
 		return nil
 	}
-	ids := []HashID{}
+	ids := []Hash256{}
 	for _, tv := range v.Txs {
 		ids = append(ids, tv.Hash())
 	}
@@ -132,7 +132,7 @@ func (v *BlockInfo) MerkleRoot() error {
 	if _, err := buf.Write(root[:]); err != nil {
 		return err
 	}
-	uts := v.UtsHash()
+	uts := v.UTSHash()
 	if _, err := buf.Write(uts[:]); err != nil {
 		return err
 	}
@@ -140,7 +140,7 @@ func (v *BlockInfo) MerkleRoot() error {
 	return nil
 }
 
-func (b *BlockInfo) Hash() HashID {
+func (b *BlockInfo) Hash() Hash256 {
 	if id, ok := b.hasher.IsSet(); ok {
 		return id
 	}
@@ -156,7 +156,7 @@ func (b *BlockInfo) IsGenesis() bool {
 }
 
 //加载区块
-func LoadBlock(db DBImp, id HashID) (*BlockInfo, error) {
+func LoadBlock(db DBImp, id Hash256) (*BlockInfo, error) {
 	if b, err := CBlock.Get(id[:]); err == nil {
 		return b.(*BlockInfo), nil
 	}
@@ -172,7 +172,7 @@ func LoadBlock(db DBImp, id HashID) (*BlockInfo, error) {
 	return v, nil
 }
 
-//hashid meta,bytes
+//Hash256 meta,bytes
 func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 	meta := &TBMeta{
 		Ver:    b.Ver,
@@ -266,14 +266,14 @@ func (v *BlockInfo) Decode(r IReader) error {
 	if err := unum.Decode(r); err != nil {
 		return err
 	}
-	v.Uts = make([]*Unit, unum)
+	v.Uts = make([]*Units, unum)
 	for i, _ := range v.Uts {
-		uv := &Unit{}
-		err := uv.Decode(r)
+		uvs := &Units{}
+		err := uvs.Decode(r)
 		if err != nil {
 			return err
 		}
-		v.Uts[i] = uv
+		v.Uts[i] = uvs
 	}
 	tnum := VarUInt(0)
 	if err := tnum.Decode(r); err != nil {
@@ -293,7 +293,7 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  HashID  //输出交易hash
+	OutHash  Hash256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //解锁脚本
 }
@@ -392,11 +392,11 @@ type TX struct {
 	hasher HashCacher //hash缓存
 }
 
-func (tx *TX) Hash() HashID {
+func (tx *TX) Hash() Hash256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
 	}
-	h := HashID{}
+	h := Hash256{}
 	buf := &bytes.Buffer{}
 	_ = tx.Encode(buf)
 	copy(h[:], HASH256(buf.Bytes()))
@@ -484,7 +484,43 @@ func (v *TX) Decode(r IReader) error {
 	return nil
 }
 
+type Units []*Unit
+
+func (v Units) Encode(w IWriter) error {
+	if err := VarUInt(len(v)).Encode(w); err != nil {
+		return err
+	}
+	for _, uv := range v {
+		err := uv.Encode(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v *Units) Decode(r IReader) error {
+	num := VarUInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	*v = make([]*Unit, num)
+	for i, _ := range *v {
+		un := &Unit{}
+		err := un.Decode(r)
+		if err != nil {
+			return err
+		}
+		(*v)[i] = un
+	}
+	return nil
+}
+
 type Alloc uint8
+
+func (v Alloc) ToUInt8() uint8 {
+	return uint8(v)
+}
 
 func (v Alloc) Encode(w IWriter) error {
 	return binary.Write(w, Endian, v)
@@ -504,12 +540,9 @@ func (v Alloc) Scale() (float64, float64, float64) {
 
 //3个值之和应该为10
 func (v Alloc) Check() error {
-	m := (v >> 5) & 0b111
-	t := (v >> 2) & 0b111
-	c := v & 0b11
-	av := m + t + c
+	av := ((v >> 5) & 0b111) + ((v >> 2) & 0b111) + (v & 0b11)
 	if av != 10 {
-		return errors.New("value error,scale sum=10")
+		return errors.New("value error,alloc sum != 10")
 	}
 	return nil
 }
@@ -532,22 +565,22 @@ type ITokenCalcer interface {
 	//用户获得的积分
 	Client() VarUInt
 	//标签获得的积分
-	Tags() map[UserID]VarUInt
+	Tags() map[Hash160]VarUInt
 	//重置
 	Reset()
 }
 
 type TokenCalcer struct {
-	total  float64            //总的的积分
-	vmap   map[UserID]float64 //标签获得的积分
-	miner  float64            //矿工奖励的积分
-	client float64            //用户获得的积分
+	total  float64             //总的的积分
+	vmap   map[Hash160]float64 //标签获得的积分
+	miner  float64             //矿工奖励的积分
+	client float64             //用户获得的积分
 }
 
 func NewTokenCalcer() *TokenCalcer {
 	return &TokenCalcer{
 		total:  0,
-		vmap:   map[UserID]float64{},
+		vmap:   map[Hash160]float64{},
 		miner:  0,
 		client: 0,
 	}
@@ -568,7 +601,7 @@ func (calcer *TokenCalcer) Reset() {
 	calcer.total = 0
 	calcer.miner = 0
 	calcer.client = 0
-	calcer.vmap = map[UserID]float64{}
+	calcer.vmap = map[Hash160]float64{}
 }
 
 func (calcer *TokenCalcer) Total() VarUInt {
@@ -586,8 +619,8 @@ func (calcer *TokenCalcer) Client() VarUInt {
 }
 
 //标签获得的积分
-func (calcer *TokenCalcer) Tags() map[UserID]VarUInt {
-	ret := map[UserID]VarUInt{}
+func (calcer *TokenCalcer) Tags() map[Hash160]VarUInt {
+	ret := map[Hash160]VarUInt{}
 	for k, v := range calcer.vmap {
 		ret[k] = VarUInt(v)
 	}

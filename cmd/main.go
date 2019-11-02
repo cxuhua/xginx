@@ -27,7 +27,7 @@ func createFistBlock() {
 
 func main() {
 
-	createFistBlock()
+	//createFistBlock()
 
 	defer gv.Close()
 	csig := make(chan os.Signal)

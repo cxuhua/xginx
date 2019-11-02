@@ -58,13 +58,14 @@ type TBMeta struct {
 //单元块数据,打卡记录
 //块中的一小部分
 
-type UnitKey HashID
+type UnitKey Hash256
 
 type TUnit struct {
 	Hash  []byte   `bson:"_id"`   //block hash
 	TTS   []byte   `bson:"tts"`   //TT状态 url +2,激活后OO tam map
 	TVer  uint32   `bson:"ver"`   //版本 from tag
 	TLoc  []uint32 `bson:"tloc"`  //uint32-uint32 位置 from tag
+	TASV  uint8    `bson:"asv"`   //分配比例
 	TPKH  []byte   `bson:"tpkh"`  //标签所有者公钥hash
 	TUID  []byte   `bson:"tuid"`  //标签id from tag
 	TCTR  uint     `bson:"tctr"`  //标签记录计数器 from tag map

@@ -143,32 +143,32 @@ func (p *SigBytes) Set(sig *SigValue) {
 }
 
 //公钥hash160
-type UserID [20]byte
+type Hash160 [20]byte
 
-func (v *UserID) SetPK(pk *PublicKey) {
+func (v *Hash160) SetPK(pk *PublicKey) {
 	*v = pk.Hash()
 }
 
-func (v *UserID) Set(b []byte) {
+func (v *Hash160) Set(b []byte) {
 	copy(v[:], b)
 }
 
-func (v UserID) Equal(b UserID) bool {
+func (v Hash160) Equal(b Hash160) bool {
 	return bytes.Equal(v[:], b[:])
 }
 
-func (v UserID) Encode(w IWriter) error {
+func (v Hash160) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
 
-func (v *UserID) Decode(r IReader) error {
+func (v *Hash160) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
 type HashCacher struct {
-	hash HashID
+	hash Hash256
 	set  bool
 }
 
@@ -176,11 +176,11 @@ func (h *HashCacher) Reset() {
 	h.set = false
 }
 
-func (h HashCacher) IsSet() (HashID, bool) {
+func (h HashCacher) IsSet() (Hash256, bool) {
 	return h.hash, h.set
 }
 
-func (h *HashCacher) Hash(b []byte) HashID {
+func (h *HashCacher) Hash(b []byte) Hash256 {
 	if h.set {
 		return h.hash
 	}
@@ -239,7 +239,7 @@ type TagInfo struct {
 	TVer  uint32   //版本 from tag
 	TLoc  Location //uint32-uint32 位置 from tag
 	TASV  Alloc    //积分分配比例,由标签持有者确定，写入后不可修改
-	TPKH  UserID   //标签所有者公钥的hash160，标记标签所有者
+	TPKH  Hash160  //标签所有者公钥的hash160，标记标签所有者
 	TUID  TagUID   //标签id from tag
 	TCTR  TagCTR   //标签记录计数器 from tag map
 	TMAC  TagMAC   //标签CMAC值 from tag url + 16
@@ -517,7 +517,7 @@ func (s VarStr) EncodeWriter(w io.Writer) error {
 //POST 编码数据到服务器
 type CliPart struct {
 	CLoc  Location //用户定位信息user location
-	Prev  HashID   //上个hash
+	Prev  Hash256  //上个hash
 	CTime int64    //客户端时间，不能和服务器相差太大 单位：纳秒
 	CPks  PKBytes  //用户公钥
 	CSig  SigBytes //用户签名
@@ -556,8 +556,8 @@ func (c *CliPart) Verify(b []byte) error {
 }
 
 //cpks hash160
-func (c *CliPart) ClientID() UserID {
-	uid := UserID{}
+func (c *CliPart) ClientID() Hash160 {
+	uid := Hash160{}
 	copy(uid[:], HASH160(c.CPks[:]))
 	return uid
 }
@@ -744,6 +744,7 @@ func (b *TUnit) Encode(w io.Writer) (*Unit, error) {
 	bi.TTS.Set(b.TTS)
 	bi.TVer = b.TVer
 	bi.TLoc.SetLoc(b.TLoc)
+	bi.TASV = Alloc(b.TASV)
 	bi.TPKH.Set(b.TPKH)
 	bi.TUID.Set(b.TUID)
 	bi.TCTR.Set(b.TCTR)
@@ -815,7 +816,7 @@ func (b *Unit) Decode(r io.Reader) error {
 	return nil
 }
 
-func (b *Unit) Hash() HashID {
+func (b *Unit) Hash() Hash256 {
 	if hash, ok := b.hasher.IsSet(); ok {
 		return hash
 	}
@@ -842,6 +843,7 @@ func VerifyUnit(conf *Config, bs []byte) (*TUnit, error) {
 	v.TTS = b.TTS[:]
 	v.TVer = b.TVer
 	v.TLoc = b.TLoc.ToUInt()
+	v.TASV = b.TASV.ToUInt8()
 	v.TPKH = b.TPKH[:]
 	v.TUID = b.TUID[:]
 	v.TCTR = b.TCTR.ToUInt()

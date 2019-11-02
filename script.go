@@ -3,10 +3,13 @@ package xginx
 import "bytes"
 
 const (
-	SCRIPT_BASE_TYPE    = uint8(0) //coinbase input 0
-	SCRIPT_UNLOCK_TYPE  = uint8(1) //pubkey sigvalue
-	SCRIPT_LOCKED_TYPE  = uint8(2) //hash160(pubkey)
+	SCRIPT_BASE_TYPE   = uint8(0) //coinbase input 0
+	SCRIPT_UNLOCK_TYPE = uint8(1) //pubkey sigvalue
+	//标准交易
+	SCRIPT_LOCKED_TYPE = uint8(2) //hash160(pubkey)
+	//竞价成功不可消费类型
 	SCRIPT_RECOVER_TYPE = uint8(3) //hash160(pubkey)
+	//竞价成功可以消费类型
 	SCRIPT_AUCTION_TYPE = uint8(4) //hash160(pubkey)
 )
 
@@ -16,7 +19,7 @@ func (s Script) Len() int {
 	return len(s)
 }
 
-func (s Script) Ver() uint8 {
+func (s Script) Type() uint8 {
 	return s[0]
 }
 

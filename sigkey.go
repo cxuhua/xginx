@@ -291,9 +291,9 @@ func (pk *PublicKey) Decode(data []byte) error {
 	return nil
 }
 
-func (pb *PublicKey) Hash() UserID {
+func (pb *PublicKey) Hash() Hash160 {
 	b := pb.Encode()
-	uid := UserID{}
+	uid := Hash160{}
 	copy(uid[:], HASH160(b))
 	return uid
 }

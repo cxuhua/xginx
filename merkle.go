@@ -12,7 +12,7 @@ type MerkleNode []byte
 
 type MerkleTree struct {
 	trans int
-	vhash []HashID
+	vhash []Hash256
 	bits  []bool
 	bad   bool
 }
@@ -20,13 +20,13 @@ type MerkleTree struct {
 func NewMerkleTree(num int) *MerkleTree {
 	v := &MerkleTree{}
 	v.trans = num
-	v.vhash = []HashID{}
+	v.vhash = []Hash256{}
 	v.bits = []bool{}
 	v.bad = false
 	return v
 }
 
-func GetMerkleTree(num int, hashs []HashID, bits *bitset.BitSet) *MerkleTree {
+func GetMerkleTree(num int, hashs []Hash256, bits *bitset.BitSet) *MerkleTree {
 	v := &MerkleTree{}
 	v.trans = num
 	v.vhash = hashs
@@ -42,7 +42,7 @@ func (tree *MerkleTree) Trans() int {
 	return tree.trans
 }
 
-func (tree *MerkleTree) Hashs() []HashID {
+func (tree *MerkleTree) Hashs() []Hash256 {
 	return tree.vhash
 }
 
@@ -54,8 +54,8 @@ func (tree *MerkleTree) Bits() *bitset.BitSet {
 	return ret
 }
 
-func (tree *MerkleTree) Hash(n1 HashID, n2 HashID) HashID {
-	ret := HashID{}
+func (tree *MerkleTree) Hash(n1 Hash256, n2 Hash256) Hash256 {
+	ret := Hash256{}
 	v := append([]byte{}, n1[:]...)
 	v = append(v, n2[:]...)
 	copy(ret[:], HASH256(v))
@@ -70,7 +70,7 @@ func (tree *MerkleTree) Height() int {
 	return h
 }
 
-func BuildMerkleTree(ids []HashID) *MerkleTree {
+func BuildMerkleTree(ids []Hash256) *MerkleTree {
 	num := len(ids)
 	tree := NewMerkleTree(num)
 	vb := bitset.New(uint(num))
@@ -79,16 +79,16 @@ func BuildMerkleTree(ids []HashID) *MerkleTree {
 	return tree
 }
 
-func (tree *MerkleTree) Build(ids []HashID, vb *bitset.BitSet) *MerkleTree {
+func (tree *MerkleTree) Build(ids []Hash256, vb *bitset.BitSet) *MerkleTree {
 	tree.bad = false
-	tree.vhash = []HashID{}
+	tree.vhash = []Hash256{}
 	tree.bits = []bool{}
 	h := tree.Height()
 	tree.build(h, 0, ids, vb)
 	return tree
 }
 
-func (tree *MerkleTree) build(h int, pos int, ids []HashID, vb *bitset.BitSet) {
+func (tree *MerkleTree) build(h int, pos int, ids []Hash256, vb *bitset.BitSet) {
 	match := false
 	for p := pos << h; p < (pos+1)<<h && p < tree.trans; p++ {
 		if vb.Test(uint(p)) {
@@ -106,45 +106,45 @@ func (tree *MerkleTree) build(h int, pos int, ids []HashID, vb *bitset.BitSet) {
 	}
 }
 
-func (tree *MerkleTree) Extract() (HashID, []HashID, []int) {
-	ids := make([]HashID, 0)
+func (tree *MerkleTree) Extract() (Hash256, []Hash256, []int) {
+	ids := make([]Hash256, 0)
 	idx := make([]int, 0)
 	tree.bad = false
 	if tree.trans == 0 {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	if len(tree.vhash) > tree.trans {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	if len(tree.bits) < len(tree.vhash) {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	h := tree.Height()
 	nbits, nhash := 0, 0
 	root := tree.extract(h, 0, &nbits, &nhash, &ids, &idx)
 	if tree.bad {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	if (nbits+7)/8 != (len(tree.bits)+7)/8 {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	if nhash != len(tree.vhash) {
-		return HashID{}, nil, nil
+		return Hash256{}, nil, nil
 	}
 	return root, ids, idx
 }
 
-func (tree *MerkleTree) extract(h int, pos int, nbits *int, nhash *int, ids *[]HashID, idx *[]int) HashID {
+func (tree *MerkleTree) extract(h int, pos int, nbits *int, nhash *int, ids *[]Hash256, idx *[]int) Hash256 {
 	if *nbits >= len(tree.bits) {
 		tree.bad = true
-		return HashID{}
+		return Hash256{}
 	}
 	match := tree.bits[*nbits]
 	*nbits++
 	if h == 0 || !match {
 		if *nhash >= len(tree.vhash) {
 			tree.bad = true
-			return HashID{}
+			return Hash256{}
 		}
 		hash := tree.vhash[*nhash]
 		*nhash++
@@ -154,7 +154,7 @@ func (tree *MerkleTree) extract(h int, pos int, nbits *int, nhash *int, ids *[]H
 		}
 		return hash
 	} else {
-		left, right := tree.extract(h-1, pos*2, nbits, nhash, ids, idx), HashID{}
+		left, right := tree.extract(h-1, pos*2, nbits, nhash, ids, idx), Hash256{}
 		if pos*2+1 < tree.TreeWidth(h-1) {
 			right = tree.extract(h-1, pos*2+1, nbits, nhash, ids, idx)
 			if left.Equal(right) {
@@ -171,14 +171,14 @@ func (tree *MerkleTree) TreeWidth(h int) int {
 	return (tree.trans + (1 << h) - 1) >> h
 }
 
-func (tree *MerkleTree) CalcHash(h int, pos int, ids []HashID) HashID {
+func (tree *MerkleTree) CalcHash(h int, pos int, ids []Hash256) Hash256 {
 	if len(ids) == 0 {
 		panic(errors.New("empty merkle array"))
 	}
 	if h == 0 {
 		return ids[pos]
 	}
-	left, right := tree.CalcHash(h-1, pos*2, ids), HashID{}
+	left, right := tree.CalcHash(h-1, pos*2, ids), Hash256{}
 	if pos*2+1 < tree.TreeWidth(h-1) {
 		right = tree.CalcHash(h-1, pos*2+1, ids)
 	} else {

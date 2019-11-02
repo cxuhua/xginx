@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,10 +31,17 @@ var (
 
 type xhttp struct {
 	tbf    *bloom.BloomFilter //标签id过滤器
+	tmu    sync.RWMutex
 	shttp  *http.Server
 	ctx    context.Context
 	cancel context.CancelFunc
 	dbkey  string
+}
+
+//输出错误
+func putError(c *gin.Context, err error) {
+	c.String(http.StatusBadRequest, err.Error())
+	c.Abort()
 }
 
 // 签名服务
@@ -42,35 +50,56 @@ func signAction(c *gin.Context) {
 	tag := NewTagInfo(url)
 	//客户端服务器端都要解码
 	if err := tag.DecodeURL(); err != nil {
-		_ = c.AbortWithError(http.StatusBadRequest, err)
+		putError(c, err)
 		return
 	}
 	cli := &CliPart{}
 	if err := cli.Decode(c.Request.Body); err != nil {
-		_ = c.AbortWithError(http.StatusBadRequest, err)
+		putError(c, err)
 		return
 	}
 	db := Http.GetDBImp(c)
 	//校验客户端数据
 	err := tag.Valid(db, cli)
 	if err != nil {
-		_ = c.AbortWithError(http.StatusBadRequest, err)
+		putError(c, err)
 		return
 	}
 	tb := &SerPart{}
 	//获取一个可签名的私钥
 	spri := conf.GetPrivateKey()
 	if spri == nil {
-		_ = c.AbortWithError(http.StatusBadRequest, errors.New("private key mss"))
+		putError(c, errors.New("private key mss"))
 		return
 	}
 	//签名数据
 	bb, err := tb.Sign(spri, tag, cli)
 	if err != nil {
-		_ = c.AbortWithError(http.StatusBadRequest, err)
+		putError(c, err)
+		return
+	}
+	uv, err := VerifyUnit(conf, bb)
+	if err != nil {
+		putError(c, err)
+		return
+	}
+	if err := uv.Save(db); err != nil {
+		putError(c, err)
 		return
 	}
 	c.Data(http.StatusOK, "application/octet-stream", bb)
+}
+
+func (h *xhttp) AddTag(uid []byte) {
+	h.tmu.Lock()
+	defer h.tmu.Unlock()
+	h.tbf.Add(uid)
+}
+
+func (h *xhttp) TestTag(uid []byte) bool {
+	h.tmu.RLock()
+	defer h.tmu.RUnlock()
+	return h.tbf.Test(uid)
 }
 
 //在使用DBHandler之后可调用
@@ -81,7 +110,7 @@ func (h *xhttp) GetDBImp(c *gin.Context) DBImp {
 //挂接服务
 func (h *xhttp) init(m *gin.Engine) {
 	//添加测试标签
-	h.tbf.Add([]byte{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80})
+	h.AddTag([]byte{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80})
 	//签名接口
 	m.POST("/sign/:hex", h.TagFilter(), h.DBHandler(), signAction)
 }
@@ -105,24 +134,20 @@ func (h *xhttp) TagFilter() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		hex := c.Param("hex")
 		if len(hex) < 64 {
-			log.Println("url hex too short")
-			c.Abort()
+			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 		if len(hex) > 512 {
-			log.Println("url hex too long")
-			c.Abort()
+			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 		tag := TagInfo{}
 		if err := tag.DecodeHex([]byte(hex)); err != nil {
-			log.Println("decode tag hex error", err)
-			c.Abort()
+			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
-		if !h.tbf.Test(tag.TUID[:]) {
-			log.Println("test error skip")
-			c.Abort()
+		if !h.TestTag(tag.TUID[:]) {
+			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 		c.Next()

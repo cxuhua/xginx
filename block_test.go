@@ -8,6 +8,44 @@ import (
 	"time"
 )
 
+func TestCreateGenesisBlock(t *testing.T) {
+	pub, err := LoadPublicKey("8aKby6XxwmoaiYt6gUbS1u2RHco37iHfh6sAPstME33Qh6ujd9")
+	if err != nil {
+		panic(err)
+	}
+
+	b := &BlockInfo{
+		Ver:    1,
+		Prev:   Hash256{},
+		Merkle: Hash256{},
+		Time:   1572669878,
+		Bits:   0x1d00ffff,
+		Nonce:  0x58f3e185,
+		Uts:    []*Units{},
+		Txs:    []*TX{},
+	}
+
+	tx := &TX{}
+
+	tx.Ver = 1
+	in := &TxIn{}
+	in.Script = BaseScript([]byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
+	tx.Ins = []*TxIn{in}
+
+	out := &TxOut{}
+	out.Value = 529
+	out.Script = LockedScript(pub)
+
+	tx.Outs = []*TxOut{out}
+	tx.Hash()
+	b.Txs = []*TX{tx}
+	//生成merkle root id
+	if err := b.SetMerkle(); err != nil {
+		panic(err)
+	}
+	log.Println(b.Hash())
+}
+
 func TestSaveBlockInfo(t *testing.T) {
 	b := &BlockInfo{}
 	b.Ver = 100
@@ -73,7 +111,7 @@ func TestCalcDistance(t *testing.T) {
 	i1.CTime = now
 	i1.CLoc.Set(104.0671670437, 30.5573090657)
 	i1.STime = now
-	i1.TPKH = UserID{1}
+	i1.TPKH = Hash160{1}
 	i1.TASV = S631
 
 	i2 := &Unit{}
@@ -82,7 +120,7 @@ func TestCalcDistance(t *testing.T) {
 	i2.CTime = now + int64(time.Hour)
 	i2.CLoc.Set(104.0615880489, 30.5536596605)
 	i2.STime = now + int64(time.Hour)
-	i2.TPKH = UserID{2}
+	i2.TPKH = Hash160{2}
 	i2.TASV = S622
 
 	i3 := &Unit{}
@@ -92,7 +130,7 @@ func TestCalcDistance(t *testing.T) {
 	i3.CTime = now + int64(time.Hour*2)
 	i3.CLoc.Set(104.0671670437, 30.5573090657)
 	i3.STime = now + int64(time.Hour*2)
-	i3.TPKH = UserID{3}
+	i3.TPKH = Hash160{3}
 	i3.TASV = S721
 
 	is := []*Unit{i1, i2, i3}

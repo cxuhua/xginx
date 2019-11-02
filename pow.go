@@ -5,8 +5,8 @@ import (
 )
 
 // Check whether a block hash satisfies the proof-of-work requirement specified by nBits
-func CheckProofOfWork(hash HashID, bits uint32) bool {
-	h := UIHash{}
+func CheckProofOfWork(hash Hash256, bits uint32) bool {
+	h := UINT256{}
 	n, o := h.SetCompact(bits)
 	if n {
 		return false
@@ -29,7 +29,7 @@ func CheckProofOfWork(hash HashID, bits uint32) bool {
 //pw = lastBlock's bits
 func CalculateWorkRequired(ct uint32, pt uint32, pw uint32) uint32 {
 	span := uint32(conf.PowTime)
-	limit := NewUIHash(conf.PowLimit)
+	limit := NewUINT256(conf.PowLimit)
 	sub := ct - pt
 	if sub <= 0 {
 		panic(errors.New("ct pt error"))
@@ -40,10 +40,10 @@ func CalculateWorkRequired(ct uint32, pt uint32, pw uint32) uint32 {
 	if sv := span * 4; sub > sv {
 		sub = sv
 	}
-	n := UIHash{}
+	n := UINT256{}
 	n.SetCompact(pw)
 	n = n.MulUInt32(sub)
-	n = n.Div(NewUIHash(span))
+	n = n.Div(NewUINT256(span))
 	if n.Cmp(limit) > 0 {
 		n = limit
 	}

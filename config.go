@@ -46,28 +46,28 @@ type Config struct {
 	MinerPKey    string                  `json:"miner_pkey"`    //矿工产出私钥
 	PowTime      uint                    `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
 	PowLimit     string                  `json:"pow_limit"`
-	SpanTime     float64                 `json:"span_time"`   //两次记录时间差超过这个时间将被忽略距离计算
-	DisRange     []uint                  `json:"dis_range"`   //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
-	Halving      uint                    `json:"halving"`     //210000
-	Flags        string                  `json:"flags"`       //协议头标记
-	Ver          uint32                  `json:"version"`     //节点版本
-	Publics      []string                `json:"pubs"`        //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
-	ListenPort   int                     `json:"listen_port"` //服务端口和ip
-	ListenIp     string                  `json:"listen_ip"`   //服务ip
-	RemoteIp     string                  `json:"remote_ip"`   //节点远程连接ip
-	Privates     []string                `json:"pris"`        //用于签名的私钥
-	Certs        []string                `json:"certs"`       //已经签名的证书
-	TimeErr      float64                 `json:"time_err"`    //时间误差 秒 客户端时间与服务器时间差在这个范围内
-	pris         map[PKBytes]*PrivateKey `json:"-"`           //
-	pubs         map[PKBytes]*PublicKey  `json:"-"`           //
-	certs        map[PKBytes]*Cert       `json:"-"`           //
-	pubshash     HashID                  `json:"-"`           //
-	mu           sync.RWMutex            `json:"-"`           //
-	NodeID       UserID                  `json:"-"`           //启动时临时生成
-	minerpk      *PublicKey              `json:"-"`           //私钥
-	logFile      *os.File                `json:"-"`           //日志文件
-	genesisId    HashID                  `json:"-"`           //第一个区块id
-	LimitHash    UIHash                  `json:"-"`           //最小工作难度
+	SpanTime     float64                 `json:"span_time"` //两次记录时间差超过这个时间将被忽略距离计算
+	DisRange     []uint                  `json:"dis_range"` //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
+	Halving      uint                    `json:"halving"`   //210000
+	Flags        string                  `json:"flags"`     //协议头标记
+	Ver          uint32                  `json:"version"`   //节点版本
+	Publics      []string                `json:"pubs"`      //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
+	TcpPort      int                     `json:"tcp_port"`  //服务端口和ip
+	TcplIp       string                  `json:"tcp_lip"`   //服务ip
+	TcprIp       string                  `json:"tcp_rip"`   //节点远程连接ip
+	Privates     []string                `json:"pris"`      //用于签名的私钥
+	Certs        []string                `json:"certs"`     //已经签名的证书
+	TimeErr      float64                 `json:"time_err"`  //时间误差 秒 客户端时间与服务器时间差在这个范围内
+	pris         map[PKBytes]*PrivateKey `json:"-"`         //
+	pubs         map[PKBytes]*PublicKey  `json:"-"`         //
+	certs        map[PKBytes]*Cert       `json:"-"`         //
+	pubshash     Hash256                 `json:"-"`         //
+	mu           sync.RWMutex            `json:"-"`         //
+	NodeID       Hash160                 `json:"-"`         //启动时临时生成
+	minerpk      *PublicKey              `json:"-"`         //私钥
+	logFile      *os.File                `json:"-"`         //日志文件
+	genesisId    Hash256                 `json:"-"`         //第一个区块id
+	LimitHash    UINT256                 `json:"-"`         //最小工作难度
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {
@@ -76,15 +76,15 @@ func (c *Config) GetMinerPubKey() *PublicKey {
 
 func (c *Config) GetListenAddr() NetAddr {
 	return NetAddr{
-		ip:   net.ParseIP(c.ListenIp),
-		port: uint16(c.ListenPort),
+		ip:   net.ParseIP(c.TcplIp),
+		port: uint16(c.TcpPort),
 	}
 }
 
 func (c *Config) GetNetAddr() NetAddr {
 	return NetAddr{
-		ip:   net.ParseIP(c.RemoteIp),
-		port: uint16(c.ListenPort),
+		ip:   net.ParseIP(c.TcprIp),
+		port: uint16(c.TcpPort),
 	}
 }
 
@@ -139,7 +139,7 @@ func (c *Config) DecodeCerts(b []byte) error {
 	defer c.mu.Unlock()
 	vhash := c.PubsHash()
 	buf := bytes.NewReader(b)
-	hash := HashID{}
+	hash := Hash256{}
 	if _, err := buf.Read(hash[:]); err != nil {
 		return err
 	}
@@ -171,13 +171,12 @@ func (c *Config) DecodeCerts(b []byte) error {
 			c.certs[cert.PubKey] = cert
 		}
 	}
-	log.Println("decode cert num=", num)
 	return nil
 }
 
 //两个客户端hash公钥配置必须一致
 //节点不能任意添加信任公钥
-func (c *Config) PubsHash() HashID {
+func (c *Config) PubsHash() Hash256 {
 	return c.pubshash
 }
 
@@ -228,7 +227,7 @@ func (c *Config) Close() {
 	}
 }
 
-func (c *Config) IsGenesisId(id HashID) bool {
+func (c *Config) IsGenesisId(id Hash256) bool {
 	return c.genesisId.Equal(id)
 }
 
@@ -253,13 +252,13 @@ func (c *Config) Init() error {
 		gin.DefaultErrorWriter = colorable.NewColorableStderr()
 	}
 	//设置第一个区块id
-	c.genesisId = NewHashID(c.GenesisBlock)
+	c.genesisId = NewHash256(c.GenesisBlock)
 	//加载矿工私钥
 	pk, err := LoadPublicKey(c.MinerPKey)
 	if err == nil {
 		c.minerpk = pk
 	}
-	c.LimitHash = NewUIHash(c.PowLimit)
+	c.LimitHash = NewUINT256(c.PowLimit)
 	//随机生成节点ID
 	c.NodeID = NewNodeID()
 	//加载私钥

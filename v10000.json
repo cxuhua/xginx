@@ -1,9 +1,9 @@
 {
   "flags": "xmnx",
   "version":10000,
-  "listen_port": 9333,
-  "listen_ip": "0.0.0.0",
-  "remote_ip": "192.168.31.198",
+  "tcp_port": 9333,
+  "tcp_lip": "0.0.0.0",
+  "tcp_rip": "192.168.31.198",
   "time_err": 60,
   "halving": 210000,
   "dis_range": [500,2000],
@@ -13,7 +13,7 @@
   "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
   "http_port": 9334,
   "http_scheme": "http",
-  "genesis_block": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "genesis_block": "00000000bc53243afdefce626814071bd4a616507726aa0ad37606e801f37a2e",
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",
