@@ -3,9 +3,11 @@ package xginx
 import "bytes"
 
 const (
-	SCRIPT_BASE_TYPE   = uint8(0) //coinbase input 0
-	SCRIPT_UNLOCK_TYPE = uint8(1) //pubkey sigvalue
-	SCRIPT_LOCKED_TYPE = uint8(2) //hash160(pubkey)
+	SCRIPT_BASE_TYPE    = uint8(0) //coinbase input 0
+	SCRIPT_UNLOCK_TYPE  = uint8(1) //pubkey sigvalue
+	SCRIPT_LOCKED_TYPE  = uint8(2) //hash160(pubkey)
+	SCRIPT_RECOVER_TYPE = uint8(3) //hash160(pubkey)
+	SCRIPT_AUCTION_TYPE = uint8(4) //hash160(pubkey)
 )
 
 type Script []byte

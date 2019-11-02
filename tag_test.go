@@ -182,7 +182,7 @@ func TestTagData(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		bl, err := VerifyBlockInfo(conf, bb)
+		bl, err := VerifyUnit(conf, bb)
 		if err != nil {
 			return fmt.Errorf("verify sign data error %w", err)
 		}

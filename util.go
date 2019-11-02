@@ -12,8 +12,6 @@ import (
 
 var (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
-	RATE_VALUE        = 100000000
-	MIN_RAWARD_RATE   = 0.0001 //0.1%
 )
 
 //距离计算比例
@@ -26,22 +24,6 @@ func GetDisRate(km float64) float64 {
 		return 1.0
 	}
 	return 1.0 - (km-min)/(max-min)
-}
-
-//计算分成比例,至少0.1%
-func GetRewardRate(h uint) float64 {
-	halvings := h / conf.Halving
-	if halvings > 32 {
-		return MIN_RAWARD_RATE
-	}
-	b := 50 * RATE_VALUE
-	n := b
-	n >>= halvings
-	v := float64(n) / float64(b)
-	if v < MIN_RAWARD_RATE {
-		return MIN_RAWARD_RATE
-	}
-	return v
 }
 
 //max : 60 bits

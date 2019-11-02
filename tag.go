@@ -825,7 +825,7 @@ func (b *Unit) Hash() HashID {
 }
 
 //校验块数据并返回对象
-func VerifyBlockInfo(conf *Config, bs []byte) (*TUnit, error) {
+func VerifyUnit(conf *Config, bs []byte) (*TUnit, error) {
 	if len(bs) > 512 {
 		return nil, errors.New("data error")
 	}
