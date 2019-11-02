@@ -25,7 +25,7 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 		Merkle: HashID{},
 		Time:   uint32(time.Now().Unix()),
 		Bits:   0x1d00ffff,
-		Uts:    []*Units{},
+		Uts:    []*Unit{},
 		Txs:    []*TX{},
 	}
 
@@ -92,7 +92,7 @@ type BlockInfo struct {
 	Time   uint32     //时间戳
 	Bits   uint32     //难度
 	Nonce  uint32     //随机值
-	Uts    []*Units   //记录单元 没有记录单元将不会获得奖励
+	Uts    []*Unit    //记录单元 没有记录单元将不会获得奖励
 	Txs    []*TX      //交易记录，类似比特币
 	hasher HashCacher //hash 缓存
 	utsher HashCacher //uts 缓存
@@ -266,9 +266,9 @@ func (v *BlockInfo) Decode(r IReader) error {
 	if err := unum.Decode(r); err != nil {
 		return err
 	}
-	v.Uts = make([]*Units, unum)
+	v.Uts = make([]*Unit, unum)
 	for i, _ := range v.Uts {
-		uv := &Units{}
+		uv := &Unit{}
 		err := uv.Decode(r)
 		if err != nil {
 			return err
@@ -522,16 +522,6 @@ const (
 	S721 = 0b111_010_01
 )
 
-//条目
-type Units struct {
-	ClientID  UserID       //用户公钥的hash160
-	PrevBlock HashID       //上个块hash
-	PrevIndex VarUInt      //上个块所在Units索引
-	Items     []*Unit      //
-	calcer    ITokenCalcer //check 成功后积分存在这里
-	hasher    HashCacher
-}
-
 //token结算接口
 type ITokenCalcer interface {
 	Calc(items []*Unit) error
@@ -667,138 +657,6 @@ func (calcer *TokenCalcer) Calc(items []*Unit) error {
 	}
 	if calcer.total < 0 || calcer.total > EARTH_RADIUS {
 		return errors.New("total range error")
-	}
-	return nil
-}
-
-//查找上一个单元 根据:
-//PrevBlock HashID  //上个块hash
-//PrevIndex VarUInt //上个块所在Units索引
-func (v *Units) findPrevUnit(db DBImp) (*Unit, error) {
-	if v.PrevBlock.IsZero() && !v.Items[0].IsFirst() {
-		return nil, errors.New("prev block hash zero")
-	}
-	//Items[0]为第一个元素
-	if v.PrevBlock.IsZero() && v.Items[0].IsFirst() {
-		return nil, nil
-	}
-	pb, err := LoadBlock(db, v.PrevBlock)
-	if err != nil {
-		return nil, err
-	}
-	idx := v.PrevIndex.ToInt()
-	if idx < 0 || idx >= len(pb.Uts) {
-		return nil, errors.New("prev index error")
-	}
-	uts := pb.Uts[idx]
-	//必须是当前client的
-	if !uts.ClientID.Equal(v.ClientID) {
-		return nil, errors.New("block unit error")
-	}
-	if len(uts.Items) == 0 {
-		return nil, errors.New("prv block units empty")
-	}
-	return uts.Last(), nil
-}
-
-func (v *Units) Hash() HashID {
-	if h, b := v.hasher.IsSet(); b {
-		return h
-	}
-	buf := &bytes.Buffer{}
-	if err := v.Encode(buf); err != nil {
-		panic(err)
-	}
-	return v.hasher.Hash(buf.Bytes())
-}
-
-func (v *Units) Last() *Unit {
-	return v.Items[len(v.Items)-1]
-}
-
-func (v *Units) Check(db DBImp) error {
-	//检测上一个has
-	if len(v.Items) < 2 {
-		return errors.New("items count too slow")
-	}
-	items := make([]*Unit, 0)
-	//查询上一个
-	puv, err := v.findPrevUnit(db)
-	if err != nil {
-		return err
-	}
-	//存在加入首位
-	if puv != nil {
-		items = append(items, puv)
-	}
-	buf := &bytes.Buffer{}
-	items = append(items, v.Items...)
-	for _, uv := range items {
-		//items必须是一个用户的数据
-		if !v.ClientID.Equal(uv.ClientID()) {
-			return errors.New("client id error")
-		}
-		buf.Reset()
-		err := uv.Encode(buf)
-		if err != nil {
-			return err
-		}
-		err = uv.SerPart.Verify(conf, buf.Bytes())
-		if err != nil {
-			return err
-		}
-	}
-	v.calcer = NewTokenCalcer()
-	if err := v.calcer.Calc(items); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v Units) Encode(w IWriter) error {
-	if err := v.ClientID.Encode(w); err != nil {
-		return err
-	}
-	if err := v.PrevBlock.Encode(w); err != nil {
-		return err
-	}
-	if err := v.PrevIndex.Encode(w); err != nil {
-		return err
-	}
-	if err := VarUInt(len(v.Items)).Encode(w); err != nil {
-		return err
-	}
-	for _, v := range v.Items {
-		err := v.Encode(w)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (v *Units) Decode(r IReader) error {
-	if err := v.ClientID.Decode(r); err != nil {
-		return err
-	}
-	if err := v.PrevBlock.Decode(r); err != nil {
-		return err
-	}
-	if err := v.PrevIndex.Decode(r); err != nil {
-		return err
-	}
-	inum := VarUInt(0)
-	if err := inum.Decode(r); err != nil {
-		return err
-	}
-	v.Items = make([]*Unit, inum)
-	for i, _ := range v.Items {
-		uv := &Unit{}
-		err := uv.Decode(r)
-		if err != nil {
-			return err
-		}
-		v.Items[i] = uv
 	}
 	return nil
 }
