@@ -10,6 +10,9 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
+	//获取交易id，单元id对应的块id,交易id，单元id应该是不重复的
+	//ft = uids or tids
+	BlockId(id HASH256, ft string) (HASH256, error)
 	//删除块
 	DelBlock(id []byte) error
 	//是否存在
@@ -88,6 +91,10 @@ func (b *TUnit) Save(db DBImp) error {
 var (
 	store DBSession = &mongoDBSession{}
 )
+
+func GetStore() DBSession {
+	return store
+}
 
 //标签数据
 type TagKey [16]byte

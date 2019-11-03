@@ -39,36 +39,38 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	ObjIdPrefix  string                  `json:"oid_prefix"`    //物品id前缀
+	AddrPrefix   string                  `json:"addr_prefix"`   //地址前缀
 	GenesisBlock string                  `json:"genesis_block"` //第一个区块
 	HttpScheme   string                  `json:"http_scheme"`   //http
 	LogFile      string                  `json:"log_file"`      //日志文件
 	HttpPort     int                     `json:"http_port"`     //http服务器端口
 	MinerPKey    string                  `json:"miner_pkey"`    //矿工产出私钥
 	PowTime      uint                    `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
-	PowLimit     string                  `json:"pow_limit"`
-	SpanTime     float64                 `json:"span_time"` //两次记录时间差超过这个时间将被忽略距离计算，单位小时
-	MaxSpeed     float64                 `json:"max_speed"` //最大速度 km/h
-	DisRange     []uint                  `json:"dis_range"` //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
-	Halving      uint                    `json:"halving"`   //210000
-	Flags        string                  `json:"flags"`     //协议头标记
-	Ver          uint32                  `json:"version"`   //节点版本
-	Publics      []string                `json:"pubs"`      //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
-	TcpPort      int                     `json:"tcp_port"`  //服务端口和ip
-	TcplIp       string                  `json:"tcp_lip"`   //服务ip
-	TcprIp       string                  `json:"tcp_rip"`   //节点远程连接ip
-	Privates     []string                `json:"pris"`      //用于签名的私钥
-	Certs        []string                `json:"certs"`     //已经签名的证书
-	TimeErr      float64                 `json:"time_err"`  //时间误差 秒 客户端时间与服务器时间差在这个范围内
-	pris         map[PKBytes]*PrivateKey `json:"-"`         //
-	pubs         map[PKBytes]*PublicKey  `json:"-"`         //
-	certs        map[PKBytes]*Cert       `json:"-"`         //
-	pubshash     HASH256                 `json:"-"`         //
-	mu           sync.RWMutex            `json:"-"`         //
-	NodeID       HASH160                 `json:"-"`         //启动时临时生成
-	minerpk      *PublicKey              `json:"-"`         //私钥
-	logFile      *os.File                `json:"-"`         //日志文件
-	genesisId    HASH256                 `json:"-"`         //第一个区块id
-	LimitHash    UINT256                 `json:"-"`         //最小工作难度
+	PowLimit     string                  `json:"pow_limit"`     //最小难度设置
+	SpanTime     float64                 `json:"span_time"`     //两次记录时间差超过这个时间将被忽略距离计算，单位小时
+	MaxSpeed     float64                 `json:"max_speed"`     //最大速度 km/h
+	DisRange     []uint                  `json:"dis_range"`     //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
+	Halving      uint                    `json:"halving"`       //210000
+	Flags        string                  `json:"flags"`         //协议头标记
+	Ver          uint32                  `json:"version"`       //节点版本
+	Publics      []string                `json:"pubs"`          //节点信任的公钥=只用来验证证书是否正确 +前缀代表可用 -前缀标识弃用的公钥
+	TcpPort      int                     `json:"tcp_port"`      //服务端口和ip
+	TcplIp       string                  `json:"tcp_lip"`       //服务ip
+	TcprIp       string                  `json:"tcp_rip"`       //节点远程连接ip
+	Privates     []string                `json:"pris"`          //用于签名的私钥
+	Certs        []string                `json:"certs"`         //已经签名的证书
+	TimeErr      float64                 `json:"time_err"`      //时间误差 秒 客户端时间与服务器时间差在这个范围内
+	pris         map[PKBytes]*PrivateKey `json:"-"`             //
+	pubs         map[PKBytes]*PublicKey  `json:"-"`             //
+	certs        map[PKBytes]*Cert       `json:"-"`             //
+	pubshash     HASH256                 `json:"-"`             //
+	mu           sync.RWMutex            `json:"-"`             //
+	NodeID       HASH160                 `json:"-"`             //启动时临时生成
+	minerpk      *PublicKey              `json:"-"`             //私钥
+	logFile      *os.File                `json:"-"`             //日志文件
+	genesisId    HASH256                 `json:"-"`             //第一个区块id
+	LimitHash    UINT256                 `json:"-"`             //最小工作难度
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {

@@ -14,6 +14,8 @@
   "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
   "http_port": 9334,
   "http_scheme": "http",
+  "addr_prefix": "std",
+  "oid_prefix": "obj",
   "genesis_block": "00000000bc53243afdefce626814071bd4a616507726aa0ad37606e801f37a2e",
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",

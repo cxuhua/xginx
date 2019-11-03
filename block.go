@@ -8,13 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
-func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) {
+func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) {
 	defer wg.Done()
 	pub, err := LoadPublicKey("8aKby6XxwmoaiYt6gUbS1u2RHco37iHfh6sAPstME33Qh6ujd9")
 	if err != nil {
@@ -38,8 +37,16 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	tx.Ver = 1
 
 	in := &TxIn{}
-	in.Script = BaseScript([]byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
+	in.Script = BaseScript(0, []byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
 	tx.Ins = []*TxIn{in}
+
+	us := &Units{}
+	u0 := &Unit{}
+	u1 := &Unit{}
+	_ = us.Add(db, u0)
+	_ = us.Add(db, u1)
+
+	b.Uts = []*Units{us}
 
 	out := &TxOut{}
 	out.Value = 529
@@ -62,25 +69,29 @@ func CreateGenesisBlock(wg *sync.WaitGroup, ctx context.Context, cancel context.
 	}
 	heaerbytes := buf.Bytes()
 	nhash := HASH256{}
-	for i := uint64(0); ; i++ {
+	for i := uint64(b.Nonce); ; i++ {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			//写入随机数
+			//写入数字
 			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
+			//计算hash
 			copy(nhash[:], Hash256(heaerbytes))
+			//检测hash
 			if CheckProofOfWork(nhash, b.Bits) {
-				log.Printf("%x %v %x\n", b.Nonce, nhash, tv)
+				log.Printf("%x %v %x\n", b.Nonce, nhash, b.Time)
 				cancel()
 				break
 			}
 			if i%100000 == 0 {
-				SetRandInt(&b.Nonce)
+				//重新计算时间
 				log.Println(i, nhash, b.Nonce)
+				b.Time = uint32(time.Now().Unix())
+				Endian.PutUint32(heaerbytes[len(heaerbytes)-12:], b.Time)
 				continue
 			}
-			b.Nonce++
+			b.Nonce = uint32(i)
 		}
 	}
 }
@@ -133,6 +144,7 @@ func (v *BlockInfo) SetMerkle() error {
 	if root.IsZero() {
 		return errors.New("merkle root error")
 	}
+	//root + utshash = merkle hash
 	buf := &bytes.Buffer{}
 	if _, err := buf.Write(root[:]); err != nil {
 		return err
@@ -158,6 +170,14 @@ func (b *BlockInfo) Hash() HASH256 {
 
 func (b *BlockInfo) IsGenesis() bool {
 	return b.Prev.IsZero() && conf.IsGenesisId(b.Hash())
+}
+
+func UseIdLoadBlock(db DBImp, id HASH256, ft string) (*BlockInfo, error) {
+	bid, err := db.BlockId(id, ft)
+	if err != nil {
+		return nil, fmt.Errorf("use id get block id error %w", err)
+	}
+	return LoadBlock(db, bid)
 }
 
 //加载区块
@@ -311,10 +331,12 @@ func (v TxIn) Check() error {
 		if !v.Script.IsBaseScript() {
 			return errors.New("base script type error")
 		}
+	} else if v.Script.IsStdUnlockScript() {
+
+	} else if v.Script.IsAucUnlockScript() {
+
 	} else {
-		if !v.Script.IsUnlockScript() {
-			return errors.New("txin unlock script type error")
-		}
+		return errors.New("txin unlock script type error")
 	}
 	return nil
 }
@@ -360,28 +382,21 @@ type TxOut struct {
 }
 
 //获取竞价脚本
-func (v TxOut) ToAuctionScript() (*AuctionScript, error) {
+func (v TxOut) ToAuctionScript() (*AucLockScript, error) {
 	typ := v.Script.Type()
 	//其他类型可消费
-	if typ != SCRIPT_AUCNOREV_TYPE && typ != SCRIPT_AUCTION_TYPE {
+	if typ != SCRIPT_AUCLOCK_TYPE {
 		return nil, errors.New("type error")
 	}
 	if v.Script.Len() > 256 {
 		return nil, errors.New("script length too long")
 	}
-	ass, err := v.Script.ToAuction()
-	if err != nil {
-		return nil, err
-	}
-	if err := ass.Verify(v.Value); err != nil {
-		return nil, err
-	}
-	return ass, nil
+	return v.Script.ToAuction()
 }
 
 //获取区块中所有指定类型的拍卖输出
-func (b *BlockInfo) FindAucScript(typ uint8, obj HASH160) []*AuctionScript {
-	ass := []*AuctionScript{}
+func (b *BlockInfo) FindAucScript(obj ObjectId) []*AucLockScript {
+	ass := []*AucLockScript{}
 	//获取区块中所有和obj相关的竞价输出
 	for _, tx := range b.Txs {
 		for _, out := range tx.Outs {
@@ -389,56 +404,13 @@ func (b *BlockInfo) FindAucScript(typ uint8, obj HASH160) []*AuctionScript {
 			if err != nil {
 				continue
 			}
-			if as.Type != typ {
-				continue
-			}
 			if !as.ObjId.Equal(obj) {
 				continue
 			}
-			//保存输出积分
-			as.value = out.Value
 			ass = append(ass, as)
 		}
 	}
 	return ass
-}
-
-//竞价模式下最高出价检测
-//返回是否是最高出价，返回错误标识不能消费
-func (v TxOut) IsBidHighest(obj HASH160, b *BlockInfo) (bool, error) {
-	//获取脚本类型
-	typ := v.Script.Type()
-	//忽略非竞价类型的脚本
-	if typ != SCRIPT_AUCNOREV_TYPE && typ != SCRIPT_AUCTION_TYPE {
-		return false, nil
-	}
-	css, err := v.ToAuctionScript()
-	if err != nil {
-		return false, err
-	}
-	//查找合适的脚本
-	ass := b.FindAucScript(css.Type, obj)
-	if len(ass) == 0 {
-		return false, errors.New("not found auction script")
-	}
-	sort.Slice(ass, func(i, j int) bool {
-		if ass[i].value == ass[j].value && ass[i].Time == ass[j].Time {
-			//出价相同 时间相同 按公钥大数比较
-			return ass[i].BidPks.Cmp(ass[j].BidPks) > 0
-		} else if ass[i].value == ass[j].value {
-			//出价相同的情况下按时间
-			return ass[i].Time < ass[j].Time
-		} else {
-			//出价高获胜
-			return ass[i].value > ass[j].value
-		}
-	})
-	ihv := ass[0].Equal(*css)
-	//如果是最高并且不可消费
-	if ihv && typ == SCRIPT_AUCNOREV_TYPE {
-		return true, errors.New("auc no rev type can't cost")
-	}
-	return ihv, nil
 }
 
 func (v TxOut) Check() error {
@@ -580,6 +552,32 @@ func (v Units) Encode(w IWriter) error {
 	return nil
 }
 
+func (v *Units) Last() *Unit {
+	if len(*v) == 0 {
+		return nil
+	}
+	return (*v)[len(*v)-1]
+}
+
+func (v *Units) Add(db DBImp, uv *Unit) error {
+	if err := uv.Check(); err != nil {
+		return err
+	}
+	if uv.IsFirst() {
+		*v = append(*v, uv)
+		return nil
+	}
+	last := v.Last()
+	if last == nil {
+		return errors.New("last unit miss")
+	}
+	if !uv.Prev.Equal(last.Hash()) {
+		return errors.New("hash not consecutive")
+	}
+	*v = append(*v, uv)
+	return nil
+}
+
 func (v *Units) Decode(r IReader) error {
 	num := VarUInt(0)
 	if err := num.Decode(r); err != nil {
@@ -595,6 +593,61 @@ func (v *Units) Decode(r IReader) error {
 		(*v)[i] = un
 	}
 	return nil
+}
+
+//查找用户cpk的链
+func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
+	for _, uts := range b.Uts {
+		if len(*uts) > 0 && (*uts)[0].CPks.Equal(cpk) {
+			return uts
+		}
+	}
+	return nil
+}
+
+//获取上一个unit
+func (v *Units) GetPrev(db DBImp) (*Unit, error) {
+	//如果有数据并且是第一个数据单元直接返回
+	if len(*v) > 0 && (*v)[0].IsFirst() {
+		return (*v)[0], nil
+	}
+	if len(*v) == 0 {
+		return nil, errors.New("units empty")
+	}
+	//获取第一个所在的区块id
+	uid := (*v)[0].Hash()
+	//获取区块
+	block, err := UseIdLoadBlock(db, uid, USE_UIDS)
+	if err != nil {
+		return nil, fmt.Errorf("block info miss %w", err)
+	}
+	uts := block.FindUnits((*v)[0].CPks)
+	if uts == nil {
+		return nil, errors.New("cli units miss")
+	}
+	last := uts.Last()
+	if last == nil {
+		return nil, errors.New("cli last unit miss")
+	}
+	return last, nil
+}
+
+//计算积分
+func (v *Units) CalcToken(db DBImp, calcer ITokenCalcer) error {
+	if len(*v) < 2 {
+		return errors.New("Unit too small ")
+	}
+	//获取上一个参与计算
+	prev, err := v.GetPrev(db)
+	if err != nil {
+		return err
+	}
+	is := []*Unit{}
+	if !prev.Eqial(*(*v)[0]) {
+		is = append(is, prev)
+	}
+	is = append(is, *v...)
+	return calcer.Calc(is)
 }
 
 type Alloc uint8

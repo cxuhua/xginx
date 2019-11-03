@@ -3,14 +3,11 @@ package xginx
 import "bytes"
 
 const (
-	SCRIPT_BASE_TYPE   = uint8(0) //coinbase input 0
-	SCRIPT_UNLOCK_TYPE = uint8(1) //pubkey sigvalue
-	//标准交易
-	SCRIPT_LOCKED_TYPE = uint8(2) //HASH160(pubkey)
-	//竞价成功不可消费类型
-	SCRIPT_AUCNOREV_TYPE = uint8(3) //HASH160(pubkey)
-	//竞价成功可以消费类型
-	SCRIPT_AUCTION_TYPE = uint8(4) //HASH160(pubkey)
+	SCRIPT_BASE_TYPE      = uint8(0) //coinbase input 0
+	SCRIPT_STDUNLOCK_TYPE = uint8(1) //标准解锁脚本 pubkey sigvalue
+	SCRIPT_STDLOCKED_TYPE = uint8(2) //标准锁定脚本 HASH160(pubkey)
+	SCRIPT_AUCLOCK_TYPE   = uint8(3) //竞价锁定脚本AucLockScript
+	SCRIPT_AUCUNLOCK_TYPE = uint8(4) //竞价解锁脚本AucUnlockScript
 )
 
 type Script []byte
@@ -23,16 +20,29 @@ func (s Script) Type() uint8 {
 	return s[0]
 }
 
-func (s Script) IsUnlockScript() bool {
-	return s.Len() > 1 && s[0] == SCRIPT_UNLOCK_TYPE
+func (s Script) IsStdUnlockScript() bool {
+	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_STDUNLOCK_TYPE
 }
 
-func (s Script) IsLockedcript() bool {
-	return s.Len() > 1 && s[0] == SCRIPT_LOCKED_TYPE
+func (s Script) IsStdLockedcript() bool {
+	return s.Len() > 1 && s.Len() < 64 && s[0] == SCRIPT_STDLOCKED_TYPE
 }
 
 func (s Script) IsBaseScript() bool {
-	return s.Len() > 1 && s[0] == SCRIPT_BASE_TYPE
+	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_BASE_TYPE
+}
+
+func (s Script) IsAucLockScript() bool {
+	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_AUCLOCK_TYPE
+}
+
+func (s Script) IsAucUnlockScript() bool {
+	return s.Len() > 1 && s.Len() < 256 && s[0] == SCRIPT_AUCUNLOCK_TYPE
+}
+
+//获取coinbase中的区块高度
+func (s Script) Height() uint32 {
+	return Endian.Uint32(s[1:5])
 }
 
 func (s Script) Encode(w IWriter) error {
@@ -43,8 +53,12 @@ func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
 }
 
-func BaseScript(b []byte) Script {
+//加入区块高度
+func BaseScript(h uint32, b []byte) Script {
+	hb := []byte{0, 0, 0, 0}
+	Endian.PutUint32(hb, h)
 	s := Script{SCRIPT_BASE_TYPE}
+	s = append(s, hb...)
 	s = append(s, b...)
 	return s
 }
@@ -54,7 +68,7 @@ func UnlockScript(pub *PublicKey, sig *SigValue) Script {
 	sb := sig.Encode()
 	buf := &bytes.Buffer{}
 	//type
-	buf.WriteByte(SCRIPT_UNLOCK_TYPE)
+	buf.WriteByte(SCRIPT_STDUNLOCK_TYPE)
 	//sig value
 	buf.WriteByte(byte(len(sb)))
 	buf.Write(sb)
@@ -65,7 +79,7 @@ func UnlockScript(pub *PublicKey, sig *SigValue) Script {
 }
 
 func LockedScript(pub *PublicKey) Script {
-	s := Script{SCRIPT_LOCKED_TYPE}
+	s := Script{SCRIPT_STDLOCKED_TYPE}
 	hash := Hash160(pub.Encode())
 	s = append(s, hash...)
 	return s

@@ -129,6 +129,10 @@ func (v PKBytes) Cmp(b PKBytes) int {
 	return vu.Cmp(bu)
 }
 
+func (v PKBytes) Equal(b PKBytes) bool {
+	return bytes.Equal(v[:], b[:])
+}
+
 func (v PKBytes) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
@@ -177,6 +181,12 @@ func (v *HASH160) SetPK(pk *PublicKey) {
 
 func (v *HASH160) Set(b []byte) {
 	copy(v[:], b)
+}
+
+func (v HASH160) Cmp(b HASH160) int {
+	u1 := NewUINT256(v[:])
+	u2 := NewUINT256(b[:])
+	return u1.Cmp(u2)
 }
 
 func (v HASH160) Equal(b HASH160) bool {
@@ -792,6 +802,14 @@ type Unit struct {
 	CliPart
 	SerPart
 	hasher HashCacher
+}
+
+func (pv Unit) Eqial(cv Unit) bool {
+	return pv.Hash().Equal(cv.Hash())
+}
+
+func (pv Unit) Check() error {
+	return nil
 }
 
 func (pv Unit) TTLocDis(cv *Unit) float64 {

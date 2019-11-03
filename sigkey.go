@@ -313,6 +313,35 @@ func LoadPublicKey(s string) (*PublicKey, error) {
 	return new(PublicKey).Load(s)
 }
 
+func DecodeAddress(addr string) (HASH160, error) {
+	hv := HASH160{}
+	b, err := SegWitAddressDecode(addr)
+	if err != nil {
+		return hv, err
+	}
+	if b[0] != 0 {
+		return hv, errors.New("ver error")
+	}
+	if int(b[1]) != len(b[2:]) {
+		return hv, errors.New("address length error")
+	}
+	copy(hv[:], b[2:])
+	return hv, nil
+}
+
+func (pub PublicKey) Address() string {
+	pks := pub.Encode()
+	ver := byte(0)
+	a := Hash160(pks)
+	b := []byte{ver, byte(len(a))}
+	b = append(b, a...)
+	addr, err := SegWitAddressEncode(conf.AddrPrefix, b)
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
 func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 	b, err := B58Decode(s, BitcoinAlphabet)
 	if err != nil {

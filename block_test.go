@@ -29,7 +29,7 @@ func TestCreateGenesisBlock(t *testing.T) {
 
 	tx.Ver = 1
 	in := &TxIn{}
-	in.Script = BaseScript([]byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
+	in.Script = BaseScript(0, []byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
 	tx.Ins = []*TxIn{in}
 
 	out := &TxOut{}

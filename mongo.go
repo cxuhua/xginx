@@ -26,6 +26,13 @@ func (m *mongoDBStore) collection(t string) *mongo.Collection {
 	return m.database().Collection(t)
 }
 
+//存储块所关联的交易he和单元id
+//db.utxids.ensureIndex({uids:1})
+//db.utxids.ensureIndex({tids:1})
+func (m *mongoDBStore) utxids() *mongo.Collection {
+	return m.database().Collection("utxids")
+}
+
 func (m *mongoDBStore) txs() *mongo.Collection {
 	return m.database().Collection("txs")
 }
@@ -94,8 +101,61 @@ func (m *mongoDBStore) GetBlock(id []byte, v interface{}) error {
 	return b.Decode(buf)
 }
 
+const (
+	USE_UIDS = "uisd"
+	USE_TIDS = "tids"
+)
+
+//查询单元id，交易id所在的块id
+//ft = uids(从单元查) or tids(交易id查)
+func (m *mongoDBStore) BlockId(id HASH256, ft string) (HASH256, error) {
+	bid := HASH256{}
+	if ft != USE_UIDS && ft != USE_TIDS {
+		return bid, errors.New("ft args error")
+	}
+	opts := options.FindOne()
+	opts.SetProjection(bson.M{"_id": true})
+	ret := m.utxids().FindOne(m, bson.M{ft: id})
+	if err := ret.Err(); err != nil {
+		return bid, err
+	}
+	bv := struct {
+		Id []byte `bson:"_id"`
+	}{}
+	if err := ret.Decode(&bv); err != nil {
+		return bid, err
+	}
+	copy(bid[:], bv.Id)
+	return bid, nil
+}
+
 //保存块用gridfs
 func (m *mongoDBStore) SetBlock(id []byte, meta interface{}, bb []byte) error {
+	if m.HasBlock(id) {
+		return nil
+	}
+	b := &BlockInfo{}
+	buf := bytes.NewReader(bb)
+	if err := b.Decode(buf); err != nil {
+		return err
+	}
+	//保存块相关的ids
+	uids := []HASH256{}
+	for _, uts := range b.Uts {
+		for _, uv := range *uts {
+			uids = append(uids, uv.Hash())
+		}
+	}
+	tids := []HASH256{}
+	for _, tx := range b.Txs {
+		tids = append(tids, tx.Hash())
+	}
+	iopts := options.InsertOne()
+	_, err := m.utxids().InsertOne(m, bson.M{"_id": id, "uids": uids, "tids": tids}, iopts)
+	if err != nil {
+		return err
+	}
+	//保存块数据
 	bucket, err := m.blocks()
 	if err != nil {
 		return err
