@@ -445,6 +445,28 @@ type TX struct {
 	hasher HashCacher //hash缓存
 }
 
+func (tx TX) Save(db DBImp) error {
+	v := &TTx{}
+	v.Ver = uint32(tx.Ver)
+	v.Ins = make([]*TTxIn, len(tx.Ins))
+	for i, iv := range tx.Ins {
+		tin := &TTxIn{}
+		tin.Script = iv.Script[:]
+		tin.OutHash = iv.OutHash[:]
+		tin.OutIndex = uint32(iv.OutIndex)
+		v.Ins[i] = tin
+	}
+	v.Outs = make([]*TTxOut, len(tx.Outs))
+	for i, ov := range tx.Outs {
+		tout := &TTxOut{}
+		tout.Value = uint64(ov.Value)
+		tout.Script = ov.Script[:]
+		v.Outs[i] = tout
+	}
+	v.Hash = tx.Hash().Bytes()
+	return db.SetTX(v.Hash, v)
+}
+
 func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash

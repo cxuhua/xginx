@@ -43,7 +43,13 @@ func TestCreateGenesisBlock(t *testing.T) {
 	if err := b.SetMerkle(); err != nil {
 		panic(err)
 	}
-	log.Println(b.Hash())
+	tx2 := &TTx{}
+	err = store.UseSession(context.Background(), func(db DBImp) error {
+
+		return db.GetTX(tx.Hash().Bytes(), tx2)
+	})
+	tx3 := tx2.ToTx()
+	log.Println(err, b.Hash(), tx3.Hash().Equal(tx.Hash()))
 }
 
 func TestSaveBlockInfo(t *testing.T) {

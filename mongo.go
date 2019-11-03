@@ -261,6 +261,35 @@ func (m *mongoDBStore) HasUnit(id []byte) bool {
 	return ret.Err() == nil
 }
 
+//删除交易
+func (m *mongoDBStore) DelTX(id []byte) error {
+	_, err := m.txs().DeleteOne(m, bson.M{"_id": id})
+	if err != nil {
+		return err
+	}
+	return err
+}
+
+//获取交易
+func (m *mongoDBStore) GetTX(id []byte, v interface{}) error {
+	ret := m.txs().FindOne(m, bson.M{"_id": id})
+	if err := ret.Err(); err != nil {
+		return err
+	}
+	return ret.Decode(v)
+}
+
+//是否存在交易
+func (m *mongoDBStore) HasTX(id []byte) bool {
+	ret := m.txs().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
+}
+
+//保存交易
+func (m *mongoDBStore) SetTX(id []byte, v interface{}) error {
+	return m.set("txs", id, v)
+}
+
 func (m *mongoDBStore) SetUnit(id []byte, v interface{}) error {
 	return m.set("units", id, v)
 }

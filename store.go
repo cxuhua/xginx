@@ -10,6 +10,14 @@ type IncValue map[string]int
 
 type DBImp interface {
 	context.Context
+	//删除交易
+	DelTX(id []byte) error
+	//获取交易
+	GetTX(id []byte, v interface{}) error
+	//是否存在交易
+	HasTX(id []byte) bool
+	//保存交易
+	SetTX(id []byte, v interface{}) error
 	//获取交易id，单元id对应的块id,交易id，单元id应该是不重复的
 	//ft = uids or tids
 	BlockId(id HASH256, ft string) (HASH256, error)
@@ -56,6 +64,55 @@ type TBMeta struct {
 	Nonce  uint32 `bson:"nonce"`  //随机值
 	Uts    uint32 `bson:"uts"`    //Units数量
 	Txs    uint32 `bson:"txs"`    //tx数量
+}
+
+//交易输入
+type TTxIn struct {
+	OutHash  []byte `bson:"outhash"` //输出交易hash
+	OutIndex uint32 `bson:"outidx"`  //对应的输出索引
+	Script   []byte `bson:"script"`  //解锁脚本
+}
+
+func (in TTxIn) ToTxIn() *TxIn {
+	v := &TxIn{}
+	copy(v.OutHash[:], in.OutHash)
+	v.OutIndex = VarUInt(in.OutIndex)
+	v.Script = in.Script[:]
+	return v
+}
+
+type TTxOut struct {
+	Value  uint64 `bson:"value"`
+	Script []byte `bson:"script"`
+}
+
+func (out TTxOut) ToTxOut() *TxOut {
+	v := &TxOut{}
+	v.Value = VarUInt(out.Value)
+	v.Script = out.Script[:]
+	return v
+}
+
+//交易信息
+type TTx struct {
+	Hash []byte    `bson:"_id"`  //txhash
+	Ver  uint32    `bson:"ver"`  //版本
+	Ins  []*TTxIn  `bson:"ins"`  //输入
+	Outs []*TTxOut `bson:"outs"` //输出
+}
+
+func (tx TTx) ToTx() *TX {
+	v := &TX{}
+	v.Ver = VarUInt(tx.Ver)
+	v.Ins = make([]*TxIn, len(tx.Ins))
+	for i, tv := range tx.Ins {
+		v.Ins[i] = tv.ToTxIn()
+	}
+	v.Outs = make([]*TxOut, len(tx.Outs))
+	for i, ov := range tx.Outs {
+		v.Outs[i] = ov.ToTxOut()
+	}
+	return v
 }
 
 //单元块数据,打卡记录
