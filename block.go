@@ -789,11 +789,16 @@ func (calcer *TokenCalcer) Tags() map[HASH160]VarUInt {
 //以上都不影响链的链接，只是会减少距离提成
 //标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
 //所有distance之和就是clientid的总的distance
-func (calcer *TokenCalcer) Calc(items []*Unit) error {
+//bits 区块难度
+func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
 	if len(items) < 2 {
 		return errors.New("items count error")
 	}
+	if !CheckProofOfWorkBits(bits) {
+		return errors.New("proof of work bits error")
+	}
 	calcer.Reset()
+	tpv := CalculateWorkTimeScale(bits)
 	for i := 1; i < len(items); i++ {
 		cv := items[i+0]
 		//使用当前标签设定的分配比例
@@ -820,8 +825,8 @@ func (calcer *TokenCalcer) Calc(items []*Unit) error {
 		if st < 0 {
 			return errors.New("stime error")
 		}
-		//两次记录时间差太大将被忽略
-		if st > conf.SpanTime*3600.0 {
+		//两次记录时间差太大将被忽略,根据当前区块难度放宽
+		if st > conf.SpanTime*tpv {
 			continue
 		}
 		//忽略超人的存在，速度太快

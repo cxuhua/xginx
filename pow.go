@@ -24,6 +24,32 @@ func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	return ch.Cmp(h) <= 0
 }
 
+//计算难度对应的签到时间间隔比例
+//难度越高时间间隔加长，在一天的基础上增加
+//返回 秒数/小时
+func CalculateWorkTimeScale(bits uint32) float64 {
+	bv := float64(NewUINT256(conf.PowLimit).Compact(false))
+	cv := float64(bits)
+	r := 2.0 * (1.0 - (cv / bv))
+	return (r + 1.0) * 3600
+}
+
+//检测难度值是否正确
+func CheckProofOfWorkBits(bits uint32) bool {
+	h := UINT256{}
+	n, o := h.SetCompact(bits)
+	if n {
+		return false
+	}
+	if h.IsZero() {
+		return false
+	}
+	if o {
+		return false
+	}
+	return h.Cmp(conf.LimitHash) > 0
+}
+
 //ct = lastBlock blockTime
 //pt = lastBlock - 2016 + 1 blockTime
 //pw = lastBlock's bits

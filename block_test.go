@@ -109,6 +109,7 @@ func TestValueScale(t *testing.T) {
 }
 
 func TestCalcDistance(t *testing.T) {
+	bits := NewUINT256(conf.PowLimit).Compact(false)
 	calcer := NewTokenCalcer()
 	now := time.Now().UnixNano()
 	//i1 first
@@ -140,6 +141,6 @@ func TestCalcDistance(t *testing.T) {
 	i3.TASV = S721
 
 	is := []*Unit{i1, i2, i3}
-	err := calcer.Calc(is)
+	err := calcer.Calc(bits, is)
 	log.Println(calcer, err)
 }

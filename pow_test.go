@@ -10,6 +10,10 @@ func TestPow(t *testing.T) {
 	hash := NewHASH256("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 	b := CheckProofOfWork(hash, 0x1d00ffff)
 	log.Println(b)
+
+	log.Println(1.0 - (float64(0x17148edf) / float64(0x1d00ffff)))
+
+	log.Println(CalculateWorkTimeScale(0x1d00ffff))
 }
 
 func TestBaseBits(t *testing.T) {
