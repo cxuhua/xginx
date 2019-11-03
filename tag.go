@@ -227,6 +227,10 @@ func (h *HashCacher) Hash(b []byte) HASH256 {
 
 type TagUID [7]byte
 
+func (v TagUID) Equal(b TagUID) bool {
+	return bytes.Equal(v[:], b[:])
+}
+
 func (id *TagUID) Set(b []byte) {
 	copy(id[:], b)
 }

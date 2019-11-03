@@ -820,7 +820,7 @@ func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
 		if !cv.Prev.Equal(pv.Hash()) {
 			return errors.New("prev hash error")
 		}
-		//两次记录时间必须连续
+		//两次记录时间必须连续 st=两次时间间隔，单位：秒
 		st := pv.STimeSub(cv)
 		if st < 0 {
 			return errors.New("stime error")
@@ -834,12 +834,19 @@ func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
 		if sp < 0 || sp > conf.MaxSpeed {
 			continue
 		}
-		//获取当前点定位差
-		csr := cv.CTLocDisRate()
-		//上一点的定位差
-		psr := pv.CTLocDisRate()
-		//计算距离奖励 rr为递减
-		dis := pv.TTLocDis(cv) * csr * psr
+		dis := float64(0)
+		//如果两次都是同一打卡点，按时间获得积分
+		if cv.TUID.Equal(pv.TUID) {
+			//按每小时1km速度结算
+			dis = st / 3600.0
+		} else {
+			//获取定位不准惩罚系数
+			csr := cv.CTLocDisRate()
+			//上一点的定位差
+			psr := pv.CTLocDisRate()
+			//计算距离奖励 rr为递减
+			dis = pv.TTLocDis(cv) * csr * psr
+		}
 		//所有和不能超过总量
 		calcer.total += dis
 		//矿工获得
