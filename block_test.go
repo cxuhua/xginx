@@ -9,10 +9,25 @@ import (
 	"time"
 )
 
+func TestReadGenesisBlock(t *testing.T) {
+	err := store.UseSession(context.Background(), func(db DBImp) error {
+		id := NewHASH256(conf.GenesisBlock)
+		b := &BlockInfo{}
+		if err := db.GetBlock(id[:], b); err != nil {
+			return err
+		}
+		return b.Check(db)
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestReadUnit(t *testing.T) {
 	var unit1 *Unit
 	var unit2 *Unit
 	var unit3 *Unit
+	var unit4 *Unit
 	err := store.UseSession(context.Background(), func(db DBImp) error {
 		u1 := &TUnit{}
 		id1, err := base64.StdEncoding.DecodeString("2Yu0LH3xiVKlcYK6PjQr9KaLFd8mExd5/PC6WwDCicE=")
@@ -52,6 +67,20 @@ func TestReadUnit(t *testing.T) {
 		if !unit3.Prev.Equal(unit2.Hash()) {
 			return errors.New("errors")
 		}
+
+		id4, err := base64.StdEncoding.DecodeString("xiY5xK6aNgvoxPhM+BWimai+PHDh1nvrhDxFdqMkiQ0=")
+		if err != nil {
+			return err
+		}
+		err = db.GetUnit(id4, u1)
+		if err != nil {
+			return err
+		}
+		unit4 = u1.ToUnit()
+
+		if !unit4.Prev.Equal(unit3.Hash()) {
+			return errors.New("errors")
+		}
 		return err
 	})
 	if err != nil {
@@ -76,9 +105,9 @@ func TestCreateGenesisBlock(t *testing.T) {
 		Ver:    1,
 		Prev:   HASH256{},
 		Merkle: HASH256{},
-		Time:   1572669878,
+		Time:   0x5dbfc748,
 		Bits:   0x1d00ffff,
-		Nonce:  0x58f3e185,
+		Nonce:  0xcb0fd9d8,
 		Uts:    []*Units{},
 		Txs:    []*TX{},
 	}

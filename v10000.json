@@ -16,7 +16,7 @@
   "http_scheme": "http",
   "addr_prefix": "std",
   "oid_prefix": "obj",
-  "genesis_block": "00000000bc53243afdefce626814071bd4a616507726aa0ad37606e801f37a2e",
+  "genesis_block": "0000000049c6893c61f4431d597e8e8a170261ca5df381c348031238a76e4945",
   "pubs":[
     "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
     "82uKTugD2uHkjQwWYfh5DcWXVmRvQLkkqpt2zQfS1YZaNmNAdV",

@@ -20,6 +20,7 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 	var unit1 *Unit
 	var unit2 *Unit
 	var unit3 *Unit
+	var unit4 *Unit
 	u1 := &TUnit{}
 	id1, err := base64.StdEncoding.DecodeString("2Yu0LH3xiVKlcYK6PjQr9KaLFd8mExd5/PC6WwDCicE=")
 	if err != nil {
@@ -59,18 +60,32 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 		return errors.New("errors")
 	}
 
+	id4, err := base64.StdEncoding.DecodeString("xiY5xK6aNgvoxPhM+BWimai+PHDh1nvrhDxFdqMkiQ0=")
+	if err != nil {
+		return err
+	}
+	err = db.GetUnit(id4, u1)
+	if err != nil {
+		return err
+	}
+	unit4 = u1.ToUnit()
+
+	if !unit4.Prev.Equal(unit3.Hash()) {
+		return errors.New("errors")
+	}
+
 	bits := NewUINT256(conf.PowLimit).Compact(false)
 	calcer := NewTokenCalcer()
 
-	tv := uint32(time.Now().Unix())
+	//tv := uint32(time.Now().Unix())
 
 	b := &BlockInfo{
 		Ver:    1,
 		Prev:   HASH256{},
 		Merkle: HASH256{},
-		Time:   tv,
+		Time:   0x5dbfc748,
 		Bits:   bits,
-		Nonce:  0x58f3e185,
+		Nonce:  0xcb0fd9d8,
 		Uts:    []*Units{},
 		Txs:    []*TX{},
 	}
@@ -82,7 +97,7 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 	in.Script = BaseScript(0, []byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
 	tx.Ins = []*TxIn{in}
 
-	us := &Units{unit1, unit2, unit3}
+	us := &Units{unit1, unit2, unit3, unit4}
 
 	err = calcer.Calc(bits, us)
 	if err != nil {
@@ -107,19 +122,34 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 		panic(err)
 	}
 
+	id, meta, bb, err := b.ToTBMeta()
+	if err != nil {
+		panic(err)
+	}
+	err = db.SetBlock(id, meta, bb)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(b.Hash())
+
 	buf := &bytes.Buffer{}
-	SetRandInt(&b.Nonce)
+	//SetRandInt(&b.Nonce)
 	err = b.EncodeHeader(buf)
 	if err != nil {
 		return err
 	}
 	heaerbytes := buf.Bytes()
+	//Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
+	//Endian.PutUint32(heaerbytes[len(heaerbytes)-12:], b.Time)
 	nhash := HASH256{}
+	copy(nhash[:], Hash256(heaerbytes))
+	log.Println(nhash)
 	for i := uint64(b.Nonce); ; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+			b.Nonce += uint32(i)
 			//写入数字
 			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
 			//计算hash
@@ -130,14 +160,14 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 				cancel()
 				break
 			}
-			if i%100000 == 0 {
+			if i%1000000 == 0 {
 				//重新计算时间
-				log.Println(i, nhash, b.Nonce)
 				b.Time = uint32(time.Now().Unix())
 				Endian.PutUint32(heaerbytes[len(heaerbytes)-12:], b.Time)
+				SetRandInt(&b.Nonce)
+				log.Println(i, nhash, b.Nonce, b.Time)
 				continue
 			}
-			b.Nonce = uint32(i)
 		}
 	}
 }
@@ -178,9 +208,10 @@ func (v *BlockInfo) UTSHash() HASH256 {
 	return v.utsher.Hash(buf.Bytes())
 }
 
-func (v *BlockInfo) SetMerkle() error {
-	if _, b := v.merher.IsSet(); b {
-		return nil
+func (v BlockInfo) GetMerkle() (HASH256, error) {
+	hash := HASH256{}
+	if h, b := v.merher.IsSet(); b {
+		return h, nil
 	}
 	ids := []HASH256{}
 	for _, tv := range v.Txs {
@@ -188,18 +219,26 @@ func (v *BlockInfo) SetMerkle() error {
 	}
 	root, _, _ := BuildMerkleTree(ids).Extract()
 	if root.IsZero() {
-		return errors.New("merkle root error")
+		return hash, errors.New("merkle root error")
 	}
 	//root + utshash = merkle hash
 	buf := &bytes.Buffer{}
 	if _, err := buf.Write(root[:]); err != nil {
-		return err
+		return hash, err
 	}
 	uts := v.UTSHash()
 	if _, err := buf.Write(uts[:]); err != nil {
+		return hash, err
+	}
+	return v.merher.Hash(buf.Bytes()), nil
+}
+
+func (v *BlockInfo) SetMerkle() error {
+	merkle, err := v.GetMerkle()
+	if err != nil {
 		return err
 	}
-	v.Merkle = v.merher.Hash(buf.Bytes())
+	v.Merkle = merkle
 	return nil
 }
 
@@ -256,14 +295,100 @@ func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 		Txs:    uint32(len(b.Txs)),
 	}
 	buf := &bytes.Buffer{}
-	if err := b.Encode(buf); err != nil {
+	if err := b.EncodeHeader(buf); err != nil {
 		return nil, nil, nil, err
 	}
-	hash := Hash256(buf.Bytes())
-	return hash, meta, buf.Bytes(), nil
+	id := Hash256(buf.Bytes())
+	if err := b.EncodeBody(buf); err != nil {
+		return nil, nil, nil, err
+	}
+	return id, meta, buf.Bytes(), nil
 }
 
-func (v *BlockInfo) Check(db DBImp) error {
+//获取分配所得
+func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
+	for i, txs := range v.Txs {
+		if i == 0 && len(txs.Ins) != 1 {
+			return nil, errors.New("base txin miss")
+		}
+		if i == 0 && !txs.Ins[0].IsBase() {
+			return nil, errors.New("base txin type error")
+		}
+		if i == 0 && len(txs.Outs) > 0 {
+			return txs.BaseOuts()
+		}
+	}
+	return nil, errors.New("base outs miss")
+}
+
+//检查所有的交易
+func (v BlockInfo) CheckTxs(db DBImp) error {
+	for _, tx := range v.Txs {
+		err := tx.Check(db)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//检查所有的单元数据
+func (v BlockInfo) CheckUts(db DBImp) error {
+	for _, uvs := range v.Uts {
+		err := uvs.Check(db)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v BlockInfo) Check(db DBImp) error {
+	if len(v.Txs) == 0 {
+		return errors.New("txs miss, too little")
+	}
+	if len(v.Uts) == 0 {
+		return errors.New("uts miss, too little")
+	}
+	if !CheckProofOfWork(v.Hash(), v.Bits) {
+		return errors.New("proof of work bits error")
+	}
+	merkle, err := v.GetMerkle()
+	if err != nil {
+		return err
+	}
+	if !merkle.Equal(v.Merkle) {
+		return errors.New("merkle hash error")
+	}
+	//检查所有的交易
+	if err := v.CheckTxs(db); err != nil {
+		return err
+	}
+	//检查所有的数据单元
+	if err := v.CheckUts(db); err != nil {
+		return err
+	}
+	//获取积分分配
+	outs, err := v.GetBaseOuts()
+	if err != nil {
+		return err
+	}
+	//计算积分分配
+	calcer := NewTokenCalcer()
+	for _, uv := range v.Uts {
+		uc := NewTokenCalcer()
+		err := uv.CalcToken(db, v.Bits, uc)
+		if err != nil {
+			return err
+		}
+		calcer.Merge(uc)
+	}
+	//检验分配是否正确
+	for ck, cv := range calcer.Outs() {
+		if outs[ck] != cv {
+			return errors.New("token alloc error")
+		}
+	}
 	return nil
 }
 
@@ -289,10 +414,7 @@ func (v BlockInfo) EncodeHeader(w IWriter) error {
 	return nil
 }
 
-func (v BlockInfo) Encode(w IWriter) error {
-	if err := v.EncodeHeader(w); err != nil {
-		return err
-	}
+func (v BlockInfo) EncodeBody(w IWriter) error {
 	if err := VarUInt(len(v.Uts)).Encode(w); err != nil {
 		return err
 	}
@@ -310,6 +432,16 @@ func (v BlockInfo) Encode(w IWriter) error {
 		if err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (v BlockInfo) Encode(w IWriter) error {
+	if err := v.EncodeHeader(w); err != nil {
+		return err
+	}
+	if err := v.EncodeBody(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -371,7 +503,7 @@ type TxIn struct {
 
 func (v TxIn) Check() error {
 	if v.IsBase() {
-		if v.Script.Len() > 100 || v.Script.Len() < 4 {
+		if v.Script.Len() > 128 || v.Script.Len() < 4 {
 			return errors.New("base script len error")
 		}
 		if !v.Script.IsBaseScript() {
@@ -513,6 +645,17 @@ func (tx TX) Save(db DBImp) error {
 	return db.SetTX(v.Hash, v)
 }
 
+func (tx TX) BaseOuts() (map[HASH160]VarUInt, error) {
+	outs := map[HASH160]VarUInt{}
+	for _, v := range tx.Outs {
+		if !v.Script.IsStdLockedcript() {
+			return nil, errors.New("base tx out script error")
+		}
+		outs[v.Script.StdLockedHash()] = v.Value
+	}
+	return outs, nil
+}
+
 func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
@@ -524,7 +667,7 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v TX) Check() error {
+func (v TX) Check(imp DBImp) error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -641,7 +784,7 @@ func (v *Units) Last() *Unit {
 }
 
 func (v *Units) Add(db DBImp, uv *Unit) error {
-	if err := uv.Check(); err != nil {
+	if err := uv.Check(db); err != nil {
 		return err
 	}
 	if uv.IsFirst() {
@@ -713,8 +856,26 @@ func (v *Units) GetPrev(db DBImp) (*Unit, error) {
 	return last, nil
 }
 
+func (v *Units) Check(db DBImp) error {
+	prev, err := v.GetPrev(db)
+	if err != nil {
+		return err
+	}
+	for _, uv := range *v {
+		if !uv.Equal(*prev) && !uv.Prev.Equal(prev.Hash()) {
+			return errors.New("unit not continuous")
+		}
+		err := uv.Check(db)
+		if err != nil {
+			return err
+		}
+		prev = uv
+	}
+	return nil
+}
+
 //计算积分
-func (v *Units) CalcToken(db DBImp, calcer ITokenCalcer) error {
+func (v *Units) CalcToken(db DBImp, bits uint32, calcer ITokenCalcer) error {
 	if len(*v) < 2 {
 		return errors.New("Unit too small ")
 	}
@@ -723,12 +884,12 @@ func (v *Units) CalcToken(db DBImp, calcer ITokenCalcer) error {
 	if err != nil {
 		return err
 	}
-	is := []*Unit{}
-	if !prev.Eqial(*(*v)[0]) {
-		is = append(is, prev)
+	is := &Units{}
+	if !prev.Equal(*(*v)[0]) {
+		*is = append(*is, prev)
 	}
-	is = append(is, *v...)
-	return calcer.Calc(is)
+	*is = append(*is, *v...)
+	return calcer.Calc(bits, is)
 }
 
 type Alloc uint8
@@ -772,32 +933,26 @@ const (
 
 //token结算接口
 type ITokenCalcer interface {
-	Calc(items []*Unit) error
+	Calc(bits uint32, items *Units) error
 	//总的积分
 	Total() VarUInt
-	//矿工获得的积分
-	Miner() VarUInt
-	//用户获得的积分
-	Client() VarUInt
 	//标签获得的积分
-	Tags() map[HASH160]VarUInt
+	Outs() map[HASH160]VarUInt
 	//重置
 	Reset()
+	//合并
+	Merge(c *TokenCalcer)
 }
 
 type TokenCalcer struct {
 	total float64             //总的的积分
 	vmap  map[HASH160]float64 //标签获得的积分
-	mmap  map[HASH160]float64 //矿工奖励的积分
-	cmap  map[HASH160]float64 //用户获得的积分
 }
 
 func NewTokenCalcer() *TokenCalcer {
 	return &TokenCalcer{
 		total: 0,
 		vmap:  map[HASH160]float64{},
-		mmap:  map[HASH160]float64{},
-		cmap:  map[HASH160]float64{},
 	}
 }
 
@@ -812,8 +967,6 @@ func (calcer TokenCalcer) String() string {
 
 func (calcer *TokenCalcer) Reset() {
 	calcer.total = 0
-	calcer.cmap = map[HASH160]float64{}
-	calcer.mmap = map[HASH160]float64{}
 	calcer.vmap = map[HASH160]float64{}
 }
 
@@ -827,12 +980,6 @@ func (calcer *TokenCalcer) Outs() map[HASH160]VarUInt {
 	for k, v := range calcer.vmap {
 		ret[k] += VarUInt(v)
 	}
-	for k, v := range calcer.cmap {
-		ret[k] += VarUInt(v)
-	}
-	for k, v := range calcer.mmap {
-		ret[k] += VarUInt(v)
-	}
 	return ret
 }
 
@@ -840,12 +987,6 @@ func (calcer *TokenCalcer) Merge(c *TokenCalcer) {
 	calcer.total += c.total
 	for k, v := range c.vmap {
 		calcer.vmap[k] += v
-	}
-	for k, v := range c.cmap {
-		calcer.cmap[k] += v
-	}
-	for k, v := range c.mmap {
-		calcer.mmap[k] += v
 	}
 }
 
@@ -923,9 +1064,9 @@ func (calcer *TokenCalcer) Calc(bits uint32, items *Units) error {
 		calcer.vmap[cv.TPKH] += tdis
 		calcer.vmap[pv.TPKH] += tdis
 		cdis := dis * cr
-		calcer.cmap[cv.ClientID()] += cdis
+		calcer.vmap[cv.ClientID()] += cdis
 		//保存矿工获得的总量
-		calcer.mmap[mph] += mdis
+		calcer.vmap[mph] += mdis
 	}
 	if calcer.total < 0 || calcer.total > EARTH_RADIUS {
 		return errors.New("total range error")

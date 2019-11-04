@@ -27,6 +27,15 @@ func (s Script) IsStdUnlockScript() bool {
 	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_STDUNLOCK_TYPE
 }
 
+func (s Script) StdLockedHash() HASH160 {
+	if !s.IsStdLockedcript() {
+		panic(errors.New("type error"))
+	}
+	hash := HASH160{}
+	copy(hash[:], s[1:])
+	return hash
+}
+
 func (s Script) IsStdLockedcript() bool {
 	return s.Len() > 1 && s.Len() < 64 && s[0] == SCRIPT_STDLOCKED_TYPE
 }

@@ -812,12 +812,16 @@ type Unit struct {
 	hasher HashCacher
 }
 
-func (pv Unit) Eqial(cv Unit) bool {
+func (pv Unit) Equal(cv Unit) bool {
 	return pv.Hash().Equal(cv.Hash())
 }
 
-func (pv Unit) Check() error {
-	return nil
+func (pv Unit) Check(db DBImp) error {
+	buf := &bytes.Buffer{}
+	if err := pv.Encode(buf); err != nil {
+		return err
+	}
+	return pv.SerPart.Verify(conf, buf.Bytes())
 }
 
 func (pv Unit) TTLocDis(cv *Unit) float64 {
