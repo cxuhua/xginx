@@ -11,15 +11,11 @@ import (
 type Cert struct {
 	Name   VarStr   //证书名称
 	PubKey PKBytes  //证书公钥
-	Expire int64    //过期时间:unix 秒
+	Expire int64    //过期时间:unix 秒,过期后可以验证旧数据，但无法签名新数据
 	CSig   SigBytes //签名，信任的公钥检测签名，通过说明证书有效，如果不过期
 	VPub   PKBytes  //验证公钥，对应config中信任的公钥,必须在config信任列表中
 	vsig   bool     //是否验证了签名
 	pubv   *PublicKey
-}
-
-func (c *Cert) IsExpire() bool {
-	return time.Now().Unix() > c.Expire
 }
 
 func NewCert(pub *PublicKey, name string, exp time.Duration) *Cert {
@@ -30,7 +26,7 @@ func NewCert(pub *PublicKey, name string, exp time.Duration) *Cert {
 	return c
 }
 
-//开始用pri私钥来签发证书
+//开始用pri私钥来签发新证书
 func (c *Cert) Sign(pri *PrivateKey) error {
 	if len(c.Name) == 0 {
 		return errors.New("name miss")
@@ -72,19 +68,11 @@ func (c *Cert) Decode(r io.Reader) error {
 	return nil
 }
 
-func (c *Cert) ExpireTime() int64 {
-	t := c.Expire - time.Now().Unix()
-	if t < 0 {
-		t = 0
-	}
-	return t
-}
-
-//验证证书是否正确
+//验证证书是否签名正确
 func (c *Cert) Verify() error {
 	//如果已经验证了签名就只验证过期时间
-	if c.vsig && time.Now().Unix() > c.Expire {
-		return errors.New("cert expire")
+	if c.vsig {
+		return nil
 	}
 	buf := &bytes.Buffer{}
 	if err := c.EncodeWriter(buf); err != nil {
@@ -102,9 +90,6 @@ func (c *Cert) Verify() error {
 	hash := Hash256(buf.Bytes())
 	if !pub.Verify(hash, sig) {
 		return errors.New("verify cert failed")
-	}
-	if time.Now().Unix() > c.Expire {
-		return errors.New("cert expire")
 	}
 	c.vsig = true
 	return nil

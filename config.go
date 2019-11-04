@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/mattn/go-colorable"
 
@@ -215,8 +216,13 @@ func (c *Config) GetPublicKey(pk PKBytes) *PublicKey {
 }
 
 //任意获取一个节点可用的私钥
+//私钥签名时必须检测是否过期
 func (c *Config) GetPrivateKey() *PrivateKey {
+	now := time.Now().Unix()
 	for k, v := range c.certs {
+		if v.Expire > now {
+			continue
+		}
 		if err := v.Verify(); err == nil {
 			return c.pris[k]
 		}
