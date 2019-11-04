@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"log"
 	"testing"
@@ -21,78 +20,6 @@ func TestReadGenesisBlock(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-}
-
-func TestReadUnit(t *testing.T) {
-	var unit1 *Unit
-	var unit2 *Unit
-	var unit3 *Unit
-	var unit4 *Unit
-	err := store.UseSession(context.Background(), func(db DBImp) error {
-		u1 := &TUnit{}
-		id1, err := base64.StdEncoding.DecodeString("2Yu0LH3xiVKlcYK6PjQr9KaLFd8mExd5/PC6WwDCicE=")
-		if err != nil {
-			return err
-		}
-		err = db.GetUnit(id1, u1)
-		if err != nil {
-			return err
-		}
-		unit1 = u1.ToUnit()
-
-		id2, err := base64.StdEncoding.DecodeString("iPHrbxZAKMdmdEdtrvme4m0Lt+e+IBdwB/b4EmCm1/U=")
-		if err != nil {
-			return err
-		}
-		err = db.GetUnit(id2, u1)
-		if err != nil {
-			return err
-		}
-		unit2 = u1.ToUnit()
-
-		if !unit2.Prev.Equal(unit1.Hash()) {
-			return errors.New("errors")
-		}
-
-		id3, err := base64.StdEncoding.DecodeString("8NVIH3ymO+TwEnOrnN4EckEeTKTOM7sv65NWL8Sv7y4=")
-		if err != nil {
-			return err
-		}
-		err = db.GetUnit(id3, u1)
-		if err != nil {
-			return err
-		}
-		unit3 = u1.ToUnit()
-
-		if !unit3.Prev.Equal(unit2.Hash()) {
-			return errors.New("errors")
-		}
-
-		id4, err := base64.StdEncoding.DecodeString("xiY5xK6aNgvoxPhM+BWimai+PHDh1nvrhDxFdqMkiQ0=")
-		if err != nil {
-			return err
-		}
-		err = db.GetUnit(id4, u1)
-		if err != nil {
-			return err
-		}
-		unit4 = u1.ToUnit()
-
-		if !unit4.Prev.Equal(unit3.Hash()) {
-			return errors.New("errors")
-		}
-		return err
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	bits := NewUINT256(conf.PowLimit).Compact(false)
-	calcer := NewTokenCalcer()
-
-	is := &Units{unit1, unit2, unit3}
-	err = calcer.Calc(bits, is)
-	log.Println(calcer, err)
 }
 
 func TestCreateGenesisBlock(t *testing.T) {
