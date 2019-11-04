@@ -10,7 +10,7 @@
   "span_time": 24,
   "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,
-  "max_speed": 500,
+  "max_speed": 60,
   "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
   "http_port": 9334,
   "http_scheme": "http",

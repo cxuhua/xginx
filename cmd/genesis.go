@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"context"
@@ -13,12 +13,13 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	wg := &sync.WaitGroup{}
-	_ = gv.GetStore().UseSession(ctx, func(db gv.DBImp) error {
-		for i := 0; i < 64; i++ {
-			wg.Add(1)
-			go gv.CreateGenesisBlock(db, wg, ctx, cancel)
-		}
-		return nil
-	})
+	for i := 0; i < 1; i++ {
+		wg.Add(1)
+		go func() {
+			_ = gv.GetStore().UseSession(ctx, func(db gv.DBImp) error {
+				return gv.CreateGenesisBlock(db, wg, ctx, cancel)
+			})
+		}()
+	}
 	wg.Wait()
 }

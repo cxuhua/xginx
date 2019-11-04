@@ -123,6 +123,10 @@ func (c *TagCTR) Set(v uint) {
 
 type PKBytes [33]byte
 
+func (v PKBytes) Hash() HASH160 {
+	return Hash160To(v[:])
+}
+
 func (v PKBytes) Cmp(b PKBytes) int {
 	vu := NewUINT256(v[:])
 	bu := NewUINT256(b[:])
@@ -345,13 +349,13 @@ func (t *TagInfo) DecodeURL() error {
 	return nil
 }
 
-func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
+func (t *TagInfo) Valid(db DBImp, cli *CliPart) error {
 	//定位信息不能为空
-	if client.CLoc.IsZero() {
+	if cli.CLoc.IsZero() {
 		return errors.New("cloc error")
 	}
 	//时间相差不能太大
-	if client.TimeErr() > conf.TimeErr {
+	if cli.TimeErr() > conf.TimeErr {
 		return errors.New("client time error")
 	}
 	if t.input == "" {
@@ -375,11 +379,11 @@ func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 		return fmt.Errorf("update counter error %w", err)
 	}
 	//校验用户签名
-	sig, err := NewSigValue(client.CSig[:])
+	sig, err := NewSigValue(cli.CSig[:])
 	if err != nil {
 		return fmt.Errorf("sig error %w", err)
 	}
-	pub, err := NewPublicKey(client.CPks[:])
+	pub, err := NewPublicKey(cli.CPks[:])
 	if err != nil {
 		return fmt.Errorf("pub error %w", err)
 	}
@@ -388,7 +392,7 @@ func (t *TagInfo) Valid(db DBImp, client *CliPart) error {
 		return err
 	}
 	buf := bytes.NewBuffer(data)
-	if err := client.EncodeWriter(buf); err != nil {
+	if err := cli.EncodeWriter(buf); err != nil {
 		return err
 	}
 	//校验客户签名
@@ -597,9 +601,7 @@ func (c *CliPart) Verify(b []byte) error {
 
 //cpks HASH160
 func (c *CliPart) ClientID() HASH160 {
-	uid := HASH160{}
-	copy(uid[:], Hash160(c.CPks[:]))
-	return uid
+	return Hash160To(c.CPks[:])
 }
 
 func (c *CliPart) Decode(r io.Reader) error {
@@ -776,11 +778,8 @@ func (ser *SerPart) Sign(pri *PrivateKey, tag *TagInfo, cli *CliPart) ([]byte, e
 	return buf.Bytes(), nil
 }
 
-func (b *TUnit) Encode(w io.Writer) (*Unit, error) {
+func (b *TUnit) ToUnit() *Unit {
 	bi := &Unit{}
-	if err := bi.Encode(w); err != nil {
-		return nil, err
-	}
 	bi.TTS.Set(b.TTS)
 	bi.TVer = b.TVer
 	bi.TLoc.SetLoc(b.TLoc)
@@ -798,7 +797,12 @@ func (b *TUnit) Encode(w io.Writer) (*Unit, error) {
 	bi.STime = b.STime
 	bi.SPks.SetBytes(b.SPks)
 	bi.SSig.SetBytes(b.SSig)
-	return bi, nil
+	return bi
+}
+
+func (b *TUnit) Encode(w io.Writer) error {
+	bi := b.ToUnit()
+	return bi.Encode(w)
 }
 
 type Unit struct {

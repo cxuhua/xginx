@@ -47,7 +47,7 @@ func CheckProofOfWorkBits(bits uint32) bool {
 	if o {
 		return false
 	}
-	return h.Cmp(conf.LimitHash) > 0
+	return h.Cmp(conf.LimitHash) <= 0
 }
 
 //ct = lastBlock blockTime

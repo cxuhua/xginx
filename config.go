@@ -67,7 +67,7 @@ type Config struct {
 	pubshash     HASH256                 `json:"-"`             //
 	mu           sync.RWMutex            `json:"-"`             //
 	NodeID       HASH160                 `json:"-"`             //启动时临时生成
-	minerpk      *PublicKey              `json:"-"`             //私钥
+	minerpk      *PublicKey              `json:"-"`             //矿工公钥
 	logFile      *os.File                `json:"-"`             //日志文件
 	genesisId    HASH256                 `json:"-"`             //第一个区块id
 	LimitHash    UINT256                 `json:"-"`             //最小工作难度

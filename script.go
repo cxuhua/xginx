@@ -1,6 +1,9 @@
 package xginx
 
-import "bytes"
+import (
+	"bytes"
+	"errors"
+)
 
 const (
 	SCRIPT_BASE_TYPE      = uint8(0) //coinbase input 0
@@ -63,7 +66,7 @@ func BaseScript(h uint32, b []byte) Script {
 	return s
 }
 
-func UnlockScript(pub *PublicKey, sig *SigValue) Script {
+func StdUnlockScript(pub *PublicKey, sig *SigValue) Script {
 	pb := pub.Encode()
 	sb := sig.Encode()
 	buf := &bytes.Buffer{}
@@ -78,9 +81,27 @@ func UnlockScript(pub *PublicKey, sig *SigValue) Script {
 	return buf.Bytes()
 }
 
-func LockedScript(pub *PublicKey) Script {
+func StdLockedScript(v interface{}) Script {
+	var hash HASH160
 	s := Script{SCRIPT_STDLOCKED_TYPE}
-	hash := Hash160(pub.Encode())
-	s = append(s, hash...)
+	switch v.(type) {
+	case *PublicKey:
+		pub := v.(*PublicKey)
+		hash = Hash160To(pub.Encode())
+	case HASH160:
+		hash = v.(HASH160)
+	case PKBytes:
+		pks := v.(PKBytes)
+		hash = Hash160To(pks[:])
+	case string:
+		pub, err := LoadPublicKey(v.(string))
+		if err != nil {
+			panic(err)
+		}
+		hash = Hash160To(pub.Encode())
+	default:
+		panic(errors.New("v args type error"))
+	}
+	s = append(s, hash[:]...)
 	return s
 }

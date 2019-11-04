@@ -3,6 +3,7 @@ package xginx
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -13,12 +14,53 @@ import (
 	"time"
 )
 
-func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) {
+func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) error {
 	defer wg.Done()
-	pub, err := LoadPublicKey("8aKby6XxwmoaiYt6gUbS1u2RHco37iHfh6sAPstME33Qh6ujd9")
+
+	var unit1 *Unit
+	var unit2 *Unit
+	var unit3 *Unit
+	u1 := &TUnit{}
+	id1, err := base64.StdEncoding.DecodeString("2Yu0LH3xiVKlcYK6PjQr9KaLFd8mExd5/PC6WwDCicE=")
 	if err != nil {
-		panic(err)
+		return err
 	}
+	err = db.GetUnit(id1, u1)
+	if err != nil {
+		return err
+	}
+	unit1 = u1.ToUnit()
+
+	id2, err := base64.StdEncoding.DecodeString("iPHrbxZAKMdmdEdtrvme4m0Lt+e+IBdwB/b4EmCm1/U=")
+	if err != nil {
+		return err
+	}
+	err = db.GetUnit(id2, u1)
+	if err != nil {
+		return err
+	}
+	unit2 = u1.ToUnit()
+
+	if !unit2.Prev.Equal(unit1.Hash()) {
+		return errors.New("errors")
+	}
+
+	id3, err := base64.StdEncoding.DecodeString("8NVIH3ymO+TwEnOrnN4EckEeTKTOM7sv65NWL8Sv7y4=")
+	if err != nil {
+		return err
+	}
+	err = db.GetUnit(id3, u1)
+	if err != nil {
+		return err
+	}
+	unit3 = u1.ToUnit()
+
+	if !unit3.Prev.Equal(unit2.Hash()) {
+		return errors.New("errors")
+	}
+
+	bits := NewUINT256(conf.PowLimit).Compact(false)
+	calcer := NewTokenCalcer()
 
 	tv := uint32(time.Now().Unix())
 
@@ -27,7 +69,7 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 		Prev:   HASH256{},
 		Merkle: HASH256{},
 		Time:   tv,
-		Bits:   0x1d00ffff,
+		Bits:   bits,
 		Nonce:  0x58f3e185,
 		Uts:    []*Units{},
 		Txs:    []*TX{},
@@ -40,20 +82,24 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 	in.Script = BaseScript(0, []byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
 	tx.Ins = []*TxIn{in}
 
-	us := &Units{}
-	u0 := &Unit{}
-	u1 := &Unit{}
-	_ = us.Add(db, u0)
-	_ = us.Add(db, u1)
+	us := &Units{unit1, unit2, unit3}
 
+	err = calcer.Calc(bits, us)
+	if err != nil {
+		return err
+	}
 	b.Uts = []*Units{us}
 
-	out := &TxOut{}
-	out.Value = 529
-	out.Script = LockedScript(pub)
-	tx.Outs = []*TxOut{out}
-
-	tx.Hash()
+	for tk, vv := range calcer.Outs() {
+		if vv == 0 {
+			continue
+		}
+		out := &TxOut{}
+		out.Value = vv
+		out.Script = StdLockedScript(tk)
+		tx.Outs = append(tx.Outs, out)
+	}
+	//
 	b.Txs = []*TX{tx}
 
 	//生成merkle root id
@@ -65,14 +111,14 @@ func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cance
 	SetRandInt(&b.Nonce)
 	err = b.EncodeHeader(buf)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	heaerbytes := buf.Bytes()
 	nhash := HASH256{}
 	for i := uint64(b.Nonce); ; i++ {
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		default:
 			//写入数字
 			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
@@ -561,6 +607,19 @@ func (v *TX) Decode(r IReader) error {
 
 type Units []*Unit
 
+func (v Units) CliId() HASH160 {
+	if len(v) < 2 {
+		panic(errors.New("units empty"))
+	}
+	cid := v[0].CPks.Hash()
+	for i := 1; i < len(v); i++ {
+		if !v[i].CPks.Equal(v[0].CPks) {
+			panic(errors.New("units data error"))
+		}
+	}
+	return cid
+}
+
 func (v Units) Encode(w IWriter) error {
 	if err := VarUInt(len(v)).Encode(w); err != nil {
 		return err
@@ -727,27 +786,25 @@ type ITokenCalcer interface {
 }
 
 type TokenCalcer struct {
-	total  float64             //总的的积分
-	vmap   map[HASH160]float64 //标签获得的积分
-	miner  float64             //矿工奖励的积分
-	client float64             //用户获得的积分
+	total float64             //总的的积分
+	vmap  map[HASH160]float64 //标签获得的积分
+	mmap  map[HASH160]float64 //矿工奖励的积分
+	cmap  map[HASH160]float64 //用户获得的积分
 }
 
 func NewTokenCalcer() *TokenCalcer {
 	return &TokenCalcer{
-		total:  0,
-		vmap:   map[HASH160]float64{},
-		miner:  0,
-		client: 0,
+		total: 0,
+		vmap:  map[HASH160]float64{},
+		mmap:  map[HASH160]float64{},
+		cmap:  map[HASH160]float64{},
 	}
 }
 
 func (calcer TokenCalcer) String() string {
 	sb := strings.Builder{}
 	sb.WriteString(fmt.Sprintf("Total=%d\n", calcer.Total()))
-	sb.WriteString(fmt.Sprintf("Miner=%d\n", calcer.Miner()))
-	sb.WriteString(fmt.Sprintf("Client=%d\n", calcer.Client()))
-	for k, v := range calcer.Tags() {
+	for k, v := range calcer.Outs() {
 		sb.WriteString(fmt.Sprintf("Tag=%s Value=%d\n", hex.EncodeToString(k[:]), v))
 	}
 	return sb.String()
@@ -755,8 +812,8 @@ func (calcer TokenCalcer) String() string {
 
 func (calcer *TokenCalcer) Reset() {
 	calcer.total = 0
-	calcer.miner = 0
-	calcer.client = 0
+	calcer.cmap = map[HASH160]float64{}
+	calcer.mmap = map[HASH160]float64{}
 	calcer.vmap = map[HASH160]float64{}
 }
 
@@ -764,23 +821,32 @@ func (calcer *TokenCalcer) Total() VarUInt {
 	return VarUInt(calcer.total)
 }
 
-//矿工获得的积分
-func (calcer *TokenCalcer) Miner() VarUInt {
-	return VarUInt(calcer.miner)
-}
-
-//用户获得的积分
-func (calcer *TokenCalcer) Client() VarUInt {
-	return VarUInt(calcer.client)
-}
-
 //标签获得的积分
-func (calcer *TokenCalcer) Tags() map[HASH160]VarUInt {
+func (calcer *TokenCalcer) Outs() map[HASH160]VarUInt {
 	ret := map[HASH160]VarUInt{}
 	for k, v := range calcer.vmap {
-		ret[k] = VarUInt(v)
+		ret[k] += VarUInt(v)
+	}
+	for k, v := range calcer.cmap {
+		ret[k] += VarUInt(v)
+	}
+	for k, v := range calcer.mmap {
+		ret[k] += VarUInt(v)
 	}
 	return ret
+}
+
+func (calcer *TokenCalcer) Merge(c *TokenCalcer) {
+	calcer.total += c.total
+	for k, v := range c.vmap {
+		calcer.vmap[k] += v
+	}
+	for k, v := range c.cmap {
+		calcer.cmap[k] += v
+	}
+	for k, v := range c.mmap {
+		calcer.mmap[k] += v
+	}
 }
 
 //多个连续的记录信息，记录client链,至少有两个记录
@@ -790,23 +856,24 @@ func (calcer *TokenCalcer) Tags() map[HASH160]VarUInt {
 //标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
 //所有distance之和就是clientid的总的distance
 //bits 区块难度
-func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
-	if len(items) < 2 {
+func (calcer *TokenCalcer) Calc(bits uint32, items *Units) error {
+	if len(*items) < 2 {
 		return errors.New("items count error")
 	}
 	if !CheckProofOfWorkBits(bits) {
 		return errors.New("proof of work bits error")
 	}
+	mph := conf.minerpk.Hash()
 	calcer.Reset()
 	tpv := CalculateWorkTimeScale(bits)
-	for i := 1; i < len(items); i++ {
-		cv := items[i+0]
+	for i := 1; i < len(*items); i++ {
+		cv := (*items)[i+0]
 		//使用当前标签设定的分配比例
 		if err := cv.TASV.Check(); err != nil {
 			return fmt.Errorf("item asv error %w", err)
 		}
 		mr, tr, cr := cv.TASV.Scale()
-		pv := items[i-1]
+		pv := (*items)[i-1]
 		if !cv.ClientID().Equal(pv.ClientID()) {
 			return errors.New("client error")
 		}
@@ -838,7 +905,7 @@ func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
 		//如果两次都是同一打卡点，按时间获得积分
 		if cv.TUID.Equal(pv.TUID) {
 			//按每小时1km速度结算
-			dis = st / 3600.0
+			dis = st / 3.6
 		} else {
 			//获取定位不准惩罚系数
 			csr := cv.CTLocDisRate()
@@ -856,9 +923,9 @@ func (calcer *TokenCalcer) Calc(bits uint32, items []*Unit) error {
 		calcer.vmap[cv.TPKH] += tdis
 		calcer.vmap[pv.TPKH] += tdis
 		cdis := dis * cr
-		calcer.client += cdis
+		calcer.cmap[cv.ClientID()] += cdis
 		//保存矿工获得的总量
-		calcer.miner += mdis
+		calcer.mmap[mph] += mdis
 	}
 	if calcer.total < 0 || calcer.total > EARTH_RADIUS {
 		return errors.New("total range error")

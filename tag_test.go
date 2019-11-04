@@ -132,7 +132,7 @@ func TestMakeTagURL(t *testing.T) {
 	pk1, _ := B58Decode(pk, BitcoinAlphabet)
 	pub, _ := NewPublicKey(pk1)
 	tag := NewTagInfo()
-	tag.TLoc.Set(116.368904, 39.923423)
+	tag.TLoc.Set(104.062810, 30.552873)
 	tag.TASV = S622
 	tag.TPKH.SetPK(pub)
 	s, err := tag.EncodeHex()

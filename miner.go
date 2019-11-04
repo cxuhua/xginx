@@ -90,6 +90,7 @@ func (m *minerEngine) loop(i int) {
 			m.uxs[ux.Hash()] = ux
 			m.umu.Unlock()
 			m.dok <- true
+			log.Println("recv unit hash=", ux.Hash())
 		case tx := <-m.tc:
 			m.tmu.RLock()
 			_, ok := m.txs[tx.Hash()]
@@ -101,6 +102,7 @@ func (m *minerEngine) loop(i int) {
 			m.txs[tx.Hash()] = tx
 			m.tmu.Unlock()
 			m.dok <- true
+			log.Println("recv tx hash=", tx.Hash())
 		case <-m.ctx.Done():
 			return
 		}
