@@ -31,6 +31,13 @@ var (
 	datadir = "f:\\datadir"
 )
 
+var (
+	CTR_PREFIX   = []byte{'C'} //标签计数器前缀
+	TAG_PREFIX   = []byte{'T'} //标签信息前缀
+	BLOCK_PREFIX = []byte{'B'} //块头信息前缀
+	HUNIT_PREFIX = []byte{'H'} //单元hash，签名hash存在说明数据验证通过签名
+)
+
 func GetDBKey(p []byte, id ...[]byte) []byte {
 	tk := []byte{}
 	tk = append(tk, p...)
@@ -88,13 +95,6 @@ func LoadAllTags(tfb *bloom.BloomFilter) {
 	log.Println("load", len(TagsCtr), "tag ctr")
 }
 
-var (
-	CTR_PREFIX   = []byte{'C'} //标签计数器前缀
-	TAG_PREFIX   = []byte{'T'} //标签信息前缀
-	BLOCK_PREFIX = []byte{'B'} //块头信息前缀
-	HUNIT_PREFIX = []byte{'H'} //单元hash，签名hash存在说明数据验证通过签名
-)
-
 type TBMeta struct {
 	Ver     uint32  //block ver
 	Prev    HASH256 //pre block hash
@@ -102,11 +102,11 @@ type TBMeta struct {
 	Time    uint32  //时间戳
 	Bits    uint32  //难度
 	Nonce   uint32  //随机值
-	Uts     uint32  //Units数量
-	Txs     uint32  //tx数量
-	FileId  uint32  //所在文件id 0000000.blk
-	FileOff uint32  //文件偏移
-	FileLen uint32  //块长度
+	Uts     VarUInt //Units数量
+	Txs     VarUInt //tx数量
+	FileId  VarUInt //所在文件id 0000000.blk
+	FileOff VarUInt //文件偏移
+	FileLen VarUInt //块长度
 }
 
 func (h *TBMeta) Encode(w IWriter) error {
@@ -128,19 +128,19 @@ func (h *TBMeta) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, h.Nonce); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, h.Uts); err != nil {
+	if err := h.Uts.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, h.Txs); err != nil {
+	if err := h.Txs.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, h.FileId); err != nil {
+	if err := h.FileId.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, h.FileOff); err != nil {
+	if err := h.FileOff.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, h.FileLen); err != nil {
+	if err := h.FileLen.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -165,19 +165,19 @@ func (h *TBMeta) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &h.Nonce); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &h.Uts); err != nil {
+	if err := h.Uts.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &h.Txs); err != nil {
+	if err := h.Txs.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &h.FileId); err != nil {
+	if err := h.FileId.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &h.FileOff); err != nil {
+	if err := h.FileId.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &h.FileLen); err != nil {
+	if err := h.FileLen.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -268,7 +268,7 @@ func (s *sfile) read(off uint32, b []byte) error {
 }
 
 //写入数据，返回数据偏移
-func (f *sfile) write(b []byte) (int, error) {
+func (f *sfile) write(b []byte) (uint32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	fi, err := f.Stat()
@@ -287,9 +287,9 @@ func (f *sfile) write(b []byte) (int, error) {
 	}
 	if off+wl > int(f.size) {
 		f.flush()
-		return off, nextFileErr
+		return uint32(off), nextFileErr
 	}
-	return off, nil
+	return uint32(off), nil
 }
 
 func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
@@ -302,6 +302,10 @@ func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 
 func (s sstore) fileIdPath(id uint32) string {
 	return fmt.Sprintf("%s%c%06d%s", datadir, os.PathSeparator, id, s.ext)
+}
+
+func (f *sstore) Id() uint32 {
+	return atomic.LoadUint32(&f.id)
 }
 
 func (s *sstore) openfile(id uint32) (*sfile, error) {
@@ -326,7 +330,7 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 		return sf, nil
 	}
 	pos, err := sf.write(hbytes[fsiz:])
-	if pos != fsiz || err != nil {
+	if pos != uint32(fsiz) || err != nil {
 		_ = sf.Close()
 		return nil, err
 	}
@@ -344,7 +348,7 @@ func (s *sstore) read(id uint32, off uint32, b []byte) error {
 	return f.read(off, b)
 }
 
-func (s *sstore) write(b []byte) (int, error) {
+func (s *sstore) write(b []byte) (uint32, error) {
 	f, err := s.openfile(s.id)
 	if err != nil {
 		return 0, err
@@ -419,6 +423,7 @@ func DB() *leveldb.DB {
 	return dbptr
 }
 
+//验证是否有验证成功的单元hash
 func HasUnitash(id HASH256) (HASH160, error) {
 	hk := GetDBKey(HUNIT_PREFIX, id[:])
 	opts := &opt.ReadOptions{
@@ -434,6 +439,7 @@ func HasUnitash(id HASH256) (HASH160, error) {
 	return pkh, nil
 }
 
+//添加一个验证成功的单元hash
 func PutUnitHash(id HASH256, cli PKBytes) error {
 	hk := GetDBKey(HUNIT_PREFIX, id[:])
 	opts := &opt.WriteOptions{

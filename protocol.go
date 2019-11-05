@@ -333,6 +333,18 @@ func (v VarUInt) ToInt() int {
 	return int(v)
 }
 
+func (v VarUInt) ToUInt32() uint32 {
+	return uint32(v)
+}
+
+func (v *VarUInt) SetUInt32(uv uint32) {
+	*v = VarUInt(uv)
+}
+
+func (v *VarUInt) SetInt(uv int) {
+	*v = VarUInt(uv)
+}
+
 func (v VarUInt) Encode(w IWriter) error {
 	lb := make([]byte, binary.MaxVarintLen64)
 	l := binary.PutUvarint(lb, uint64(v))

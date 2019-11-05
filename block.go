@@ -50,7 +50,7 @@ func (v *BlockInfo) Load(id HASH256) error {
 		return err
 	}
 	bb := make([]byte, bh.FileLen)
-	if err := blk.read(bh.FileId, bh.FileOff, bb); err != nil {
+	if err := blk.read(bh.FileId.ToUInt32(), bh.FileOff.ToUInt32(), bb); err != nil {
 		return err
 	}
 	return v.Decode(bytes.NewReader(bb))
@@ -67,9 +67,8 @@ func (v BlockInfo) Save() error {
 	if err != nil {
 		return err
 	}
-	meta.FileId = blk.id
-	meta.FileOff = uint32(pos)
-	meta.FileLen = uint32(len(bb))
+	meta.FileId.SetUInt32(blk.Id())
+	meta.FileOff.SetUInt32(pos)
 	//保存头
 	buf := &bytes.Buffer{}
 	if err := meta.Encode(buf); err != nil {
@@ -178,8 +177,8 @@ func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 		Time:   b.Time,
 		Bits:   b.Bits,
 		Nonce:  b.Nonce,
-		Uts:    uint32(len(b.Uts)),
-		Txs:    uint32(len(b.Txs)),
+		Uts:    VarUInt(len(b.Uts)),
+		Txs:    VarUInt(len(b.Txs)),
 	}
 	buf := &bytes.Buffer{}
 	if err := b.EncodeHeader(buf); err != nil {
@@ -189,6 +188,7 @@ func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 	if err := b.EncodeBody(buf); err != nil {
 		return nil, nil, nil, err
 	}
+	meta.FileLen = VarUInt(buf.Len())
 	return id, meta, buf.Bytes(), nil
 }
 
