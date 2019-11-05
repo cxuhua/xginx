@@ -34,18 +34,12 @@ func TestMsgExt(t *testing.T) {
 }
 
 func TestMsgVersion(t *testing.T) {
-	certs, err := conf.EncodeCerts()
-	if err != nil {
-		panic(err)
-	}
 	msg := &MsgVersion{}
 	msg.Ver = conf.Ver
-	msg.Certs = certs
 	msg.Service = SERVICE_SIG_TAG | SERVICE_SIG_DATA
 	msg.Addr = conf.GetNetAddr()
-	msg.PubsHash = conf.PubsHash()
 	buf := &bytes.Buffer{}
-	err = msg.Encode(buf)
+	err := msg.Encode(buf)
 	if err != nil {
 		panic(err)
 	}
@@ -64,9 +58,6 @@ func TestMsgVersion(t *testing.T) {
 	}
 	if m2.Service != msg.Service {
 		t.Errorf("service error")
-	}
-	if !m2.PubsHash.Equal(conf.PubsHash()) {
-		t.Errorf("hash error")
 	}
 	np := NetPackage{
 		Type:  NT_VERSION,
@@ -95,9 +86,6 @@ func TestMsgVersion(t *testing.T) {
 	}
 	if m4.Service != msg.Service {
 		t.Errorf("service error")
-	}
-	if !m4.PubsHash.Equal(conf.PubsHash()) {
-		t.Errorf("ver hash disaccord")
 	}
 }
 

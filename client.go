@@ -17,7 +17,7 @@ const (
 type IClient interface {
 	OnOpen()
 	OnClose()
-	OnRecvMsg(db DBImp, m MsgIO)
+	OnRecvMsg(m MsgIO)
 }
 
 type Client struct {
@@ -41,7 +41,7 @@ func (c *Client) Equal(b *Client) bool {
 }
 
 //服务器端处理包
-func (c *Client) processMsgIn(db DBImp, m MsgIO) {
+func (c *Client) processMsgIn(m MsgIO) {
 
 }
 
@@ -65,11 +65,11 @@ func (c *Client) NodeID() HASH160 {
 }
 
 //客户端处理包
-func (c *Client) processMsgOut(db DBImp, m MsgIO) {
+func (c *Client) processMsgOut(m MsgIO) {
 
 }
 
-func (c *Client) processMsg(db DBImp, m MsgIO) error {
+func (c *Client) processMsg(m MsgIO) error {
 	if m.Type() == NT_PONG {
 		msg := m.(*MsgPong)
 		c.ping = msg.Ping()
@@ -79,11 +79,6 @@ func (c *Client) processMsg(db DBImp, m MsgIO) error {
 	} else if m.Type() == NT_VERSION {
 		osg := NewMsgVersion()
 		msg := m.(*MsgVersion)
-		//解码证书失败直接返回错误
-		if err := conf.DecodeCerts(msg.Certs); err != nil {
-			c.Close()
-			return err
-		}
 		//保存连接地址和版本信息
 		c.ss.addrs.Set(msg.Addr)
 		c.mVer = msg
@@ -98,12 +93,12 @@ func (c *Client) processMsg(db DBImp, m MsgIO) error {
 			c.SendMsg(osg)
 		}
 	} else if c.IsIn() {
-		c.processMsgIn(db, m)
+		c.processMsgIn(m)
 	} else if c.IsOut() {
-		c.processMsgOut(db, m)
+		c.processMsgOut(m)
 	}
 	if c.lis != nil {
-		c.lis.OnRecvMsg(db, m)
+		c.lis.OnRecvMsg(m)
 	}
 	return nil
 }
@@ -181,9 +176,7 @@ func (c *Client) loop() {
 				panic(fmt.Errorf("write msg error %v", err))
 			}
 		case rp := <-c.rc:
-			err := store.UseSession(c.ctx, func(db DBImp) error {
-				return c.processMsg(db, rp)
-			})
+			err := c.processMsg(rp)
 			if err != nil {
 				log.Println("process msg", rp.Type(), "error", err)
 			}

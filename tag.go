@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -37,6 +39,26 @@ func MaxBits(v uint64) uint {
 }
 
 type Location [2]uint32
+
+func (l Location) Encode(w IWriter) error {
+	if err := binary.Write(w, Endian, l[0]); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, l[1]); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l *Location) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &l[0]); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &l[1]); err != nil {
+		return err
+	}
+	return nil
+}
 
 func (l Location) IsZero() bool {
 	return l[0] == 0 || l[1] == 0
@@ -109,10 +131,10 @@ func (l Location) Distance(v Location) float64 {
 //
 type TagCTR [3]byte
 
-func (c TagCTR) ToUInt() uint {
+func (c TagCTR) ToUInt() uint32 {
 	b4 := []byte{0, 0, 0, 0}
 	copy(b4[1:], c[:])
-	return uint(binary.BigEndian.Uint32(b4))
+	return binary.BigEndian.Uint32(b4)
 }
 
 func (c *TagCTR) Set(v uint) {
@@ -349,7 +371,7 @@ func (t *TagInfo) DecodeURL() error {
 	return nil
 }
 
-func (t *TagInfo) Valid(db DBImp, cli *CliPart) error {
+func (t *TagInfo) Valid(cli *CliPart) error {
 	//定位信息不能为空
 	if cli.CLoc.IsZero() {
 		return errors.New("cloc error")
@@ -362,21 +384,17 @@ func (t *TagInfo) Valid(db DBImp, cli *CliPart) error {
 		return errors.New("input miss")
 	}
 	//获取标签信息
-	itag, err := LoadTagInfo(t.TUID, db)
+	itag, err := LoadTagInfo(t.TUID)
 	if err != nil {
 		return fmt.Errorf("get tag info error %w", err)
 	}
-	//检测标签计数器
-	if itag.CTR >= t.TCTR.ToUInt() {
-		return errors.New("tag counter error")
-	}
-	//暂时默认使用密钥0
+	//校验mac
 	if !aescmac.Vaild(itag.Mackey(), t.TUID[:], t.TCTR[:], t.TMAC[:], t.input) {
 		return errors.New("cmac valid error")
 	}
 	//更新数据库标签计数器
-	if err := db.SetCtr(t.TUID[:], t.TCTR.ToUInt()); err != nil {
-		return fmt.Errorf("update counter error %w", err)
+	if err := SetTagCtr(t.TUID, t.TCTR.ToUInt()); err != nil {
+		return err
 	}
 	//校验用户签名
 	sig, err := NewSigValue(cli.CSig[:])
@@ -526,17 +544,16 @@ const (
 //最大支持255长度字节
 type VarStr string
 
-func (s *VarStr) DecodeReader(r io.Reader) error {
-	b0 := []byte{0}
-	_, err := r.Read(b0)
+func (s *VarStr) Decode(r IReader) error {
+	l, err := r.ReadByte()
 	if err != nil {
 		return err
 	}
-	if b0[0] == 0 {
+	if l == 0 {
 		*s = ""
 		return nil
 	}
-	sb := make([]byte, b0[0])
+	sb := make([]byte, l)
 	_, err = r.Read(sb)
 	if err != nil {
 		return err
@@ -545,16 +562,17 @@ func (s *VarStr) DecodeReader(r io.Reader) error {
 	return nil
 }
 
-func (s VarStr) EncodeWriter(w io.Writer) error {
+func (s VarStr) Encode(w IWriter) error {
 	if len(s) > VAR_STR_MAX {
-		panic(errors.New("var too big long"))
+		return errors.New("var too big long")
 	}
-	r := []byte{byte(len(s))}
-	if len(s) > 0 {
-		r = append(r, []byte(s)...)
+	if err := w.WriteByte(byte(len(s))); err != nil {
+		return err
 	}
-	_, err := w.Write(r)
-	return err
+	if _, err := w.Write([]byte(s)); err != nil {
+		return err
+	}
+	return nil
 }
 
 //client信息
@@ -684,70 +702,32 @@ func (c *CliPart) Sign(pv *PrivateKey, tag []byte) ([]byte, error) {
 
 //块信息
 type SerPart struct {
-	Nonce int64    //随机值 server full
-	STime int64    //服务器时间 单位：纳秒
-	SPks  PKBytes  //服务器公钥
-	SSig  SigBytes //服务器签名
+	Nonce int64  //随机值 server full
+	STime int64  //服务器时间 单位：纳秒
+	Host  VarStr //验证主机地址地址 https://ip:port/verify,验证时拼接hex(hash)
 }
 
-func (c *SerPart) Encode(w io.Writer) error {
-	if err := c.EncodeWriter(w); err != nil {
-		return err
-	}
-	if err := binary.Write(w, Endian, c.SSig); err != nil {
-		return err
-	}
-	return nil
+func NewSerPart(url string) *SerPart {
+	tb := &SerPart{}
+	tb.SetRand()
+	tb.SetTime()
+	tb.SetHost(url)
+	return tb
 }
 
-func (c *SerPart) EncodeWriter(w io.Writer) error {
-	if err := binary.Write(w, Endian, &c.Nonce); err != nil {
-		return err
-	}
-	if err := binary.Write(w, Endian, &c.STime); err != nil {
-		return err
-	}
-	if err := binary.Write(w, Endian, &c.SPks); err != nil {
-		return err
-	}
-	return nil
+func (c *SerPart) SetRand() {
+	SetRandInt(&c.Nonce)
 }
 
-func (c *SerPart) Decode(r io.Reader) error {
-	return c.DecodeReader(r)
+func (c *SerPart) SetTime() {
+	c.STime = time.Now().UnixNano()
 }
 
-func (c *SerPart) DecodeReader(r io.Reader) error {
-	if err := binary.Read(r, Endian, &c.Nonce); err != nil {
-		return err
-	}
-	if err := binary.Read(r, Endian, &c.STime); err != nil {
-		return err
-	}
-	if err := binary.Read(r, Endian, &c.SPks); err != nil {
-		return err
-	}
-	if err := binary.Read(r, Endian, &c.SSig); err != nil {
-		return err
-	}
-	return nil
+func (c *SerPart) SetHost(url string) {
+	c.Host = VarStr(url)
 }
 
-//b=校验数据
-func (s *SerPart) Verify(conf *Config, b []byte) error {
-	if len(b) < len(s.SPks)+len(s.SSig) {
-		return errors.New("data size error")
-	}
-	sig, err := NewSigValue(s.SSig[:])
-	if err != nil {
-		return err
-	}
-	//ssig不包含在签名数据中
-	hash := Hash256(b[:len(b)-len(s.SSig)])
-	return conf.Verify(s.SPks, sig, hash)
-}
-
-func (ser *SerPart) Sign(pri *PrivateKey, tag *TagInfo, cli *CliPart) ([]byte, error) {
+func (c *SerPart) Dump(tag *TagInfo, cli *CliPart) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := tag.Encode(buf); err != nil {
 		return nil, err
@@ -755,54 +735,39 @@ func (ser *SerPart) Sign(pri *PrivateKey, tag *TagInfo, cli *CliPart) ([]byte, e
 	if err := cli.Encode(buf); err != nil {
 		return nil, err
 	}
-	//设置随机值
-	SetRandInt(&ser.Nonce)
-	//设置服务器时间
-	ser.STime = time.Now().UnixNano()
-	//设置签名公钥
-	ser.SPks.Set(pri.PublicKey())
-	if err := ser.EncodeWriter(buf); err != nil {
+	if err := cli.Verify(buf.Bytes()); err != nil {
 		return nil, err
 	}
-	//计算服务器签名
-	hash := Hash256(buf.Bytes())
-	sig, err := pri.Sign(hash)
-	if err != nil {
-		return nil, err
-	}
-	ser.SSig.Set(sig)
-	//签名数据
-	if err := binary.Write(buf, Endian, ser.SSig); err != nil {
+	if err := c.Encode(buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-func (b *TUnit) ToUnit() *Unit {
-	bi := &Unit{}
-	bi.TTS.Set(b.TTS)
-	bi.TVer = b.TVer
-	bi.TLoc.SetLoc(b.TLoc)
-	bi.TASV = Alloc(b.TASV)
-	bi.TPKH.Set(b.TPKH)
-	bi.TUID.Set(b.TUID)
-	bi.TCTR.Set(b.TCTR)
-	bi.TMAC.Set(b.TMAC)
-	bi.CLoc.SetLoc(b.CLoc)
-	bi.Prev.Set(b.Prev)
-	bi.CTime = b.CTime
-	bi.CPks.SetBytes(b.CPks)
-	bi.CSig.SetBytes(b.CSig)
-	bi.Nonce = b.Nonce
-	bi.STime = b.STime
-	bi.SPks.SetBytes(b.SPks)
-	bi.SSig.SetBytes(b.SSig)
-	return bi
+func (c SerPart) Encode(w IWriter) error {
+	if err := binary.Write(w, Endian, &c.Nonce); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, &c.STime); err != nil {
+		return err
+	}
+	if err := c.Host.Encode(w); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (b *TUnit) Encode(w io.Writer) error {
-	bi := b.ToUnit()
-	return bi.Encode(w)
+func (c *SerPart) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &c.Nonce); err != nil {
+		return err
+	}
+	if err := binary.Read(r, Endian, &c.STime); err != nil {
+		return err
+	}
+	if err := c.Host.Decode(r); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Unit struct {
@@ -816,12 +781,8 @@ func (pv Unit) Equal(cv Unit) bool {
 	return pv.Hash().Equal(cv.Hash())
 }
 
-func (pv Unit) Check(db DBImp) error {
-	buf := &bytes.Buffer{}
-	if err := pv.Encode(buf); err != nil {
-		return err
-	}
-	return pv.SerPart.Verify(conf, buf.Bytes())
+func (pv Unit) Check() error {
+	return nil
 }
 
 func (pv Unit) TTLocDis(cv *Unit) float64 {
@@ -854,7 +815,7 @@ func (b Unit) CTLocDisRate() float64 {
 	return GetDisRate(b.CTLocDis())
 }
 
-func (b Unit) Encode(w io.Writer) error {
+func (b Unit) Encode(w IWriter) error {
 	if err := b.TagInfo.Encode(w); err != nil {
 		return err
 	}
@@ -867,7 +828,7 @@ func (b Unit) Encode(w io.Writer) error {
 	return nil
 }
 
-func (b *Unit) Decode(r io.Reader) error {
+func (b *Unit) Decode(r IReader) error {
 	if err := b.TagInfo.Decode(r); err != nil {
 		return err
 	}
@@ -880,6 +841,28 @@ func (b *Unit) Decode(r io.Reader) error {
 	return nil
 }
 
+//通过url访问校验数据,成功返回用户公钥hash160
+func (pv Unit) Verify() ([]byte, error) {
+	id := pv.Hash()
+	sh := hex.EncodeToString(id[:])
+	url := string(pv.Host) + "/" + sh
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode != 200 {
+		return nil, errors.New("status code error")
+	}
+	dat, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if len(dat) != 20 {
+		return nil, errors.New("pkh length error")
+	}
+	return dat, nil
+}
+
 func (b *Unit) Hash() HASH256 {
 	if hash, ok := b.hasher.IsSet(); ok {
 		return hash
@@ -887,39 +870,4 @@ func (b *Unit) Hash() HASH256 {
 	buf := &bytes.Buffer{}
 	_ = b.Encode(buf)
 	return b.hasher.Hash(buf.Bytes())
-}
-
-//校验块数据并返回对象
-func VerifyUnit(conf *Config, bs []byte) (*TUnit, error) {
-	if len(bs) > 512 {
-		return nil, errors.New("data error")
-	}
-	buf := bytes.NewBuffer(bs)
-	b := Unit{}
-	if err := b.Decode(buf); err != nil {
-		return nil, err
-	}
-	if err := b.SerPart.Verify(conf, bs); err != nil {
-		return nil, err
-	}
-	v := &TUnit{}
-	v.Hash = Hash256(bs)
-	v.TTS = b.TTS[:]
-	v.TVer = b.TVer
-	v.TLoc = b.TLoc.ToUInt()
-	v.TASV = b.TASV.ToUInt8()
-	v.TPKH = b.TPKH[:]
-	v.TUID = b.TUID[:]
-	v.TCTR = b.TCTR.ToUInt()
-	v.TMAC = b.TMAC[:]
-	v.CLoc = b.CLoc.ToUInt()
-	v.Prev = b.Prev[:]
-	v.CTime = b.CTime
-	v.CPks = b.CPks[:]
-	v.CSig = b.CSig[:]
-	v.Nonce = b.Nonce
-	v.STime = b.STime
-	v.SPks = b.SPks[:]
-	v.SSig = b.SSig[:]
-	return v, nil
 }

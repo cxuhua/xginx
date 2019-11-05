@@ -2,13 +2,11 @@ package xginx
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"log"
 	"testing"
-	"time"
+
+	"github.com/willf/bloom"
 )
 
 var (
@@ -35,11 +33,11 @@ func TestLocation_Distance(t *testing.T) {
 func TestVarStr(t *testing.T) {
 	buf := &bytes.Buffer{}
 	s := VarStr("1245677")
-	if err := s.EncodeWriter(buf); err != nil {
+	if err := s.Encode(buf); err != nil {
 		panic(err)
 	}
 	v := VarStr("")
-	if err := v.DecodeReader(buf); err != nil {
+	if err := v.Decode(buf); err != nil {
 		panic(err)
 	}
 	if v != s {
@@ -86,17 +84,16 @@ func TestSig(t *testing.T) {
 }
 
 func TestLoadTestKey(t *testing.T) {
-	err := store.UseSession(context.Background(), func(db DBImp) error {
-		kv, err := LoadTagInfo(tuid, db)
-		if err != nil {
-			panic(err)
-		}
-		log.Println(kv)
-		return err
-	})
+
+	LoadAllTags(bloom.New(1000, 10))
+
+	id, err := hex.DecodeString("9B2FCF46B3352B964E86E0CA47678FDC306A918A386111FFC60208B2795111B4")
 	if err != nil {
 		panic(err)
 	}
+	hid := HASH256{}
+	copy(hid[:], id)
+	HasUnitash(hid)
 }
 
 func TestSaveTestKey(t *testing.T) {
@@ -104,24 +101,18 @@ func TestSaveTestKey(t *testing.T) {
 	pk1, _ := B58Decode(pk, BitcoinAlphabet)
 	pub, _ := NewPublicKey(pk1)
 	hash := pub.Hash()
-	err := store.UseSession(context.Background(), func(db DBImp) error {
-		loc := Location{}
-		loc.Set(116.368904, 39.923423)
-		tk := &TTagInfo{}
-		tk.UID = tuid.Bytes()
-		tk.Ver = 1
-		tk.Loc = loc.Get()
-		tk.CTR = 1
-		tk.ASV = S622
-		tk.PKH = hash[:]
-		tk.SetMacKey(0)
-		copy(tk.Keys[0][:], tkey)
-		err := tk.Save(db)
-		if err != nil {
-			panic(err)
-		}
-		return err
-	})
+	loc := Location{}
+	loc.Set(116.368904, 39.923423)
+	tk := &TTagInfo{}
+	tk.UID = tuid
+	tk.Ver = 1
+	tk.Loc = loc
+	tk.ASV = S622
+	tk.PKH = hash
+	tk.Keys[4] = TTagKey{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
+	tk.SetMacKey(0)
+	copy(tk.Keys[0][:], tkey)
+	err := tk.Save()
 	if err != nil {
 		panic(err)
 	}
@@ -137,61 +128,6 @@ func TestMakeTagURL(t *testing.T) {
 	tag.TPKH.SetPK(pub)
 	s, err := tag.EncodeHex()
 	log.Println(string(s), err, tag.pos)
-}
-
-//http://api.xginx.com/sign/II01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089000000000000000000000000000000000000
-//II01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089000000000000000000000000000000000000
-func TestTagData(t *testing.T) {
-	err := store.UseSession(context.Background(), func(db DBImp) error {
-		surl := "http://192.168.31.177:9334/sign/OO01000000507C5C45B6D4CB17CADEC3AE1EDE36775302EF0330C5295F714ACF8089047D1432AA6180000010C930ABEAFC1D8553"
-		otag := NewTagInfo(surl)
-		//客户端服务器端都要解码
-		if err := otag.DecodeURL(); err != nil {
-			panic(err)
-		}
-		sigb, err := otag.ToSigBytes()
-		if err != nil {
-			panic(err)
-		}
-		//模拟客户端签名
-		pk, err := LoadPrivateKey(cpkey)
-		if err != nil {
-			panic(err)
-		}
-		client := &CliPart{}
-		client.CLoc.Set(122.33, 112.44)
-		client.Prev = HASH256{}
-		client.CTime = time.Now().UnixNano()
-		cb, err := client.Sign(pk, sigb)
-		if err != nil {
-			panic(err)
-		}
-		log.Println(hex.EncodeToString(cb))
-		//校验客户端数据
-		err = otag.Valid(db, client)
-		if err != nil {
-			return err
-		}
-		tb := &SerPart{}
-		//获取一个可签名的私钥
-		spri := conf.GetPrivateKey()
-		if spri == nil {
-			return errors.New("private key mss")
-		}
-		//用私钥0签名数据
-		bb, err := tb.Sign(spri, otag, client)
-		if err != nil {
-			return err
-		}
-		bl, err := VerifyUnit(conf, bb)
-		if err != nil {
-			return fmt.Errorf("verify sign data error %w", err)
-		}
-		return bl.Save(db)
-	})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func TestMaxBits(t *testing.T) {

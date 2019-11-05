@@ -2,175 +2,17 @@ package xginx
 
 import (
 	"bytes"
-	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
-	"sync"
-	"time"
+
+	"github.com/syndtr/goleveldb/leveldb"
+
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
-
-func CreateGenesisBlock(db DBImp, wg *sync.WaitGroup, ctx context.Context, cancel context.CancelFunc) error {
-	defer wg.Done()
-
-	var unit1 *Unit
-	var unit2 *Unit
-	var unit3 *Unit
-	var unit4 *Unit
-	u1 := &TUnit{}
-	id1, err := base64.StdEncoding.DecodeString("2Yu0LH3xiVKlcYK6PjQr9KaLFd8mExd5/PC6WwDCicE=")
-	if err != nil {
-		return err
-	}
-	err = db.GetUnit(id1, u1)
-	if err != nil {
-		return err
-	}
-	unit1 = u1.ToUnit()
-
-	id2, err := base64.StdEncoding.DecodeString("iPHrbxZAKMdmdEdtrvme4m0Lt+e+IBdwB/b4EmCm1/U=")
-	if err != nil {
-		return err
-	}
-	err = db.GetUnit(id2, u1)
-	if err != nil {
-		return err
-	}
-	unit2 = u1.ToUnit()
-
-	if !unit2.Prev.Equal(unit1.Hash()) {
-		return errors.New("errors")
-	}
-
-	id3, err := base64.StdEncoding.DecodeString("8NVIH3ymO+TwEnOrnN4EckEeTKTOM7sv65NWL8Sv7y4=")
-	if err != nil {
-		return err
-	}
-	err = db.GetUnit(id3, u1)
-	if err != nil {
-		return err
-	}
-	unit3 = u1.ToUnit()
-
-	if !unit3.Prev.Equal(unit2.Hash()) {
-		return errors.New("errors")
-	}
-
-	id4, err := base64.StdEncoding.DecodeString("xiY5xK6aNgvoxPhM+BWimai+PHDh1nvrhDxFdqMkiQ0=")
-	if err != nil {
-		return err
-	}
-	err = db.GetUnit(id4, u1)
-	if err != nil {
-		return err
-	}
-	unit4 = u1.ToUnit()
-
-	if !unit4.Prev.Equal(unit3.Hash()) {
-		return errors.New("errors")
-	}
-
-	bits := NewUINT256(conf.PowLimit).Compact(false)
-	calcer := NewTokenCalcer()
-
-	//tv := uint32(time.Now().Unix())
-
-	b := &BlockInfo{
-		Ver:    1,
-		Prev:   HASH256{},
-		Merkle: HASH256{},
-		Time:   0x5dbfc748,
-		Bits:   bits,
-		Nonce:  0xcb0fd9d8,
-		Uts:    []*Units{},
-		Txs:    []*TX{},
-	}
-
-	tx := &TX{}
-	tx.Ver = 1
-
-	in := &TxIn{}
-	in.Script = BaseScript(0, []byte("The value of a man should be seen in what he gives and not in what he is able to receive."))
-	tx.Ins = []*TxIn{in}
-
-	us := &Units{unit1, unit2, unit3, unit4}
-
-	err = calcer.Calc(bits, us)
-	if err != nil {
-		return err
-	}
-	b.Uts = []*Units{us}
-
-	for tk, vv := range calcer.Outs() {
-		if vv == 0 {
-			continue
-		}
-		out := &TxOut{}
-		out.Value = vv
-		out.Script = StdLockedScript(tk)
-		tx.Outs = append(tx.Outs, out)
-	}
-	//
-	b.Txs = []*TX{tx}
-
-	//生成merkle root id
-	if err := b.SetMerkle(); err != nil {
-		panic(err)
-	}
-
-	id, meta, bb, err := b.ToTBMeta()
-	if err != nil {
-		panic(err)
-	}
-	err = db.SetBlock(id, meta, bb)
-	if err != nil {
-		panic(err)
-	}
-	log.Println(b.Hash())
-
-	buf := &bytes.Buffer{}
-	//SetRandInt(&b.Nonce)
-	err = b.EncodeHeader(buf)
-	if err != nil {
-		return err
-	}
-	heaerbytes := buf.Bytes()
-	//Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
-	//Endian.PutUint32(heaerbytes[len(heaerbytes)-12:], b.Time)
-	nhash := HASH256{}
-	copy(nhash[:], Hash256(heaerbytes))
-	log.Println(nhash)
-	for i := uint64(b.Nonce); ; i++ {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			b.Nonce += uint32(i)
-			//写入数字
-			Endian.PutUint32(heaerbytes[len(heaerbytes)-4:], b.Nonce)
-			//计算hash
-			copy(nhash[:], Hash256(heaerbytes))
-			//检测hash
-			if CheckProofOfWork(nhash, b.Bits) {
-				log.Printf("%x %v %x\n", b.Nonce, nhash, b.Time)
-				cancel()
-				break
-			}
-			if i%1000000 == 0 {
-				//重新计算时间
-				b.Time = uint32(time.Now().Unix())
-				Endian.PutUint32(heaerbytes[len(heaerbytes)-12:], b.Time)
-				SetRandInt(&b.Nonce)
-				log.Println(i, nhash, b.Nonce, b.Time)
-				continue
-			}
-		}
-	}
-}
 
 //一个记录单元必须同一个用户连续的链数据
 //块信息
@@ -189,6 +31,59 @@ type BlockInfo struct {
 	hasher HashCacher //hash 缓存
 	utsher HashCacher //uts 缓存
 	merher HashCacher //mer hash 缓存
+}
+
+//加载块数据
+func (v *BlockInfo) Load(id HASH256) error {
+	bk := GetDBKey(BLOCK_PREFIX, id[:])
+	bh := &TBMeta{}
+	opts := &opt.ReadOptions{
+		DontFillCache: true,
+		Strict:        opt.StrictReader,
+	}
+	hb, err := DB().Get(bk, opts)
+	if err != nil {
+		return err
+	}
+	buf := bytes.NewReader(hb)
+	if err := bh.Decode(buf); err != nil {
+		return err
+	}
+	bb := make([]byte, bh.FileLen)
+	if err := blk.read(bh.FileId, bh.FileOff, bb); err != nil {
+		return err
+	}
+	return v.Decode(bytes.NewReader(bb))
+}
+
+//保存块数据
+func (v BlockInfo) Save() error {
+	id, meta, bb, err := v.ToTBMeta()
+	if err != nil {
+		return err
+	}
+	//保存数据
+	pos, err := blk.write(bb)
+	if err != nil {
+		return err
+	}
+	meta.FileId = blk.id
+	meta.FileOff = uint32(pos)
+	meta.FileLen = uint32(len(bb))
+	//保存头
+	buf := &bytes.Buffer{}
+	if err := meta.Encode(buf); err != nil {
+		return err
+	}
+	bk := GetDBKey(BLOCK_PREFIX, id)
+	opts := &opt.WriteOptions{
+		NoWriteMerge: false,
+		Sync:         true,
+	}
+	batch := &leveldb.Batch{}
+	batch.Put(bk, buf.Bytes())
+	//保存索引
+	return DB().Write(batch, opts)
 }
 
 func (v *BlockInfo) UTSHash() HASH256 {
@@ -257,37 +152,29 @@ func (b *BlockInfo) IsGenesis() bool {
 	return b.Prev.IsZero() && conf.IsGenesisId(b.Hash())
 }
 
-func UseIdLoadBlock(db DBImp, id HASH256, ft string) (*BlockInfo, error) {
-	bid, err := db.BlockId(id, ft)
-	if err != nil {
-		return nil, fmt.Errorf("use id get block id error %w", err)
-	}
-	return LoadBlock(db, bid)
-}
-
 //加载区块
-func LoadBlock(db DBImp, id HASH256) (*BlockInfo, error) {
+func LoadBlock(id HASH256) (*BlockInfo, error) {
 	if b, err := CBlock.Get(id[:]); err == nil {
 		return b.(*BlockInfo), nil
 	}
-	v := &BlockInfo{}
-	if err := db.GetBlock(id[:], v); err != nil {
+	bptr := &BlockInfo{}
+	if err := bptr.Load(id); err != nil {
 		return nil, err
 	}
-	if b, err := CBlock.Set(id[:], v); err == nil {
+	if b, err := CBlock.Set(id[:], bptr); err == nil {
 		return b.(*BlockInfo), nil
 	} else {
 		log.Println("WARN", "cblock set cache error", err)
 	}
-	return v, nil
+	return bptr, nil
 }
 
 //HASH256 meta,bytes
 func (b *BlockInfo) ToTBMeta() ([]byte, *TBMeta, []byte, error) {
 	meta := &TBMeta{
 		Ver:    b.Ver,
-		Prev:   b.Prev[:],
-		Merkle: b.Merkle[:],
+		Prev:   b.Prev,
+		Merkle: b.Merkle,
 		Time:   b.Time,
 		Bits:   b.Bits,
 		Nonce:  b.Nonce,
@@ -322,9 +209,9 @@ func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
 }
 
 //检查所有的交易
-func (v BlockInfo) CheckTxs(db DBImp) error {
+func (v BlockInfo) CheckTxs() error {
 	for _, tx := range v.Txs {
-		err := tx.Check(db)
+		err := tx.Check()
 		if err != nil {
 			return err
 		}
@@ -333,9 +220,9 @@ func (v BlockInfo) CheckTxs(db DBImp) error {
 }
 
 //检查所有的单元数据
-func (v BlockInfo) CheckUts(db DBImp) error {
+func (v BlockInfo) CheckUts() error {
 	for _, uvs := range v.Uts {
-		err := uvs.Check(db)
+		err := uvs.Check()
 		if err != nil {
 			return err
 		}
@@ -343,7 +230,7 @@ func (v BlockInfo) CheckUts(db DBImp) error {
 	return nil
 }
 
-func (v BlockInfo) Check(db DBImp) error {
+func (v BlockInfo) Check() error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -361,11 +248,11 @@ func (v BlockInfo) Check(db DBImp) error {
 		return errors.New("merkle hash error")
 	}
 	//检查所有的交易
-	if err := v.CheckTxs(db); err != nil {
+	if err := v.CheckTxs(); err != nil {
 		return err
 	}
 	//检查所有的数据单元
-	if err := v.CheckUts(db); err != nil {
+	if err := v.CheckUts(); err != nil {
 		return err
 	}
 	//获取积分分配
@@ -377,7 +264,7 @@ func (v BlockInfo) Check(db DBImp) error {
 	calcer := NewTokenCalcer()
 	for _, uv := range v.Uts {
 		uc := NewTokenCalcer()
-		err := uv.CalcToken(db, v.Bits, uc)
+		err := uv.CalcToken(v.Bits, uc)
 		if err != nil {
 			return err
 		}
@@ -623,28 +510,6 @@ type TX struct {
 	hasher HashCacher //hash缓存
 }
 
-func (tx TX) Save(db DBImp) error {
-	v := &TTx{}
-	v.Ver = uint32(tx.Ver)
-	v.Ins = make([]*TTxIn, len(tx.Ins))
-	for i, iv := range tx.Ins {
-		tin := &TTxIn{}
-		tin.Script = iv.Script[:]
-		tin.OutHash = iv.OutHash[:]
-		tin.OutIndex = uint32(iv.OutIndex)
-		v.Ins[i] = tin
-	}
-	v.Outs = make([]*TTxOut, len(tx.Outs))
-	for i, ov := range tx.Outs {
-		tout := &TTxOut{}
-		tout.Value = uint64(ov.Value)
-		tout.Script = ov.Script[:]
-		v.Outs[i] = tout
-	}
-	v.Hash = tx.Hash().Bytes()
-	return db.SetTX(v.Hash, v)
-}
-
 func (tx TX) BaseOuts() (map[HASH160]VarUInt, error) {
 	outs := map[HASH160]VarUInt{}
 	for _, v := range tx.Outs {
@@ -667,7 +532,7 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v TX) Check(imp DBImp) error {
+func (v TX) Check() error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -783,8 +648,8 @@ func (v *Units) Last() *Unit {
 	return (*v)[len(*v)-1]
 }
 
-func (v *Units) Add(db DBImp, uv *Unit) error {
-	if err := uv.Check(db); err != nil {
+func (v *Units) Add(uv *Unit) error {
+	if err := uv.Check(); err != nil {
 		return err
 	}
 	if uv.IsFirst() {
@@ -830,7 +695,7 @@ func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
 }
 
 //获取上一个unit
-func (v *Units) GetPrev(db DBImp) (*Unit, error) {
+func (v *Units) GetPrev() (*Unit, error) {
 	//如果有数据并且是第一个数据单元直接返回
 	if len(*v) > 0 && (*v)[0].IsFirst() {
 		return (*v)[0], nil
@@ -838,26 +703,11 @@ func (v *Units) GetPrev(db DBImp) (*Unit, error) {
 	if len(*v) == 0 {
 		return nil, errors.New("units empty")
 	}
-	//获取第一个所在的区块id
-	uid := (*v)[0].Hash()
-	//获取区块
-	block, err := UseIdLoadBlock(db, uid, USE_UIDS)
-	if err != nil {
-		return nil, fmt.Errorf("block info miss %w", err)
-	}
-	uts := block.FindUnits((*v)[0].CPks)
-	if uts == nil {
-		return nil, errors.New("cli units miss")
-	}
-	last := uts.Last()
-	if last == nil {
-		return nil, errors.New("cli last unit miss")
-	}
-	return last, nil
+	return nil, errors.New("not imp")
 }
 
-func (v *Units) Check(db DBImp) error {
-	prev, err := v.GetPrev(db)
+func (v *Units) Check() error {
+	prev, err := v.GetPrev()
 	if err != nil {
 		return err
 	}
@@ -865,7 +715,7 @@ func (v *Units) Check(db DBImp) error {
 		if !uv.Equal(*prev) && !uv.Prev.Equal(prev.Hash()) {
 			return errors.New("unit not continuous")
 		}
-		err := uv.Check(db)
+		err := uv.Check()
 		if err != nil {
 			return err
 		}
@@ -875,12 +725,12 @@ func (v *Units) Check(db DBImp) error {
 }
 
 //计算积分
-func (v *Units) CalcToken(db DBImp, bits uint32, calcer ITokenCalcer) error {
+func (v *Units) CalcToken(bits uint32, calcer ITokenCalcer) error {
 	if len(*v) < 2 {
 		return errors.New("Unit too small ")
 	}
 	//获取上一个参与计算
-	prev, err := v.GetPrev(db)
+	prev, err := v.GetPrev()
 	if err != nil {
 		return err
 	}

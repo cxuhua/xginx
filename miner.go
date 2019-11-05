@@ -56,7 +56,7 @@ func (m *minerEngine) OnTx(tx *TX) {
 }
 
 //计算打包数据
-func (m *minerEngine) calcdata(db DBImp) error {
+func (m *minerEngine) calcdata() error {
 	return nil
 }
 
@@ -73,9 +73,7 @@ func (m *minerEngine) loop(i int) {
 	for {
 		select {
 		case <-m.dok:
-			err := store.UseSession(m.ctx, func(db DBImp) error {
-				return m.calcdata(db)
-			})
+			err := m.calcdata()
 			if err != nil {
 				log.Println("calcdata error", err)
 			}

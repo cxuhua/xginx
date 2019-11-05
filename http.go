@@ -1,13 +1,14 @@
 package xginx
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -19,13 +20,11 @@ type IHttp interface {
 	Stop()
 	Wait()
 	TagFilter() gin.HandlerFunc
-	GetDBImp(c *gin.Context) DBImp
 }
 
 var (
 	Http IHttp = &xhttp{
-		tbf:   bloom.New(50000, 10),
-		dbkey: "dbkey",
+		tbf: bloom.New(50000, 10),
 	}
 )
 
@@ -44,6 +43,32 @@ func putError(c *gin.Context, err error) {
 	c.Abort()
 }
 
+//验证服务
+func verifyAction(c *gin.Context) {
+	hs := c.Param("hex")
+	if len(hs) != 64 {
+		putError(c, errors.New("hex hash error"))
+		return
+	}
+	bb, err := hex.DecodeString(hs)
+	if err != nil {
+		putError(c, err)
+		return
+	}
+	id := HASH256{}
+	if copy(id[:], bb) != 32 {
+		putError(c, errors.New("hex hash length error"))
+		return
+	}
+	pkh, err := HasUnitash(id)
+	if err != nil {
+		putError(c, err)
+		return
+	}
+	//返回用户 公钥pkh
+	c.Data(http.StatusOK, "application/octet-stream", pkh[:])
+}
+
 // 签名服务
 func signAction(c *gin.Context) {
 	url := conf.HttpScheme + "://" + c.Request.Host + c.Request.RequestURI
@@ -58,36 +83,45 @@ func signAction(c *gin.Context) {
 		putError(c, err)
 		return
 	}
-	db := Http.GetDBImp(c)
 	//校验客户端数据
-	err := tag.Valid(db, cli)
+	err := tag.Valid(cli)
 	if err != nil {
 		putError(c, err)
 		return
 	}
-	tb := &SerPart{}
-	//获取一个可签名的私钥
-	spri := conf.GetPrivateKey()
-	if spri == nil {
-		putError(c, errors.New("private key mss"))
-		return
-	}
-	//签名数据
-	bb, err := tb.Sign(spri, tag, cli)
+	tb := NewSerPart(conf.HttpScheme + "://" + c.Request.Host + "/verify")
+	ud, err := tb.Dump(tag, cli)
 	if err != nil {
 		putError(c, err)
 		return
 	}
-	uv, err := VerifyUnit(conf, bb)
+	id := Hash256To(ud)
+	if err := PutUnitHash(id, cli.CPks); err != nil {
+		putError(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/octet-stream", ud)
+}
+
+//接收数据单元
+func recvUnitAction(c *gin.Context) {
+	data, err := c.GetRawData()
 	if err != nil {
 		putError(c, err)
 		return
 	}
-	if err := uv.Save(db); err != nil {
+	buf := bytes.NewReader(data)
+	uv := &Unit{}
+	if err := uv.Decode(buf); err != nil {
 		putError(c, err)
 		return
 	}
-	c.Data(http.StatusOK, "application/octet-stream", bb)
+	if _, err := uv.Verify(); err != nil {
+		putError(c, err)
+		return
+	}
+	Miner.OnUnit(uv)
+	c.Status(http.StatusOK)
 }
 
 func (h *xhttp) AddTag(uid []byte) {
@@ -102,31 +136,16 @@ func (h *xhttp) TestTag(uid []byte) bool {
 	return h.tbf.Test(uid)
 }
 
-//在使用DBHandler之后可调用
-func (h *xhttp) GetDBImp(c *gin.Context) DBImp {
-	return c.MustGet(h.dbkey).(DBImp)
-}
-
 //挂接服务
 func (h *xhttp) init(m *gin.Engine) {
-	//添加测试标签
-	h.AddTag([]byte{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80})
+	//一次加载所有标签
+	LoadAllTags(h.tbf)
 	//签名接口
-	m.POST("/sign/:hex", h.TagFilter(), h.DBHandler(), signAction)
-}
-
-//数据库
-func (h *xhttp) DBHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		//数据库操作不能超过30秒
-		ctx, cancel := context.WithTimeout(h.ctx, time.Second*30)
-		defer cancel()
-		_ = store.UseSession(ctx, func(db DBImp) error {
-			c.Set(h.dbkey, db)
-			c.Next()
-			return nil
-		})
-	}
+	m.POST("/sign/:hex", h.TagFilter(), signAction)
+	//校验接口
+	m.GET("/verify/:hex", verifyAction)
+	//接收数据单元
+	m.POST("/recv/unit", recvUnitAction)
 }
 
 //过滤不可用的标签
