@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"container/list"
+	"errors"
 	"sync"
 )
 
@@ -46,6 +47,60 @@ func (uts *CliUnits) cmpTime(l1 *list.List, l2 *list.List) int {
 		return +1
 	}
 	return 0
+}
+
+//转换为数组
+func (uts *CliUnits) ToUnits(lis *list.List) (Units, error) {
+	uns := Units{}
+	for e := lis.Front(); e != nil; e = e.Next() {
+		uns = append(uns, e.Value.(*Unit))
+	}
+	if !uns.IsConsecutive() {
+		return nil, errors.New("list not consecutive")
+	}
+	return uns, nil
+}
+
+//移除多个连续数据
+func (uts *CliUnits) RemoveUnits(uvs Units) error {
+	uts.mu.Lock()
+	defer uts.mu.Unlock()
+	hass := map[HASH256]bool{}
+	if len(uvs) < 2 {
+		return nil
+	}
+	for i := 0; i < len(uvs); i++ {
+		cv := uvs[i]
+		hass[cv.Hash()] = true
+		if i == 0 {
+			continue
+		}
+		pv := uvs[i-1]
+		if !cv.Prev.Equal(pv.Hash()) {
+			return errors.New("uvs not continue")
+		}
+		pv = cv
+	}
+	for _, lis := range uts.liss {
+		var next *list.Element = nil
+		for e := lis.Front(); e != nil; e = next {
+			next = e.Next()
+			uv := e.Value.(*Unit)
+			if _, has := hass[uv.Hash()]; !has {
+				lis.Remove(e)
+			}
+		}
+	}
+	return nil
+}
+
+//移除连续的数据
+func (uts *CliUnits) RemoveList(uvs *list.List) error {
+	units, err := uts.ToUnits(uvs)
+	if err != nil {
+		return err
+	}
+	return uts.RemoveUnits(units)
 }
 
 //获取最长的链

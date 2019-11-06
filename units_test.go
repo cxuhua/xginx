@@ -29,7 +29,7 @@ func TestCliUnits_Push(t *testing.T) {
 		}
 		rv := uint32(0)
 		binary.Read(rand.Reader, binary.BigEndian, &rv)
-		if rv%10 == 0 {
+		if rv%2 == 0 {
 			u1.Prev = HASH256{}
 		}
 	}
@@ -38,8 +38,8 @@ func TestCliUnits_Push(t *testing.T) {
 		sort.Slice(uss, func(i, j int) bool {
 			rv := uint32(0)
 			binary.Read(rand.Reader, binary.BigEndian, &rv)
-			a := rv % 2
-			return a == 0
+			a := rv % 20
+			return a > 10
 		})
 	}
 
@@ -51,8 +51,11 @@ func TestCliUnits_Push(t *testing.T) {
 	if max == nil {
 		return
 	}
-	for cur := max.Front(); cur != nil; cur = cur.Next() {
-		v := cur.Value.(*Unit)
-		log.Println(v.STime)
+	units, err := v.ToUnits(max)
+	if err != nil {
+		panic(err)
+	}
+	for _, uv := range units {
+		log.Println(uv.STime)
 	}
 }

@@ -720,6 +720,22 @@ func (v *Units) GetPrev() (*Unit, error) {
 	return nil, errors.New("not imp")
 }
 
+//是否是连续的
+func (v *Units) IsConsecutive() bool {
+	var pv *Unit = nil
+	for i, uv := range *v {
+		if i == 0 {
+			pv = uv
+			continue
+		}
+		if !uv.Prev.Equal(pv.Hash()) {
+			return false
+		}
+		pv = uv
+	}
+	return true
+}
+
 func (v *Units) Check() error {
 	prev, err := v.GetPrev()
 	if err != nil {
