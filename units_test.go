@@ -29,7 +29,7 @@ func TestCliUnits_Push(t *testing.T) {
 		}
 		rv := uint32(0)
 		binary.Read(rand.Reader, binary.BigEndian, &rv)
-		if rv%2 == 0 {
+		if rv%10 > 8 {
 			u1.Prev = HASH256{}
 		}
 	}
