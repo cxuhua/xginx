@@ -64,6 +64,7 @@ func (uts *CliUnits) MaxList() *list.List {
 			cur = cv
 		}
 	}
+	//清除空链
 	nss := []*list.List{}
 	for _, lv := range uts.liss {
 		if lv.Len() == 0 {
@@ -83,33 +84,7 @@ func (uts *CliUnits) append(l1 *list.List, l2 *list.List) {
 	l2.Init()
 }
 
-func (uts *CliUnits) Push(unit *Unit) {
-	uts.mu.Lock()
-	defer uts.mu.Unlock()
-	if !uts.cli.Equal(unit.CPks.Hash()) {
-		return
-	}
-	linked := false
-	var nlis *list.List = nil
-	for _, lis := range uts.liss {
-		ele := uts.linkList(lis, unit)
-		if ele != nil {
-			linked = true
-			break
-		}
-		//获取空链
-		if nlis == nil && lis.Len() == 0 {
-			nlis = lis
-		}
-	}
-	//没有可用的链生成新的
-	if !linked {
-		if nlis == nil {
-			nlis = list.New()
-			uts.liss = append(uts.liss, nlis)
-		}
-		nlis.PushBack(unit)
-	}
+func (uts *CliUnits) merge() {
 	//合并链
 	if len(uts.liss) < 2 {
 		return
@@ -139,4 +114,34 @@ func (uts *CliUnits) Push(unit *Unit) {
 			}
 		}
 	}
+}
+
+func (uts *CliUnits) Push(unit *Unit) {
+	uts.mu.Lock()
+	defer uts.mu.Unlock()
+	if !uts.cli.Equal(unit.CPks.Hash()) {
+		return
+	}
+	linked := false
+	var nlis *list.List = nil
+	for _, lis := range uts.liss {
+		ele := uts.linkList(lis, unit)
+		if ele != nil {
+			linked = true
+			break
+		}
+		//获取空链
+		if nlis == nil && lis.Len() == 0 {
+			nlis = lis
+		}
+	}
+	//没有可用的链生成新的
+	if !linked {
+		if nlis == nil {
+			nlis = list.New()
+			uts.liss = append(uts.liss, nlis)
+		}
+		nlis.PushBack(unit)
+	}
+	uts.merge()
 }
