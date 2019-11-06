@@ -22,13 +22,7 @@ type IMiner interface {
 }
 
 var (
-	Miner IMiner = &minerEngine{
-		uc:  make(chan *Unit, 50),
-		tc:  make(chan *TX, 50),
-		uxs: map[HASH256]*Unit{},
-		txs: map[HASH256]*TX{},
-		dok: make(chan bool),
-	}
+	Miner IMiner = newMinerEngine()
 )
 
 type minerEngine struct {
@@ -43,6 +37,16 @@ type minerEngine struct {
 	txs    map[HASH256]*TX
 	tmu    sync.RWMutex
 	dok    chan bool
+}
+
+func newMinerEngine() IMiner {
+	return &minerEngine{
+		uc:  make(chan *Unit, 50),
+		tc:  make(chan *TX, 50),
+		uxs: map[HASH256]*Unit{},
+		txs: map[HASH256]*TX{},
+		dok: make(chan bool),
+	}
 }
 
 //收到有效的单元块
@@ -77,30 +81,30 @@ func (m *minerEngine) loop(i int) {
 			if err != nil {
 				log.Println("calcdata error", err)
 			}
-		case ux := <-m.uc:
+		case uv := <-m.uc:
 			m.umu.RLock()
-			_, ok := m.uxs[ux.Hash()]
+			_, ok := m.uxs[uv.Hash()]
 			m.umu.RUnlock()
 			if !ok {
 				continue
 			}
 			m.umu.Lock()
-			m.uxs[ux.Hash()] = ux
+			m.uxs[uv.Hash()] = uv
 			m.umu.Unlock()
 			m.dok <- true
-			log.Println("recv unit hash=", ux.Hash())
-		case tx := <-m.tc:
+			log.Println("recv unit hash=", uv.Hash())
+		case tv := <-m.tc:
 			m.tmu.RLock()
-			_, ok := m.txs[tx.Hash()]
+			_, ok := m.txs[tv.Hash()]
 			m.tmu.RUnlock()
 			if ok {
 				continue
 			}
 			m.tmu.Lock()
-			m.txs[tx.Hash()] = tx
+			m.txs[tv.Hash()] = tv
 			m.tmu.Unlock()
 			m.dok <- true
-			log.Println("recv tx hash=", tx.Hash())
+			log.Println("recv tx hash=", tv.Hash())
 		case <-m.ctx.Done():
 			return
 		}

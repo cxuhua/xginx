@@ -35,6 +35,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	DataDir      string       `json:"data_dir"`      //数据路径
 	ObjIdPrefix  string       `json:"oid_prefix"`    //物品id前缀
 	AddrPrefix   string       `json:"addr_prefix"`   //地址前缀
 	GenesisBlock string       `json:"genesis_block"` //第一个区块
@@ -115,14 +116,14 @@ func (c *Config) Init() error {
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
 	//加载矿工私钥
-	pk, err := LoadPublicKey(c.MinerPKey)
-	if err == nil {
+	if pk, err := LoadPublicKey(c.MinerPKey); err != nil {
+		panic(err)
+	} else {
 		c.minerpk = pk
 	}
 	c.LimitHash = NewUINT256(c.PowLimit)
 	//随机生成节点ID
 	c.NodeID = NewNodeID()
-
 	return nil
 }
 

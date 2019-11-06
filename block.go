@@ -56,19 +56,21 @@ func (v *BlockInfo) Load(id HASH256) error {
 	return v.Decode(bytes.NewReader(bb))
 }
 
-//保存块数据
-func (v BlockInfo) Save() error {
+//保存连接块数据
+func (v BlockInfo) Link() error {
 	id, meta, bb, err := v.ToTBMeta()
 	if err != nil {
 		return err
 	}
+	//获取当前文件id
+	meta.FileId.SetUInt32(blk.Id())
 	//保存数据
-	pos, err := blk.write(bb)
+	off, err := blk.write(bb)
 	if err != nil {
 		return err
 	}
-	meta.FileId.SetUInt32(blk.Id())
-	meta.FileOff.SetUInt32(pos)
+	//保存数据位置
+	meta.FileOff.SetUInt32(off)
 	//保存头
 	buf := &bytes.Buffer{}
 	if err := meta.Encode(buf); err != nil {
@@ -81,25 +83,36 @@ func (v BlockInfo) Save() error {
 	}
 	batch := &leveldb.Batch{}
 	batch.Put(bk, buf.Bytes())
-	//保存索引
+	//更新bestBlockId
+	batch.Put([]byte(BestBlockKey), id[:])
+	//每个单元所在的块，每个交易所在块
+	//for _, uts := range v.Uts {
+	//	for _, uv := range *uts {
+	//		id := uv.Hash()
+	//	}
+	//}
+	//for _, tv := range v.Txs {
+	//	id := tv.Hash()
+	//}
 	return DB().Write(batch, opts)
 }
 
-func (v *BlockInfo) UTSHash() HASH256 {
+func (v *BlockInfo) UTSHash() (HASH256, error) {
+	id := HASH256{}
 	if h, b := v.utsher.IsSet(); b {
-		return h
+		return h, nil
 	}
 	buf := &bytes.Buffer{}
 	if err := VarUInt(len(v.Uts)).Encode(buf); err != nil {
-		panic(err)
+		return id, err
 	}
 	for _, uv := range v.Uts {
 		err := uv.Encode(buf)
 		if err != nil {
-			panic(err)
+			return id, err
 		}
 	}
-	return v.utsher.Hash(buf.Bytes())
+	return v.utsher.Hash(buf.Bytes()), nil
 }
 
 func (v BlockInfo) GetMerkle() (HASH256, error) {
@@ -120,8 +133,9 @@ func (v BlockInfo) GetMerkle() (HASH256, error) {
 	if _, err := buf.Write(root[:]); err != nil {
 		return hash, err
 	}
-	uts := v.UTSHash()
-	if _, err := buf.Write(uts[:]); err != nil {
+	if uts, err := v.UTSHash(); err != nil {
+		return hash, err
+	} else if _, err := buf.Write(uts[:]); err != nil {
 		return hash, err
 	}
 	return v.merher.Hash(buf.Bytes()), nil

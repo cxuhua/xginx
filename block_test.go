@@ -11,7 +11,7 @@ func TestBlockSave(t *testing.T) {
 	SetRandInt(&b.Ver)
 	SetRandInt(&b.Nonce)
 	SetRandInt(&b.Time)
-	err := b.Save()
+	err := b.Link()
 	err = b.Load(b.Hash())
 	log.Println(err)
 }

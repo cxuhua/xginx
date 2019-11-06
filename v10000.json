@@ -1,4 +1,5 @@
 {
+  "data_dir": "f:/datadir",
   "flags": "xmnx",
   "version":10000,
   "tcp_port": 9333,

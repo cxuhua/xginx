@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -120,7 +121,9 @@ func recvUnitAction(c *gin.Context) {
 		putError(c, err)
 		return
 	}
-	Miner.OnUnit(uv)
+	if Miner != nil {
+		Miner.OnUnit(uv)
+	}
 	c.Status(http.StatusOK)
 }
 
@@ -146,6 +149,7 @@ func (h *xhttp) init(m *gin.Engine) {
 	m.GET("/verify/:hex", verifyAction)
 	//接收数据单元
 	m.POST("/recv/unit", recvUnitAction)
+
 }
 
 //过滤不可用的标签

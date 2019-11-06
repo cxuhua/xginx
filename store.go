@@ -26,9 +26,8 @@ import (
 )
 
 var (
-	dbptr   *leveldb.DB = nil
-	once    sync.Once
-	datadir = "f:\\datadir"
+	dbptr *leveldb.DB = nil
+	once  sync.Once
 )
 
 var (
@@ -37,6 +36,24 @@ var (
 	BLOCK_PREFIX = []byte{'B'} //块头信息前缀
 	HUNIT_PREFIX = []byte{'H'} //单元hash，签名hash存在说明数据验证通过签名
 )
+
+const (
+	BestBlockKey = "BestBlockKey"
+)
+
+func GetBestBlock() HASH256 {
+	id := HASH256{}
+	opts := &opt.ReadOptions{
+		DontFillCache: false,
+		Strict:        opt.StrictReader,
+	}
+	b, err := DB().Get([]byte(BestBlockKey), opts)
+	if err != nil {
+		return conf.genesisId
+	}
+	copy(id[:], b)
+	return id
+}
 
 func GetDBKey(p []byte, id ...[]byte) []byte {
 	tk := []byte{}
@@ -185,7 +202,7 @@ func (h *TBMeta) Decode(r IReader) error {
 
 func (s *sstore) getlastfile() {
 	blks := []string{}
-	err := filepath.Walk(datadir, func(spath string, info os.FileInfo, err error) error {
+	err := filepath.Walk(conf.DataDir, func(spath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -301,7 +318,7 @@ func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 }
 
 func (s sstore) fileIdPath(id uint32) string {
-	return fmt.Sprintf("%s%c%06d%s", datadir, os.PathSeparator, id, s.ext)
+	return fmt.Sprintf("%s%c%06d%s", conf.DataDir, os.PathSeparator, id, s.ext)
 }
 
 func (f *sstore) Id() uint32 {
@@ -413,7 +430,7 @@ func DB() *leveldb.DB {
 		opts := &opt.Options{
 			Filter: bf,
 		}
-		sdb, err := leveldb.OpenFile(datadir, opts)
+		sdb, err := leveldb.OpenFile(conf.DataDir, opts)
 		if err != nil {
 			panic(err)
 		}

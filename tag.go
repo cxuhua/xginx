@@ -201,6 +201,12 @@ func (p *SigBytes) Set(sig *SigValue) {
 //公钥HASH160
 type HASH160 [20]byte
 
+func NewHASH160(b []byte) HASH160 {
+	id := HASH160{}
+	copy(id[:], b)
+	return id
+}
+
 func (v *HASH160) SetPK(pk *PublicKey) {
 	*v = pk.Hash()
 }
@@ -774,6 +780,7 @@ type Unit struct {
 	TagInfo
 	CliPart
 	SerPart
+	//hash use
 	hasher HashCacher
 }
 
@@ -859,6 +866,10 @@ func (pv Unit) Verify() ([]byte, error) {
 	}
 	if len(dat) != 20 {
 		return nil, errors.New("pkh length error")
+	}
+	uhash := NewHASH160(dat)
+	if !pv.CPks.Hash().Equal(uhash) {
+		return nil, errors.New("pkh bytes error")
 	}
 	return dat, nil
 }
