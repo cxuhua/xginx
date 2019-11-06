@@ -1,7 +1,10 @@
 package xginx
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"log"
+	"sort"
 	"testing"
 )
 
@@ -11,38 +14,38 @@ func TestCliUnits_Push(t *testing.T) {
 
 	v := NewCliUnits(pks.Hash())
 
-	u1 := &Unit{}
-	u1.CPks = pks
-	u1.STime = 1
+	uss := []*Unit{}
+	var u0 *Unit
+	for i := 0; i < 1000; i++ {
+		u1 := &Unit{}
+		u1.CPks = pks
+		u1.STime = int64(i)
+		uss = append(uss, u1)
+		if u0 == nil {
+			u0 = u1
+		} else {
+			u1.Prev = u0.Hash()
+			u0 = u1
+		}
+		rv := uint32(0)
+		binary.Read(rand.Reader, binary.BigEndian, &rv)
+		if rv%10 == 0 {
+			u1.Prev = HASH256{}
+		}
+	}
 
-	u2 := &Unit{}
-	u2.CPks = pks
-	//u2.Prev = u1.Hash()
-	u2.STime = 2
+	for i := 0; i < 1000; i++ {
+		sort.Slice(uss, func(i, j int) bool {
+			rv := uint32(0)
+			binary.Read(rand.Reader, binary.BigEndian, &rv)
+			a := rv % 2
+			return a == 0
+		})
+	}
 
-	u3 := &Unit{}
-	u3.Prev = u2.Hash()
-	u3.CPks = pks
-	u3.STime = 3
-
-	u4 := &Unit{}
-	u4.CPks = pks
-	u4.STime = 4
-
-	u1.Prev = u4.Hash()
-
-	u5 := &Unit{}
-	u5.CPks = pks
-	u5.STime = 5
-	//u5.Prev = u1.Hash()
-
-	u2.Prev = u5.Hash()
-
-	v.Push(u5)
-	v.Push(u1)
-	v.Push(u3)
-	v.Push(u2)
-	v.Push(u4)
+	for _, uv := range uss {
+		v.Push(uv)
+	}
 
 	max := v.MaxList()
 	if max == nil {

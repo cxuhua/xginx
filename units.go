@@ -20,13 +20,6 @@ func NewCliUnits(cli HASH160) *CliUnits {
 	}
 }
 
-//是否是连续的,连续的就可以打包
-func (uts *CliUnits) IsConsecutive() bool {
-	uts.mu.Lock()
-	defer uts.mu.Unlock()
-	return true
-}
-
 func (uts *CliUnits) linkList(lis *list.List, uv *Unit) *list.Element {
 	for p := lis.Front(); p != nil; p = p.Next() {
 		cv := p.Value.(*Unit)
@@ -71,6 +64,14 @@ func (uts *CliUnits) MaxList() *list.List {
 			cur = cv
 		}
 	}
+	nss := []*list.List{}
+	for _, lv := range uts.liss {
+		if lv.Len() == 0 {
+			continue
+		}
+		nss = append(nss, lv)
+	}
+	uts.liss = nss
 	return cur
 }
 
@@ -102,11 +103,11 @@ func (uts *CliUnits) Push(unit *Unit) {
 		}
 	}
 	//没有可用的链生成新的
-	if !linked && nlis == nil {
-		nlis = list.New()
-		uts.liss = append(uts.liss, nlis)
-	}
 	if !linked {
+		if nlis == nil {
+			nlis = list.New()
+			uts.liss = append(uts.liss, nlis)
+		}
 		nlis.PushBack(unit)
 	}
 	//合并链
@@ -114,26 +115,27 @@ func (uts *CliUnits) Push(unit *Unit) {
 		return
 	}
 	for j := 0; j < len(uts.liss); j++ {
-		cur := uts.liss[j]
-		if cur.Len() == 0 {
+		jv := uts.liss[j]
+		if jv.Len() == 0 {
 			continue
 		}
 		for i := j + 1; i < len(uts.liss); i++ {
-			lv := uts.liss[i]
-			if lv.Len() == 0 {
+			iv := uts.liss[i]
+			if iv.Len() == 0 {
 				continue
 			}
-			b := cur.Back().Value.(*Unit)
-			f := lv.Front().Value.(*Unit)
+			b := jv.Back().Value.(*Unit)
+			f := iv.Front().Value.(*Unit)
 			if f.Prev.Equal(b.Hash()) {
-				uts.append(cur, lv)
+				uts.append(jv, iv)
 				continue
 			}
-			b = lv.Back().Value.(*Unit)
-			f = cur.Front().Value.(*Unit)
+			b = iv.Back().Value.(*Unit)
+			f = jv.Front().Value.(*Unit)
 			if f.Prev.Equal(b.Hash()) {
-				uts.append(lv, cur)
-				cur = lv
+				uts.append(iv, jv)
+				jv = iv
+				continue
 			}
 		}
 	}
