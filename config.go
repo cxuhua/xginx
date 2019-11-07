@@ -39,10 +39,10 @@ type Config struct {
 	ObjIdPrefix  string       `json:"oid_prefix"`    //物品id前缀
 	AddrPrefix   string       `json:"addr_prefix"`   //地址前缀
 	GenesisBlock string       `json:"genesis_block"` //第一个区块
-	HttpScheme   string       `json:"http_scheme"`   //http
-	LogFile      string       `json:"log_file"`      //日志文件
+	HttpScheme   string       `json:"http_scheme"`   //http服务类型
+	LogFile      string       `json:"log_file"`      //日志文件路径
 	HttpPort     int          `json:"http_port"`     //http服务器端口
-	MinerPKey    string       `json:"miner_pkey"`    //矿工产出私钥
+	MinerPKey    string       `json:"miner_pkey"`    //矿工产出公钥
 	PowTime      uint         `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
 	PowLimit     string       `json:"pow_limit"`     //最小难度设置
 	SpanTime     float64      `json:"span_time"`     //两次记录时间差超过这个时间将被忽略距离计算，单位小时
@@ -58,7 +58,7 @@ type Config struct {
 	Certs        []string     `json:"certs"`         //已经签名的证书
 	TimeErr      float64      `json:"time_err"`      //时间误差 秒 客户端时间与服务器时间差在这个范围内
 	mu           sync.RWMutex `json:"-"`             //
-	NodeID       HASH160      `json:"-"`             //启动时临时生成
+	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
 	minerpk      *PublicKey   `json:"-"`             //矿工公钥
 	logFile      *os.File     `json:"-"`             //日志文件
 	genesisId    HASH256      `json:"-"`             //第一个区块id

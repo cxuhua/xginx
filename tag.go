@@ -248,6 +248,11 @@ func (h HashCacher) IsSet() (HASH256, bool) {
 	return h.hash, h.set
 }
 
+func (h *HashCacher) SetHash(hv HASH256) {
+	h.hash = hv
+	h.set = true
+}
+
 func (h *HashCacher) Hash(b []byte) HASH256 {
 	if h.set {
 		return h.hash
@@ -782,13 +787,19 @@ type Unit struct {
 	SerPart
 	//hash use
 	hasher HashCacher
+	//是否已经验证成功
+	verifyok bool
 }
 
 func (pv Unit) Equal(cv Unit) bool {
 	return pv.Hash().Equal(cv.Hash())
 }
 
-func (pv Unit) Check() error {
+func (pv *Unit) Check() error {
+	//是否已经验证过
+	if _, err := pv.Verify(); err != nil {
+		return fmt.Errorf("verify unit error %w", err)
+	}
 	return nil
 }
 
@@ -849,29 +860,34 @@ func (b *Unit) Decode(r IReader) error {
 }
 
 //通过url访问校验数据,成功返回用户公钥hash160
-func (pv Unit) Verify() ([]byte, error) {
+func (pv *Unit) Verify() (HASH160, error) {
+	cid := pv.CPks.Hash()
+	if pv.verifyok {
+		return cid, nil
+	}
 	id := pv.Hash()
 	sh := hex.EncodeToString(id[:])
-	url := string(pv.Host) + "/" + sh
-	res, err := http.Get(url)
+	surl := string(pv.Host) + "/" + sh
+	res, err := http.Get(surl)
 	if err != nil {
-		return nil, err
+		return cid, err
 	}
 	if res.StatusCode != 200 {
-		return nil, errors.New("status code error")
+		return cid, errors.New("status code error")
 	}
 	dat, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return cid, err
 	}
 	if len(dat) != 20 {
-		return nil, errors.New("pkh length error")
+		return cid, errors.New("pkh length error")
 	}
 	uhash := NewHASH160(dat)
-	if !pv.CPks.Hash().Equal(uhash) {
-		return nil, errors.New("pkh bytes error")
+	if !cid.Equal(uhash) {
+		return cid, errors.New("pkh bytes error")
 	}
-	return dat, nil
+	pv.verifyok = true
+	return cid, nil
 }
 
 func (b *Unit) Hash() HASH256 {

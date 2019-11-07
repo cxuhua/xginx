@@ -106,6 +106,35 @@ func (tree *MerkleTree) build(h int, pos int, ids []HASH256, vb *bitset.BitSet) 
 	}
 }
 
+func (tree *MerkleTree) ExtractRoot() HASH256 {
+	root := HASH256{}
+	ids := make([]HASH256, 0)
+	idx := make([]int, 0)
+	tree.bad = false
+	if tree.trans == 0 {
+		return root
+	}
+	if len(tree.vhash) > tree.trans {
+		return root
+	}
+	if len(tree.bits) < len(tree.vhash) {
+		return root
+	}
+	h := tree.Height()
+	nbits, nhash := 0, 0
+	root = tree.extract(h, 0, &nbits, &nhash, &ids, &idx)
+	if tree.bad {
+		return root
+	}
+	if (nbits+7)/8 != (len(tree.bits)+7)/8 {
+		return root
+	}
+	if nhash != len(tree.vhash) {
+		return root
+	}
+	return root
+}
+
 func (tree *MerkleTree) Extract() (HASH256, []HASH256, []int) {
 	ids := make([]HASH256, 0)
 	idx := make([]int, 0)

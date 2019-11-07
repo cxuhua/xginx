@@ -1,6 +1,6 @@
 {
   "data_dir": "f:/datadir",
-  "flags": "xmnx",
+  "flags": "bcxh",
   "version":10000,
   "tcp_port": 9333,
   "tcp_lip": "0.0.0.0",

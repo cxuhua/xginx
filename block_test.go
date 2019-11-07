@@ -7,13 +7,20 @@ import (
 )
 
 func TestBlockSave(t *testing.T) {
+	best := GetBestBlock()
 	b := &BlockInfo{}
-	SetRandInt(&b.Ver)
-	SetRandInt(&b.Nonce)
-	SetRandInt(&b.Time)
-	err := b.Link()
-	err = b.Load(b.Hash())
-	log.Println(err)
+	SetRandInt(&b.Header.Ver)
+	SetRandInt(&b.Header.Nonce)
+	SetRandInt(&b.Header.Time)
+	_, err := b.LinkBack()
+	if err != nil {
+		panic(err)
+	}
+	b.Check()
+	err = b.Load(best)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestValueScale(t *testing.T) {
