@@ -57,7 +57,7 @@ func verifyAction(c *gin.Context) {
 		return
 	}
 	id := HASH256{}
-	if copy(id[:], bb) != 32 {
+	if copy(id[:], bb[7:]) != 32 {
 		putError(c, errors.New("hex hash length error"))
 		return
 	}
@@ -146,26 +146,52 @@ func (h *xhttp) init(m *gin.Engine) {
 	//签名接口
 	m.POST("/sign/:hex", h.TagFilter(), signAction)
 	//校验接口
-	m.GET("/verify/:hex", verifyAction)
+	m.GET("/verify/:hex", h.VerifyFilter(), verifyAction)
 	//接收数据单元
 	m.POST("/recv/unit", recvUnitAction)
 
 }
 
 //过滤不可用的标签
-func (h *xhttp) TagFilter() gin.HandlerFunc {
+func (h *xhttp) VerifyFilter() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		hex := c.Param("hex")
-		if len(hex) < 64 {
+		shex := c.Param("hex")
+		if len(shex) < 64 {
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
-		if len(hex) > 512 {
+		if len(shex) > 128 {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		bb, err := hex.DecodeString(shex)
+		if err != nil {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		tuid := bb[:7]
+		if !h.TestTag(tuid) {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		c.Next()
+	}
+}
+
+//过滤不可用的标签
+func (h *xhttp) TagFilter() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		shex := c.Param("hex")
+		if len(shex) < 64 {
+			c.AbortWithStatus(http.StatusBadRequest)
+			return
+		}
+		if len(shex) > 512 {
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}
 		tag := TagInfo{}
-		if err := tag.DecodeHex([]byte(hex)); err != nil {
+		if err := tag.DecodeHex([]byte(shex)); err != nil {
 			c.AbortWithStatus(http.StatusBadRequest)
 			return
 		}

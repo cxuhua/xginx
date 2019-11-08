@@ -31,7 +31,7 @@ var (
 	//index db
 	dbptr  DBImp = nil
 	dbonce sync.Once
-	//china state db
+	//china state db,coin数据
 	stptr  DBImp = nil
 	stonce sync.Once
 	//tags db
@@ -41,20 +41,78 @@ var (
 	Separator = string(os.PathSeparator)
 )
 
-type Batch struct {
-	bptr *leveldb.Batch
+func getDBKeyValue(ks ...[]byte) ([]byte, []byte) {
+	var k []byte
+	var v []byte
+	l := len(ks)
+	if l < 2 {
+		panic(errors.New("args ks num error"))
+	} else if l == 2 {
+		k = ks[0]
+		v = ks[1]
+	} else if l > 2 {
+		k = GetDBKey(ks[0], ks[1:l-1]...)
+		v = ks[l-1]
+	}
+	return k, v
 }
 
-func (b *Batch) Put(k []byte, v []byte) {
+func getDBKey(ks ...[]byte) []byte {
+	var k []byte
+	l := len(ks)
+	if l < 1 {
+		panic(errors.New("args ks num error"))
+	} else if l == 1 {
+		k = ks[0]
+	} else if l > 1 {
+		k = GetDBKey(ks[0], ks[1:]...)
+	}
+	return k
+}
+
+type Batch struct {
+	bptr *leveldb.Batch
+	rb   *Batch //事务回退日志
+}
+
+func (b *Batch) SetRev(r *Batch) *Batch {
+	b.rb = r
+	return r
+}
+
+func (b *Batch) Load(d []byte) error {
+	return b.bptr.Load(d)
+}
+
+func (b *Batch) Dump() []byte {
+	return b.bptr.Dump()
+}
+
+func (b *Batch) Len() int {
+	return b.bptr.Len()
+}
+
+//最后一个是数据，前面都是key
+func (b *Batch) Put(ks ...[]byte) {
+	k, v := getDBKeyValue(ks...)
+	if b.rb != nil {
+		b.rb.Del(k)
+	}
 	b.bptr.Put(k, v)
 }
 
-func (b *Batch) Del(k []byte) {
+func (b *Batch) Del(ks ...[]byte) {
+	k := getDBKey(ks...)
 	b.bptr.Delete(k)
 }
 
 func (b *Batch) Reset() {
 	b.bptr.Reset()
+}
+
+func LoadBatch(d []byte) (*Batch, error) {
+	bp := NewBatch()
+	return bp, bp.Load(d)
 }
 
 func NewBatch() *Batch {
@@ -69,10 +127,7 @@ type Range struct {
 
 func NewRange(s []byte, l []byte) *Range {
 	return &Range{
-		r: &util.Range{
-			Start: s,
-			Limit: l,
-		},
+		r: &util.Range{Start: s, Limit: l},
 	}
 }
 
@@ -122,13 +177,13 @@ func (it *Iterator) Seek(k []byte) bool {
 }
 
 type DBImp interface {
-	Has(k []byte) bool
-	Put(k []byte, v []byte) error
-	Get(k []byte) ([]byte, error)
-	Del(k []byte) error
+	Has(ks ...[]byte) bool
+	Put(ks ...[]byte) error
+	Get(ks ...[]byte) ([]byte, error)
+	Del(ks ...[]byte) error
 	Write(b *Batch) error
 	Close()
-	Iterator(slice *Range) *Iterator
+	Iterator(slice ...*Range) *Iterator
 }
 
 type leveldbimp struct {
@@ -139,13 +194,17 @@ func NewDB(dbp *leveldb.DB) DBImp {
 	return &leveldbimp{l: dbp}
 }
 
-func (db *leveldbimp) Iterator(slice *Range) *Iterator {
+func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
 	}
+	var rptr *util.Range = nil
+	if len(slice) > 0 {
+		rptr = slice[0].r
+	}
 	return &Iterator{
-		iter: db.l.NewIterator(slice.r, opts),
+		iter: db.l.NewIterator(rptr, opts),
 	}
 }
 
@@ -156,7 +215,8 @@ func (db *leveldbimp) Close() {
 	}
 }
 
-func (db *leveldbimp) Has(k []byte) bool {
+func (db *leveldbimp) Has(ks ...[]byte) bool {
+	k := getDBKey(ks...)
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
@@ -168,7 +228,8 @@ func (db *leveldbimp) Has(k []byte) bool {
 	return b
 }
 
-func (db *leveldbimp) Put(k []byte, v []byte) error {
+func (db *leveldbimp) Put(ks ...[]byte) error {
+	k, v := getDBKeyValue(ks...)
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
 		Sync:         false,
@@ -176,7 +237,8 @@ func (db *leveldbimp) Put(k []byte, v []byte) error {
 	return db.l.Put(k, v, opts)
 }
 
-func (db *leveldbimp) Get(k []byte) ([]byte, error) {
+func (db *leveldbimp) Get(ks ...[]byte) ([]byte, error) {
+	k := getDBKey(ks...)
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
@@ -184,7 +246,8 @@ func (db *leveldbimp) Get(k []byte) ([]byte, error) {
 	return db.l.Get(k, opts)
 }
 
-func (db *leveldbimp) Del(k []byte) error {
+func (db *leveldbimp) Del(ks ...[]byte) error {
+	k := getDBKey(ks...)
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
 		Sync:         false,
@@ -259,18 +322,54 @@ var (
 	CBI_PREFIX   = []byte{'C'} //用户最后单元块id StateDB()存储
 )
 
-const (
-	BestBlockKey = "BestBlockKey"
+var (
+	BestBlockKey = []byte("BestBlockKey") //StateDB 保存
+	InvalidBest  = NewInvalidBest()
 )
 
-func GetBestBlock() HASH256 {
-	id := HASH256{}
-	b, err := IndexDB().Get([]byte(BestBlockKey))
-	if err != nil {
-		return conf.genesisId
+type BestValue struct {
+	Id     HASH256
+	Height uint32
+}
+
+func NewInvalidBest() BestValue {
+	return BestValue{
+		Height: InvalidHeight,
 	}
-	copy(id[:], b)
-	return id
+}
+
+func (v BestValue) IsValid() bool {
+	return v.Height != InvalidHeight
+}
+
+func (v BestValue) Bytes() []byte {
+	buf := &bytes.Buffer{}
+	buf.Write(v.Id[:])
+	_ = binary.Write(buf, Endian, v.Height)
+	return buf.Bytes()
+}
+
+func (v *BestValue) From(b []byte) error {
+	buf := bytes.NewReader(b)
+	if _, err := buf.Read(v.Id[:]); err != nil {
+		return err
+	}
+	if err := binary.Read(buf, Endian, &v.Height); err != nil {
+		return err
+	}
+	return nil
+}
+
+func GetBestBlock() BestValue {
+	bv := BestValue{}
+	b, err := StateDB().Get(BestBlockKey)
+	if err != nil {
+		return InvalidBest
+	}
+	if err := bv.From(b); err != nil {
+		return InvalidBest
+	}
+	return bv
 }
 
 func GetDBKey(p []byte, id ...[]byte) []byte {
@@ -322,14 +421,46 @@ func LoadAllTags(tfb *bloom.BloomFilter) {
 	log.Println("load", len(TagsCtr), "tag ctr")
 }
 
+//文件数据状态
+type FileState struct {
+	Id  VarUInt //文件id
+	Off VarUInt //所在文件便宜
+	Len VarUInt //数据长度
+}
+
+func (f *FileState) Decode(r IReader) error {
+	if err := f.Id.Decode(r); err != nil {
+		return err
+	}
+	if err := f.Off.Decode(r); err != nil {
+		return err
+	}
+	if err := f.Len.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (f FileState) Encode(w IWriter) error {
+	if err := f.Id.Encode(w); err != nil {
+		return err
+	}
+	if err := f.Off.Encode(w); err != nil {
+		return err
+	}
+	if err := f.Len.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
 type TBMeta struct {
-	Header BlockHeader //区块头
-	Uts    VarUInt     //Units数量
-	Txs    VarUInt     //tx数量
-	FsId   VarUInt     //所在文件id 0000000.blk
-	FsOff  VarUInt     //文件偏移
-	FsLen  VarUInt     //块长度
-	hasher HashCacher
+	BlockHeader           //区块头
+	Uts         VarUInt   //Units数量
+	Txs         VarUInt   //tx数量
+	Blk         FileState //数据状态
+	Rev         FileState //日志回退
+	hasher      HashCacher
 }
 
 func (h *TBMeta) Hash() HASH256 {
@@ -343,8 +474,14 @@ func (h *TBMeta) Hash() HASH256 {
 	return h.hasher.Hash(buf.Bytes())
 }
 
+func (h TBMeta) Bytes() ([]byte, error) {
+	buf := &bytes.Buffer{}
+	err := h.Encode(buf)
+	return buf.Bytes(), err
+}
+
 func (h TBMeta) Encode(w IWriter) error {
-	if err := h.Header.Encode(w); err != nil {
+	if err := h.BlockHeader.Encode(w); err != nil {
 		return err
 	}
 	if err := h.Uts.Encode(w); err != nil {
@@ -353,20 +490,17 @@ func (h TBMeta) Encode(w IWriter) error {
 	if err := h.Txs.Encode(w); err != nil {
 		return err
 	}
-	if err := h.FsId.Encode(w); err != nil {
+	if err := h.Blk.Encode(w); err != nil {
 		return err
 	}
-	if err := h.FsOff.Encode(w); err != nil {
-		return err
-	}
-	if err := h.FsLen.Encode(w); err != nil {
+	if err := h.Rev.Encode(w); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (h *TBMeta) Decode(r IReader) error {
-	if err := h.Header.Decode(r); err != nil {
+	if err := h.BlockHeader.Decode(r); err != nil {
 		return err
 	}
 	if err := h.Uts.Decode(r); err != nil {
@@ -375,13 +509,10 @@ func (h *TBMeta) Decode(r IReader) error {
 	if err := h.Txs.Decode(r); err != nil {
 		return err
 	}
-	if err := h.FsId.Decode(r); err != nil {
+	if err := h.Blk.Decode(r); err != nil {
 		return err
 	}
-	if err := h.FsOff.Decode(r); err != nil {
-		return err
-	}
-	if err := h.FsLen.Decode(r); err != nil {
+	if err := h.Rev.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -457,8 +588,9 @@ var (
 )
 
 func sfileHeaderBytes() []byte {
+	flags := []byte(conf.Flags)
 	buf := &bytes.Buffer{}
-	_ = binary.Write(buf, Endian, []byte(conf.Flags))
+	_ = binary.Write(buf, Endian, flags[:4])
 	_ = binary.Write(buf, Endian, conf.Ver)
 	return buf.Bytes()
 }
@@ -466,7 +598,9 @@ func sfileHeaderBytes() []byte {
 type sfile struct {
 	mu sync.RWMutex
 	*os.File
-	size int64
+	size  int64
+	flags []byte
+	ver   uint32
 }
 
 func (f *sfile) flush() {
@@ -525,7 +659,12 @@ func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sfile{File: f, size: max}, nil
+	sf := &sfile{
+		File:  f,
+		flags: []byte{0, 0, 0, 0},
+		size:  max,
+	}
+	return sf, nil
 }
 
 func (s sstore) fileIdPath(id uint32) string {
@@ -534,6 +673,29 @@ func (s sstore) fileIdPath(id uint32) string {
 
 func (f *sstore) Id() uint32 {
 	return atomic.LoadUint32(&f.id)
+}
+
+func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
+	hbytes := sfileHeaderBytes()
+	if err := sf.read(0, hbytes); err != nil {
+		_ = sf.Close()
+		return nil, err
+	}
+	buf := bytes.NewReader(hbytes)
+	if err := binary.Read(buf, Endian, &sf.flags); err != nil {
+		_ = sf.Close()
+		return nil, err
+	}
+	if err := binary.Read(buf, Endian, &sf.ver); err != nil {
+		_ = sf.Close()
+		return nil, err
+	}
+	if !bytes.Equal(sf.flags, []byte(conf.Flags)) {
+		_ = sf.Close()
+		return nil, errors.New("file meta error")
+	}
+	s.files[id] = sf
+	return sf, nil
 }
 
 func (s *sstore) openfile(id uint32) (*sfile, error) {
@@ -554,8 +716,7 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 	}
 	fsiz := int(fi.Size())
 	if fsiz >= len(hbytes) {
-		s.files[id] = sf
-		return sf, nil
+		return s.checkmeta(id, sf)
 	}
 	pos, err := sf.write(hbytes[fsiz:])
 	if pos != uint32(fsiz) || err != nil {
@@ -567,8 +728,20 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 	return sf, nil
 }
 
+func (s *sstore) ReadFile(st FileState) ([]byte, error) {
+	if st.Len > MAX_BLOCK_SIZE {
+		return nil, errors.New("data too big")
+	}
+	bb := make([]byte, st.Len)
+	err := s.Read(st.Id.ToUInt32(), st.Off.ToUInt32(), bb)
+	if err != nil {
+		return nil, err
+	}
+	return bb, nil
+}
+
 //读取数据
-func (s *sstore) read(id uint32, off uint32, b []byte) error {
+func (s *sstore) Read(id uint32, off uint32, b []byte) error {
 	f, err := s.openfile(id)
 	if err != nil {
 		return err
@@ -576,8 +749,25 @@ func (s *sstore) read(id uint32, off uint32, b []byte) error {
 	return f.read(off, b)
 }
 
+func (s *sstore) WriteFile(b []byte) (FileState, error) {
+	fs := FileState{
+		Id:  VarUInt(s.Id()),
+		Off: VarUInt(0),
+		Len: VarUInt(len(b)),
+	}
+	if fs.Len > MAX_BLOCK_SIZE {
+		return fs, errors.New("data too big")
+	}
+	off, err := s.Write(b)
+	if err != nil {
+		return fs, err
+	}
+	fs.Off = VarUInt(off)
+	return fs, nil
+}
+
 //写入数据，返回数据便宜
-func (s *sstore) write(b []byte) (uint32, error) {
+func (s *sstore) Write(b []byte) (uint32, error) {
 	f, err := s.openfile(s.id)
 	if err != nil {
 		return 0, err

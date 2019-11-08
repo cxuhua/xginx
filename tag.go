@@ -865,8 +865,11 @@ func (pv *Unit) Verify() (HASH160, error) {
 	if pv.verifyok {
 		return cid, nil
 	}
-	id := pv.Hash()
-	sh := hex.EncodeToString(id[:])
+	//将tuid和hash连接生成hex格式连接在验证地址
+	//访问这个验证地址访问
+	vsb := append([]byte{}, pv.TUID[:]...)
+	vsb = append(vsb, pv.Hash().Bytes()...)
+	sh := hex.EncodeToString(vsb)
 	surl := string(pv.Host) + "/" + sh
 	res, err := http.Get(surl)
 	if err != nil {

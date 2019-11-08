@@ -1,23 +1,112 @@
 package xginx
 
 import (
+	"errors"
 	"log"
 	"testing"
 	"time"
 )
 
-func TestBlockSave(t *testing.T) {
-	best := GetBestBlock()
+func NewBlock(h uint32, prev HASH256) *BlockInfo {
 	b := &BlockInfo{}
-	SetRandInt(&b.Header.Ver)
+	b.Header.Ver = 1
+	b.Header.Prev = prev
+	b.Header.Bits = 0x1d00ffff
+	b.Header.Time = uint32(time.Now().Unix())
 	SetRandInt(&b.Header.Nonce)
-	SetRandInt(&b.Header.Time)
-	_, err := b.LinkBack()
+	u1 := &Unit{}
+	SetRandInt(&u1.Nonce)
+	u1.STime = time.Now().UnixNano()
+	u2 := &Unit{}
+	SetRandInt(&u2.Nonce)
+	u2.STime = time.Now().UnixNano()
+
+	us := &Units{u1, u2}
+	b.Uts = []*Units{us}
+
+	tx := &TX{}
+	txin := &TxIn{
+		Script: BaseScript(h, []byte{}),
+	}
+	txout := &TxOut{
+		Value:  0,
+		Script: StdLockedScript(conf.minerpk),
+	}
+	tx.Ins = []*TxIn{txin}
+	tx.Outs = []*TxOut{txout}
+	b.Txs = []*TX{tx}
+
+	err := b.SetMerkle()
 	if err != nil {
 		panic(err)
 	}
-	b.Check()
-	err = b.Load(best)
+	return b
+}
+
+func TestBlockChain(t *testing.T) {
+	chain := NewBlockIndex()
+	testnum := uint32(100000)
+	fb := NewBlock(0, HASH256{})
+	conf.genesisId = fb.ID()
+	log.Println(fb.ID())
+	_, err := fb.LinkBack(chain)
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
+	//100万个数据
+	for i := uint32(1); i < testnum; i++ {
+		cb := NewBlock(i, fb.ID())
+		_, err = cb.LinkBack(chain)
+		if err != nil {
+			t.Error(err)
+			t.FailNow()
+		}
+		if i%10000 == 0 {
+			log.Println(i, "block")
+		}
+		fb = cb
+	}
+	if chain.Len() != int(testnum) {
+		t.Errorf("add main chain error")
+		t.FailNow()
+	}
+
+}
+
+func TestUnlinkBlock(t *testing.T) {
+	chain := NewBlockIndex()
+	err := chain.LoadAll()
+	if err != nil {
+		panic(err)
+	}
+	for {
+		bv := GetBestBlock()
+		if !bv.IsValid() {
+			log.Println("not has best block")
+			break
+		}
+		last := chain.Last()
+		if !bv.Id.Equal(last.ID()) {
+			panic(errors.New("best id error"))
+		}
+		if bv.Height != last.Height {
+			panic(errors.New("best height error"))
+		}
+		b, err := chain.LoadBlock(last.ID())
+		if err != nil {
+			panic(err)
+		}
+		err = b.UnlinkBack(chain)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
+func TestLoadAllBlock(t *testing.T) {
+	chain := NewBlockIndex()
+	err := chain.LoadAll()
 	if err != nil {
 		panic(err)
 	}

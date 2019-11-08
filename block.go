@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+const (
+	// 最大块大小
+	MAX_BLOCK_SIZE = 1024 * 1024 * 4
+)
+
 //存储单元索引值
 type UvValue struct {
 	BlkId  HASH256 //块hash
@@ -16,8 +21,8 @@ type UvValue struct {
 	UvsIdx VarUInt //units链索引
 }
 
-func (v UvValue) GetUnit() (*Unit, error) {
-	blk, err := LoadBlock(v.BlkId)
+func (v UvValue) GetUnit(chain *BlockIndex) (*Unit, error) {
+	blk, err := chain.LoadBlock(v.BlkId)
 	if err != nil {
 		return nil, err
 	}
@@ -71,8 +76,8 @@ type TxValue struct {
 	TxsIdx VarUInt //txs 索引
 }
 
-func (v TxValue) GetTX() (*TX, error) {
-	blk, err := LoadBlock(v.BlkId)
+func (v TxValue) GetTX(chain *BlockIndex) (*TX, error) {
+	blk, err := chain.LoadBlock(v.BlkId)
 	if err != nil {
 		return nil, err
 	}
@@ -155,10 +160,10 @@ type BlockHeader struct {
 }
 
 func (v BlockHeader) IsGenesis() bool {
-	return v.Prev.IsZero() && conf.genesisId.Equal(v.Hash())
+	return v.Prev.IsZero() && conf.genesisId.Equal(v.ID())
 }
 
-func (v *BlockHeader) Hash() HASH256 {
+func (v *BlockHeader) ID() HASH256 {
 	if h, has := v.hasher.IsSet(); has {
 		return h
 	}
@@ -179,107 +184,190 @@ type BlockInfo struct {
 	Header BlockHeader //区块头
 	Uts    []*Units    //记录单元 没有记录单元将不会获得奖励
 	Txs    []*TX       //交易记录，类似比特币
+	Meta   *TBEle      //指向链数据节点
 	utsher HashCacher  //uts 缓存
 	merher HashCacher  //mer hash 缓存
 }
 
 //加载块数据
-func (v *BlockInfo) Load(id HASH256) error {
+func (v *BlockInfo) Load(id HASH256) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
 	meta := &TBMeta{}
 	hb, err := IndexDB().Get(bk)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	buf := bytes.NewReader(hb)
 	if err := meta.Decode(buf); err != nil {
+		return nil, err
+	}
+	bb, err := blk.ReadFile(meta.Blk)
+	if err != nil {
+		return nil, err
+	}
+	err = v.Decode(bytes.NewReader(bb))
+	return meta, err
+}
+
+//断开时回退数据
+func (v *BlockInfo) unlink() error {
+	return nil
+}
+
+//断开最后一个，必须是最后一个才能断开
+func (v *BlockInfo) UnlinkBack(chain *BlockIndex) error {
+	if chain.Len() == 0 {
+		return nil
+	}
+	if v.Meta == nil {
+		return errors.New("block meta miss")
+	}
+	id := v.ID()
+	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
+	if !chain.Last().ID().Equal(id) {
+		return errors.New("only unlink last block")
+	}
+	revb, err := rev.ReadFile(v.Meta.Rev)
+	if err != nil {
+		return fmt.Errorf("read block rev data error %w", err)
+	}
+	batch, err := LoadBatch(revb)
+	if err != nil {
+		return fmt.Errorf("load rev batch error %w", err)
+	}
+	if err := chain.UnlinkBack(); err != nil {
 		return err
 	}
-	bb := make([]byte, meta.FsLen)
-	if err := blk.read(meta.FsId.ToUInt32(), meta.FsOff.ToUInt32(), bb); err != nil {
+	//删除数据
+	if err := IndexDB().Del(bk); err != nil {
 		return err
 	}
-	return v.Decode(bytes.NewReader(bb))
+	if err := StateDB().Write(batch); err != nil {
+		return err
+	}
+	return nil
 }
 
 //保存连接块数据
-func (v BlockInfo) LinkBack() (*TBEle, error) {
+func (v BlockInfo) LinkBack(chain *BlockIndex) (*TBEle, error) {
 	id, meta, bb, err := v.ToTBMeta()
 	if err != nil {
 		return nil, err
 	}
-	//是否能连接到主链
-	if !MainChain.IsLinkBack(meta) {
+	//是否能连接到主链后
+	inext, blink := chain.IsLinkBack(meta)
+	if !blink {
 		return nil, fmt.Errorf("can't link to main chain hash=%v", id)
 	}
-	//获取当前文件id
-	meta.FsId.SetUInt32(blk.Id())
-	//保存数据
-	off, err := blk.write(bb)
-	if err != nil {
-		return nil, err
-	}
-	//保存数据位置
-	meta.FsOff.SetUInt32(off)
-	//保存头
-	buf := &bytes.Buffer{}
-	if err := meta.Encode(buf); err != nil {
-		return nil, err
-	}
-	bk := GetDBKey(BLOCK_PREFIX, id[:])
-	batch := NewBatch()
-	batch.Put(bk, buf.Bytes())
-	//更新bestBlockId
-	batch.Put([]byte(BestBlockKey), id[:])
-	if err := IndexDB().Write(batch); err != nil {
-		return nil, err
-	}
 	//区块状态写入
-	//每个单元所在的块，每个交易所在块
-	batch.Reset()
+	batch := NewBatch()
+	revb := batch.SetRev(NewBatch())
+	//更新bestBlockId
+	bv := BestValue{Id: id, Height: inext}
+	batch.Put(BestBlockKey, bv.Bytes())
 	if err := v.WriteUvsIdx(batch); err != nil {
 		return nil, err
 	}
 	if err := v.WriteTxsIdx(batch); err != nil {
 		return nil, err
 	}
+	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
+		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
+	}
+	//获取上一个区块
+	if !v.IsGenesis() {
+		last := chain.Last()
+		pb, err := chain.LoadBlock(last.ID())
+		if err != nil {
+			return nil, err
+		}
+		bv := BestValue{Id: last.ID(), Height: last.Height}
+		//保存上一个用于日志回退
+		revb.Put(BestBlockKey, bv.Bytes())
+		//保存cli的上一个块用于数据回退
+		if err := pb.WriteCliBestId(revb); err != nil {
+			return nil, err
+		}
+	}
+	//区块索引key
+	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
+	//保存回退日志
+	meta.Rev, err = rev.WriteFile(revb.Dump())
+	if err != nil {
+		return nil, err
+	}
+	//保存区块数据
+	meta.Blk, err = blk.WriteFile(bb)
+	if err != nil {
+		return nil, err
+	}
+	//保存头
+	hbs, err := meta.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	//连接区块
+	ele, err := chain.LinkBack(meta)
+	if err != nil {
+		return nil, err
+	}
+	//保存区块信息索引
+	if err := IndexDB().Put(bk, hbs); err != nil {
+		return nil, err
+	}
+	//更新状态
 	if err := StateDB().Write(batch); err != nil {
 		return nil, err
 	}
-	return MainChain.LinkBack(meta)
+	return ele, nil
 }
 
 func (v BlockInfo) WriteTxsIdx(b *Batch) error {
 	for i, tv := range v.Txs {
+		//保存交易id对应的区块
 		tid := tv.Hash()
-		vkey := GetDBKey(TXS_PREFIX, tid[:])
-		if StateDB().Has(vkey) {
+		if StateDB().Has(TXS_PREFIX, tid[:]) {
 			return errors.New("txs hashid exists!!")
 		}
 		vval := TxValue{
-			BlkId:  v.Hash(),
+			BlkId:  v.ID(),
 			TxsIdx: VarUInt(i),
 		}
 		vbys, err := vval.Bytes()
 		if err != nil {
 			return err
 		}
-		b.Put(vkey, vbys)
+		b.Put(TXS_PREFIX, tid[:], vbys)
 	}
 	return nil
 }
 
-func (v BlockInfo) WriteUvsIdx(b *Batch) error {
+func (v BlockInfo) WriteCliBestId(b *Batch) error {
+	for _, uts := range v.Uts {
+		if len(*uts) < 2 {
+			return errors.New("client units num error")
+		}
+		//保存 cli 最后一个数据单元所在的快
+		uid := (*uts)[len(*uts)-1].Hash()
+		cid := uts.CliId()
+		b.Put(CBI_PREFIX, cid[:], uid[:])
+	}
+	return nil
+}
+
+func (v *BlockInfo) WriteUvsIdx(b *Batch) error {
 	for i, uts := range v.Uts {
-		uid := HASH256{}
+		if len(*uts) < 2 {
+			return errors.New("client units num error")
+		}
 		for j, uv := range *uts {
-			uid = uv.Hash()
-			ukey := GetDBKey(UXS_PREFIX, uid[:])
-			if StateDB().Has(ukey) {
+			//保存单元id所在的区块
+			uid := uv.Hash()
+			if StateDB().Has(UXS_PREFIX, uid[:]) {
 				return errors.New("uts hashid exists!!")
 			}
 			uval := UvValue{
-				BlkId:  v.Hash(),
+				BlkId:  v.ID(),
 				UtsIdx: VarUInt(i),
 				UvsIdx: VarUInt(j),
 			}
@@ -287,14 +375,10 @@ func (v BlockInfo) WriteUvsIdx(b *Batch) error {
 			if err != nil {
 				return err
 			}
-			b.Put(ukey, ubys)
+			b.Put(UXS_PREFIX, uid[:], ubys)
 		}
-		//保存用户最后一个单元块id
-		cid := uts.CliId()
-		ckey := GetDBKey(CBI_PREFIX, cid[:])
-		b.Put(ckey, uid[:])
 	}
-	return nil
+	return v.WriteCliBestId(b)
 }
 
 func (v *BlockInfo) GetUMerkle() (HASH256, error) {
@@ -337,36 +421,29 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-func (b *BlockInfo) Hash() HASH256 {
-	return b.Header.Hash()
+func (b *BlockInfo) ID() HASH256 {
+	return b.Header.ID()
 }
 
 func (b *BlockInfo) IsGenesis() bool {
-	return b.Header.Prev.IsZero() && conf.IsGenesisId(b.Hash())
-}
-
-//加载区块
-func LoadBlock(id HASH256) (*BlockInfo, error) {
-	bptr := &BlockInfo{}
-	if err := bptr.Load(id); err != nil {
-		return nil, err
-	}
-	return bptr, nil
+	return b.Header.IsGenesis()
 }
 
 //HASH256 meta,bytes
 func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	meta := &TBMeta{
-		Header: b.Header,
-		Uts:    VarUInt(len(b.Uts)),
-		Txs:    VarUInt(len(b.Txs)),
+		BlockHeader: b.Header,
+		Uts:         VarUInt(len(b.Uts)),
+		Txs:         VarUInt(len(b.Txs)),
 	}
-	id := meta.Header.Hash()
+	id := meta.ID()
 	buf := &bytes.Buffer{}
 	if err := b.Encode(buf); err != nil {
 		return id, nil, nil, err
 	}
-	meta.FsLen = VarUInt(buf.Len())
+	if buf.Len() > MAX_BLOCK_SIZE {
+		return id, nil, nil, errors.New("block too big > MAX_BLOCK_SIZE")
+	}
 	return id, meta, buf.Bytes(), nil
 }
 
@@ -398,10 +475,10 @@ func (v BlockInfo) CheckTxs() error {
 }
 
 //检查所有的单元数据
-func (v BlockInfo) CheckUts() error {
+func (v BlockInfo) CheckUts(chain *BlockIndex) error {
 	cmap := map[HASH160]bool{}
 	for _, uvs := range v.Uts {
-		err := uvs.Check()
+		err := uvs.Check(chain)
 		if err != nil {
 			return err
 		}
@@ -415,14 +492,14 @@ func (v BlockInfo) CheckUts() error {
 	return nil
 }
 
-func (v BlockInfo) Check() error {
+func (v BlockInfo) Check(chain *BlockIndex) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
 	if len(v.Uts) == 0 {
 		return errors.New("uts miss, too little")
 	}
-	if !CheckProofOfWork(v.Hash(), v.Header.Bits) {
+	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
 		return errors.New("proof of work bits error")
 	}
 	merkle, err := v.GetTMerkle()
@@ -444,7 +521,7 @@ func (v BlockInfo) Check() error {
 		return err
 	}
 	//检查所有的数据单元
-	if err := v.CheckUts(); err != nil {
+	if err := v.CheckUts(chain); err != nil {
 		return err
 	}
 	//获取积分分配
@@ -456,7 +533,7 @@ func (v BlockInfo) Check() error {
 	calcer := NewTokenCalcer()
 	for _, uv := range v.Uts {
 		uc := NewTokenCalcer()
-		err := uv.CalcToken(v.Header.Bits, uc)
+		err := uv.CalcToken(chain, v.Header.Bits, uc)
 		if err != nil {
 			return err
 		}
@@ -888,7 +965,7 @@ func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
 }
 
 //获取上一个unit
-func (v *Units) LastUnit() (*Unit, error) {
+func (v *Units) LastUnit(chain *BlockIndex) (*Unit, error) {
 	lid, err := LoadCliLastUnit(v.CliId())
 	//client不存在last unit的清空下，如果是第一个直接返回
 	if len(*v) > 0 && (*v)[0].IsFirst() && err != nil {
@@ -909,7 +986,7 @@ func (v *Units) LastUnit() (*Unit, error) {
 	if err != nil {
 		return nil, err
 	}
-	return uv.GetUnit()
+	return uv.GetUnit(chain)
 }
 
 //是否是连续的
@@ -928,14 +1005,14 @@ func (v *Units) IsConsecutive() bool {
 	return true
 }
 
-func (v *Units) Check() error {
+func (v *Units) Check(chain *BlockIndex) error {
 	if len(*v) < 2 {
 		return errors.New("unit too little")
 	}
 	if !v.IsConsecutive() {
 		return errors.New("unit not continuous")
 	}
-	prev, err := v.LastUnit()
+	prev, err := v.LastUnit(chain)
 	if err != nil {
 		return err
 	}
@@ -953,12 +1030,12 @@ func (v *Units) Check() error {
 }
 
 //计算积分
-func (v *Units) CalcToken(bits uint32, calcer ITokenCalcer) error {
+func (v *Units) CalcToken(chain *BlockIndex, bits uint32, calcer ITokenCalcer) error {
 	if len(*v) < 2 {
 		return errors.New("Unit too small ")
 	}
 	//获取上一个参与计算
-	prev, err := v.LastUnit()
+	prev, err := v.LastUnit(chain)
 	if err != nil {
 		return err
 	}
