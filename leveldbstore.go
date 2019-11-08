@@ -328,7 +328,6 @@ func (ss *leveldbstore) HasUnitash(id HASH256) (HASH160, error) {
 }
 
 //打包确认后可移除单元hash
-
 func (ss *leveldbstore) DelUnitHash(id HASH256) error {
 	hk := GetDBKey(HUNIT_PREFIX, id[:])
 	return ss.tags.Del(hk)

@@ -55,6 +55,7 @@ func NewTBEle(meta *TBMeta, idx *BlockIndex) *TBEle {
 	}
 }
 
+//区块链索引
 type BlockIndex struct {
 	mu sync.RWMutex
 	//区块头列表
@@ -353,9 +354,9 @@ func (bi *BlockIndex) LinkBack(meta *TBMeta) (*TBEle, error) {
 	return bi.pushback(ele)
 }
 
-func (chain *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
+func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vk := GetDBKey(TXS_PREFIX, id[:])
-	vb, err := chain.store.State().Get(vk)
+	vb, err := bi.store.State().Get(vk)
 	if err != nil {
 		return nil, err
 	}
@@ -364,9 +365,9 @@ func (chain *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	return vv, err
 }
 
-func (chain *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
+func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
 	vk := GetDBKey(UXS_PREFIX, id[:])
-	vb, err := chain.store.State().Get(vk)
+	vb, err := bi.store.State().Get(vk)
 	if err != nil {
 		return nil, err
 	}
@@ -375,10 +376,10 @@ func (chain *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
 	return vv, err
 }
 
-func (chain *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
+func (bi *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
 	id := HASH256{}
 	ckey := GetDBKey(CBI_PREFIX, cli[:])
-	bb, err := chain.store.State().Get(ckey)
+	bb, err := bi.store.State().Get(ckey)
 	if err != nil {
 		return id, err
 	}
@@ -387,10 +388,10 @@ func (chain *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
 }
 
 //加载块数据
-func (chain *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
+func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
 	meta := &TBMeta{}
-	hb, err := chain.store.Index().Get(bk)
+	hb, err := bi.store.Index().Get(bk)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +399,7 @@ func (chain *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	if err := meta.Decode(buf); err != nil {
 		return nil, err
 	}
-	bb, err := chain.store.Blk().Read(meta.Blk)
+	bb, err := bi.store.Blk().Read(meta.Blk)
 	if err != nil {
 		return nil, err
 	}
@@ -407,8 +408,8 @@ func (chain *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 }
 
 //断开最后一个，必须是最后一个才能断开
-func (chain *BlockIndex) Unlink(block *BlockInfo) error {
-	if chain.Len() == 0 {
+func (bi *BlockIndex) Unlink(block *BlockInfo) error {
+	if bi.Len() == 0 {
 		return nil
 	}
 	if block.Meta == nil {
@@ -416,38 +417,36 @@ func (chain *BlockIndex) Unlink(block *BlockInfo) error {
 	}
 	id := block.ID()
 	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
-	if !chain.Last().ID().Equal(id) {
+	if !bi.Last().ID().Equal(id) {
 		return errors.New("only unlink last block")
 	}
-	revbb, err := chain.store.Rev().Read(block.Meta.Rev)
+	rbb, err := bi.store.Rev().Read(block.Meta.Rev)
 	if err != nil {
 		return fmt.Errorf("read block rev data error %w", err)
 	}
-	revb, err := LoadBatch(revbb)
+	revb, err := LoadBatch(rbb)
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
-	if err := chain.UnlinkBack(); err != nil {
-		return err
-	}
 	//删除数据
-	if err := chain.store.Index().Del(bk); err != nil {
+	if err := bi.store.Index().Del(bk); err != nil {
 		return err
 	}
-	if err := chain.store.State().Write(revb); err != nil {
+	if err := bi.store.State().Write(revb); err != nil {
 		return err
 	}
-	return nil
+	//断开链接
+	return bi.UnlinkBack()
 }
 
-//link
-func (chain *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
+//链接一个区块
+func (bi *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
 	id, meta, bb, err := block.ToTBMeta()
 	if err != nil {
 		return nil, err
 	}
 	//是否能连接到主链后
-	nexth, blink := chain.IsLinkBack(meta)
+	nexth, blink := bi.IsLinkBack(meta)
 	if !blink {
 		return nil, fmt.Errorf("can't link to main chain hash=%v", id)
 	}
@@ -464,13 +463,10 @@ func (chain *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
 	if err := block.WriteTxsIdx(batch); err != nil {
 		return nil, err
 	}
-	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
-		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
-	}
 	//获取上一个区块
 	if !block.IsGenesis() {
-		last := chain.Last()
-		pb, err := chain.LoadBlock(last.ID())
+		last := bi.Last()
+		pb, err := bi.LoadBlock(last.ID())
 		if err != nil {
 			return nil, err
 		}
@@ -482,37 +478,37 @@ func (chain *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
 			return nil, err
 		}
 	}
+	//检测日志文件
+	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
+		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
+	}
 	//区块索引key
 	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
 	//保存回退日志
-	meta.Rev, err = chain.store.Rev().Write(revb.Dump())
+	meta.Rev, err = bi.store.Rev().Write(revb.Dump())
 	if err != nil {
 		return nil, err
 	}
 	//保存区块数据
-	meta.Blk, err = chain.store.Blk().Write(bb)
+	meta.Blk, err = bi.store.Blk().Write(bb)
 	if err != nil {
 		return nil, err
 	}
-	//保存头
+	//保存区块头数据
 	hbs, err := meta.Bytes()
 	if err != nil {
 		return nil, err
 	}
-	//连接区块
-	ele, err := chain.LinkBack(meta)
-	if err != nil {
-		return nil, err
-	}
 	//保存区块信息索引
-	if err := chain.store.Index().Put(bk, hbs); err != nil {
+	if err := bi.store.Index().Put(bk, hbs); err != nil {
 		return nil, err
 	}
-	//更新状态
-	if err := chain.store.State().Write(batch); err != nil {
+	//更新区块状态
+	if err := bi.store.State().Write(batch); err != nil {
 		return nil, err
 	}
-	return ele, nil
+	//连接区块
+	return bi.LinkBack(meta)
 }
 
 func NewBlockIndex() *BlockIndex {
