@@ -156,20 +156,6 @@ func (bi *BlockIndex) Next() bool {
 	return bi.cur != nil
 }
 
-//断开最前一个
-func (bi *BlockIndex) UnlinkFront() {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
-	fe := bi.lis.Front()
-	if fe == nil {
-		return
-	}
-	fv := fe.Value.(*TBEle)
-	delete(bi.hmap, fv.Height)
-	delete(bi.imap, fv.ID())
-	bi.lis.Remove(fe)
-}
-
 //断开最后一个
 func (bi *BlockIndex) UnlinkBack() error {
 	bi.mu.Lock()
@@ -206,23 +192,6 @@ func (bi *BlockIndex) pushback(e *TBEle) (*TBEle, error) {
 	bi.hmap[e.Height] = ele
 	bi.imap[e.ID()] = ele
 	return e, nil
-}
-
-//加入一个队头并设置高度
-func (bi *BlockIndex) LinkFront(meta *TBMeta) (*TBEle, error) {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
-	ele := NewTBEle(meta, bi)
-	first := bi.lis.Front()
-	if first == nil {
-		return bi.pushfront(ele)
-	}
-	lv := first.Value.(*TBEle)
-	if !lv.Prev.Equal(ele.ID()) {
-		return nil, errors.New("prev hash error")
-	}
-	ele.Height = lv.Height - 1
-	return bi.pushfront(ele)
 }
 
 //根据高度获取块
