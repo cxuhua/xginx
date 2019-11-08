@@ -416,7 +416,6 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 		return errors.New("block meta miss")
 	}
 	id := bp.ID()
-	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
 	if !bi.Last().ID().Equal(id) {
 		return errors.New("only unlink last block")
 	}
@@ -429,7 +428,7 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
 	//删除数据
-	if err := bi.store.Index().Del(bk); err != nil {
+	if err := bi.store.Index().Del(BLOCK_PREFIX, id[:]); err != nil {
 		return err
 	}
 	if err := bi.store.State().Write(bt); err != nil {
@@ -492,8 +491,6 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	if bt.Len() > MAX_BLOCK_SIZE || rt.Len() > MAX_BLOCK_SIZE {
 		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
 	}
-	//区块索引key
-	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
 	//保存回退日志
 	meta.Rev, err = bi.store.Rev().Write(rt.Dump())
 	if err != nil {
@@ -510,7 +507,7 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 		return nil, err
 	}
 	//保存区块信息索引
-	if err := bi.store.Index().Put(bk, hbs); err != nil {
+	if err := bi.store.Index().Put(BLOCK_PREFIX, id[:], hbs); err != nil {
 		return nil, err
 	}
 	//更新区块状态
