@@ -118,7 +118,7 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	}
 	ele, has := bi.imap[id]
 	if !has {
-		return nil, fmt.Errorf("chain not load %v", id)
+		return nil, fmt.Errorf("block meta not load %v", id)
 	}
 	smeta := ele.Value.(*TBEle)
 	bptr := &BlockInfo{}
