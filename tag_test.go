@@ -107,7 +107,7 @@ func TestSaveTestKey(t *testing.T) {
 	tk.UID = tuid
 	tk.Ver = 1
 	tk.Loc = loc
-	tk.ASV = S622
+	tk.ASV = S622.ToUInt8()
 	tk.PKH = hash
 	tk.Keys[4] = TTagKey{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	tk.SetMacKey(0)

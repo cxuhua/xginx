@@ -114,11 +114,11 @@ func TestLoadAllBlock(t *testing.T) {
 }
 
 func TestValueScale(t *testing.T) {
-	log.Println(Alloc(S721).Scale())
-	log.Println(Alloc(S622).Scale())
-	log.Println(Alloc(S631).Scale())
-	log.Println(Alloc(S640).Scale())
-	log.Println(Alloc(S550).Scale())
+	log.Println(S721.Scale())
+	log.Println(S622.Scale())
+	log.Println(S631.Scale())
+	log.Println(S640.Scale())
+	log.Println(S550.Scale())
 }
 
 func TestCalcDistance(t *testing.T) {

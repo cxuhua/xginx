@@ -880,22 +880,22 @@ func (v *Units) CalcToken(chain *BlockIndex, bits uint32, calcer ITokenCalcer) e
 	return calcer.Calc(bits, is)
 }
 
-type Alloc uint8
+type TokenAlloc uint8
 
-func (v Alloc) ToUInt8() uint8 {
+func (v TokenAlloc) ToUInt8() uint8 {
 	return uint8(v)
 }
 
-func (v Alloc) Encode(w IWriter) error {
+func (v TokenAlloc) Encode(w IWriter) error {
 	return binary.Write(w, Endian, v)
 }
 
-func (v *Alloc) Decode(r IReader) error {
+func (v *TokenAlloc) Decode(r IReader) error {
 	return binary.Read(r, Endian, &v)
 }
 
 //矿工，标签，用户，获得积分比例
-func (v Alloc) Scale() (float64, float64, float64) {
+func (v TokenAlloc) Scale() (float64, float64, float64) {
 	m := float64((v >> 5) & 0b111)
 	t := float64((v >> 2) & 0b111)
 	c := float64(v & 0b11)
@@ -903,7 +903,7 @@ func (v Alloc) Scale() (float64, float64, float64) {
 }
 
 //3个值之和应该为10
-func (v Alloc) Check() error {
+func (v TokenAlloc) Check() error {
 	av := ((v >> 5) & 0b111) + ((v >> 2) & 0b111) + (v & 0b11)
 	if av != 10 {
 		return errors.New("value error,alloc sum != 10")
@@ -912,11 +912,11 @@ func (v Alloc) Check() error {
 }
 
 const (
-	S631 = 0b110_011_01
-	S622 = 0b110_010_10
-	S640 = 0b110_100_00
-	S550 = 0b101_101_00
-	S721 = 0b111_010_01
+	S631 = TokenAlloc(0b110_011_01)
+	S622 = TokenAlloc(0b110_010_10)
+	S640 = TokenAlloc(0b110_100_00)
+	S550 = TokenAlloc(0b101_101_00)
+	S721 = TokenAlloc(0b111_010_01)
 )
 
 //token结算接口

@@ -312,14 +312,14 @@ func NewTagTT(s string) TagTT {
 
 //标签信息
 type TagInfo struct {
-	TTS   TagTT    //TT状态 url +2,激活后OO tam map
-	TVer  uint32   //版本 from tag
-	TLoc  Location //uint32-uint32 位置 from tag
-	TASV  Alloc    //积分分配比例,由标签持有者确定，写入后不可修改
-	TPKH  HASH160  //标签所有者公钥的HASH160，标记标签所有者
-	TUID  TagUID   //标签id from tag
-	TCTR  TagCTR   //标签记录计数器 from tag map
-	TMAC  TagMAC   //标签CMAC值 from tag url + 16
+	TTS   TagTT      //TT状态 url +2,激活后OO tam map
+	TVer  uint32     //版本 from tag
+	TLoc  Location   //uint32-uint32 位置 from tag
+	TASV  TokenAlloc //积分分配比例,由标签持有者确定，写入后不可修改
+	TPKH  HASH160    //标签所有者公钥的HASH160，标记标签所有者
+	TUID  TagUID     //标签id from tag
+	TCTR  TagCTR     //标签记录计数器 from tag map
+	TMAC  TagMAC     //标签CMAC值 from tag url + 16
 	url   string
 	input string
 	pos   TagPos
