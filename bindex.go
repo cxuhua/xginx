@@ -408,23 +408,23 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 }
 
 //断开最后一个，必须是最后一个才能断开
-func (bi *BlockIndex) Unlink(block *BlockInfo) error {
+func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if bi.Len() == 0 {
 		return nil
 	}
-	if block.Meta == nil {
+	if bp.Meta == nil {
 		return errors.New("block meta miss")
 	}
-	id := block.ID()
+	id := bp.ID()
 	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
 	if !bi.Last().ID().Equal(id) {
 		return errors.New("only unlink last block")
 	}
-	rbb, err := bi.store.Rev().Read(block.Meta.Rev)
+	rb, err := bi.store.Rev().Read(bp.Meta.Rev)
 	if err != nil {
 		return fmt.Errorf("read block rev data error %w", err)
 	}
-	revb, err := LoadBatch(rbb)
+	bt, err := LoadBatch(rb)
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
@@ -432,16 +432,37 @@ func (bi *BlockIndex) Unlink(block *BlockInfo) error {
 	if err := bi.store.Index().Del(bk); err != nil {
 		return err
 	}
-	if err := bi.store.State().Write(revb); err != nil {
+	if err := bi.store.State().Write(bt); err != nil {
 		return err
 	}
 	//断开链接
 	return bi.UnlinkBack()
 }
 
+//写回退日志到事物
+func (bi *BlockIndex) WriteLastToRev(bp *BlockInfo, bt *Batch) error {
+	//如果是第一个没有最后一个了
+	if bp.IsGenesis() {
+		return nil
+	}
+	last := bi.Last()
+	if last == nil {
+		return errors.New("last block meta miss")
+	}
+	pb, err := bi.LoadBlock(last.ID())
+	if err != nil {
+		return fmt.Errorf("linkto block,load last block error %w", err)
+	}
+	bv := BestValue{Id: last.ID(), Height: last.Height}
+	//保存上一个用于日志回退
+	bt.Put(BestBlockKey, bv.Bytes())
+	//保存cli的上一个块用于数据回退
+	return pb.WriteCliBestId(bt)
+}
+
 //链接一个区块
-func (bi *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
-	id, meta, bb, err := block.ToTBMeta()
+func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
+	id, meta, bb, err := bp.ToTBMeta()
 	if err != nil {
 		return nil, err
 	}
@@ -451,41 +472,30 @@ func (bi *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
 		return nil, fmt.Errorf("can't link to main chain hash=%v", id)
 	}
 	//区块状态写入
-	batch := NewBatch()
+	bt := NewBatch()
 	//设置事物回退
-	revb := batch.SetRev(NewBatch())
+	rt := bt.SetRev(NewBatch())
 	//更新bestBlockId
 	bv := BestValue{Id: id, Height: nexth}
-	batch.Put(BestBlockKey, bv.Bytes())
-	if err := block.WriteUvsIdx(batch); err != nil {
+	bt.Put(BestBlockKey, bv.Bytes())
+	if err := bp.WriteUvsIdx(bt); err != nil {
 		return nil, err
 	}
-	if err := block.WriteTxsIdx(batch); err != nil {
+	if err := bp.WriteTxsIdx(bt); err != nil {
 		return nil, err
 	}
-	//获取上一个区块
-	if !block.IsGenesis() {
-		last := bi.Last()
-		pb, err := bi.LoadBlock(last.ID())
-		if err != nil {
-			return nil, err
-		}
-		bv := BestValue{Id: last.ID(), Height: last.Height}
-		//保存上一个用于日志回退
-		revb.Put(BestBlockKey, bv.Bytes())
-		//保存cli的上一个块用于数据回退
-		if err := pb.WriteCliBestId(revb); err != nil {
-			return nil, err
-		}
+	//写入回退日志
+	if err := bi.WriteLastToRev(bp, rt); err != nil {
+		return nil, fmt.Errorf("write last block best data error %w", err)
 	}
 	//检测日志文件
-	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
+	if bt.Len() > MAX_BLOCK_SIZE || rt.Len() > MAX_BLOCK_SIZE {
 		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
 	}
 	//区块索引key
 	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
 	//保存回退日志
-	meta.Rev, err = bi.store.Rev().Write(revb.Dump())
+	meta.Rev, err = bi.store.Rev().Write(rt.Dump())
 	if err != nil {
 		return nil, err
 	}
@@ -504,7 +514,7 @@ func (bi *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
 		return nil, err
 	}
 	//更新区块状态
-	if err := bi.store.State().Write(batch); err != nil {
+	if err := bi.store.State().Write(bt); err != nil {
 		return nil, err
 	}
 	//连接区块
