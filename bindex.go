@@ -27,22 +27,22 @@ type TBEle struct {
 }
 
 //从磁盘加载块头
-func (e *TBEle) LoadMeta(id HASH256) error {
-	if e.flags&TBELoadedMeta != 0 {
+func (ele *TBEle) LoadMeta(id HASH256) error {
+	if ele.flags&TBELoadedMeta != 0 {
 		return nil
 	}
-	hb, err := e.idx.store.Index().Get(BLOCK_PREFIX, id[:])
+	hb, err := ele.idx.store.Index().Get(BLOCK_PREFIX, id[:])
 	if err != nil {
 		return err
 	}
 	buf := bytes.NewReader(hb)
-	if err := e.TBMeta.Decode(buf); err != nil {
+	if err := ele.TBMeta.Decode(buf); err != nil {
 		return err
 	}
-	if !id.Equal(e.TBMeta.ID()) {
+	if !id.Equal(ele.TBMeta.ID()) {
 		return errors.New("hash error")
 	}
-	e.flags |= TBELoadedMeta
+	ele.flags |= TBELoadedMeta
 	return nil
 }
 

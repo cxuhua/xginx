@@ -18,8 +18,8 @@ import (
 
 //文件数据状态
 type FileState struct {
-	Id  VarUInt //文件id
-	Off VarUInt //所在文件便宜
+	Id  VarUInt //数据所在文件id
+	Off VarUInt //数据所在位置
 	Len VarUInt //数据长度
 }
 
