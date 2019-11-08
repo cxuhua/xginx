@@ -317,9 +317,8 @@ func (ss *leveldbstore) GetBestValue() BestValue {
 
 //验证是否有验证成功的单元hash
 func (ss *leveldbstore) HasUnitash(id HASH256) (HASH160, error) {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
 	pkh := HASH160{}
-	ck, err := ss.tags.Get(hk)
+	ck, err := ss.tags.Get(HUNIT_PREFIX, id[:])
 	if err != nil {
 		return pkh, err
 	}
@@ -329,34 +328,28 @@ func (ss *leveldbstore) HasUnitash(id HASH256) (HASH160, error) {
 
 //打包确认后可移除单元hash
 func (ss *leveldbstore) DelUnitHash(id HASH256) error {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
-	return ss.tags.Del(hk)
+	return ss.tags.Del(HUNIT_PREFIX, id[:])
 }
 
 //添加一个验证成功的单元hash
 func (ss *leveldbstore) PutUnitHash(id HASH256, cli PKBytes) error {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
 	pkh := cli.Hash()
-	return ss.tags.Put(hk, pkh[:])
+	return ss.tags.Put(HUNIT_PREFIX, id[:], pkh[:])
 }
 
 func (ss *leveldbstore) SaveTag(tag *TTagInfo) error {
-	batch := NewBatch()
-	tk := GetDBKey(TAG_PREFIX, tag.UID[:])
 	buf := &bytes.Buffer{}
 	if err := tag.Encode(buf); err != nil {
 		return err
 	}
-	ck := GetDBKey(CTR_PREFIX, tag.UID[:])
-	cb := []byte{0, 0, 0, 0}
-	batch.Put(ck, cb)
-	batch.Put(tk, buf.Bytes())
+	batch := NewBatch()
+	batch.Put(CTR_PREFIX, tag.UID[:], []byte{0, 0, 0, 0})
+	batch.Put(TAG_PREFIX, tag.UID[:], buf.Bytes())
 	return ss.tags.Write(batch)
 }
 
 func (ss *leveldbstore) LoadTagInfo(id TagUID) (*TTagInfo, error) {
-	tk := GetDBKey(TAG_PREFIX, id[:])
-	bb, err := ss.tags.Get(tk)
+	bb, err := ss.tags.Get(TAG_PREFIX, id[:])
 	if err != nil {
 		return nil, err
 	}
