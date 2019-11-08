@@ -61,7 +61,7 @@ func verifyAction(c *gin.Context) {
 		putError(c, errors.New("hex hash length error"))
 		return
 	}
-	pkh, err := HasUnitash(id)
+	pkh, err := store.HasUnitash(id)
 	if err != nil {
 		putError(c, err)
 		return
@@ -97,7 +97,7 @@ func signAction(c *gin.Context) {
 		return
 	}
 	id := Hash256To(ud)
-	if err := PutUnitHash(id, cli.CPks); err != nil {
+	if err := store.PutUnitHash(id, cli.CPks); err != nil {
 		putError(c, err)
 		return
 	}
@@ -142,7 +142,7 @@ func (h *xhttp) TestTag(uid []byte) bool {
 //挂接服务
 func (h *xhttp) init(m *gin.Engine) {
 	//一次加载所有标签
-	LoadAllTags(h.tbf)
+	store.LoadAllTags(h.tbf)
 	//签名接口
 	m.POST("/sign/:hex", h.TagFilter(), signAction)
 	//校验接口

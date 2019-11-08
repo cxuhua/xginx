@@ -1,5 +1,5 @@
 {
-  "data_dir": "f:/datadir",
+  "data_dir": "/Users/xuhua/datadir",
   "flags": "bcxh",
   "version":10000,
   "tcp_port": 9333,
@@ -17,5 +17,5 @@
   "http_scheme": "http",
   "addr_prefix": "std",
   "oid_prefix": "obj",
-  "genesis_block": "efbc1e050399184c85553943caf865b0f75028184c2a676a175705cf2953d1bb"
+  "genesis_block": "6604d019da356d0d035841e1a073f9f52992a3e4d0d9351823b0cf3ffc2cbf06"
 }

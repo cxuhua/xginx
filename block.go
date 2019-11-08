@@ -114,39 +114,6 @@ func (v TxValue) Bytes() ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-func LoadTxValue(id HASH256) (*TxValue, error) {
-	vk := GetDBKey(TXS_PREFIX, id[:])
-	vb, err := StateDB().Get(vk)
-	if err != nil {
-		return nil, err
-	}
-	vv := &TxValue{}
-	err = vv.Decode(bytes.NewReader(vb))
-	return vv, err
-}
-
-func LoadUvValue(id HASH256) (*UvValue, error) {
-	vk := GetDBKey(UXS_PREFIX, id[:])
-	vb, err := StateDB().Get(vk)
-	if err != nil {
-		return nil, err
-	}
-	vv := &UvValue{}
-	err = vv.Decode(bytes.NewReader(vb))
-	return vv, err
-}
-
-func LoadCliLastUnit(cli HASH160) (HASH256, error) {
-	id := HASH256{}
-	ckey := GetDBKey(CBI_PREFIX, cli[:])
-	bb, err := StateDB().Get(ckey)
-	if err != nil {
-		return id, err
-	}
-	copy(id[:], bb)
-	return id, nil
-}
-
 //区块头
 type BlockHeader struct {
 	Ver     uint32  //block ver
@@ -189,146 +156,15 @@ type BlockInfo struct {
 	merher HashCacher  //mer hash 缓存
 }
 
-//加载块数据
-func (v *BlockInfo) Load(id HASH256) (*TBMeta, error) {
-	bk := GetDBKey(BLOCK_PREFIX, id[:])
-	meta := &TBMeta{}
-	hb, err := IndexDB().Get(bk)
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewReader(hb)
-	if err := meta.Decode(buf); err != nil {
-		return nil, err
-	}
-	bb, err := blk.ReadFile(meta.Blk)
-	if err != nil {
-		return nil, err
-	}
-	err = v.Decode(bytes.NewReader(bb))
-	return meta, err
-}
-
 //断开时回退数据
 func (v *BlockInfo) unlink() error {
 	return nil
-}
-
-//断开最后一个，必须是最后一个才能断开
-func (v *BlockInfo) UnlinkBack(chain *BlockIndex) error {
-	if chain.Len() == 0 {
-		return nil
-	}
-	if v.Meta == nil {
-		return errors.New("block meta miss")
-	}
-	id := v.ID()
-	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
-	if !chain.Last().ID().Equal(id) {
-		return errors.New("only unlink last block")
-	}
-	revb, err := rev.ReadFile(v.Meta.Rev)
-	if err != nil {
-		return fmt.Errorf("read block rev data error %w", err)
-	}
-	batch, err := LoadBatch(revb)
-	if err != nil {
-		return fmt.Errorf("load rev batch error %w", err)
-	}
-	if err := chain.UnlinkBack(); err != nil {
-		return err
-	}
-	//删除数据
-	if err := IndexDB().Del(bk); err != nil {
-		return err
-	}
-	if err := StateDB().Write(batch); err != nil {
-		return err
-	}
-	return nil
-}
-
-//保存连接块数据
-func (v BlockInfo) LinkBack(chain *BlockIndex) (*TBEle, error) {
-	id, meta, bb, err := v.ToTBMeta()
-	if err != nil {
-		return nil, err
-	}
-	//是否能连接到主链后
-	inext, blink := chain.IsLinkBack(meta)
-	if !blink {
-		return nil, fmt.Errorf("can't link to main chain hash=%v", id)
-	}
-	//区块状态写入
-	batch := NewBatch()
-	revb := batch.SetRev(NewBatch())
-	//更新bestBlockId
-	bv := BestValue{Id: id, Height: inext}
-	batch.Put(BestBlockKey, bv.Bytes())
-	if err := v.WriteUvsIdx(batch); err != nil {
-		return nil, err
-	}
-	if err := v.WriteTxsIdx(batch); err != nil {
-		return nil, err
-	}
-	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
-		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
-	}
-	//获取上一个区块
-	if !v.IsGenesis() {
-		last := chain.Last()
-		pb, err := chain.LoadBlock(last.ID())
-		if err != nil {
-			return nil, err
-		}
-		bv := BestValue{Id: last.ID(), Height: last.Height}
-		//保存上一个用于日志回退
-		revb.Put(BestBlockKey, bv.Bytes())
-		//保存cli的上一个块用于数据回退
-		if err := pb.WriteCliBestId(revb); err != nil {
-			return nil, err
-		}
-	}
-	//区块索引key
-	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
-	//保存回退日志
-	meta.Rev, err = rev.WriteFile(revb.Dump())
-	if err != nil {
-		return nil, err
-	}
-	//保存区块数据
-	meta.Blk, err = blk.WriteFile(bb)
-	if err != nil {
-		return nil, err
-	}
-	//保存头
-	hbs, err := meta.Bytes()
-	if err != nil {
-		return nil, err
-	}
-	//连接区块
-	ele, err := chain.LinkBack(meta)
-	if err != nil {
-		return nil, err
-	}
-	//保存区块信息索引
-	if err := IndexDB().Put(bk, hbs); err != nil {
-		return nil, err
-	}
-	//更新状态
-	if err := StateDB().Write(batch); err != nil {
-		return nil, err
-	}
-	return ele, nil
 }
 
 func (v BlockInfo) WriteTxsIdx(b *Batch) error {
 	for i, tv := range v.Txs {
 		//保存交易id对应的区块
 		tid := tv.Hash()
-		if StateDB().Has(TXS_PREFIX, tid[:]) {
-			return errors.New("txs hashid exists!!")
-		}
 		vval := TxValue{
 			BlkId:  v.ID(),
 			TxsIdx: VarUInt(i),
@@ -363,9 +199,6 @@ func (v *BlockInfo) WriteUvsIdx(b *Batch) error {
 		for j, uv := range *uts {
 			//保存单元id所在的区块
 			uid := uv.Hash()
-			if StateDB().Has(UXS_PREFIX, uid[:]) {
-				return errors.New("uts hashid exists!!")
-			}
 			uval := UvValue{
 				BlkId:  v.ID(),
 				UtsIdx: VarUInt(i),
@@ -966,7 +799,7 @@ func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
 
 //获取上一个unit
 func (v *Units) LastUnit(chain *BlockIndex) (*Unit, error) {
-	lid, err := LoadCliLastUnit(v.CliId())
+	lid, err := chain.LoadCliLastUnit(v.CliId())
 	//client不存在last unit的清空下，如果是第一个直接返回
 	if len(*v) > 0 && (*v)[0].IsFirst() && err != nil {
 		return (*v)[0], nil
@@ -982,7 +815,7 @@ func (v *Units) LastUnit(chain *BlockIndex) (*Unit, error) {
 		return nil, errors.New("units empty")
 	}
 	//加载最后一个单元数据
-	uv, err := LoadUvValue(lid)
+	uv, err := chain.LoadUvValue(lid)
 	if err != nil {
 		return nil, err
 	}

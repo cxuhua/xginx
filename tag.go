@@ -395,7 +395,7 @@ func (t *TagInfo) Valid(cli *CliPart) error {
 		return errors.New("input miss")
 	}
 	//获取标签信息
-	itag, err := LoadTagInfo(t.TUID)
+	itag, err := store.LoadTagInfo(t.TUID)
 	if err != nil {
 		return fmt.Errorf("get tag info error %w", err)
 	}
@@ -404,7 +404,7 @@ func (t *TagInfo) Valid(cli *CliPart) error {
 		return errors.New("cmac valid error")
 	}
 	//更新数据库标签计数器
-	if err := SetTagCtr(t.TUID, t.TCTR.ToUInt()); err != nil {
+	if err := store.SetTagCtr(t.TUID, t.TCTR.ToUInt()); err != nil {
 		return err
 	}
 	//校验用户签名

@@ -49,7 +49,7 @@ func TestBlockChain(t *testing.T) {
 	fb := NewBlock(0, HASH256{})
 	conf.genesisId = fb.ID()
 	log.Println(fb.ID())
-	_, err := fb.LinkBack(chain)
+	_, err := chain.LinkTo(fb)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -57,7 +57,7 @@ func TestBlockChain(t *testing.T) {
 	//100万个数据
 	for i := uint32(1); i < testnum; i++ {
 		cb := NewBlock(i, fb.ID())
-		_, err = cb.LinkBack(chain)
+		_, err = chain.LinkTo(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
@@ -81,7 +81,7 @@ func TestUnlinkBlock(t *testing.T) {
 		panic(err)
 	}
 	for {
-		bv := GetBestBlock()
+		bv := chain.store.GetBestValue()
 		if !bv.IsValid() {
 			log.Println("not has best block")
 			break
@@ -97,7 +97,7 @@ func TestUnlinkBlock(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		err = b.UnlinkBack(chain)
+		err = chain.Unlink(b)
 		if err != nil {
 			panic(err)
 		}

@@ -4,42 +4,58 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
-	"io"
-	"log"
 	"os"
-	"path"
-	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
-	"sync/atomic"
-
-	"github.com/syndtr/goleveldb/leveldb/iterator"
 
 	"github.com/willf/bloom"
-
-	"github.com/syndtr/goleveldb/leveldb/util"
-
-	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/filter"
-	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 var (
-	//index db
-	dbptr  DBImp = nil
-	dbonce sync.Once
-	//china state db,coin数据
-	stptr  DBImp = nil
-	stonce sync.Once
-	//tags db
-	tsptr  DBImp = nil
-	tsonce sync.Once
 	//系统路径分隔符
 	Separator = string(os.PathSeparator)
+	//主链存储器
+	store IStore = nil
 )
+
+type IDataStore interface {
+	Read(st FileState) ([]byte, error)
+	Write(b []byte) (FileState, error)
+	Close()
+	Init()
+	Sync(id ...uint32)
+}
+
+type IStore interface {
+	//关闭数据库
+	Close()
+	//初始化
+	Init(arg ...interface{})
+	//索引数据库
+	Index() DBImp
+	//区块状态数据库
+	State() DBImp
+	//标签数据库
+	Tags() DBImp
+	//区块数据文件
+	Blk() IDataStore
+	//事物回退文件
+	Rev() IDataStore
+	//获取存储的最高块信息
+	GetBestValue() BestValue
+	//设置标签计数器
+	SetTagCtr(id TagUID, nv uint32) error
+	//加载所有标签，并设置到过滤器
+	LoadAllTags(bf *bloom.BloomFilter)
+	//验证是否有验证成功的单元hash
+	HasUnitash(id HASH256) (HASH160, error)
+	//打包确认后可移除单元hash
+	DelUnitHash(id HASH256) error
+	//添加一个验证成功的单元hash
+	PutUnitHash(id HASH256, cli PKBytes) error
+	//保存标签信息
+	SaveTag(tag *TTagInfo) error
+	//获取标签信息
+	LoadTagInfo(id TagUID) (*TTagInfo, error)
+}
 
 func getDBKeyValue(ks ...[]byte) ([]byte, []byte) {
 	var k []byte
@@ -70,112 +86,6 @@ func getDBKey(ks ...[]byte) []byte {
 	return k
 }
 
-type Batch struct {
-	bptr *leveldb.Batch
-	rb   *Batch //事务回退日志
-}
-
-func (b *Batch) SetRev(r *Batch) *Batch {
-	b.rb = r
-	return r
-}
-
-func (b *Batch) Load(d []byte) error {
-	return b.bptr.Load(d)
-}
-
-func (b *Batch) Dump() []byte {
-	return b.bptr.Dump()
-}
-
-func (b *Batch) Len() int {
-	return b.bptr.Len()
-}
-
-//最后一个是数据，前面都是key
-func (b *Batch) Put(ks ...[]byte) {
-	k, v := getDBKeyValue(ks...)
-	if b.rb != nil {
-		b.rb.Del(k)
-	}
-	b.bptr.Put(k, v)
-}
-
-func (b *Batch) Del(ks ...[]byte) {
-	k := getDBKey(ks...)
-	b.bptr.Delete(k)
-}
-
-func (b *Batch) Reset() {
-	b.bptr.Reset()
-}
-
-func LoadBatch(d []byte) (*Batch, error) {
-	bp := NewBatch()
-	return bp, bp.Load(d)
-}
-
-func NewBatch() *Batch {
-	return &Batch{
-		bptr: &leveldb.Batch{},
-	}
-}
-
-type Range struct {
-	r *util.Range
-}
-
-func NewRange(s []byte, l []byte) *Range {
-	return &Range{
-		r: &util.Range{Start: s, Limit: l},
-	}
-}
-
-func NewPrefix(p []byte) *Range {
-	return &Range{
-		r: util.BytesPrefix(p),
-	}
-}
-
-type Iterator struct {
-	iter iterator.Iterator
-}
-
-func (it *Iterator) Close() {
-	it.iter.Release()
-}
-
-func (it *Iterator) Next() bool {
-	return it.iter.Next()
-}
-
-func (it *Iterator) First() bool {
-	return it.iter.First()
-}
-func (it *Iterator) Prev() bool {
-	return it.iter.Prev()
-}
-
-func (it *Iterator) Last() bool {
-	return it.iter.Last()
-}
-
-func (it *Iterator) Key() []byte {
-	return it.iter.Key()
-}
-
-func (it *Iterator) Value() []byte {
-	return it.iter.Value()
-}
-
-func (it *Iterator) Valid() bool {
-	return it.iter.Valid()
-}
-
-func (it *Iterator) Seek(k []byte) bool {
-	return it.iter.Seek(k)
-}
-
 type DBImp interface {
 	Has(ks ...[]byte) bool
 	Put(ks ...[]byte) error
@@ -184,132 +94,6 @@ type DBImp interface {
 	Write(b *Batch) error
 	Close()
 	Iterator(slice ...*Range) *Iterator
-}
-
-type leveldbimp struct {
-	l *leveldb.DB
-}
-
-func NewDB(dbp *leveldb.DB) DBImp {
-	return &leveldbimp{l: dbp}
-}
-
-func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
-	opts := &opt.ReadOptions{
-		DontFillCache: false,
-		Strict:        opt.StrictReader,
-	}
-	var rptr *util.Range = nil
-	if len(slice) > 0 {
-		rptr = slice[0].r
-	}
-	return &Iterator{
-		iter: db.l.NewIterator(rptr, opts),
-	}
-}
-
-func (db *leveldbimp) Close() {
-	err := db.l.Close()
-	if err != nil {
-		log.Println("close db error", err)
-	}
-}
-
-func (db *leveldbimp) Has(ks ...[]byte) bool {
-	k := getDBKey(ks...)
-	opts := &opt.ReadOptions{
-		DontFillCache: false,
-		Strict:        opt.StrictReader,
-	}
-	b, err := db.l.Has(k, opts)
-	if err != nil {
-		panic(err)
-	}
-	return b
-}
-
-func (db *leveldbimp) Put(ks ...[]byte) error {
-	k, v := getDBKeyValue(ks...)
-	opts := &opt.WriteOptions{
-		NoWriteMerge: false,
-		Sync:         false,
-	}
-	return db.l.Put(k, v, opts)
-}
-
-func (db *leveldbimp) Get(ks ...[]byte) ([]byte, error) {
-	k := getDBKey(ks...)
-	opts := &opt.ReadOptions{
-		DontFillCache: false,
-		Strict:        opt.StrictReader,
-	}
-	return db.l.Get(k, opts)
-}
-
-func (db *leveldbimp) Del(ks ...[]byte) error {
-	k := getDBKey(ks...)
-	opts := &opt.WriteOptions{
-		NoWriteMerge: false,
-		Sync:         false,
-	}
-	return db.l.Delete(k, opts)
-}
-
-func (db *leveldbimp) Write(b *Batch) error {
-	opts := &opt.WriteOptions{
-		NoWriteMerge: false,
-		Sync:         false,
-	}
-	return db.l.Write(b.bptr, opts)
-}
-
-//标签数据库
-func TagDB() DBImp {
-	tsonce.Do(func() {
-		dir := conf.DataDir + Separator + "tags"
-		opts := &opt.Options{
-			Filter: filter.NewBloomFilter(10),
-		}
-		sdb, err := leveldb.OpenFile(dir, opts)
-		if err != nil {
-			panic(err)
-		}
-		tsptr = NewDB(sdb)
-	})
-	return tsptr
-}
-
-//链状态数据库
-func StateDB() DBImp {
-	stonce.Do(func() {
-		dir := conf.DataDir + Separator + "state"
-		opts := &opt.Options{
-			Filter: filter.NewBloomFilter(10),
-		}
-		sdb, err := leveldb.OpenFile(dir, opts)
-		if err != nil {
-			panic(err)
-		}
-		stptr = NewDB(sdb)
-	})
-	return stptr
-}
-
-//索引数据库
-func IndexDB() DBImp {
-	dbonce.Do(func() {
-		dir := conf.DataDir + Separator + "index"
-		opts := &opt.Options{
-			Filter: filter.NewBloomFilter(10),
-		}
-		sdb, err := leveldb.OpenFile(dir, opts)
-		if err != nil {
-			panic(err)
-		}
-		dbptr = NewDB(sdb)
-		initBlockFiles()
-	})
-	return dbptr
 }
 
 var (
@@ -360,18 +144,6 @@ func (v *BestValue) From(b []byte) error {
 	return nil
 }
 
-func GetBestBlock() BestValue {
-	bv := BestValue{}
-	b, err := StateDB().Get(BestBlockKey)
-	if err != nil {
-		return InvalidBest
-	}
-	if err := bv.From(b); err != nil {
-		return InvalidBest
-	}
-	return bv
-}
-
 func GetDBKey(p []byte, id ...[]byte) []byte {
 	tk := []byte{}
 	tk = append(tk, p...)
@@ -379,481 +151,6 @@ func GetDBKey(p []byte, id ...[]byte) []byte {
 		tk = append(tk, v...)
 	}
 	return tk
-}
-
-//标签计数器
-var (
-	TagsCtr = map[TagUID]*uint32{}
-)
-
-//新的值必须比旧的大
-func SetTagCtr(id TagUID, nv uint32) error {
-	vptr, ok := TagsCtr[id]
-	if !ok {
-		return errors.New("tags ctr info miss")
-	}
-	//确保原子性
-	ov := atomic.LoadUint32(vptr)
-	if nv <= ov || !atomic.CompareAndSwapUint32(vptr, ov, nv) {
-		return errors.New("set ctr error")
-	}
-	//更新值到数据库
-	ck := GetDBKey(CTR_PREFIX, id[:])
-	cb := []byte{0, 0, 0, 0}
-	Endian.PutUint32(cb, nv)
-	return TagDB().Put(ck, cb)
-}
-
-//加载所有的标签计数器
-func LoadAllTags(tfb *bloom.BloomFilter) {
-	log.Println("start load tags ctr info")
-	rp := NewPrefix(CTR_PREFIX)
-	iter := TagDB().Iterator(rp)
-	defer iter.Close()
-	for iter.Next() {
-		tk := iter.Key()
-		v := Endian.Uint32(iter.Value())
-		id := TagUID{}
-		copy(id[:], tk[1:])
-		TagsCtr[id] = &v
-		tfb.Add(id[:])
-	}
-	log.Println("load", len(TagsCtr), "tag ctr")
-}
-
-//文件数据状态
-type FileState struct {
-	Id  VarUInt //文件id
-	Off VarUInt //所在文件便宜
-	Len VarUInt //数据长度
-}
-
-func (f *FileState) Decode(r IReader) error {
-	if err := f.Id.Decode(r); err != nil {
-		return err
-	}
-	if err := f.Off.Decode(r); err != nil {
-		return err
-	}
-	if err := f.Len.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (f FileState) Encode(w IWriter) error {
-	if err := f.Id.Encode(w); err != nil {
-		return err
-	}
-	if err := f.Off.Encode(w); err != nil {
-		return err
-	}
-	if err := f.Len.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-type TBMeta struct {
-	BlockHeader           //区块头
-	Uts         VarUInt   //Units数量
-	Txs         VarUInt   //tx数量
-	Blk         FileState //数据状态
-	Rev         FileState //日志回退
-	hasher      HashCacher
-}
-
-func (h *TBMeta) Hash() HASH256 {
-	if h, set := h.hasher.IsSet(); set {
-		return h
-	}
-	buf := &bytes.Buffer{}
-	if err := h.Encode(buf); err != nil {
-		panic(err)
-	}
-	return h.hasher.Hash(buf.Bytes())
-}
-
-func (h TBMeta) Bytes() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := h.Encode(buf)
-	return buf.Bytes(), err
-}
-
-func (h TBMeta) Encode(w IWriter) error {
-	if err := h.BlockHeader.Encode(w); err != nil {
-		return err
-	}
-	if err := h.Uts.Encode(w); err != nil {
-		return err
-	}
-	if err := h.Txs.Encode(w); err != nil {
-		return err
-	}
-	if err := h.Blk.Encode(w); err != nil {
-		return err
-	}
-	if err := h.Rev.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (h *TBMeta) Decode(r IReader) error {
-	if err := h.BlockHeader.Decode(r); err != nil {
-		return err
-	}
-	if err := h.Uts.Decode(r); err != nil {
-		return err
-	}
-	if err := h.Txs.Decode(r); err != nil {
-		return err
-	}
-	if err := h.Blk.Decode(r); err != nil {
-		return err
-	}
-	if err := h.Rev.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *sstore) exists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	if os.IsNotExist(err) {
-		return false
-	}
-	return false
-}
-
-func (s *sstore) getpath() string {
-	if s.path == "" {
-		s.path = conf.DataDir + Separator + s.dir
-		if !s.exists(s.path) {
-			_ = os.Mkdir(s.path, os.ModePerm)
-		}
-	}
-	return s.path
-}
-
-func (s *sstore) getlastfile() {
-	blks := []string{}
-	err := filepath.Walk(s.getpath(), func(spath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if path.Ext(info.Name()) == s.ext {
-			fs := strings.Split(info.Name(), ".")
-			blks = append(blks, fs[0])
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	sid := "0"
-	if len(blks) != 0 {
-		sort.Slice(blks, func(i, j int) bool {
-			return blks[i] > blks[j]
-		})
-		sid = blks[0]
-	}
-	id, err := strconv.ParseInt(sid, 10, 32)
-	if err != nil {
-		panic(err)
-	}
-	fi, err := os.Stat(s.fileIdPath(uint32(id)))
-	if err == nil && fi.Size() >= s.size {
-		id++
-	}
-	s.id = uint32(id)
-}
-
-type sstore struct {
-	id    uint32            //当前文件id
-	mu    sync.Mutex        //
-	files map[uint32]*sfile //指针缓存
-	ext   string            //扩展名称
-	size  int64             //单个文件最大长度
-	dir   string            //目录名称
-	path  string            //存储全路径
-}
-
-var (
-	//需要切换到下一个文件存储
-	nextFileErr = errors.New("next file")
-)
-
-func sfileHeaderBytes() []byte {
-	flags := []byte(conf.Flags)
-	buf := &bytes.Buffer{}
-	_ = binary.Write(buf, Endian, flags[:4])
-	_ = binary.Write(buf, Endian, conf.Ver)
-	return buf.Bytes()
-}
-
-type sfile struct {
-	mu sync.RWMutex
-	*os.File
-	size  int64
-	flags []byte
-	ver   uint32
-}
-
-func (f *sfile) flush() {
-	if err := f.Sync(); err != nil {
-		log.Println(f.Name(), "fsync error", err)
-	}
-}
-
-//读取数据
-func (s *sfile) read(off uint32, b []byte) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	rl := uint32(len(b))
-	pl := uint32(0)
-	for pl < rl {
-		_, err := s.Seek(int64(off+pl), io.SeekStart)
-		if err != nil {
-			return err
-		}
-		cl, err := s.Read(b[pl:])
-		if err != nil {
-			return err
-		}
-		pl += uint32(cl)
-	}
-	return nil
-}
-
-//写入数据，返回数据偏移
-func (f *sfile) write(b []byte) (uint32, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	fi, err := f.Stat()
-	if err != nil {
-		return 0, err
-	}
-	wl := len(b)
-	pl := 0
-	off := int(fi.Size())
-	for pl < wl {
-		cl, err := f.Write(b[pl:])
-		if err != nil {
-			return 0, err
-		}
-		pl += cl
-	}
-	if off+wl > int(f.size) {
-		f.flush()
-		return uint32(off), nextFileErr
-	}
-	return uint32(off), nil
-}
-
-func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
-	f, err := os.OpenFile(s.fileIdPath(id), os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return nil, err
-	}
-	sf := &sfile{
-		File:  f,
-		flags: []byte{0, 0, 0, 0},
-		size:  max,
-	}
-	return sf, nil
-}
-
-func (s sstore) fileIdPath(id uint32) string {
-	return fmt.Sprintf("%s%s%06d%s", s.getpath(), Separator, id, s.ext)
-}
-
-func (f *sstore) Id() uint32 {
-	return atomic.LoadUint32(&f.id)
-}
-
-func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
-	hbytes := sfileHeaderBytes()
-	if err := sf.read(0, hbytes); err != nil {
-		_ = sf.Close()
-		return nil, err
-	}
-	buf := bytes.NewReader(hbytes)
-	if err := binary.Read(buf, Endian, &sf.flags); err != nil {
-		_ = sf.Close()
-		return nil, err
-	}
-	if err := binary.Read(buf, Endian, &sf.ver); err != nil {
-		_ = sf.Close()
-		return nil, err
-	}
-	if !bytes.Equal(sf.flags, []byte(conf.Flags)) {
-		_ = sf.Close()
-		return nil, errors.New("file meta error")
-	}
-	s.files[id] = sf
-	return sf, nil
-}
-
-func (s *sstore) openfile(id uint32) (*sfile, error) {
-	hbytes := sfileHeaderBytes()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if f, ok := s.files[id]; ok {
-		return f, nil
-	}
-	sf, err := s.newFile(id, s.size)
-	if err != nil {
-		return nil, err
-	}
-	fi, err := sf.Stat()
-	if err != nil {
-		_ = sf.Close()
-		return nil, err
-	}
-	fsiz := int(fi.Size())
-	if fsiz >= len(hbytes) {
-		return s.checkmeta(id, sf)
-	}
-	pos, err := sf.write(hbytes[fsiz:])
-	if pos != uint32(fsiz) || err != nil {
-		_ = sf.Close()
-		return nil, err
-	}
-	sf.flush()
-	s.files[id] = sf
-	return sf, nil
-}
-
-func (s *sstore) ReadFile(st FileState) ([]byte, error) {
-	if st.Len > MAX_BLOCK_SIZE {
-		return nil, errors.New("data too big")
-	}
-	bb := make([]byte, st.Len)
-	err := s.Read(st.Id.ToUInt32(), st.Off.ToUInt32(), bb)
-	if err != nil {
-		return nil, err
-	}
-	return bb, nil
-}
-
-//读取数据
-func (s *sstore) Read(id uint32, off uint32, b []byte) error {
-	f, err := s.openfile(id)
-	if err != nil {
-		return err
-	}
-	return f.read(off, b)
-}
-
-func (s *sstore) WriteFile(b []byte) (FileState, error) {
-	fs := FileState{
-		Id:  VarUInt(s.Id()),
-		Off: VarUInt(0),
-		Len: VarUInt(len(b)),
-	}
-	if fs.Len > MAX_BLOCK_SIZE {
-		return fs, errors.New("data too big")
-	}
-	off, err := s.Write(b)
-	if err != nil {
-		return fs, err
-	}
-	fs.Off = VarUInt(off)
-	return fs, nil
-}
-
-//写入数据，返回数据便宜
-func (s *sstore) Write(b []byte) (uint32, error) {
-	f, err := s.openfile(s.id)
-	if err != nil {
-		return 0, err
-	}
-	pos, err := f.write(b)
-	if err == nextFileErr {
-		atomic.AddUint32(&s.id, 1)
-		return pos, nil
-	}
-	if err != nil {
-		return 0, err
-	}
-	return pos, err
-}
-
-func (s *sstore) closefile(id uint32) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if f, ok := s.files[id]; ok {
-		_ = f.Close()
-		delete(s.files, id)
-	}
-}
-
-func (s sstore) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, v := range s.files {
-		_ = v.Close()
-	}
-}
-
-var (
-	blk = &sstore{
-		ext:   ".blk",
-		files: map[uint32]*sfile{},
-		size:  1024 * 1024 * 256,
-		dir:   "blocks",
-	}
-	rev = &sstore{
-		ext:   ".rev",
-		files: map[uint32]*sfile{},
-		size:  1024 * 1024 * 32,
-		dir:   "blocks",
-	}
-)
-
-//.blk保存块数据
-//初始化db
-func initBlockFiles() {
-	blk.getlastfile()
-	rev.getlastfile()
-}
-
-func dbclose() {
-	IndexDB().Close()
-	StateDB().Close()
-	TagDB().Close()
-	blk.close()
-	rev.close()
-}
-
-//验证是否有验证成功的单元hash
-func HasUnitash(id HASH256) (HASH160, error) {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
-	pkh := HASH160{}
-	ck, err := TagDB().Get(hk)
-	if err != nil {
-		return pkh, err
-	}
-	copy(pkh[:], ck)
-	return pkh, nil
-}
-
-//打包确认后可移除单元hash
-
-func DelUnitHash(id HASH256) error {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
-	return TagDB().Del(hk)
-}
-
-//添加一个验证成功的单元hash
-func PutUnitHash(id HASH256, cli PKBytes) error {
-	hk := GetDBKey(HUNIT_PREFIX, id[:])
-	pkh := cli.Hash()
-	return TagDB().Put(hk, pkh[:])
 }
 
 //标签数据
@@ -919,18 +216,6 @@ func (t TTagInfo) Encode(w IWriter) error {
 	return nil
 }
 
-func LoadTagInfo(id TagUID) (*TTagInfo, error) {
-	tk := GetDBKey(TAG_PREFIX, id[:])
-	bb, err := TagDB().Get(tk)
-	if err != nil {
-		return nil, err
-	}
-	buf := bytes.NewReader(bb)
-	t := &TTagInfo{}
-	err = t.Decode(buf)
-	return t, err
-}
-
 func (tag TTagInfo) Mackey() []byte {
 	idx := (tag.Ver >> 28) & 0xF
 	return tag.Keys[idx][:]
@@ -941,18 +226,4 @@ func (tag *TTagInfo) SetMacKey(idx int) {
 		panic(errors.New("idx out bound"))
 	}
 	tag.Ver |= uint32((idx & 0xf) << 28)
-}
-
-func (tag TTagInfo) Save() error {
-	batch := NewBatch()
-	tk := GetDBKey(TAG_PREFIX, tag.UID[:])
-	buf := &bytes.Buffer{}
-	if err := tag.Encode(buf); err != nil {
-		return err
-	}
-	ck := GetDBKey(CTR_PREFIX, tag.UID[:])
-	cb := []byte{0, 0, 0, 0}
-	batch.Put(ck, cb)
-	batch.Put(tk, buf.Bytes())
-	return TagDB().Write(batch)
 }

@@ -31,8 +31,7 @@ func (e *TBEle) LoadMeta(id HASH256) error {
 	if e.flags&TBELoadedMeta != 0 {
 		return nil
 	}
-	bk := GetDBKey(BLOCK_PREFIX, id[:])
-	hb, err := IndexDB().Get(bk)
+	hb, err := e.idx.store.Index().Get(BLOCK_PREFIX, id[:])
 	if err != nil {
 		return err
 	}
@@ -56,15 +55,11 @@ func NewTBEle(meta *TBMeta, idx *BlockIndex) *TBEle {
 	}
 }
 
-func LoadTBEle(id HASH256) (*TBEle, error) {
-	ele := &TBEle{}
-	err := ele.LoadMeta(id)
-	return ele, err
-}
-
 type BlockIndex struct {
-	mu  sync.RWMutex
+	mu sync.RWMutex
+	//区块头列表
 	lis *list.List
+	//当前光标
 	cur *list.Element
 	//按高度缓存
 	hmap map[uint32]*list.Element
@@ -72,6 +67,8 @@ type BlockIndex struct {
 	imap map[HASH256]*list.Element
 	//块缓存
 	cacher *cache.Cache
+	//存储
+	store IStore
 }
 
 //最低块
@@ -124,7 +121,7 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	}
 	smeta := ele.Value.(*TBEle)
 	bptr := &BlockInfo{}
-	lmeta, err := bptr.Load(id)
+	lmeta, err := bi.LoadTo(id, bptr)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +254,6 @@ func (bi *BlockIndex) LoadAll() error {
 	log.Println("start load main chain block header")
 	hh := InvalidHeight
 	vv := uint(0)
-	log.Println(IndexDB().IsEmpty())
 	for {
 		ele, err := bi.LoadPrev()
 		if err == FirstIsGenesis {
@@ -284,6 +280,12 @@ func (bi *BlockIndex) LoadAll() error {
 	}
 }
 
+func (bi *BlockIndex) LoadTBEle(id HASH256) (*TBEle, error) {
+	ele := &TBEle{idx: bi}
+	err := ele.LoadMeta(id)
+	return ele, err
+}
+
 //向前加载一个区块数据头
 func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 	bi.mu.Lock()
@@ -295,13 +297,13 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		return nil, FirstIsGenesis
 	} else if fe != nil {
 		id = fe.Value.(*TBEle).Prev
-	} else if bv := GetBestBlock(); !bv.IsValid() {
+	} else if bv := bi.store.GetBestValue(); !bv.IsValid() {
 		return nil, NotFoundBest
 	} else {
 		id = bv.Id
 		ih = bv.Height
 	}
-	meta, err := LoadTBEle(id)
+	meta, err := bi.LoadTBEle(id)
 	if err != nil {
 		return nil, err
 	}
@@ -351,12 +353,175 @@ func (bi *BlockIndex) LinkBack(meta *TBMeta) (*TBEle, error) {
 	return bi.pushback(ele)
 }
 
+func (chain *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
+	vk := GetDBKey(TXS_PREFIX, id[:])
+	vb, err := chain.store.State().Get(vk)
+	if err != nil {
+		return nil, err
+	}
+	vv := &TxValue{}
+	err = vv.Decode(bytes.NewReader(vb))
+	return vv, err
+}
+
+func (chain *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
+	vk := GetDBKey(UXS_PREFIX, id[:])
+	vb, err := chain.store.State().Get(vk)
+	if err != nil {
+		return nil, err
+	}
+	vv := &UvValue{}
+	err = vv.Decode(bytes.NewReader(vb))
+	return vv, err
+}
+
+func (chain *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
+	id := HASH256{}
+	ckey := GetDBKey(CBI_PREFIX, cli[:])
+	bb, err := chain.store.State().Get(ckey)
+	if err != nil {
+		return id, err
+	}
+	copy(id[:], bb)
+	return id, nil
+}
+
+//加载块数据
+func (chain *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
+	bk := GetDBKey(BLOCK_PREFIX, id[:])
+	meta := &TBMeta{}
+	hb, err := chain.store.Index().Get(bk)
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewReader(hb)
+	if err := meta.Decode(buf); err != nil {
+		return nil, err
+	}
+	bb, err := chain.store.Blk().Read(meta.Blk)
+	if err != nil {
+		return nil, err
+	}
+	err = block.Decode(bytes.NewReader(bb))
+	return meta, err
+}
+
+//断开最后一个，必须是最后一个才能断开
+func (chain *BlockIndex) Unlink(block *BlockInfo) error {
+	if chain.Len() == 0 {
+		return nil
+	}
+	if block.Meta == nil {
+		return errors.New("block meta miss")
+	}
+	id := block.ID()
+	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
+	if !chain.Last().ID().Equal(id) {
+		return errors.New("only unlink last block")
+	}
+	revbb, err := chain.store.Rev().Read(block.Meta.Rev)
+	if err != nil {
+		return fmt.Errorf("read block rev data error %w", err)
+	}
+	revb, err := LoadBatch(revbb)
+	if err != nil {
+		return fmt.Errorf("load rev batch error %w", err)
+	}
+	if err := chain.UnlinkBack(); err != nil {
+		return err
+	}
+	//删除数据
+	if err := chain.store.Index().Del(bk); err != nil {
+		return err
+	}
+	if err := chain.store.State().Write(revb); err != nil {
+		return err
+	}
+	return nil
+}
+
+//link
+func (chain *BlockIndex) LinkTo(block *BlockInfo) (*TBEle, error) {
+	id, meta, bb, err := block.ToTBMeta()
+	if err != nil {
+		return nil, err
+	}
+	//是否能连接到主链后
+	nexth, blink := chain.IsLinkBack(meta)
+	if !blink {
+		return nil, fmt.Errorf("can't link to main chain hash=%v", id)
+	}
+	//区块状态写入
+	batch := NewBatch()
+	//设置事物回退
+	revb := batch.SetRev(NewBatch())
+	//更新bestBlockId
+	bv := BestValue{Id: id, Height: nexth}
+	batch.Put(BestBlockKey, bv.Bytes())
+	if err := block.WriteUvsIdx(batch); err != nil {
+		return nil, err
+	}
+	if err := block.WriteTxsIdx(batch); err != nil {
+		return nil, err
+	}
+	if batch.Len() > MAX_BLOCK_SIZE || revb.Len() > MAX_BLOCK_SIZE {
+		return nil, errors.New("opts state logs too big > MAX_BLOCK_SIZE")
+	}
+	//获取上一个区块
+	if !block.IsGenesis() {
+		last := chain.Last()
+		pb, err := chain.LoadBlock(last.ID())
+		if err != nil {
+			return nil, err
+		}
+		bv := BestValue{Id: last.ID(), Height: last.Height}
+		//保存上一个用于日志回退
+		revb.Put(BestBlockKey, bv.Bytes())
+		//保存cli的上一个块用于数据回退
+		if err := pb.WriteCliBestId(revb); err != nil {
+			return nil, err
+		}
+	}
+	//区块索引key
+	bk := GetDBKey(BLOCK_PREFIX, id.Bytes())
+	//保存回退日志
+	meta.Rev, err = chain.store.Rev().Write(revb.Dump())
+	if err != nil {
+		return nil, err
+	}
+	//保存区块数据
+	meta.Blk, err = chain.store.Blk().Write(bb)
+	if err != nil {
+		return nil, err
+	}
+	//保存头
+	hbs, err := meta.Bytes()
+	if err != nil {
+		return nil, err
+	}
+	//连接区块
+	ele, err := chain.LinkBack(meta)
+	if err != nil {
+		return nil, err
+	}
+	//保存区块信息索引
+	if err := chain.store.Index().Put(bk, hbs); err != nil {
+		return nil, err
+	}
+	//更新状态
+	if err := chain.store.State().Write(batch); err != nil {
+		return nil, err
+	}
+	return ele, nil
+}
+
 func NewBlockIndex() *BlockIndex {
 	bi := &BlockIndex{
 		lis:    list.New(),
 		hmap:   map[uint32]*list.Element{},
 		imap:   map[HASH256]*list.Element{},
 		cacher: cache.New(time.Minute*30, time.Hour),
+		store:  store,
 	}
 	return bi
 }
