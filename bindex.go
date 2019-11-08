@@ -50,7 +50,7 @@ func NewTBEle(meta *TBMeta, idx *BlockIndex) *TBEle {
 	return &TBEle{
 		flags:  TBELoadedMeta,
 		TBMeta: *meta,
-		Height: 0,
+		Height: InvalidHeight,
 		idx:    idx,
 	}
 }

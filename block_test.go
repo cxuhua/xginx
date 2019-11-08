@@ -3,6 +3,7 @@ package xginx
 import (
 	"errors"
 	"log"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -29,7 +30,7 @@ func NewBlock(h uint32, prev HASH256) *BlockInfo {
 		Script: BaseScript(h, []byte{}),
 	}
 	txout := &TxOut{
-		Value:  0,
+		Value:  VarUInt(rand.Uint32() % 1000),
 		Script: StdLockedScript(conf.minerpk),
 	}
 	tx.Ins = []*TxIn{txin}

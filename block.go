@@ -21,8 +21,8 @@ type UvValue struct {
 	UvsIdx VarUInt //units链索引
 }
 
-func (v UvValue) GetUnit(chain *BlockIndex) (*Unit, error) {
-	blk, err := chain.LoadBlock(v.BlkId)
+func (v UvValue) GetUnit(bi *BlockIndex) (*Unit, error) {
+	blk, err := bi.LoadBlock(v.BlkId)
 	if err != nil {
 		return nil, err
 	}
@@ -297,9 +297,9 @@ func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
 }
 
 //检查所有的交易
-func (v BlockInfo) CheckTxs() error {
+func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	for _, tx := range v.Txs {
-		err := tx.Check()
+		err := tx.Check(v)
 		if err != nil {
 			return err
 		}
@@ -308,10 +308,10 @@ func (v BlockInfo) CheckTxs() error {
 }
 
 //检查所有的单元数据
-func (v BlockInfo) CheckUts(chain *BlockIndex) error {
+func (v BlockInfo) CheckUts(bi *BlockIndex) error {
 	cmap := map[HASH160]bool{}
 	for _, uvs := range v.Uts {
-		err := uvs.Check(chain)
+		err := uvs.Check(bi)
 		if err != nil {
 			return err
 		}
@@ -325,7 +325,7 @@ func (v BlockInfo) CheckUts(chain *BlockIndex) error {
 	return nil
 }
 
-func (v BlockInfo) Check(chain *BlockIndex) error {
+func (v BlockInfo) Check(bi *BlockIndex) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -350,11 +350,11 @@ func (v BlockInfo) Check(chain *BlockIndex) error {
 		return errors.New("units merkle hash error")
 	}
 	//检查所有的交易
-	if err := v.CheckTxs(); err != nil {
+	if err := v.CheckTxs(bi); err != nil {
 		return err
 	}
 	//检查所有的数据单元
-	if err := v.CheckUts(chain); err != nil {
+	if err := v.CheckUts(bi); err != nil {
 		return err
 	}
 	//获取积分分配
@@ -366,7 +366,7 @@ func (v BlockInfo) Check(chain *BlockIndex) error {
 	calcer := NewTokenCalcer()
 	for _, uv := range v.Uts {
 		uc := NewTokenCalcer()
-		err := uv.CalcToken(chain, v.Header.Bits, uc)
+		err := uv.CalcToken(bi, v.Header.Bits, uc)
 		if err != nil {
 			return err
 		}
@@ -492,13 +492,10 @@ type TxIn struct {
 	Script   Script  //解锁脚本
 }
 
-func (v TxIn) Check() error {
+func (v TxIn) Check(b *BlockInfo) error {
 	if v.IsBase() {
-		if v.Script.Len() > 128 || v.Script.Len() < 4 {
-			return errors.New("base script len error")
-		}
-		if !v.Script.IsBaseScript() {
-			return errors.New("base script type error")
+		if b.Meta.Height != v.Script.Height() {
+			return errors.New("base script must set block height")
 		}
 	} else if v.Script.IsStdUnlockScript() {
 
@@ -536,12 +533,9 @@ func (v *TxIn) Decode(r IReader) error {
 	return nil
 }
 
-//是否基本单元，txs的第一个一定是base，输出为奖励计算的距离
-//所得奖励的70%给区块矿工，30%按标签贡献分给标签所有者
-//涉及两个标签，两标签平分
-//所有奖励向下取整
+//是否基本单元，txs的第一个一定是base类型
 func (in TxIn) IsBase() bool {
-	return in.OutHash.IsZero() && in.OutIndex == 0
+	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsBaseScript()
 }
 
 //交易输出
@@ -582,7 +576,7 @@ func (b *BlockInfo) FindAucScript(obj ObjectId) []*AucLockScript {
 	return ass
 }
 
-func (v TxOut) Check() error {
+func (v TxOut) Check(b *BlockInfo) error {
 	return nil
 }
 
@@ -636,7 +630,7 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v TX) Check() error {
+func (v TX) Check(b *BlockInfo) error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -644,14 +638,14 @@ func (v TX) Check() error {
 		return errors.New("tx outs too slow")
 	}
 	for _, v := range v.Ins {
-		err := v.Check()
+		err := v.Check(b)
 		if err != nil {
 			return err
 		}
 		//校验签名
 	}
 	for _, v := range v.Outs {
-		err := v.Check()
+		err := v.Check(b)
 		if err != nil {
 			return err
 		}
@@ -798,8 +792,8 @@ func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
 }
 
 //获取上一个unit
-func (v *Units) LastUnit(chain *BlockIndex) (*Unit, error) {
-	lid, err := chain.LoadCliLastUnit(v.CliId())
+func (v *Units) LastUnit(bi *BlockIndex) (*Unit, error) {
+	lid, err := bi.LoadCliLastUnit(v.CliId())
 	//client不存在last unit的清空下，如果是第一个直接返回
 	if len(*v) > 0 && (*v)[0].IsFirst() && err != nil {
 		return (*v)[0], nil
@@ -815,11 +809,11 @@ func (v *Units) LastUnit(chain *BlockIndex) (*Unit, error) {
 		return nil, errors.New("units empty")
 	}
 	//加载最后一个单元数据
-	uv, err := chain.LoadUvValue(lid)
+	uv, err := bi.LoadUvValue(lid)
 	if err != nil {
 		return nil, err
 	}
-	return uv.GetUnit(chain)
+	return uv.GetUnit(bi)
 }
 
 //是否是连续的
@@ -838,14 +832,14 @@ func (v *Units) IsConsecutive() bool {
 	return true
 }
 
-func (v *Units) Check(chain *BlockIndex) error {
+func (v *Units) Check(bi *BlockIndex) error {
 	if len(*v) < 2 {
 		return errors.New("unit too little")
 	}
 	if !v.IsConsecutive() {
 		return errors.New("unit not continuous")
 	}
-	prev, err := v.LastUnit(chain)
+	prev, err := v.LastUnit(bi)
 	if err != nil {
 		return err
 	}
@@ -863,12 +857,12 @@ func (v *Units) Check(chain *BlockIndex) error {
 }
 
 //计算积分
-func (v *Units) CalcToken(chain *BlockIndex, bits uint32, calcer ITokenCalcer) error {
+func (v *Units) CalcToken(bi *BlockIndex, bits uint32, calcer ITokenCalcer) error {
 	if len(*v) < 2 {
 		return errors.New("Unit too small ")
 	}
 	//获取上一个参与计算
-	prev, err := v.LastUnit(chain)
+	prev, err := v.LastUnit(bi)
 	if err != nil {
 		return err
 	}
@@ -880,6 +874,7 @@ func (v *Units) CalcToken(chain *BlockIndex, bits uint32, calcer ITokenCalcer) e
 	return calcer.Calc(bits, is)
 }
 
+//积分分配比例 矿工，标签属主，签到人
 type TokenAlloc uint8
 
 func (v TokenAlloc) ToUInt8() uint8 {
