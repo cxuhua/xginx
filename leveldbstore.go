@@ -193,12 +193,97 @@ func (db *leveldbimp) Del(ks ...[]byte) error {
 	return db.l.Delete(k, opts)
 }
 
+func (db *leveldbimp) Transaction() (TRImp, error) {
+	tr, err := db.l.OpenTransaction()
+	if err != nil {
+		return nil, err
+	}
+	return &leveldbtrimp{tr: tr}, nil
+}
+
+func (db *leveldbimp) Sync() {
+	tr, err := db.l.OpenTransaction()
+	if err == nil {
+		_ = tr.Commit()
+	}
+}
+
 func (db *leveldbimp) Write(b *Batch) error {
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
 		Sync:         false,
 	}
 	return db.l.Write(b.bptr, opts)
+}
+
+type leveldbtrimp struct {
+	tr *leveldb.Transaction
+}
+
+func (db *leveldbtrimp) Has(ks ...[]byte) (bool, error) {
+	k := getDBKey(ks...)
+	opts := &opt.ReadOptions{
+		DontFillCache: false,
+		Strict:        opt.StrictReader,
+	}
+	return db.tr.Has(k, opts)
+}
+
+func (db *leveldbtrimp) Put(ks ...[]byte) error {
+	k, v := getDBKeyValue(ks...)
+	opts := &opt.WriteOptions{
+		NoWriteMerge: false,
+		Sync:         false,
+	}
+	return db.tr.Put(k, v, opts)
+}
+
+func (db *leveldbtrimp) Get(ks ...[]byte) ([]byte, error) {
+	k := getDBKey(ks...)
+	opts := &opt.ReadOptions{
+		DontFillCache: false,
+		Strict:        opt.StrictReader,
+	}
+	return db.tr.Get(k, opts)
+}
+
+func (db *leveldbtrimp) Del(ks ...[]byte) error {
+	k := getDBKey(ks...)
+	opts := &opt.WriteOptions{
+		NoWriteMerge: false,
+		Sync:         false,
+	}
+	return db.tr.Delete(k, opts)
+}
+
+func (db *leveldbtrimp) Write(b *Batch) error {
+	opts := &opt.WriteOptions{
+		NoWriteMerge: false,
+		Sync:         false,
+	}
+	return db.tr.Write(b.bptr, opts)
+}
+
+func (db *leveldbtrimp) Iterator(slice ...*Range) *Iterator {
+	opts := &opt.ReadOptions{
+		DontFillCache: false,
+		Strict:        opt.StrictReader,
+	}
+	var rptr *util.Range = nil
+	if len(slice) > 0 {
+		rptr = slice[0].r
+	}
+	return &Iterator{
+		iter: db.tr.NewIterator(rptr, opts),
+	}
+}
+
+func (db *leveldbtrimp) Commit() error {
+	return db.tr.Commit()
+}
+
+func (db *leveldbtrimp) Discard() {
+	db.tr.Discard()
 }
 
 type leveldbstore struct {
@@ -216,6 +301,14 @@ func NewLevelDBStore(dir string) IStore {
 	l := &leveldbstore{}
 	l.Init(dir)
 	return l
+}
+
+func (ss *leveldbstore) Sync() {
+	ss.index.Sync()
+	ss.state.Sync()
+	ss.tags.Sync()
+	ss.blk.Sync()
+	ss.rev.Sync()
 }
 
 //新建索引数据库

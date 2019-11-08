@@ -25,6 +25,8 @@ type IDataStore interface {
 }
 
 type IStore interface {
+	//同步数据
+	Sync()
 	//关闭数据库
 	Close()
 	//初始化
@@ -86,6 +88,19 @@ func getDBKey(ks ...[]byte) []byte {
 	return k
 }
 
+//事物接口
+type TRImp interface {
+	Has(ks ...[]byte) (bool, error)
+	Put(ks ...[]byte) error
+	Get(ks ...[]byte) ([]byte, error)
+	Del(ks ...[]byte) error
+	Write(b *Batch) error
+	Iterator(slice ...*Range) *Iterator
+	Commit() error
+	Discard()
+}
+
+//数据基本操作接口
 type DBImp interface {
 	Has(ks ...[]byte) bool
 	Put(ks ...[]byte) error
@@ -94,6 +109,8 @@ type DBImp interface {
 	Write(b *Batch) error
 	Close()
 	Iterator(slice ...*Range) *Iterator
+	Sync()
+	Transaction() (TRImp, error)
 }
 
 var (

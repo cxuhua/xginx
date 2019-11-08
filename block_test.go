@@ -71,7 +71,7 @@ func TestBlockChain(t *testing.T) {
 		t.Errorf("add main chain error")
 		t.FailNow()
 	}
-
+	chain.store.Sync()
 }
 
 func TestUnlinkBlock(t *testing.T) {
@@ -102,6 +102,7 @@ func TestUnlinkBlock(t *testing.T) {
 			panic(err)
 		}
 	}
+	chain.store.Sync()
 }
 
 func TestLoadAllBlock(t *testing.T) {
