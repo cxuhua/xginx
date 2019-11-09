@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"errors"
 	"log"
 	"testing"
 )
@@ -11,6 +12,21 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	bv := bi.db.GetBestValue()
+	if !bv.IsValid() {
+		panic("aa")
+	}
+	last := bi.Last()
+	if !bv.Id.Equal(last.ID()) {
+		panic(errors.New("best id error"))
+	}
+	if bv.Height != last.Height {
+		panic(errors.New("best height error"))
+	}
+	b, err := bi.LoadBlock(last.ID())
+	bi.Unlink(b)
+
 	ds, err := bi.ListTokens(conf.minerpk.Hash())
 	if err != nil {
 		panic(err)
@@ -33,15 +49,15 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	last := bi.Last()
+	last = bi.Last()
 
-	b := NewBlock(last.Height+1, last.ID())
+	bb := NewBlock(last.Height+1, last.ID())
 	b.Txs = append(b.Txs, tx)
 	err = b.SetMerkle()
 	if err != nil {
 		panic(err)
 	}
-	ele, err := bi.LinkTo(b)
+	ele, err := bi.LinkTo(bb)
 	if err != nil {
 		panic(err)
 	}

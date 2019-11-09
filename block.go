@@ -162,7 +162,7 @@ func (v *BlockInfo) unlink() error {
 }
 
 //消费out
-func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
+func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
@@ -177,8 +177,8 @@ func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batc
 		return err
 	}
 	tk.CPkh = pkh
-	tk.Index = VarUInt(idx)
-	tk.TxId = tv.Hash()
+	tk.Index = in.OutIndex
+	tk.TxId = in.OutHash
 	key := tk.GetKey()
 	//消耗积分后删除输出
 	bt.Del(key)
@@ -223,7 +223,7 @@ func (v BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) err
 		if err != nil {
 			return err
 		}
-		err = v.costOut(bi, tv, in.OutIndex.ToInt(), out, b)
+		err = v.costOut(bi, tv, in, out, b)
 		if err != nil {
 			return err
 		}
