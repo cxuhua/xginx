@@ -33,8 +33,6 @@ type IStore interface {
 	Init(arg ...interface{})
 	//索引数据库
 	Index() DBImp
-	//区块状态数据库
-	State() DBImp
 	//标签数据库
 	Tags() DBImp
 	//区块数据文件

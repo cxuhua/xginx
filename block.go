@@ -156,11 +156,6 @@ type BlockInfo struct {
 	merher HashCacher  //mer hash 缓存
 }
 
-//断开时回退数据
-func (v *BlockInfo) unlink() error {
-	return nil
-}
-
 //消费out
 func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
 	rt := bt.GetRev()
@@ -352,6 +347,14 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
+func (b *BlockInfo) AddUnits(us *Units) {
+	b.Uts = append(b.Uts, us)
+}
+
+func (b *BlockInfo) AddTx(tx *TX) {
+	b.Txs = append(b.Txs, tx)
+}
+
 func (b *BlockInfo) ID() HASH256 {
 	return b.Header.ID()
 }
@@ -384,7 +387,7 @@ func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
 		if i == 0 && len(txs.Ins) != 1 {
 			return nil, errors.New("base txin miss")
 		}
-		if i == 0 && !txs.Ins[0].IsBase() {
+		if i == 0 && !txs.IsBase() {
 			return nil, errors.New("base txin type error")
 		}
 		if i == 0 && len(txs.Outs) > 0 {
@@ -396,8 +399,11 @@ func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
 
 //检查所有的交易
 func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
-	for _, tx := range v.Txs {
-		err := tx.Check(v)
+	for i, tx := range v.Txs {
+		if i == 0 && !tx.IsBase() {
+			return errors.New("base tx miss")
+		}
+		err := tx.Check(bi)
 		if err != nil {
 			return err
 		}
@@ -423,7 +429,37 @@ func (v BlockInfo) CheckUts(bi *BlockIndex) error {
 	return nil
 }
 
-func (v BlockInfo) Check(bi *BlockIndex) error {
+//结算积分
+func (v *BlockInfo) CalcToken(bi *BlockIndex) error {
+	if len(v.Txs) == 0 {
+		return errors.New("txs miss, too little")
+	}
+	if len(v.Uts) == 0 {
+		return errors.New("uts miss, too little")
+	}
+	//计算积分分配
+	calcer := NewTokenCalcer()
+	for _, uv := range v.Uts {
+		uc := NewTokenCalcer()
+		err := uv.CalcToken(bi, v.Header.Bits, uc)
+		if err != nil {
+			return err
+		}
+		calcer.Merge(uc)
+	}
+	outs := []*TxOut{}
+	for ck, cv := range calcer.Outs() {
+		out := &TxOut{}
+		out.Value = cv
+		out.Script = StdLockedScript(ck)
+		outs = append(outs, out)
+	}
+	//设置区块积分奖励
+	v.Txs[0].Outs = outs
+	return v.SetMerkle()
+}
+
+func (v *BlockInfo) Check(bi *BlockIndex) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -604,19 +640,16 @@ func (v TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	return otx.Outs[idx], nil
 }
 
-func (v TxIn) Check(b *BlockInfo) error {
+func (v TxIn) Check(bi *BlockIndex) error {
 	if v.IsBase() {
-		if b.Meta.Height != v.Script.Height() {
-			return errors.New("base script must set block height")
-		}
+		return nil
 	} else if v.Script.IsStdUnlockScript() {
-
+		return nil
 	} else if v.Script.IsAucUnlockScript() {
-
+		return nil
 	} else {
 		return errors.New("txin unlock script type error")
 	}
-	return nil
 }
 
 func (v TxIn) Encode(w IWriter) error {
@@ -716,8 +749,20 @@ func (b *BlockInfo) FindAucScript(obj ObjectId) []*AucLockScript {
 	return ass
 }
 
-func (v TxOut) Check(b *BlockInfo) error {
-	return nil
+func (v TxOut) Check(bi *BlockIndex) error {
+	if v.Value == 0 {
+		return errors.New("value zero")
+	}
+	if v.Script.IsStdLockedcript() {
+		return nil
+	}
+	if v.Script.IsAucLockScript() {
+		return nil
+	}
+	if v.Script.IsArbLockScript() {
+		return nil
+	}
+	return errors.New("unknow script type")
 }
 
 func (v TxOut) Encode(w IWriter) error {
@@ -748,6 +793,11 @@ type TX struct {
 	hasher HashCacher //hash缓存
 }
 
+//第一个必须是base交易
+func (tx *TX) IsBase() bool {
+	return len(tx.Ins) == 1 && tx.Ins[0].IsBase()
+}
+
 //获取输出积分总数
 func (tx *TX) GetOutsToken() VarUInt {
 	tv := VarUInt(0)
@@ -760,6 +810,10 @@ func (tx *TX) GetOutsToken() VarUInt {
 //验证交易输入数据
 func (tx *TX) Verify(bi *BlockIndex) error {
 	for idx, in := range tx.Ins {
+		//不验证base的签名
+		if in.IsBase() {
+			continue
+		}
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
@@ -773,12 +827,15 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
 	}
-	return nil
+	return bi.SetTx(tx)
 }
 
 //签名交易数据
 func (tx *TX) Sign(bi *BlockIndex) error {
 	for idx, in := range tx.Ins {
+		if in.IsBase() {
+			continue
+		}
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
@@ -792,7 +849,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}
 	}
-	return nil
+	return bi.SetTx(tx)
 }
 
 func (tx TX) BaseOuts() (map[HASH160]VarUInt, error) {
@@ -817,27 +874,41 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v TX) Check(b *BlockInfo) error {
+func (v *TX) Check(bi *BlockIndex) error {
+	//base tx只检测积分分配，这里不检查签名和积分
+	if v.IsBase() {
+		return nil
+	}
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
 	if len(v.Outs) == 0 {
 		return errors.New("tx outs too slow")
 	}
+	itv := VarUInt(0)
 	for _, v := range v.Ins {
-		err := v.Check(b)
+		err := v.Check(bi)
 		if err != nil {
 			return err
 		}
-		//校验签名
+		out, err := v.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		itv += out.Value
 	}
+	otv := VarUInt(0)
 	for _, v := range v.Outs {
-		err := v.Check(b)
+		err := v.Check(bi)
 		if err != nil {
 			return err
 		}
+		otv += v.Value
 	}
-	return nil
+	if otv > itv {
+		return errors.New("input token must < out token")
+	}
+	return v.Verify(bi)
 }
 
 func (v TX) Encode(w IWriter) error {
@@ -996,11 +1067,7 @@ func (v *Units) LastUnit(bi *BlockIndex) (*Unit, error) {
 		return nil, errors.New("units empty")
 	}
 	//加载最后一个单元数据
-	uv, err := bi.LoadUvValue(lid)
-	if err != nil {
-		return nil, err
-	}
-	return uv.GetUnit(bi)
+	return bi.LoadUnit(lid)
 }
 
 //是否是连续的

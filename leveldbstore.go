@@ -292,7 +292,6 @@ func (db *leveldbtrimp) Discard() {
 
 type leveldbstore struct {
 	index DBImp
-	state DBImp
 	tags  DBImp
 	blk   IDataStore
 	rev   IDataStore
@@ -309,7 +308,6 @@ func NewLevelDBStore(dir string) IStore {
 
 func (ss *leveldbstore) Sync() {
 	ss.index.Sync()
-	ss.state.Sync()
 	ss.tags.Sync()
 	ss.blk.Sync()
 	ss.rev.Sync()
@@ -347,7 +345,6 @@ func (ss *leveldbstore) Init(arg ...interface{}) {
 		ss.dir = arg[0].(string)
 		ss.tags = ss.newdb("tag")
 		ss.index = ss.newdb("blocks")
-		ss.state = ss.newdb("state")
 		ss.blk = ss.newdata(".blk", "blocks", 1024*1024*256)
 		ss.rev = ss.newdata(".rev", "blocks", 1024*1024*32)
 		ss.ctrs = map[TagUID]*uint32{}
@@ -376,7 +373,6 @@ func (ss *leveldbstore) SetTagCtr(id TagUID, nv uint32) error {
 
 func (ss *leveldbstore) Close() {
 	ss.index.Close()
-	ss.state.Close()
 	ss.tags.Close()
 	ss.blk.Close()
 	ss.rev.Close()
@@ -402,7 +398,7 @@ func (ss *leveldbstore) LoadAllTags(bf *bloom.BloomFilter) {
 //获取最高块信息
 func (ss *leveldbstore) GetBestValue() BestValue {
 	bv := BestValue{}
-	b, err := ss.state.Get(BestBlockKey)
+	b, err := ss.index.Get(BestBlockKey)
 	if err != nil {
 		return InvalidBest
 	}
@@ -459,11 +455,6 @@ func (ss *leveldbstore) LoadTagInfo(id TagUID) (*TTagInfo, error) {
 //索引数据库
 func (ss *leveldbstore) Index() DBImp {
 	return ss.index
-}
-
-//区块状态数据库
-func (ss *leveldbstore) State() DBImp {
-	return ss.state
 }
 
 //标签数据库

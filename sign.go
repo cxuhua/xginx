@@ -130,7 +130,7 @@ func (sr *stdsigner) Sign() error {
 	tk.TxId = sr.in.OutHash
 	tk.Index = sr.in.OutIndex
 	key := tk.GetKey()
-	bv, err := sr.bi.db.State().Get(key)
+	bv, err := sr.bi.db.Index().Get(key)
 	if err != nil {
 		return fmt.Errorf("out token value miss %w", err)
 	}

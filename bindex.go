@@ -46,6 +46,13 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	return nil
 }
 
+func EmptyTBEle(h uint32, i *BlockIndex) *TBEle {
+	return &TBEle{
+		Height: h,
+		idx:    i,
+	}
+}
+
 func NewTBEle(meta *TBMeta, idx *BlockIndex) *TBEle {
 	return &TBEle{
 		flags:  TBELoadedMeta,
@@ -66,10 +73,62 @@ type BlockIndex struct {
 	hmap map[uint32]*list.Element
 	//按id缓存
 	imap map[HASH256]*list.Element
-	//块缓存
+	//缓存,存放块，交易，单元
 	cacher *cache.Cache
 	//存储
 	db IStore
+}
+
+//计算当前难度
+func (bi *BlockIndex) CalcBits(height uint32) uint32 {
+	last := bi.Last()
+	if last == nil || height == 0 {
+		return GetMinPowBits()
+	}
+	if height%conf.PowSpan != 0 {
+		return last.Bits
+	}
+	ct := last.Time
+	ph := height - conf.PowSpan
+	pv, has := bi.hmap[ph]
+	if !has {
+		panic(errors.New("prev height height miss"))
+	}
+	pt := pv.Value.(*TBEle).Time
+	return CalculateWorkRequired(ct, pt, last.Bits)
+}
+
+//创建下一个高度基本数据
+func (bi *BlockIndex) NewBlock(bs ...[]byte) *BlockInfo {
+	b := &BlockInfo{}
+	b.Header.Ver = 1
+	b.Header.Time = uint32(time.Now().Unix())
+	last := bi.Last()
+	nexth := InvalidHeight
+	if last == nil {
+		b.Header.Bits = GetMinPowBits()
+		nexth = 0
+	} else {
+		nexth = last.Height + 1
+		b.Header.Prev = last.ID()
+		b.Header.Bits = bi.CalcBits(nexth)
+	}
+	SetRandInt(&b.Header.Nonce)
+	//base tx
+	bin := &TxIn{}
+	bin.OutHash = HASH256{}
+	bin.OutIndex = 0
+	bin.Script = BaseScript(nexth, bs...)
+	btx := &TX{}
+	btx.Ins = []*TxIn{bin}
+	//暂时为空
+	btx.Outs = []*TxOut{}
+	//新建一个空的元素保存高度
+	b.Meta = EmptyTBEle(nexth, bi)
+	b.Txs = []*TX{btx}
+	//暂时为空
+	b.Uts = []*Units{}
+	return b
 }
 
 //最低块
@@ -112,8 +171,7 @@ func (bi *BlockIndex) Current() *TBEle {
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
-	ckey := string(id[:])
-	if v, has := bi.cacher.Get(ckey); has {
+	if v, has := bi.cacher.Get(id.ToString()); has {
 		return v.(*BlockInfo), nil
 	}
 	ele, has := bi.imap[id]
@@ -130,7 +188,7 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 		return nil, fmt.Errorf("meta data error")
 	}
 	bptr.Meta = smeta
-	bi.cacher.Set(ckey, bptr, time.Minute*30)
+	bi.cacher.Set(id.ToString(), bptr, time.Minute*30)
 	return bptr, nil
 }
 
@@ -325,16 +383,24 @@ func (bi *BlockIndex) LinkBack(meta *TBMeta) (*TBEle, error) {
 }
 
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
+	if vv, has := bi.cacher.Get(id.ToString()); has {
+		return vv.(*TX), nil
+	}
 	txv, err := bi.LoadTxValue(id)
 	if err != nil {
 		return nil, err
 	}
-	return txv.GetTX(bi)
+	tx, err := txv.GetTX(bi)
+	if err != nil {
+		return nil, err
+	}
+	bi.cacher.Set(id.ToString(), tx, time.Minute*10)
+	return tx, nil
 }
 
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vk := GetDBKey(TXS_PREFIX, id[:])
-	vb, err := bi.db.State().Get(vk)
+	vb, err := bi.db.Index().Get(vk)
 	if err != nil {
 		return nil, err
 	}
@@ -344,16 +410,24 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 }
 
 func (bi *BlockIndex) LoadUnit(id HASH256) (*Unit, error) {
+	if vv, has := bi.cacher.Get(id.ToString()); has {
+		return vv.(*Unit), nil
+	}
 	uv, err := bi.LoadUvValue(id)
 	if err != nil {
 		return nil, err
 	}
-	return uv.GetUnit(bi)
+	uvp, err := uv.GetUnit(bi)
+	if err != nil {
+		return nil, err
+	}
+	bi.cacher.Set(id.ToString(), uvp, time.Minute*10)
+	return uvp, nil
 }
 
 func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
 	vk := GetDBKey(UXS_PREFIX, id[:])
-	vb, err := bi.db.State().Get(vk)
+	vb, err := bi.db.Index().Get(vk)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +439,7 @@ func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
 func (bi *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
 	id := HASH256{}
 	ckey := GetDBKey(CBI_PREFIX, cli[:])
-	bb, err := bi.db.State().Get(ckey)
+	bb, err := bi.db.Index().Get(ckey)
 	if err != nil {
 		return id, err
 	}
@@ -393,6 +467,23 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	return meta, err
 }
 
+//断开最后一个
+func (bi *BlockIndex) UnlinkLast() error {
+	last := bi.Last()
+	if last == nil {
+		return errors.New("last block miss")
+	}
+	b, err := bi.LoadBlock(last.ID())
+	if err != nil {
+		return err
+	}
+	err = bi.Unlink(b)
+	if err == nil {
+		bi.cacher.Delete(last.ID().ToString())
+	}
+	return err
+}
+
 //断开最后一个，必须是最后一个才能断开
 func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if bi.Len() == 0 {
@@ -413,11 +504,7 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
-	//删除数据
-	if err := bi.db.Index().Del(BLOCK_PREFIX, id[:]); err != nil {
-		return err
-	}
-	if err := bi.db.State().Write(bt); err != nil {
+	if err := bi.db.Index().Write(bt); err != nil {
 		return err
 	}
 	//断开链接
@@ -428,7 +515,7 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 func (bi *BlockIndex) ListTokens(id HASH160) ([]*TokenKeyValue, error) {
 	prefix := getDBKey(TOKEN_PREFIX, id[:])
 	kvs := []*TokenKeyValue{}
-	iter := bi.db.State().Iterator(NewPrefix(prefix))
+	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {
 		kv := &TokenKeyValue{}
@@ -460,6 +547,18 @@ func (bi *BlockIndex) WriteLastToRev(bp *BlockInfo, bt *Batch) error {
 	bt.Put(BestBlockKey, bv.Bytes())
 	//保存cli的上一个块用于数据回退
 	return pb.WriteCliBestId(bi, bt)
+}
+
+//暂时缓存交易
+func (bi *BlockIndex) SetTx(tx *TX) error {
+	bi.cacher.Set(tx.Hash().ToString(), tx, time.Minute*5)
+	return nil
+}
+
+//暂时缓存单元数据
+func (bi *BlockIndex) SetUnit(uv *Unit) error {
+	bi.cacher.Set(uv.Hash().ToString(), uv, time.Minute*5)
+	return nil
 }
 
 //链接一个区块
@@ -509,12 +608,9 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	if err != nil {
 		return nil, err
 	}
-	//保存区块信息索引
-	if err := bi.db.Index().Put(BLOCK_PREFIX, id[:], hbs); err != nil {
-		return nil, err
-	}
+	bt.Put(BLOCK_PREFIX, id[:], hbs)
 	//更新区块状态
-	if err := bi.db.State().Write(bt); err != nil {
+	if err := bi.db.Index().Write(bt); err != nil {
 		return nil, err
 	}
 	//连接区块

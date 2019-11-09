@@ -1,9 +1,8 @@
 package xginx
 
 import (
-	"errors"
-	"log"
 	"testing"
+	"time"
 )
 
 func TestSign(t *testing.T) {
@@ -13,24 +12,11 @@ func TestSign(t *testing.T) {
 		panic(err)
 	}
 
-	bv := bi.db.GetBestValue()
-	if !bv.IsValid() {
-		panic("aa")
-	}
-	last := bi.Last()
-	if !bv.Id.Equal(last.ID()) {
-		panic(errors.New("best id error"))
-	}
-	if bv.Height != last.Height {
-		panic(errors.New("best height error"))
-	}
-	b, err := bi.LoadBlock(last.ID())
-	bi.Unlink(b)
-
 	ds, err := bi.ListTokens(conf.minerpk.Hash())
 	if err != nil {
 		panic(err)
 	}
+	b := bi.NewBlock()
 	//组装交易
 	tx := &TX{Ver: 1}
 	ins := []*TxIn{}
@@ -44,22 +30,27 @@ func TestSign(t *testing.T) {
 	outs := []*TxOut{txout}
 	tx.Ins = ins
 	tx.Outs = outs
-
+	//添加签名
 	err = tx.Sign(bi)
 	if err != nil {
 		panic(err)
 	}
-	last = bi.Last()
+	b.AddTx(tx)
 
-	bb := NewBlock(last.Height+1, last.ID())
-	b.Txs = append(b.Txs, tx)
-	err = b.SetMerkle()
+	u1 := &Unit{}
+	SetRandInt(&u1.Nonce)
+	u1.STime = time.Now().UnixNano()
+	u2 := &Unit{}
+	u2.Prev = u1.Hash()
+	SetRandInt(&u2.Nonce)
+	u2.STime = time.Now().UnixNano()
+
+	us := &Units{u1, u2}
+
+	b.AddUnits(us)
+
+	err = b.CalcToken(bi)
 	if err != nil {
 		panic(err)
 	}
-	ele, err := bi.LinkTo(bb)
-	if err != nil {
-		panic(err)
-	}
-	log.Println(ele)
 }

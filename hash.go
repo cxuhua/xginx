@@ -362,7 +362,12 @@ func (b HASH256) Equal(v HASH256) bool {
 	return bytes.Equal(b[:], v[:])
 }
 
+func (b HASH256) ToString() string {
+	return string(b[:])
+}
+
 func (b HASH256) Bytes() []byte {
+
 	return b[:]
 }
 

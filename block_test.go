@@ -8,13 +8,9 @@ import (
 	"time"
 )
 
-func NewBlock(h uint32, prev HASH256) *BlockInfo {
-	b := &BlockInfo{}
-	b.Header.Ver = 1
-	b.Header.Prev = prev
-	b.Header.Bits = 0x1d00ffff
-	b.Header.Time = uint32(time.Now().Unix())
-	SetRandInt(&b.Header.Nonce)
+func NewBlock(bi *BlockIndex) *BlockInfo {
+	b := bi.NewBlock()
+
 	u1 := &Unit{}
 	SetRandInt(&u1.Nonce)
 	u1.STime = time.Now().UnixNano()
@@ -27,7 +23,7 @@ func NewBlock(h uint32, prev HASH256) *BlockInfo {
 
 	tx := &TX{}
 	txin := &TxIn{
-		Script: BaseScript(h, []byte{}),
+		Script: BaseScript(b.Meta.Height, []byte("test script")),
 	}
 	txout := &TxOut{
 		Value:  VarUInt(rand.Uint32() % 1000),
@@ -47,7 +43,7 @@ func NewBlock(h uint32, prev HASH256) *BlockInfo {
 func TestBlockChain(t *testing.T) {
 	bi := NewBlockIndex()
 	testnum := uint32(10)
-	fb := NewBlock(0, HASH256{})
+	fb := NewBlock(bi)
 	conf.genesisId = fb.ID()
 	log.Println("genesis_block=", fb.ID())
 	_, err := bi.LinkTo(fb)
@@ -55,9 +51,8 @@ func TestBlockChain(t *testing.T) {
 		t.Error(err)
 		t.FailNow()
 	}
-	//100万个数据
 	for i := uint32(1); i < testnum; i++ {
-		cb := NewBlock(i, fb.ID())
+		cb := NewBlock(bi)
 		_, err = bi.LinkTo(cb)
 		if err != nil {
 			t.Error(err)

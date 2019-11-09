@@ -24,6 +24,12 @@ func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	return ch.Cmp(h) <= 0
 }
 
+//Minimum difficulty
+func GetMinPowBits() uint32 {
+	min := NewUINT256(conf.PowLimit)
+	return min.Compact(false)
+}
+
 //计算难度对应的签到时间间隔比例
 //难度越高时间间隔加长，在一天的基础上增加
 //返回 秒数/小时

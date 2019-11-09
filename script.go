@@ -84,12 +84,14 @@ func (s *Script) Decode(r IReader) error {
 }
 
 //加入区块高度
-func BaseScript(h uint32, b []byte) Script {
+func BaseScript(h uint32, bs ...[]byte) Script {
 	hb := []byte{0, 0, 0, 0}
 	Endian.PutUint32(hb, h)
 	s := Script{SCRIPT_BASE_TYPE}
 	s = append(s, hb...)
-	s = append(s, b...)
+	for _, v := range bs {
+		s = append(s, v...)
+	}
 	return s
 }
 
