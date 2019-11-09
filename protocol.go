@@ -333,6 +333,12 @@ func (v VarUInt) ToInt() int {
 	return int(v)
 }
 
+func (v VarUInt) Bytes() []byte {
+	lb := make([]byte, binary.MaxVarintLen64)
+	l := binary.PutUvarint(lb, uint64(v))
+	return lb[:l]
+}
+
 func (v VarUInt) ToUInt32() uint32 {
 	return uint32(v)
 }
@@ -346,9 +352,13 @@ func (v *VarUInt) SetInt(uv int) {
 }
 
 func (v VarUInt) Encode(w IWriter) error {
-	lb := make([]byte, binary.MaxVarintLen64)
-	l := binary.PutUvarint(lb, uint64(v))
-	return binary.Write(w, Endian, lb[:l])
+	return binary.Write(w, Endian, v.Bytes())
+}
+
+func (v *VarUInt) From(b []byte) int {
+	vv, l := binary.Uvarint(b)
+	*v = VarUInt(vv)
+	return l
 }
 
 func (v *VarUInt) Decode(r IReader) error {

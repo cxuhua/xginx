@@ -22,7 +22,8 @@ var (
 )
 
 type PrivateKey struct {
-	D *big.Int
+	D   *big.Int
+	pub *PublicKey
 }
 
 func (p *PrivateKey) Clone() *PrivateKey {
@@ -124,10 +125,13 @@ func (pk PrivateKey) Marshal() []byte {
 	return pk.D.Bytes()
 }
 
-func (pk PrivateKey) PublicKey() *PublicKey {
-	pp := &PublicKey{}
-	pp.X, pp.Y = curve.ScalarBaseMult(pk.Marshal())
-	return pp
+func (pk *PrivateKey) PublicKey() *PublicKey {
+	if pk.pub != nil {
+		return pk.pub
+	}
+	pk.pub = &PublicKey{}
+	pk.pub.X, pk.pub.Y = curve.ScalarBaseMult(pk.Marshal())
+	return pk.pub
 }
 
 type SigValue struct {

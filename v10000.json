@@ -1,5 +1,5 @@
 {
-  "data_dir": "/Users/xuhua/datadir",
+  "data_dir": "f:\\datadir",
   "flags": "bcxh",
   "version":10000,
   "tcp_port": 9333,
@@ -12,10 +12,10 @@
   "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,
   "max_speed": 60,
-  "miner_pkey": "6WCfUGs4ccPTeYjNvYDWDyM6y4SePxyBTqncan1SKfUoLPCWjY",
+  "miner_pkey": "8aKby6XxwmoaiYt6gUbS1u2RHco37iHfh6sAPstME33Qh6ujd9",
   "http_port": 9334,
   "http_scheme": "http",
   "addr_prefix": "std",
   "oid_prefix": "obj",
-  "genesis_block": "e583a89e5ff5603f7fc9c3086861db608636fcf05845085e6150879d566389cc"
+  "genesis_block": "cd4f34dea77cdf302814e2f9c84e9ad90c6b883b3098ce8b6afb8dcd511722f3"
 }

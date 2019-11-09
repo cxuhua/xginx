@@ -25,7 +25,7 @@ func TestAuctionScript(t *testing.T) {
 	}
 
 	auclock := AucLockScript{}
-	auclock.Type = SCRIPT_AUCLOCK_TYPE
+	auclock.Type = SCRIPT_AUCLOCKED_TYPE
 	auclock.BidId = bpri.PublicKey().Hash()
 	auclock.ObjId = objId
 

@@ -23,6 +23,10 @@ type Batch struct {
 	rb   *Batch //事务回退日志
 }
 
+func (b *Batch) GetRev() *Batch {
+	return b.rb
+}
+
 func (b *Batch) SetRev(r *Batch) *Batch {
 	b.rb = r
 	return r

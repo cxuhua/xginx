@@ -121,11 +121,62 @@ var (
 	UXS_PREFIX   = []byte{'U'} //uts 所在区块前缀 数据为区块id+（uts索引+uv索引) StateDB()存储
 	TXS_PREFIX   = []byte{'T'} //tx 所在区块前缀 数据为区块id+（txs索引 StateDB()存储
 	CBI_PREFIX   = []byte{'C'} //用户最后单元块id StateDB()存储
+	TOKEN_PREFIX = []byte{'A'} //积分相关存储 StateDB pkh_txid_idx
 )
+
+//积分key
+type TokenKeyValue struct {
+	CPkh  HASH160 //cli hash
+	TxId  HASH256 //tx id
+	Index VarUInt //txout idx
+	Value VarUInt //list时设置不包含在key中
+}
+
+func (tk *TokenKeyValue) From(k []byte, v []byte) error {
+	buf := bytes.NewReader(k)
+	pf := []byte{0}
+	if _, err := buf.Read(pf); err != nil {
+		return err
+	}
+	if !bytes.Equal(pf, TOKEN_PREFIX) {
+		return errors.New("key prefix error")
+	}
+	if err := tk.CPkh.Decode(buf); err != nil {
+		return err
+	}
+	if err := tk.TxId.Decode(buf); err != nil {
+		return err
+	}
+	if err := tk.Index.Decode(buf); err != nil {
+		return err
+	}
+	tk.Value.From(v)
+	return nil
+}
+
+func (tk TokenKeyValue) GetTxIn() *TxIn {
+	in := &TxIn{}
+	in.OutHash = tk.TxId
+	in.OutIndex = tk.Index
+	return in
+}
+
+func (tk TokenKeyValue) GetValue() []byte {
+	return tk.Value.Bytes()
+}
+
+func (tk TokenKeyValue) GetKey() []byte {
+	buf := &bytes.Buffer{}
+	_, _ = buf.Write(TOKEN_PREFIX)
+	_ = tk.CPkh.Encode(buf)
+	_ = tk.TxId.Encode(buf)
+	_ = tk.Index.Encode(buf)
+	return buf.Bytes()
+}
 
 var (
 	BestBlockKey = []byte("BestBlockKey") //StateDB 保存
-	InvalidBest  = NewInvalidBest()
+	InvalidBest  = NewInvalidBest()       //无效的状态
 )
 
 type BestValue struct {

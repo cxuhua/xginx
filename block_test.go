@@ -45,12 +45,12 @@ func NewBlock(h uint32, prev HASH256) *BlockInfo {
 }
 
 func TestBlockChain(t *testing.T) {
-	chain := NewBlockIndex()
-	testnum := uint32(100000)
+	bi := NewBlockIndex()
+	testnum := uint32(10)
 	fb := NewBlock(0, HASH256{})
 	conf.genesisId = fb.ID()
-	log.Println(fb.ID())
-	_, err := chain.LinkTo(fb)
+	log.Println("genesis_block=", fb.ID())
+	_, err := bi.LinkTo(fb)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -58,7 +58,7 @@ func TestBlockChain(t *testing.T) {
 	//100万个数据
 	for i := uint32(1); i < testnum; i++ {
 		cb := NewBlock(i, fb.ID())
-		_, err = chain.LinkTo(cb)
+		_, err = bi.LinkTo(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
@@ -68,50 +68,42 @@ func TestBlockChain(t *testing.T) {
 		}
 		fb = cb
 	}
-	if chain.Len() != int(testnum) {
+	if bi.Len() != int(testnum) {
 		t.Errorf("add main chain error")
 		t.FailNow()
 	}
-	chain.store.Sync()
+	bi.db.Sync()
 }
 
 func TestUnlinkBlock(t *testing.T) {
-	chain := NewBlockIndex()
-	err := chain.LoadAll()
+	bi := NewBlockIndex()
+	err := bi.LoadAll()
 	if err != nil {
 		panic(err)
 	}
 	for {
-		bv := chain.store.GetBestValue()
+		bv := bi.db.GetBestValue()
 		if !bv.IsValid() {
 			log.Println("not has best block")
 			break
 		}
-		last := chain.Last()
+		last := bi.Last()
 		if !bv.Id.Equal(last.ID()) {
 			panic(errors.New("best id error"))
 		}
 		if bv.Height != last.Height {
 			panic(errors.New("best height error"))
 		}
-		b, err := chain.LoadBlock(last.ID())
+		b, err := bi.LoadBlock(last.ID())
 		if err != nil {
 			panic(err)
 		}
-		err = chain.Unlink(b)
+		err = bi.Unlink(b)
 		if err != nil {
 			panic(err)
 		}
 	}
-	chain.store.Sync()
-}
-
-func TestLoadAllBlock(t *testing.T) {
-	chain := NewBlockIndex()
-	err := chain.LoadAll()
-	if err != nil {
-		panic(err)
-	}
+	bi.db.Sync()
 }
 
 func TestValueScale(t *testing.T) {

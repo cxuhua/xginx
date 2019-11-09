@@ -76,8 +76,8 @@ type TxValue struct {
 	TxsIdx VarUInt //txs 索引
 }
 
-func (v TxValue) GetTX(chain *BlockIndex) (*TX, error) {
-	blk, err := chain.LoadBlock(v.BlkId)
+func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
+	blk, err := bi.LoadBlock(v.BlkId)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +161,97 @@ func (v *BlockInfo) unlink() error {
 	return nil
 }
 
-func (v BlockInfo) WriteTxsIdx(b *Batch) error {
+//消费out
+func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("batch miss rev")
+	}
+	if out.Value == 0 {
+		return errors.New("out value zero")
+	}
+	tk := TokenKeyValue{}
+	tk.Value = out.Value
+	pkh, err := out.GetPKH()
+	if err != nil {
+		return err
+	}
+	tk.CPkh = pkh
+	tk.Index = VarUInt(idx)
+	tk.TxId = tv.Hash()
+	key := tk.GetKey()
+	//消耗积分后删除输出
+	bt.Del(key)
+	//添加恢复日志
+	rt.Put(key, out.Value.Bytes())
+	return nil
+}
+
+//添加out
+func (v BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("rev batch miss")
+	}
+	if out.Value == 0 {
+		return errors.New("out value zero")
+	}
+	tk := TokenKeyValue{}
+	tk.Value = out.Value
+	pkh, err := out.GetPKH()
+	if err != nil {
+		return err
+	}
+	tk.CPkh = pkh
+	tk.Index = VarUInt(idx)
+	tk.TxId = tv.Hash()
+	bt.Put(tk.GetKey(), tk.GetValue())
+	return nil
+}
+
+func (v BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) error {
+	r := b.GetRev()
+	if r == nil {
+		return errors.New("batch miss rev")
+	}
+	for _, in := range ins {
+		if in.IsBase() {
+			continue
+		}
+		//out将被消耗掉
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		err = v.costOut(bi, tv, in.OutIndex.ToInt(), out, b)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("batch miss rev")
+	}
+	for idx, out := range outs {
+		err := v.incrOut(bi, tv, idx, out, bt)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("batch miss rev")
+	}
 	for i, tv := range v.Txs {
-		//保存交易id对应的区块
+		//保存交易id对应的区块和位置
 		tid := tv.Hash()
 		vval := TxValue{
 			BlkId:  v.ID(),
@@ -173,12 +261,22 @@ func (v BlockInfo) WriteTxsIdx(b *Batch) error {
 		if err != nil {
 			return err
 		}
-		b.Put(TXS_PREFIX, tid[:], vbys)
+		bt.Put(TXS_PREFIX, tid[:], vbys)
+		//处理交易输入
+		err = v.writeTxIns(bi, tv, tv.Ins, bt)
+		if err != nil {
+			return err
+		}
+		//处理交易输出
+		err = v.writeTxOuts(bi, tv, tv.Outs, bt)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (v BlockInfo) WriteCliBestId(b *Batch) error {
+func (v BlockInfo) WriteCliBestId(bi *BlockIndex, b *Batch) error {
 	for _, uts := range v.Uts {
 		if len(*uts) < 2 {
 			return errors.New("client units num error")
@@ -191,7 +289,7 @@ func (v BlockInfo) WriteCliBestId(b *Batch) error {
 	return nil
 }
 
-func (v *BlockInfo) WriteUvsIdx(b *Batch) error {
+func (v *BlockInfo) WriteUvsIdx(bi *BlockIndex, b *Batch) error {
 	for i, uts := range v.Uts {
 		if len(*uts) < 2 {
 			return errors.New("client units num error")
@@ -211,7 +309,7 @@ func (v *BlockInfo) WriteUvsIdx(b *Batch) error {
 			b.Put(UXS_PREFIX, uid[:], ubys)
 		}
 	}
-	return v.WriteCliBestId(b)
+	return v.WriteCliBestId(bi, b)
 }
 
 func (v *BlockInfo) GetUMerkle() (HASH256, error) {
@@ -487,9 +585,23 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  HASH256 //输出交易hash
-	OutIndex VarUInt //对应的输出索引
-	Script   Script  //解锁脚本
+	OutHash  HASH256     //输出交易hash
+	OutIndex VarUInt     //对应的输出索引
+	Script   Script      //解锁脚本
+	private  *PrivateKey //消费用私钥，临时设置用来消费签名
+}
+
+//获取对应的输出
+func (v TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
+	otx, err := bi.LoadTX(v.OutHash)
+	if err != nil {
+		return nil, fmt.Errorf("txin outtx miss %w", err)
+	}
+	idx := v.OutIndex.ToInt()
+	if idx < 0 || idx >= len(otx.Outs) {
+		return nil, fmt.Errorf("outindex out of bound")
+	}
+	return otx.Outs[idx], nil
 }
 
 func (v TxIn) Check(b *BlockInfo) error {
@@ -544,17 +656,45 @@ type TxOut struct {
 	Script Script  //锁定脚本
 }
 
+//获取签名解锁器
+func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) (ISigner, error) {
+	if v.Script.IsStdLockedcript() {
+		return newStdSigner(bi, tx, v, in, idx), nil
+	}
+	return nil, errors.New("not support")
+}
+
+//获取输出金额所属公钥hash
+func (v TxOut) GetPKH() (HASH160, error) {
+	pkh := HASH160{}
+	if v.Script.IsStdLockedcript() {
+		return v.Script.StdPKH(), nil
+	}
+	if v.Script.IsAucLockScript() {
+		auc, err := v.Script.ToAucLock()
+		if err != nil {
+			return pkh, err
+		}
+		return auc.BidId, nil
+	}
+	if v.Script.IsArbLockScript() {
+		arb, err := v.Script.ToArbLock()
+		if err != nil {
+			return pkh, err
+		}
+		return arb.Buyer, nil
+	}
+	return pkh, errors.New("not support")
+}
+
 //获取竞价脚本
 func (v TxOut) ToAuctionScript() (*AucLockScript, error) {
 	typ := v.Script.Type()
 	//其他类型可消费
-	if typ != SCRIPT_AUCLOCK_TYPE {
+	if typ != SCRIPT_AUCLOCKED_TYPE {
 		return nil, errors.New("type error")
 	}
-	if v.Script.Len() > 256 {
-		return nil, errors.New("script length too long")
-	}
-	return v.Script.ToAuction()
+	return v.Script.ToAucLock()
 }
 
 //获取区块中所有指定类型的拍卖输出
@@ -606,6 +746,53 @@ type TX struct {
 	Ins    []*TxIn    //输入
 	Outs   []*TxOut   //输出
 	hasher HashCacher //hash缓存
+}
+
+//获取输出积分总数
+func (tx *TX) GetOutsToken() VarUInt {
+	tv := VarUInt(0)
+	for _, v := range tx.Outs {
+		tv += v.Value
+	}
+	return tv
+}
+
+//验证交易输入数据
+func (tx *TX) Verify(bi *BlockIndex) error {
+	for idx, in := range tx.Ins {
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		signer, err := out.GetSigner(bi, tx, in, idx)
+		if err != nil {
+			return err
+		}
+		err = signer.Verify()
+		if err != nil {
+			return fmt.Errorf("Verify in %d error %w", idx, err)
+		}
+	}
+	return nil
+}
+
+//签名交易数据
+func (tx *TX) Sign(bi *BlockIndex) error {
+	for idx, in := range tx.Ins {
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		signer, err := out.GetSigner(bi, tx, in, idx)
+		if err != nil {
+			return err
+		}
+		err = signer.Sign()
+		if err != nil {
+			return fmt.Errorf("sign in %d error %w", idx, err)
+		}
+	}
+	return nil
 }
 
 func (tx TX) BaseOuts() (map[HASH160]VarUInt, error) {

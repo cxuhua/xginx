@@ -70,8 +70,8 @@ func (v *ObjectId) Decode(r IReader) error {
 //竞价解锁脚本，txin使用
 type AucUnlockScript struct {
 	Type   uint8    //类型 SCRIPT_AUCUNLOCK_TYPE
-	BidPks PKBytes  //出价人公钥和签名 hash160=BidId
-	ObjPks PKBytes  //物品公钥和签名 hash160=objId
+	BidPks PKBytes  //出价人公钥 hash160=BidId
+	ObjPks PKBytes  //物品公钥 hash160=objId
 	BidSig SigBytes //签名
 	ObjSig SigBytes //签名
 }
@@ -121,6 +121,62 @@ func (v *AucUnlockScript) Decode(r IReader) error {
 	return nil
 }
 
+//3方仲裁脚本
+type ArbLockScript struct {
+	Type   uint8   //类型 SCRIPT_AUCLOCK_TYPE
+	Buyer  HASH160 //买家
+	Seller HASH160 //卖家
+	ArbId  HASH160 //第三方
+	ObjId  HASH160 //物品hashid
+}
+
+func (ss ArbLockScript) Encode(w IWriter) error {
+	if err := binary.Write(w, Endian, ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Buyer.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.Seller.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.ArbId.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.ObjId.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ss *ArbLockScript) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Buyer.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.Seller.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.ArbId.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.ObjId.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s Script) ToArbLock() (*ArbLockScript, error) {
+	buf := bytes.NewReader(s)
+	ss := &ArbLockScript{}
+	if err := ss.Decode(buf); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
 //竞价锁定脚本 txout 使用
 //每个物品生成密钥对，物品id为公钥的hash160
 //当需要拍卖某个id时，生成txout 竞价脚本 SCRIPT_AUCLOCK_TYPE
@@ -132,7 +188,7 @@ func (v *AucUnlockScript) Decode(r IReader) error {
 type AucLockScript struct {
 	Type  uint8    //类型 SCRIPT_AUCLOCK_TYPE
 	BidId HASH160  //出价人id
-	ObjId ObjectId //物品id 物品公钥的hash
+	ObjId ObjectId //物品id
 }
 
 func (ss AucLockScript) Encode(w IWriter) error {
@@ -170,7 +226,7 @@ func (ss AucLockScript) ToScript() Script {
 	return buf.Bytes()
 }
 
-func (s Script) ToAuction() (*AucLockScript, error) {
+func (s Script) ToAucLock() (*AucLockScript, error) {
 	buf := bytes.NewReader(s)
 	ss := &AucLockScript{}
 	if err := ss.Decode(buf); err != nil {
