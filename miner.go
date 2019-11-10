@@ -9,8 +9,6 @@ import (
 
 //矿工接口
 type IMiner interface {
-	//收到单元块
-	OnUnit(b *Unit)
 	//收到交易数据
 	OnTx(tx *TX)
 	//开始工作
@@ -30,9 +28,7 @@ type minerEngine struct {
 	mpk    *PublicKey
 	ctx    context.Context
 	cancel context.CancelFunc
-	uc     chan *Unit
 	tc     chan *TX
-	uxs    map[HASH256]*Unit
 	umu    sync.RWMutex
 	txs    map[HASH256]*TX
 	tmu    sync.RWMutex
@@ -41,17 +37,10 @@ type minerEngine struct {
 
 func newMinerEngine() IMiner {
 	return &minerEngine{
-		uc:  make(chan *Unit, 50),
 		tc:  make(chan *TX, 50),
-		uxs: map[HASH256]*Unit{},
 		txs: map[HASH256]*TX{},
 		dok: make(chan bool),
 	}
-}
-
-//收到有效的单元块
-func (m *minerEngine) OnUnit(b *Unit) {
-	m.uc <- b
 }
 
 //收到有效的交易数据
@@ -81,18 +70,6 @@ func (m *minerEngine) loop(i int) {
 			if err != nil {
 				log.Println("calcdata error", err)
 			}
-		case uv := <-m.uc:
-			m.umu.RLock()
-			_, ok := m.uxs[uv.Hash()]
-			m.umu.RUnlock()
-			if !ok {
-				continue
-			}
-			m.umu.Lock()
-			m.uxs[uv.Hash()] = uv
-			m.umu.Unlock()
-			m.dok <- true
-			log.Println("recv unit hash=", uv.Hash())
 		case tv := <-m.tc:
 			m.tmu.RLock()
 			_, ok := m.txs[tv.Hash()]

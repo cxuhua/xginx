@@ -11,11 +11,6 @@ import (
 	"testing"
 )
 
-func TestGetDisRate(t *testing.T) {
-	v := GetDisRate(750 + 500)
-	log.Println(v == 0.5)
-}
-
 func TestCompressAmount(t *testing.T) {
 	log.Println(CompressUInt(1000001))
 	for i := 0; i < 1000; i++ {

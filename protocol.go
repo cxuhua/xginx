@@ -329,6 +329,10 @@ type Stream interface {
 
 type VarUInt uint64
 
+func (v VarUInt) ToAmount() Amount {
+	return Amount(v)
+}
+
 func (v VarUInt) ToInt() int {
 	return int(v)
 }

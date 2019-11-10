@@ -124,16 +124,6 @@ func (s *sstore) exists(path string) bool {
 	return false
 }
 
-func (s *sstore) getpath() string {
-	if s.path == "" {
-		s.path = s.base + Separator + s.dir
-		if !s.exists(s.path) {
-			_ = os.Mkdir(s.path, os.ModePerm)
-		}
-	}
-	return s.path
-}
-
 func (s *sstore) Sync(id ...uint32) {
 	if len(id) == 0 {
 		for _, f := range s.files {
@@ -152,7 +142,7 @@ func (s *sstore) Sync(id ...uint32) {
 
 func (s *sstore) Init() error {
 	blks := []string{}
-	err := filepath.Walk(s.getpath(), func(spath string, info os.FileInfo, err error) error {
+	err := filepath.Walk(s.dir, func(spath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -191,8 +181,6 @@ type sstore struct {
 	ext   string            //扩展名称
 	size  int64             //单个文件最大长度
 	dir   string            //目录名称
-	path  string            //存储全路径
-	base  string            //基路径
 }
 
 var (
@@ -275,7 +263,7 @@ func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 }
 
 func (s sstore) fileIdPath(id uint32) string {
-	return fmt.Sprintf("%s%s%06d%s", s.getpath(), Separator, id, s.ext)
+	return fmt.Sprintf("%s%s%06d%s", s.dir, Separator, id, s.ext)
 }
 
 func (f *sstore) Id() uint32 {

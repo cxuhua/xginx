@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"testing"
-	"time"
 )
 
 func TestSign(t *testing.T) {
@@ -13,10 +12,6 @@ func TestSign(t *testing.T) {
 	}
 
 	ds, err := bi.ListTokens(TestMinePri.PublicKey().Hash())
-	if err != nil {
-		panic(err)
-	}
-	ds, err = bi.ListTokens(TestTagPri.PublicKey().Hash())
 	if err != nil {
 		panic(err)
 	}
@@ -34,7 +29,7 @@ func TestSign(t *testing.T) {
 	txout.Script = StdLockedScript(conf.minerpk)
 	for _, v := range ds {
 		ins = append(ins, v.GetTxIn())
-		txout.Value += v.Value
+		txout.Value += v.Value.ToAmount()
 	}
 	outs := []*TxOut{txout}
 	tx.Ins = ins
@@ -48,32 +43,7 @@ func TestSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	cli := TestCliPri.PublicKey()
-
-	cliBestId, _ := bi.GetCliBestId(cli.Hash())
-
-	u1 := &Unit{}
-	u1.CPks.Set(cli)
-	u1.Prev = cliBestId
-	SetRandInt(&u1.Nonce)
-	u1.STime = time.Now().UnixNano()
-
-	u2 := &Unit{}
-	u2.CPks.Set(cli)
-	u2.Prev = u1.Hash()
-	SetRandInt(&u2.Nonce)
-	u2.STime = time.Now().UnixNano()
-
-	us := &Units{u1, u2}
-
-	err = b.AddUnits(bi, us)
-	if err != nil {
-		panic(err)
-	}
-
-	calcer := NewTokenCalcer(TestMinePri.PublicKey().Hash())
-	err = b.Finish(bi, calcer)
+	err = b.Finish(bi)
 	if err != nil {
 		panic(err)
 	}

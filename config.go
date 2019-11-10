@@ -46,18 +46,12 @@ type Config struct {
 	PowTime      uint         `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
 	PowLimit     string       `json:"pow_limit"`     //最小难度设置
 	PowSpan      uint32       `json:"pow_span"`      //难度计算间隔 2016
-	SpanTime     float64      `json:"span_time"`     //两次记录时间差超过这个时间将被忽略距离计算，单位小时
-	MaxSpeed     float64      `json:"max_speed"`     //最大速度 km/h
-	DisRange     []uint       `json:"dis_range"`     //适合的距离范围500范围内有效-2000范围外无效,500-2000递减
-	Halving      uint         `json:"halving"`       //210000
+	Halving      int          `json:"halving"`       //210000
 	Flags        string       `json:"flags"`         //协议头标记
 	Ver          uint32       `json:"version"`       //节点版本
 	TcpPort      int          `json:"tcp_port"`      //服务端口和ip
 	TcplIp       string       `json:"tcp_lip"`       //服务ip
 	TcprIp       string       `json:"tcp_rip"`       //节点远程连接ip
-	Privates     []string     `json:"pris"`          //用于签名的私钥
-	Certs        []string     `json:"certs"`         //已经签名的证书
-	TimeErr      float64      `json:"time_err"`      //时间误差 秒 客户端时间与服务器时间差在这个范围内
 	mu           sync.RWMutex `json:"-"`             //
 	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
 	minerpk      *PublicKey   `json:"-"`             //矿工公钥
@@ -117,11 +111,6 @@ func (c *Config) Init() error {
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
 	//加载矿工私钥
-	if pk, err := LoadPublicKey(c.MinerPKey); err != nil {
-		panic(err)
-	} else {
-		c.minerpk = pk
-	}
 	c.LimitHash = NewUINT256(c.PowLimit)
 	//随机生成节点ID
 	c.NodeID = NewNodeID()
@@ -135,12 +124,9 @@ var (
 func init() {
 	//加载默认配置文件
 	LoadConfig("v10000.json") //测试配置文件
-	//创建默认存储器
-	TagStore = NewLevelTagStore(conf.DataDir)
 }
 
 func Close() {
-	TagStore.Close()
 	conf.Close()
 }
 

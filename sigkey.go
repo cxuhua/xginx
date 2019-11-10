@@ -21,6 +21,61 @@ var (
 	PREFIX_SECRET_KEY = []byte{128}
 )
 
+type PKBytes [33]byte
+
+func (v PKBytes) Hash() HASH160 {
+	return Hash160From(v[:])
+}
+
+func (v PKBytes) Cmp(b PKBytes) int {
+	vu := NewUINT256(v[:])
+	bu := NewUINT256(b[:])
+	return vu.Cmp(bu)
+}
+
+func (v PKBytes) Equal(b PKBytes) bool {
+	return bytes.Equal(v[:], b[:])
+}
+
+func (v PKBytes) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *PKBytes) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
+
+func (p *PKBytes) SetBytes(b []byte) {
+	copy(p[:], b)
+}
+
+func (p *PKBytes) Set(pk *PublicKey) PKBytes {
+	copy(p[:], pk.Encode())
+	return *p
+}
+
+type SigBytes [75]byte
+
+func (v SigBytes) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *SigBytes) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
+
+func (p *SigBytes) SetBytes(b []byte) {
+	copy(p[:], b)
+}
+
+func (p *SigBytes) Set(sig *SigValue) {
+	copy(p[:], sig.Encode())
+}
+
 type PrivateKey struct {
 	D   *big.Int
 	pub *PublicKey

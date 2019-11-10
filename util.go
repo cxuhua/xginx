@@ -14,18 +14,6 @@ var (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
 )
 
-//距离计算比例
-func GetDisRate(km float64) float64 {
-	min, max := float64(conf.DisRange[0]), float64(conf.DisRange[1])
-	if km > max {
-		km = max
-	}
-	if km < min {
-		return 1.0
-	}
-	return 1.0 - (km-min)/(max-min)
-}
-
 //max : 60 bits
 func CompressUInt(n uint64) uint64 {
 	if n > MAX_COMPRESS_UINT {

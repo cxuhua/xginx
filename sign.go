@@ -125,7 +125,7 @@ func (sr *stdsigner) Sign() error {
 	if !pri.PublicKey().Hash().Equal(pkh) {
 		return errors.New("not mine txout")
 	}
-	tk := TokenKeyValue{}
+	tk := CoinKeyValue{}
 	tk.CPkh = pkh
 	tk.TxId = sr.in.OutHash
 	tk.Index = sr.in.OutIndex

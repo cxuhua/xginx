@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,8 +13,74 @@ const (
 	UINT256Width = 256 / 32
 )
 
+type HashCacher struct {
+	hash HASH256
+	set  bool
+}
+
+func (h *HashCacher) Reset() {
+	h.set = false
+}
+
+func (h HashCacher) IsSet() (HASH256, bool) {
+	return h.hash, h.set
+}
+
+func (h *HashCacher) SetHash(hv HASH256) {
+	h.hash = hv
+	h.set = true
+}
+
+func (h *HashCacher) Hash(b []byte) HASH256 {
+	if h.set {
+		return h.hash
+	}
+	copy(h.hash[:], Hash256(b))
+	h.set = true
+	return h.hash
+}
+
+//公钥HASH160
+type HASH160 [20]byte
+
+func NewHASH160(b []byte) HASH160 {
+	id := HASH160{}
+	copy(id[:], b)
+	return id
+}
+
+func (v *HASH160) SetPK(pk *PublicKey) {
+	*v = pk.Hash()
+}
+
+func (v *HASH160) Set(b []byte) {
+	copy(v[:], b)
+}
+
+func (v HASH160) Cmp(b HASH160) int {
+	u1 := NewUINT256(v[:])
+	u2 := NewUINT256(b[:])
+	return u1.Cmp(u2)
+}
+
+func (v HASH160) Equal(b HASH160) bool {
+	return bytes.Equal(v[:], b[:])
+}
+
+func (v HASH160) Encode(w IWriter) error {
+	_, err := w.Write(v[:])
+	return err
+}
+
+func (v *HASH160) Decode(r IReader) error {
+	_, err := r.Read(v[:])
+	return err
+}
+
 var (
-	SizeError = errors.New("size data error")
+	SizeError  = errors.New("size data error")
+	Endian     = binary.LittleEndian
+	VarSizeErr = errors.New("var size too big")
 )
 
 //bytes hash

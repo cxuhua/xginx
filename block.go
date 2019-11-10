@@ -12,62 +12,6 @@ const (
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
 )
 
-//存储单元索引值
-type UvValue struct {
-	BlkId  HASH256 //块hash
-	UtsIdx VarUInt //units 索引
-	UvsIdx VarUInt //units链索引
-}
-
-func (v UvValue) GetUnit(bi *BlockIndex) (*Unit, error) {
-	blk, err := bi.LoadBlock(v.BlkId)
-	if err != nil {
-		return nil, err
-	}
-	uidx := v.UtsIdx.ToInt()
-	if uidx < 0 || uidx >= len(blk.Uts) {
-		return nil, errors.New("utxidx out of bound")
-	}
-	units := blk.Uts[uidx]
-	vidx := v.UvsIdx.ToInt()
-	if vidx < 0 || vidx >= len(*units) {
-		return nil, errors.New("uvxidx out of bound")
-	}
-	return (*units)[vidx], nil
-}
-
-func (v UvValue) Bytes() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := v.Encode(buf)
-	return buf.Bytes(), err
-}
-
-func (v UvValue) Encode(w IWriter) error {
-	if err := v.BlkId.Encode(w); err != nil {
-		return err
-	}
-	if err := v.UtsIdx.Encode(w); err != nil {
-		return err
-	}
-	if err := v.UvsIdx.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *UvValue) Decode(r IReader) error {
-	if err := v.BlkId.Decode(r); err != nil {
-		return err
-	}
-	if err := v.UtsIdx.Decode(r); err != nil {
-		return err
-	}
-	if err := v.UvsIdx.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
-
 //存储交易索引值
 type TxValue struct {
 	BlkId  HASH256 //块hash
@@ -114,14 +58,13 @@ func (v TxValue) Bytes() ([]byte, error) {
 
 //区块头
 type BlockHeader struct {
-	Ver     uint32  //block ver
-	Prev    HASH256 //pre block hash
-	TMerkle HASH256 //txs Merkle tree hash
-	UMerkle HASH256 //所有记录单元的hash Merkle
-	Time    uint32  //时间戳
-	Bits    uint32  //难度
-	Nonce   uint32  //随机值
-	hasher  HashCacher
+	Ver    uint32  //block ver
+	Prev   HASH256 //pre block hash
+	Merkle HASH256 //txs Merkle tree hash
+	Time   uint32  //时间戳
+	Bits   uint32  //难度
+	Nonce  uint32  //随机值
+	hasher HashCacher
 }
 
 func (v BlockHeader) IsGenesis() bool {
@@ -147,7 +90,6 @@ func (v *BlockHeader) ID() HASH256 {
 //块大小限制为4M大小
 type BlockInfo struct {
 	Header BlockHeader //区块头
-	Uts    []*Units    //记录单元 没有记录单元将不会获得奖励
 	Txs    []*TX       //交易记录，类似比特币
 	Meta   *TBEle      //指向链数据节点
 	utsher HashCacher  //uts 缓存
@@ -163,8 +105,8 @@ func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Bat
 	if out.Value == 0 {
 		return errors.New("out value zero")
 	}
-	tk := TokenKeyValue{}
-	tk.Value = out.Value
+	tk := CoinKeyValue{}
+	tk.Value = out.Value.ToVarUInt()
 	pkh, err := out.GetPKH()
 	if err != nil {
 		return err
@@ -189,8 +131,8 @@ func (v BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batc
 	if out.Value == 0 {
 		return errors.New("out value zero")
 	}
-	tk := TokenKeyValue{}
-	tk.Value = out.Value
+	tk := CoinKeyValue{}
+	tk.Value = out.Value.ToVarUInt()
 	pkh, err := out.GetPKH()
 	if err != nil {
 		return err
@@ -269,56 +211,7 @@ func (v BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	return nil
 }
 
-func (v BlockInfo) WriteCliBestId(bi *BlockIndex, b *Batch) error {
-	for _, uts := range v.Uts {
-		if len(*uts) < 2 {
-			return errors.New("client units num error")
-		}
-		//保存 cli 最后一个数据单元所在的快
-		uid := (*uts)[len(*uts)-1].Hash()
-		cid := uts.CliId()
-		b.Put(CBI_PREFIX, cid[:], uid[:])
-	}
-	return nil
-}
-
-func (v *BlockInfo) WriteUvsIdx(bi *BlockIndex, b *Batch) error {
-	for i, uts := range v.Uts {
-		if len(*uts) < 2 {
-			return errors.New("client units num error")
-		}
-		for j, uv := range *uts {
-			//保存单元id所在的区块
-			uid := uv.Hash()
-			uval := UvValue{
-				BlkId:  v.ID(),
-				UtsIdx: VarUInt(i),
-				UvsIdx: VarUInt(j),
-			}
-			ubys, err := uval.Bytes()
-			if err != nil {
-				return err
-			}
-			b.Put(UXS_PREFIX, uid[:], ubys)
-		}
-	}
-	return v.WriteCliBestId(bi, b)
-}
-
-func (v *BlockInfo) GetUMerkle() (HASH256, error) {
-	if h, b := v.utsher.IsSet(); b {
-		return h, nil
-	}
-	ids := []HASH256{}
-	for _, uv := range v.Uts {
-		ids = append(ids, uv.GetMerkle())
-	}
-	root := BuildMerkleTree(ids).ExtractRoot()
-	v.utsher.SetHash(root)
-	return root, nil
-}
-
-func (v BlockInfo) GetTMerkle() (HASH256, error) {
+func (v BlockInfo) GetMerkle() (HASH256, error) {
 	if h, b := v.merher.IsSet(); b {
 		return h, nil
 	}
@@ -332,29 +225,16 @@ func (v BlockInfo) GetTMerkle() (HASH256, error) {
 }
 
 func (v *BlockInfo) SetMerkle() error {
-	merkle, err := v.GetTMerkle()
+	merkle, err := v.GetMerkle()
 	if err != nil {
 		return err
 	}
-	v.Header.TMerkle = merkle
-	merkle, err = v.GetUMerkle()
-	if err != nil {
-		return err
-	}
-	v.Header.UMerkle = merkle
-	return nil
-}
-
-func (b *BlockInfo) AddUnits(bi *BlockIndex, us *Units) error {
-	if err := us.Check(bi); err != nil {
-		return err
-	}
-	b.Uts = append(b.Uts, us)
+	v.Header.Merkle = merkle
 	return nil
 }
 
 func (b *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
-	if err := tx.Check(bi); err != nil {
+	if err := tx.Check(bi, b); err != nil {
 		return err
 	}
 	b.Txs = append(b.Txs, tx)
@@ -373,7 +253,6 @@ func (b *BlockInfo) IsGenesis() bool {
 func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	meta := &TBMeta{
 		BlockHeader: b.Header,
-		Uts:         VarUInt(len(b.Uts)),
 		Txs:         VarUInt(len(b.Txs)),
 	}
 	id := meta.ID()
@@ -387,130 +266,49 @@ func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	return id, meta, buf.Bytes(), nil
 }
 
-//获取分配所得
-func (v BlockInfo) GetBaseOuts() (map[HASH160]VarUInt, error) {
-	for i, txs := range v.Txs {
-		if i == 0 && len(txs.Ins) != 1 {
-			return nil, errors.New("base txin miss")
-		}
-		if i == 0 && !txs.IsBase() {
-			return nil, errors.New("base txin type error")
-		}
-		if i == 0 && len(txs.Outs) > 0 {
-			return txs.BaseOuts()
-		}
-	}
-	return nil, errors.New("base outs miss")
-}
-
 //检查所有的交易
 func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	for i, tx := range v.Txs {
 		if i == 0 && !tx.IsBase() {
 			return errors.New("base tx miss")
 		}
-		err := tx.Check(bi)
+		err := tx.Check(bi, v)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-//检查所有的单元数据
-func (v BlockInfo) CheckUts(bi *BlockIndex) error {
-	cmap := map[HASH160]bool{}
-	for _, uvs := range v.Uts {
-		err := uvs.Check(bi)
-		if err != nil {
-			return err
-		}
-		//记录的用户不能重复
-		cid := uvs.CliId()
-		if _, has := cmap[cid]; has {
-			return errors.New("uts client repeat")
-		}
-		cmap[cid] = true
 	}
 	return nil
 }
 
 //完成块数据
-func (v *BlockInfo) Finish(bi *BlockIndex, calcer ITokenCalcer) error {
+func (v *BlockInfo) Finish(bi *BlockIndex) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
-	}
-	if len(v.Uts) == 0 {
-		return errors.New("uts miss, too little")
-	}
-	//计算积分分配
-	for _, uv := range v.Uts {
-		err := uv.CalcToken(bi, v.Header.Bits, calcer)
-		if err != nil {
-			return err
-		}
-	}
-	outs := []*TxOut{}
-	for ck, cv := range calcer.Outs() {
-		out := &TxOut{}
-		out.Value = VarUInt(cv)
-		out.Script = StdLockedScript(ck)
-		outs = append(outs, out)
-	}
-	//设置区块积分奖励
-	v.Txs[0].Outs = outs
-	return v.SetMerkle()
-}
-
-func (v *BlockInfo) Check(bi *BlockIndex, calcer ITokenCalcer) error {
-	if len(v.Txs) == 0 {
-		return errors.New("txs miss, too little")
-	}
-	if len(v.Uts) == 0 {
-		return errors.New("uts miss, too little")
-	}
-	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
-		return errors.New("proof of work bits error")
-	}
-	merkle, err := v.GetTMerkle()
-	if err != nil {
-		return err
-	}
-	if !merkle.Equal(v.Header.TMerkle) {
-		return errors.New("txs merkle hash error")
-	}
-	merkle, err = v.GetUMerkle()
-	if err != nil {
-		return err
-	}
-	if !merkle.Equal(v.Header.UMerkle) {
-		return errors.New("units merkle hash error")
 	}
 	//检查所有的交易
 	if err := v.CheckTxs(bi); err != nil {
 		return err
 	}
-	//检查所有的数据单元
-	if err := v.CheckUts(bi); err != nil {
-		return err
+	return v.SetMerkle()
+}
+
+func (v *BlockInfo) Check(bi *BlockIndex) error {
+	if len(v.Txs) == 0 {
+		return errors.New("txs miss, too little")
 	}
-	//获取积分分配
-	outs, err := v.GetBaseOuts()
+	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
+		return errors.New("proof of work bits error")
+	}
+	merkle, err := v.GetMerkle()
 	if err != nil {
 		return err
 	}
-	//计算积分分配
-	for _, uv := range v.Uts {
-		err := uv.CalcToken(bi, v.Header.Bits, calcer)
-		if err != nil {
-			return err
-		}
+	if !merkle.Equal(v.Header.Merkle) {
+		return errors.New("txs merkle hash error")
 	}
-	//检验分配是否正确
-	for ck, cv := range calcer.Outs() {
-		if outs[ck] != cv {
-			return errors.New("token alloc error")
-		}
+	//检查所有的交易
+	if err := v.CheckTxs(bi); err != nil {
+		return err
 	}
 	return nil
 }
@@ -522,10 +320,7 @@ func (v BlockHeader) Encode(w IWriter) error {
 	if err := v.Prev.Encode(w); err != nil {
 		return err
 	}
-	if err := v.TMerkle.Encode(w); err != nil {
-		return err
-	}
-	if err := v.UMerkle.Encode(w); err != nil {
+	if err := v.Merkle.Encode(w); err != nil {
 		return err
 	}
 	if err := binary.Write(w, Endian, v.Time); err != nil {
@@ -543,14 +338,6 @@ func (v BlockHeader) Encode(w IWriter) error {
 func (v BlockInfo) Encode(w IWriter) error {
 	if err := v.Header.Encode(w); err != nil {
 		return err
-	}
-	if err := VarUInt(len(v.Uts)).Encode(w); err != nil {
-		return err
-	}
-	for _, v := range v.Uts {
-		if err := v.Encode(w); err != nil {
-			return err
-		}
 	}
 	if err := VarUInt(len(v.Txs)).Encode(w); err != nil {
 		return err
@@ -570,10 +357,7 @@ func (v *BlockHeader) Decode(r IReader) error {
 	if err := v.Prev.Decode(r); err != nil {
 		return err
 	}
-	if err := v.TMerkle.Decode(r); err != nil {
-		return err
-	}
-	if err := v.UMerkle.Decode(r); err != nil {
+	if err := v.Merkle.Decode(r); err != nil {
 		return err
 	}
 	if err := binary.Read(r, Endian, &v.Time); err != nil {
@@ -591,18 +375,6 @@ func (v *BlockHeader) Decode(r IReader) error {
 func (v *BlockInfo) Decode(r IReader) error {
 	if err := v.Header.Decode(r); err != nil {
 		return err
-	}
-	unum := VarUInt(0)
-	if err := unum.Decode(r); err != nil {
-		return err
-	}
-	v.Uts = make([]*Units, unum)
-	for i, _ := range v.Uts {
-		uvs := &Units{}
-		if err := uvs.Decode(r); err != nil {
-			return err
-		}
-		v.Uts[i] = uvs
 	}
 	tnum := VarUInt(0)
 	if err := tnum.Decode(r); err != nil {
@@ -682,10 +454,55 @@ func (in TxIn) IsBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsBaseScript()
 }
 
+const (
+	COIN      = Amount(100000000)
+	MAX_MONEY = Amount(21000000 * COIN)
+)
+
+func GetCoinbaseReward(h uint32) Amount {
+	halvings := int(h) / conf.Halving
+	if halvings >= 64 {
+		return 0
+	}
+	n := 50 * COIN
+	n >>= halvings
+	return n
+}
+
+type Amount int64
+
+func (a *Amount) Decode(r IReader) error {
+	return binary.Read(r, Endian, &a)
+}
+
+func (a Amount) Bytes() []byte {
+	lb := make([]byte, binary.MaxVarintLen64)
+	l := binary.PutVarint(lb, int64(a))
+	return lb[:l]
+}
+
+func (v *Amount) From(b []byte) int {
+	vv, l := binary.Varint(b)
+	*v = Amount(vv)
+	return l
+}
+
+func (a Amount) ToVarUInt() VarUInt {
+	return VarUInt(a)
+}
+
+func (a Amount) Encode(w IWriter) error {
+	return binary.Write(w, Endian, a)
+}
+
+func (a Amount) IsRange() bool {
+	return a >= 0 && a < MAX_MONEY
+}
+
 //交易输出
 type TxOut struct {
-	Value  VarUInt //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
-	Script Script  //锁定脚本
+	Value  Amount //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
+	Script Script //锁定脚本
 }
 
 //获取签名解锁器
@@ -797,15 +614,6 @@ func (tx *TX) IsBase() bool {
 	return len(tx.Ins) == 1 && tx.Ins[0].IsBase()
 }
 
-//获取输出积分总数
-func (tx *TX) GetOutsToken() VarUInt {
-	tv := VarUInt(0)
-	for _, v := range tx.Outs {
-		tv += v.Value
-	}
-	return tv
-}
-
 //验证交易输入数据
 func (tx *TX) Verify(bi *BlockIndex) error {
 	for idx, in := range tx.Ins {
@@ -851,17 +659,6 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 	return bi.SetTx(tx)
 }
 
-func (tx TX) BaseOuts() (map[HASH160]VarUInt, error) {
-	outs := map[HASH160]VarUInt{}
-	for _, v := range tx.Outs {
-		if !v.Script.IsStdLockedcript() {
-			return nil, errors.New("base tx out script error")
-		}
-		outs[v.Script.StdLockedHash()] = v.Value
-	}
-	return outs, nil
-}
-
 func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
@@ -873,10 +670,21 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v *TX) Check(bi *BlockIndex) error {
-	//base tx只检测积分分配，这里不检查签名和积分
+func (v *TX) checkBase(bi *BlockIndex, b *BlockInfo) error {
+	out := Amount(0)
+	for _, ov := range v.Outs {
+		out += ov.Value
+	}
+	rev := GetCoinbaseReward(b.Meta.Height)
+	if !out.IsRange() || !rev.IsRange() || out > rev {
+		return errors.New("coinbase tx error")
+	}
+	return nil
+}
+
+func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
 	if v.IsBase() {
-		return nil
+		return v.checkBase(bi, b)
 	}
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
@@ -884,7 +692,7 @@ func (v *TX) Check(bi *BlockIndex) error {
 	if len(v.Outs) == 0 {
 		return errors.New("tx outs too slow")
 	}
-	itv := VarUInt(0)
+	itv := Amount(0)
 	for _, v := range v.Ins {
 		err := v.Check(bi)
 		if err != nil {
@@ -896,7 +704,7 @@ func (v *TX) Check(bi *BlockIndex) error {
 		}
 		itv += out.Value
 	}
-	otv := VarUInt(0)
+	otv := Amount(0)
 	for _, v := range v.Outs {
 		err := v.Check(bi)
 		if err != nil {
@@ -904,7 +712,7 @@ func (v *TX) Check(bi *BlockIndex) error {
 		}
 		otv += v.Value
 	}
-	if otv > itv {
+	if itv < 0 || otv < 0 || otv > itv {
 		return errors.New("input token must < out token")
 	}
 	return v.Verify(bi)
@@ -966,163 +774,4 @@ func (v *TX) Decode(r IReader) error {
 		v.Outs[i] = out
 	}
 	return nil
-}
-
-type Units []*Unit
-
-func (v Units) CliId() HASH160 {
-	return v[0].CPks.Hash()
-}
-
-func (v Units) GetMerkle() HASH256 {
-	ids := []HASH256{}
-	for _, uv := range v {
-		ids = append(ids, uv.Hash())
-	}
-	return BuildMerkleTree(ids).ExtractRoot()
-}
-
-func (v Units) Encode(w IWriter) error {
-	if err := VarUInt(len(v)).Encode(w); err != nil {
-		return err
-	}
-	for _, uv := range v {
-		err := uv.Encode(w)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (v *Units) Last() *Unit {
-	if len(*v) == 0 {
-		return nil
-	}
-	return (*v)[len(*v)-1]
-}
-
-func (v *Units) Add(uv *Unit) error {
-	if err := uv.Check(); err != nil {
-		return err
-	}
-	if uv.IsFirst() {
-		*v = append(*v, uv)
-		return nil
-	}
-	last := v.Last()
-	if last == nil {
-		return errors.New("last unit miss")
-	}
-	if !uv.Prev.Equal(last.Hash()) {
-		return errors.New("hash not consecutive")
-	}
-	*v = append(*v, uv)
-	return nil
-}
-
-func (v *Units) Decode(r IReader) error {
-	num := VarUInt(0)
-	if err := num.Decode(r); err != nil {
-		return err
-	}
-	*v = make([]*Unit, num)
-	for i, _ := range *v {
-		un := &Unit{}
-		err := un.Decode(r)
-		if err != nil {
-			return err
-		}
-		(*v)[i] = un
-	}
-	return nil
-}
-
-//查找用户cpk的链
-func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
-	for _, uts := range b.Uts {
-		if len(*uts) > 0 && (*uts)[0].CPks.Equal(cpk) {
-			return uts
-		}
-	}
-	return nil
-}
-
-//获取上一个unit
-func (v *Units) LastUnit(bi *BlockIndex) (*Unit, error) {
-	lid, err := bi.GetCliBestId(v.CliId())
-	//client不存在last unit的清空下，如果是第一个直接返回
-	if len(*v) > 0 && (*v)[0].IsFirst() && err != nil {
-		return (*v)[0], nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	//第一个必须指向最后一个
-	if !lid.Equal((*v)[0].Prev) {
-		return nil, errors.New("first must is last unit id")
-	}
-	if len(*v) == 0 {
-		return nil, errors.New("units empty")
-	}
-	//加载最后一个单元数据
-	return bi.LoadUnit(lid)
-}
-
-//是否是连续的
-func (v *Units) IsConsecutive() bool {
-	var pv *Unit = nil
-	for i, uv := range *v {
-		if i == 0 {
-			pv = uv
-			continue
-		}
-		if !uv.Prev.Equal(pv.Hash()) {
-			return false
-		}
-		pv = uv
-	}
-	return true
-}
-
-func (v *Units) Check(bi *BlockIndex) error {
-	if len(*v) < 2 {
-		return errors.New("unit too little")
-	}
-	if !v.IsConsecutive() {
-		return errors.New("unit not continuous")
-	}
-	prev, err := v.LastUnit(bi)
-	if err != nil {
-		return err
-	}
-	//如果不是第一个，prev必须指向最后一个
-	first := (*v)[0]
-	if !prev.Equal(*first) && !first.Prev.Equal(prev.Hash()) {
-		return errors.New("unit not continuous")
-	}
-	for _, uv := range *v {
-		if err := uv.Check(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-//计算积分
-func (v *Units) CalcToken(bi *BlockIndex, bits uint32, calcer ITokenCalcer) error {
-	if len(*v) < 2 {
-		return errors.New("Unit too small ")
-	}
-	//获取上一个参与计算
-	prev, err := v.LastUnit(bi)
-	if err != nil {
-		return err
-	}
-	is := &Units{}
-	if !prev.Equal(*(*v)[0]) {
-		*is = append(*is, prev)
-	}
-	*is = append(*is, *v...)
-	return calcer.Calc(bits, is)
 }

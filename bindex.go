@@ -124,8 +124,6 @@ func (bi *BlockIndex) NewBlock(bs ...[]byte) *BlockInfo {
 	//新建一个空的元素保存高度
 	b.Meta = EmptyTBEle(nexth, bi)
 	b.Txs = []*TX{btx}
-	//暂时为空
-	b.Uts = []*Units{}
 	return b
 }
 
@@ -415,50 +413,6 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	return vv, err
 }
 
-func (bi *BlockIndex) LoadUnit(id HASH256) (*Unit, error) {
-	hptr := bi.lru.Get(id, func() (size int, value Value) {
-		uv, err := bi.LoadUvValue(id)
-		if err != nil {
-			return 0, nil
-		}
-		uvp, err := uv.GetUnit(bi)
-		if err != nil {
-			return 0, nil
-		}
-		buf := &bytes.Buffer{}
-		if err := uvp.Encode(buf); err != nil {
-			return 0, nil
-		}
-		return buf.Len(), uvp
-	})
-	if hptr.Value() == nil {
-		return nil, errors.New("not found")
-	}
-	return hptr.Value().(*Unit), nil
-}
-
-func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
-	vk := GetDBKey(UXS_PREFIX, id[:])
-	vb, err := bi.db.Index().Get(vk)
-	if err != nil {
-		return nil, err
-	}
-	vv := &UvValue{}
-	err = vv.Decode(bytes.NewReader(vb))
-	return vv, err
-}
-
-func (bi *BlockIndex) GetCliBestId(cli HASH160) (HASH256, error) {
-	id := HASH256{}
-	ckey := GetDBKey(CBI_PREFIX, cli[:])
-	bb, err := bi.db.Index().Get(ckey)
-	if err != nil {
-		return id, err
-	}
-	copy(id[:], bb)
-	return id, nil
-}
-
 //加载块数据
 func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
@@ -483,11 +437,6 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 func (bi *BlockIndex) cleanBlockCache(b *BlockInfo) {
 	for _, tv := range b.Txs {
 		bi.lru.Delete(tv.Hash())
-	}
-	for _, us := range b.Uts {
-		for _, uv := range *us {
-			bi.lru.Delete(uv.Hash())
-		}
 	}
 	bi.lru.Delete(b.ID())
 }
@@ -550,13 +499,13 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 }
 
 //获取某个id的所有积分
-func (bi *BlockIndex) ListTokens(id HASH160) ([]*TokenKeyValue, error) {
-	prefix := getDBKey(TOKEN_PREFIX, id[:])
-	kvs := []*TokenKeyValue{}
+func (bi *BlockIndex) ListTokens(id HASH160) ([]*CoinKeyValue, error) {
+	prefix := getDBKey(COIN_PREFIX, id[:])
+	kvs := []*CoinKeyValue{}
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {
-		kv := &TokenKeyValue{}
+		kv := &CoinKeyValue{}
 		err := kv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
@@ -576,15 +525,11 @@ func (bi *BlockIndex) WriteLastToRev(bp *BlockInfo, bt *Batch) error {
 	if last == nil {
 		return errors.New("last block meta miss")
 	}
-	pb, err := bi.LoadBlock(last.ID())
-	if err != nil {
-		return fmt.Errorf("linkto block,load last block error %w", err)
-	}
 	bv := BestValue{Id: last.ID(), Height: last.Height}
 	//保存上一个用于日志回退
 	bt.Put(BestBlockKey, bv.Bytes())
 	//保存cli的上一个块用于数据回退
-	return pb.WriteCliBestId(bi, bt)
+	return nil
 }
 
 //暂时缓存交易
@@ -595,18 +540,6 @@ func (bi *BlockIndex) SetTx(tx *TX) error {
 			return 0, nil
 		}
 		return buf.Len(), tx
-	})
-	return nil
-}
-
-//暂时缓存单元数据
-func (bi *BlockIndex) SetUnit(uv *Unit) error {
-	bi.lru.Get(uv.Hash(), func() (size int, value Value) {
-		buf := &bytes.Buffer{}
-		if err := uv.Encode(buf); err != nil {
-			return 0, nil
-		}
-		return buf.Len(), uv
 	})
 	return nil
 }
@@ -629,9 +562,6 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	//更新bestBlockId
 	bv := BestValue{Id: id, Height: nexth}
 	bt.Put(BestBlockKey, bv.Bytes())
-	if err := bp.WriteUvsIdx(bi, bt); err != nil {
-		return nil, err
-	}
 	if err := bp.WriteTxsIdx(bi, bt); err != nil {
 		return nil, err
 	}
