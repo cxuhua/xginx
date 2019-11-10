@@ -10,6 +10,8 @@ import (
 const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
+	//最大ExtScript大小
+	MAX_EXT_SCRIPT_SIZE = 64 * 1024
 )
 
 //存储交易索引值

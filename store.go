@@ -35,8 +35,6 @@ type IBlkStore interface {
 	Blk() IChunkStore
 	//事物回退文件
 	Rev() IChunkStore
-	//扩展存储
-	Ext() IChunkStore
 }
 
 func getDBKeyValue(ks ...[]byte) ([]byte, []byte) {

@@ -7,45 +7,52 @@ import (
 )
 
 //扩展存储，数据由矿工打包存储，并收取交易费为数据打包费
+//消费成功需要矿工和付款人签名
+//step1 发出存储交易,告诉矿工，需要存储的数据大小和hash值
+//step2 矿工收到交易后确认，输入，输出，交易费是否合适，接受填写 MPks MSig Msig之前的内容签名，发送给发起人
+//step3 发起人收到矿工的回复后确认，然后添加签名 SPks SSig,然后发给矿工
+//step4 矿工收到后验证数据hash，大小，发起人签名是否正确，然后开始挖矿并获得交易费，并且将就存储到区块
 type ExtLockScript struct {
-	Type  uint8    //类型 SCRIPT_EXTLOCKED_TYPE
-	Pkh   HASH160  //输出公钥hash
-	Prev  HASH256  //上一个存储块hash
-	Hash  HASH256  //当前数据内容hash,必须存在上一个hash
-	Bytes VarBytes //当前数据内容，数据存储在Ext()，最大长度为4M
+	Type  uint8    //类型 SCRIPT_EXTLOCKED_TYPE s1 s2 s3
+	MPkh  HASH160  //消费公钥hash，矿工填写,决定最终这个交易谁可以消费 s2 s3
+	Size  VarUInt  //数据大小 s1 s2 s3
+	Hash  HASH256  //数据hash s1 s2 s3
+	MPks  PKBytes  //矿工接受后返回公钥和签名 s2 s3
+	MSig  SigBytes //矿工签名 对之上数据签名 s3
+	Bytes VarBytes //需要存储的数据，不能太大 < MAX_EXT_SCRIPT_SIZE，存储在ext中 s3
+	SPks  PKBytes  //发起人公钥
+	SSig  SigBytes //发起人签名 对之上数据签名
 }
 
-func (v ExtLockScript) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, v.Type); err != nil {
-		return err
-	}
-	if err := v.Pkh.Encode(w); err != nil {
-		return err
-	}
-	if err := v.Prev.Encode(w); err != nil {
-		return err
-	}
-	if err := v.Hash.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *ExtLockScript) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &v.Type); err != nil {
-		return err
-	}
-	if err := v.Pkh.Decode(r); err != nil {
-		return err
-	}
-	if err := v.Prev.Decode(r); err != nil {
-		return err
-	}
-	if err := v.Hash.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
+//func (v ExtLockScript) Check() error {
+//	return nil
+//}
+//
+//func (v ExtLockScript) Encode(w IWriter) error {
+//	if err := binary.Write(w, Endian, v.Type); err != nil {
+//		return err
+//	}
+//	if err := v.MPkh.Encode(w); err != nil {
+//		return err
+//	}
+//	if err := v.Hash.Encode(w); err != nil {
+//		return err
+//	}
+//	return nil
+//}
+//
+//func (v *ExtLockScript) Decode(r IReader) error {
+//	if err := binary.Read(r, Endian, &v.Type); err != nil {
+//		return err
+//	}
+//	if err := v.MPkh.Decode(r); err != nil {
+//		return err
+//	}
+//	if err := v.Hash.Decode(r); err != nil {
+//		return err
+//	}
+//	return nil
+//}
 
 type ExtUnlockScript struct {
 	Type uint8    //SCRIPT_EXTUNLOCK_TYPE

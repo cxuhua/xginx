@@ -290,7 +290,6 @@ type leveldbstore struct {
 	index DBImp
 	blk   IChunkStore
 	rev   IChunkStore
-	ext   IChunkStore
 	once  sync.Once
 	dir   string
 }
@@ -348,10 +347,6 @@ func (ss *leveldbstore) Init(arg ...interface{}) {
 		if err := ss.rev.Init(); err != nil {
 			panic(err)
 		}
-		ss.ext = ss.newdata(".ext", 1024*1024*256)
-		if err := ss.ext.Init(); err != nil {
-			panic(err)
-		}
 	})
 }
 
@@ -369,11 +364,6 @@ func (ss *leveldbstore) Index() DBImp {
 //扩展存储
 func (ss *leveldbstore) Ext() IChunkStore {
 	return ss.ext
-}
-
-//区块数据文件
-func (ss *leveldbstore) Blk() IChunkStore {
-	return ss.blk
 }
 
 //事物回退文件
