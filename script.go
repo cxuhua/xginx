@@ -14,8 +14,8 @@ const (
 	SCRIPT_AUCUNLOCK_TYPE = uint8(4) //竞价解锁脚本AucUnlockScript
 	SCRIPT_ARBLOCKED_TYPE = uint8(5) //三方仲裁脚本（买方，卖方，第三方) 解锁需要仲裁+买方 或者 仲裁+卖方
 	SCRIPT_ARBUNLOCK_TYPE = uint8(6) //三方解锁脚本
-	SCRIPT_BLKLOCKED_TYPE = uint8(7) //区块锁定脚本,提供区块存储服务器
-	SCRIPT_BLKUNLOCK_TYPE = uint8(8) //区块解锁脚本
+	SCRIPT_EXTLOCKED_TYPE = uint8(7) //扩展存储
+	SCRIPT_EXTUNLOCK_TYPE = uint8(8) //扩展存储
 )
 
 type Script []byte

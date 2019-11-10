@@ -6,8 +6,51 @@ import (
 	"errors"
 )
 
-//块服务脚本
-type BlkLockScript struct {
+//扩展存储，数据由矿工打包存储，并收取交易费为数据打包费
+type ExtLockScript struct {
+	Type  uint8    //类型 SCRIPT_EXTLOCKED_TYPE
+	Pkh   HASH160  //输出公钥hash
+	Prev  HASH256  //上一个存储块hash
+	Hash  HASH256  //当前数据内容hash,必须存在上一个hash
+	Bytes VarBytes //当前数据内容，数据存储在Ext()，最大长度为4M
+}
+
+func (v ExtLockScript) Encode(w IWriter) error {
+	if err := binary.Write(w, Endian, v.Type); err != nil {
+		return err
+	}
+	if err := v.Pkh.Encode(w); err != nil {
+		return err
+	}
+	if err := v.Prev.Encode(w); err != nil {
+		return err
+	}
+	if err := v.Hash.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *ExtLockScript) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &v.Type); err != nil {
+		return err
+	}
+	if err := v.Pkh.Decode(r); err != nil {
+		return err
+	}
+	if err := v.Prev.Decode(r); err != nil {
+		return err
+	}
+	if err := v.Hash.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+type ExtUnlockScript struct {
+	Type uint8    //SCRIPT_EXTUNLOCK_TYPE
+	Pks  PKBytes  //公钥
+	Sig  SigBytes //签名
 }
 
 //竞价时脚本只会打包在bbh和beh高度之间的区块上
