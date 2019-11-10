@@ -479,6 +479,19 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	return meta, err
 }
 
+//清除区块相关的缓存
+func (bi *BlockIndex) cleanBlockCache(b *BlockInfo) {
+	for _, tv := range b.Txs {
+		bi.lru.Delete(tv.Hash())
+	}
+	for _, us := range b.Uts {
+		for _, uv := range *us {
+			bi.lru.Delete(uv.Hash())
+		}
+	}
+	bi.lru.Delete(b.ID())
+}
+
 //断开最后一个
 func (bi *BlockIndex) UnlinkLast() error {
 	last := bi.Last()
@@ -491,7 +504,7 @@ func (bi *BlockIndex) UnlinkLast() error {
 	}
 	err = bi.Unlink(b)
 	if err == nil {
-		bi.lru.Delete(last.ID())
+		bi.cleanBlockCache(b)
 	}
 	return err
 }
