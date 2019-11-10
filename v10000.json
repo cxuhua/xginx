@@ -13,5 +13,5 @@
   "http_scheme": "http",
   "addr_prefix": "std",
   "oid_prefix": "obj",
-  "genesis_block": "c89f7ec94f8b9369a88aef0bd691dbe748534cfef511e7f98186c2454a958490"
+  "genesis_block": "d81bfdb52712ec5ec77584559c668a2768b3d6ba5f9c19685240f3d0f4569782"
 }

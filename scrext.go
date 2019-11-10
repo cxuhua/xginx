@@ -6,6 +6,10 @@ import (
 	"errors"
 )
 
+//块服务脚本
+type BlkLockScript struct {
+}
+
 //竞价时脚本只会打包在bbh和beh高度之间的区块上
 //如果区块有回退，回退的区块内容作废
 //物品id组成
