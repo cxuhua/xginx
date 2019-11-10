@@ -85,7 +85,7 @@ func TestSig(t *testing.T) {
 
 func TestLoadTestKey(t *testing.T) {
 
-	store.LoadAllTags(bloom.New(1000, 10))
+	TagStore.LoadAllTags(bloom.New(1000, 10))
 
 	id, err := hex.DecodeString("9B2FCF46B3352B964E86E0CA47678FDC306A918A386111FFC60208B2795111B4")
 	if err != nil {
@@ -93,7 +93,7 @@ func TestLoadTestKey(t *testing.T) {
 	}
 	hid := HASH256{}
 	copy(hid[:], id)
-	store.HasUnitash(hid)
+	TagStore.HasUnitash(hid)
 }
 
 func TestSaveTestKey(t *testing.T) {
@@ -112,7 +112,7 @@ func TestSaveTestKey(t *testing.T) {
 	tk.Keys[4] = TTagKey{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 	tk.SetMacKey(0)
 	copy(tk.Keys[0][:], tkey)
-	err := store.SaveTag(tk)
+	err := TagStore.SaveTag(tk)
 	if err != nil {
 		panic(err)
 	}

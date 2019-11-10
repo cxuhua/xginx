@@ -160,18 +160,18 @@ func StdLockedScript(v interface{}) Script {
 	switch v.(type) {
 	case *PublicKey:
 		pub := v.(*PublicKey)
-		hash = Hash160To(pub.Encode())
+		hash = Hash160From(pub.Encode())
 	case HASH160:
 		hash = v.(HASH160)
 	case PKBytes:
 		pks := v.(PKBytes)
-		hash = Hash160To(pks[:])
+		hash = Hash160From(pks[:])
 	case string:
 		pub, err := LoadPublicKey(v.(string))
 		if err != nil {
 			panic(err)
 		}
-		hash = Hash160To(pub.Encode())
+		hash = Hash160From(pub.Encode())
 	default:
 		panic(errors.New("v args type error"))
 	}

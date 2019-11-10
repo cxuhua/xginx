@@ -136,11 +136,11 @@ func init() {
 	//加载默认配置文件
 	LoadConfig("v10000.json") //测试配置文件
 	//创建默认存储器
-	store = NewLevelDBStore(conf.DataDir)
+	TagStore = NewLevelTagStore(conf.DataDir)
 }
 
 func Close() {
-	store.Close()
+	TagStore.Close()
 	conf.Close()
 }
 

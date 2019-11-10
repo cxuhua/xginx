@@ -150,7 +150,7 @@ func (s *sstore) Sync(id ...uint32) {
 	}
 }
 
-func (s *sstore) Init() {
+func (s *sstore) Init() error {
 	blks := []string{}
 	err := filepath.Walk(s.getpath(), func(spath string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -163,7 +163,7 @@ func (s *sstore) Init() {
 		return nil
 	})
 	if err != nil {
-		panic(err)
+		return err
 	}
 	sid := "0"
 	if len(blks) != 0 {
@@ -174,13 +174,14 @@ func (s *sstore) Init() {
 	}
 	id, err := strconv.ParseInt(sid, 10, 32)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fi, err := os.Stat(s.fileIdPath(uint32(id)))
 	if err == nil && fi.Size() >= s.size {
 		id++
 	}
 	s.id = uint32(id)
+	return nil
 }
 
 type sstore struct {

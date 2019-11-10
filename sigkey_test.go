@@ -1,12 +1,14 @@
 package xginx
 
 import (
+	"log"
 	"math/rand"
 	"testing"
 )
 
 func TestAddress(t *testing.T) {
 	pri, _ := NewPrivateKey()
+	log.Println(pri.Dump())
 	pub := pri.PublicKey()
 	addr := pub.Address()
 	x, err := DecodeAddress(addr)

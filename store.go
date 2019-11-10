@@ -13,34 +13,26 @@ var (
 	//系统路径分隔符
 	Separator = string(os.PathSeparator)
 	//主链存储器
-	store IStore = nil
+	TagStore ITagStore = nil
 )
 
-type IDataStore interface {
+//数据块存储
+type IChunkStore interface {
 	Read(st FileState) ([]byte, error)
 	Write(b []byte) (FileState, error)
 	Close()
-	Init()
+	Init() error
 	Sync(id ...uint32)
 }
 
-type IStore interface {
+//标签库存储
+type ITagStore interface {
 	//同步数据
 	Sync()
 	//关闭数据库
 	Close()
 	//初始化
 	Init(arg ...interface{})
-	//索引数据库
-	Index() DBImp
-	//标签数据库
-	Tags() DBImp
-	//区块数据文件
-	Blk() IDataStore
-	//事物回退文件
-	Rev() IDataStore
-	//获取存储的最高块信息
-	GetBestValue() BestValue
 	//设置标签计数器
 	SetTagCtr(id TagUID, nv uint32) error
 	//加载所有标签，并设置到过滤器
@@ -55,6 +47,22 @@ type IStore interface {
 	SaveTag(tag *TTagInfo) error
 	//获取标签信息
 	LoadTagInfo(id TagUID) (*TTagInfo, error)
+}
+
+//区块存储
+type IBlkStore interface {
+	//同步数据
+	Sync()
+	//关闭数据库
+	Close()
+	//初始化
+	Init(arg ...interface{})
+	//索引数据库
+	Index() DBImp
+	//区块数据文件
+	Blk() IChunkStore
+	//事物回退文件
+	Rev() IChunkStore
 }
 
 func getDBKeyValue(ks ...[]byte) ([]byte, []byte) {
@@ -112,14 +120,14 @@ type DBImp interface {
 }
 
 var (
-	CTR_PREFIX   = []byte{'C'} //标签计数器前缀 TagDB()
-	TAG_PREFIX   = []byte{'T'} //标签信息前缀 TagDB()
-	BLOCK_PREFIX = []byte{'B'} //块头信息前缀 IndexDB()
-	HUNIT_PREFIX = []byte{'H'} //单元hash，签名hash存在说明数据验证通过签名 TagDB()
-	UXS_PREFIX   = []byte{'U'} //uts 所在区块前缀 数据为区块id+（uts索引+uv索引) StateDB()存储
-	TXS_PREFIX   = []byte{'T'} //tx 所在区块前缀 数据为区块id+（txs索引 StateDB()存储
-	CBI_PREFIX   = []byte{'C'} //用户最后单元块id StateDB()存储
-	TOKEN_PREFIX = []byte{'A'} //积分相关存储 StateDB pkh_txid_idx
+	CTR_PREFIX   = []byte{1} //标签计数器前缀 TagDB()
+	TAG_PREFIX   = []byte{2} //标签信息前缀 TagDB()
+	BLOCK_PREFIX = []byte{3} //块头信息前缀 IndexDB()
+	HUNIT_PREFIX = []byte{4} //单元hash，签名hash存在说明数据验证通过签名 TagDB()
+	UXS_PREFIX   = []byte{5} //uts 所在区块前缀 数据为区块id+（uts索引+uv索引) StateDB()存储
+	TXS_PREFIX   = []byte{6} //tx 所在区块前缀 数据为区块id+（txs索引 StateDB()存储
+	CBI_PREFIX   = []byte{7} //用户最后单元块id StateDB()存储
+	TOKEN_PREFIX = []byte{8} //积分相关存储 StateDB pkh_txid_idx
 )
 
 //积分key

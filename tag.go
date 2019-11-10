@@ -146,7 +146,7 @@ func (c *TagCTR) Set(v uint) {
 type PKBytes [33]byte
 
 func (v PKBytes) Hash() HASH160 {
-	return Hash160To(v[:])
+	return Hash160From(v[:])
 }
 
 func (v PKBytes) Cmp(b PKBytes) int {
@@ -395,7 +395,7 @@ func (t *TagInfo) Valid(cli *CliPart) error {
 		return errors.New("input miss")
 	}
 	//获取标签信息
-	itag, err := store.LoadTagInfo(t.TUID)
+	itag, err := TagStore.LoadTagInfo(t.TUID)
 	if err != nil {
 		return fmt.Errorf("get tag info error %w", err)
 	}
@@ -404,7 +404,7 @@ func (t *TagInfo) Valid(cli *CliPart) error {
 		return errors.New("cmac valid error")
 	}
 	//更新数据库标签计数器
-	if err := store.SetTagCtr(t.TUID, t.TCTR.ToUInt()); err != nil {
+	if err := TagStore.SetTagCtr(t.TUID, t.TCTR.ToUInt()); err != nil {
 		return err
 	}
 	//校验用户签名
@@ -629,8 +629,8 @@ func (c *CliPart) Verify(b []byte) error {
 }
 
 //cpks HASH160
-func (c *CliPart) ClientID() HASH160 {
-	return Hash160To(c.CPks[:])
+func (c *CliPart) CliID() HASH160 {
+	return Hash160From(c.CPks[:])
 }
 
 func (c *CliPart) Decode(r io.Reader) error {
@@ -796,7 +796,13 @@ func (pv Unit) Equal(cv Unit) bool {
 }
 
 func (pv *Unit) Check() error {
-	//是否已经验证过
+	if err := pv.TASV.Check(); err != nil {
+		return err
+	}
+	//定位信息不能为空
+	if pv.CLoc.IsZero() {
+		return errors.New("cloc error")
+	}
 	if _, err := pv.Verify(); err != nil {
 		return fmt.Errorf("verify unit error %w", err)
 	}

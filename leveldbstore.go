@@ -292,15 +292,13 @@ func (db *leveldbtrimp) Discard() {
 
 type leveldbstore struct {
 	index DBImp
-	tags  DBImp
-	blk   IDataStore
-	rev   IDataStore
+	blk   IChunkStore
+	rev   IChunkStore
 	once  sync.Once
 	dir   string
-	ctrs  map[TagUID]*uint32
 }
 
-func NewLevelDBStore(dir string) IStore {
+func NewLevelDBStore(dir string) IBlkStore {
 	l := &leveldbstore{}
 	l.Init(dir)
 	return l
@@ -308,26 +306,25 @@ func NewLevelDBStore(dir string) IStore {
 
 func (ss *leveldbstore) Sync() {
 	ss.index.Sync()
-	ss.tags.Sync()
 	ss.blk.Sync()
 	ss.rev.Sync()
 }
 
 //新建索引数据库
-func (ss *leveldbstore) newdb(subdir string) DBImp {
+func (ss *leveldbstore) newdb(subdir string) (DBImp, error) {
 	dbdir := ss.dir + Separator + subdir
 	opts := &opt.Options{
 		Filter: filter.NewBloomFilter(10),
 	}
 	sdb, err := leveldb.OpenFile(dbdir, opts)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return NewDB(sdb)
+	return NewDB(sdb), nil
 }
 
 //新建存储数据库
-func (ss *leveldbstore) newdata(ext string, subdir string, maxsiz int64) IDataStore {
+func (ss *leveldbstore) newdata(ext string, subdir string, maxsiz int64) IChunkStore {
 	return &sstore{
 		ext:   ext,
 		files: map[uint32]*sfile{},
@@ -343,18 +340,87 @@ func (ss *leveldbstore) Init(arg ...interface{}) {
 			panic(errors.New("args error"))
 		}
 		ss.dir = arg[0].(string)
-		ss.tags = ss.newdb("tag")
-		ss.index = ss.newdb("blocks")
+		if db, err := ss.newdb("blocks"); err != nil {
+			panic(err)
+		} else {
+			ss.index = db
+		}
 		ss.blk = ss.newdata(".blk", "blocks", 1024*1024*256)
+		if err := ss.blk.Init(); err != nil {
+			panic(err)
+		}
 		ss.rev = ss.newdata(".rev", "blocks", 1024*1024*32)
+		if err := ss.rev.Init(); err != nil {
+			panic(err)
+		}
+	})
+}
+
+func (ss *leveldbstore) Close() {
+	ss.index.Close()
+	ss.blk.Close()
+	ss.rev.Close()
+}
+
+//索引数据库
+func (ss *leveldbstore) Index() DBImp {
+	return ss.index
+}
+
+//区块数据文件
+func (ss *leveldbstore) Blk() IChunkStore {
+	return ss.blk
+}
+
+//事物回退文件
+func (ss *leveldbstore) Rev() IChunkStore {
+	return ss.rev
+}
+
+//leveldb 标签管理
+type levelTagStore struct {
+	tags DBImp
+	once sync.Once
+	dir  string
+	ctrs map[TagUID]*uint32
+}
+
+func NewLevelTagStore(dir string) ITagStore {
+	l := &levelTagStore{}
+	l.Init(dir)
+	return l
+}
+
+func (ss *levelTagStore) Sync() {
+	ss.tags.Sync()
+}
+
+//新建索引数据库
+func (ss *levelTagStore) newdb(subdir string) DBImp {
+	dbdir := ss.dir + Separator + subdir
+	opts := &opt.Options{
+		Filter: filter.NewBloomFilter(10),
+	}
+	sdb, err := leveldb.OpenFile(dbdir, opts)
+	if err != nil {
+		panic(err)
+	}
+	return NewDB(sdb)
+}
+
+func (ss *levelTagStore) Init(arg ...interface{}) {
+	ss.once.Do(func() {
+		if len(arg) < 1 {
+			panic(errors.New("args error"))
+		}
+		ss.dir = arg[0].(string)
+		ss.tags = ss.newdb("tag")
 		ss.ctrs = map[TagUID]*uint32{}
-		ss.blk.Init()
-		ss.rev.Init()
 	})
 }
 
 //新的值必须比旧的大
-func (ss *leveldbstore) SetTagCtr(id TagUID, nv uint32) error {
+func (ss *levelTagStore) SetTagCtr(id TagUID, nv uint32) error {
 	vptr, ok := ss.ctrs[id]
 	if !ok {
 		return errors.New("tags ctr info miss")
@@ -371,15 +437,12 @@ func (ss *leveldbstore) SetTagCtr(id TagUID, nv uint32) error {
 	return ss.tags.Put(ck, cb)
 }
 
-func (ss *leveldbstore) Close() {
-	ss.index.Close()
+func (ss *levelTagStore) Close() {
 	ss.tags.Close()
-	ss.blk.Close()
-	ss.rev.Close()
 }
 
 //加载所有的标签计数器
-func (ss *leveldbstore) LoadAllTags(bf *bloom.BloomFilter) {
+func (ss *levelTagStore) LoadAllTags(bf *bloom.BloomFilter) {
 	log.Println("start load tags ctr info")
 	rp := NewPrefix(CTR_PREFIX)
 	iter := ss.tags.Iterator(rp)
@@ -395,21 +458,8 @@ func (ss *leveldbstore) LoadAllTags(bf *bloom.BloomFilter) {
 	log.Println("load", len(ss.ctrs), "tag ctr")
 }
 
-//获取最高块信息
-func (ss *leveldbstore) GetBestValue() BestValue {
-	bv := BestValue{}
-	b, err := ss.index.Get(BestBlockKey)
-	if err != nil {
-		return InvalidBest
-	}
-	if err := bv.From(b); err != nil {
-		return InvalidBest
-	}
-	return bv
-}
-
 //验证是否有验证成功的单元hash
-func (ss *leveldbstore) HasUnitash(id HASH256) (HASH160, error) {
+func (ss *levelTagStore) HasUnitash(id HASH256) (HASH160, error) {
 	pkh := HASH160{}
 	ck, err := ss.tags.Get(HUNIT_PREFIX, id[:])
 	if err != nil {
@@ -420,17 +470,17 @@ func (ss *leveldbstore) HasUnitash(id HASH256) (HASH160, error) {
 }
 
 //打包确认后可移除单元hash
-func (ss *leveldbstore) DelUnitHash(id HASH256) error {
+func (ss *levelTagStore) DelUnitHash(id HASH256) error {
 	return ss.tags.Del(HUNIT_PREFIX, id[:])
 }
 
 //添加一个验证成功的单元hash
-func (ss *leveldbstore) PutUnitHash(id HASH256, cli PKBytes) error {
+func (ss *levelTagStore) PutUnitHash(id HASH256, cli PKBytes) error {
 	pkh := cli.Hash()
 	return ss.tags.Put(HUNIT_PREFIX, id[:], pkh[:])
 }
 
-func (ss *leveldbstore) SaveTag(tag *TTagInfo) error {
+func (ss *levelTagStore) SaveTag(tag *TTagInfo) error {
 	buf := &bytes.Buffer{}
 	if err := tag.Encode(buf); err != nil {
 		return err
@@ -441,7 +491,7 @@ func (ss *leveldbstore) SaveTag(tag *TTagInfo) error {
 	return ss.tags.Write(batch)
 }
 
-func (ss *leveldbstore) LoadTagInfo(id TagUID) (*TTagInfo, error) {
+func (ss *levelTagStore) LoadTagInfo(id TagUID) (*TTagInfo, error) {
 	bb, err := ss.tags.Get(TAG_PREFIX, id[:])
 	if err != nil {
 		return nil, err
@@ -450,24 +500,4 @@ func (ss *leveldbstore) LoadTagInfo(id TagUID) (*TTagInfo, error) {
 	t := &TTagInfo{}
 	err = t.Decode(buf)
 	return t, err
-}
-
-//索引数据库
-func (ss *leveldbstore) Index() DBImp {
-	return ss.index
-}
-
-//标签数据库
-func (ss *leveldbstore) Tags() DBImp {
-	return ss.tags
-}
-
-//区块数据文件
-func (ss *leveldbstore) Blk() IDataStore {
-	return ss.blk
-}
-
-//事物回退文件
-func (ss *leveldbstore) Rev() IDataStore {
-	return ss.rev
 }

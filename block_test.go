@@ -3,37 +3,66 @@ package xginx
 import (
 	"errors"
 	"log"
-	"math/rand"
 	"testing"
 	"time"
 )
 
-func NewBlock(bi *BlockIndex) *BlockInfo {
-	b := bi.NewBlock()
+var (
+	//测试用矿工私钥
+	TestMinerPrivateKey = "L4eSSzfWoTB9Y3eZo4Wp9TBPBsTJCcwmbioRcda3cM86MnUMrXhN"
+	TestMinePri, _      = LoadPrivateKey(TestMinerPrivateKey)
+	//测试用客户端key
+	TestCliPrivateKey = "KzVa4aqLziZWuiKFkPRkM46ZTrdzJhfuUxbe8pmxgosjoEYYnZuM"
+	TestCliPri, _     = LoadPrivateKey(TestCliPrivateKey)
+	//测试用标签私钥
+	TestTagPrivateKey = "Kyxcf5FAp2tneFB1ZXzNfZTYpu28fQ7DF99aqUZ3NgtD6hJEJ8zJ"
+	TestTagPri, _     = LoadPrivateKey(TestTagPrivateKey)
 
-	u1 := &Unit{}
-	SetRandInt(&u1.Nonce)
-	u1.STime = time.Now().UnixNano()
-	u2 := &Unit{}
-	SetRandInt(&u2.Nonce)
-	u2.STime = time.Now().UnixNano()
+	tuid1 = TagUID{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x80}
+	tuid2 = TagUID{0x04, 0x7D, 0x14, 0x32, 0xAA, 0x61, 0x81}
+)
+
+//创建测试用单元数据
+func newTestUnit(uid TagUID, lng float64, lat float64, time int64, prev HASH256) *Unit {
+	u := &Unit{}
+	u.TUID = uid
+	u.TLoc.Set(lng, lat)
+	u.TPKH = TestTagPri.PublicKey().Hash()
+	u.TASV = S631
+	u.verifyok = true //假设已经验证
+	u.CLoc.Set(lng, lat)
+	u.Prev = prev
+	u.CPks.Set(TestCliPri.PublicKey())
+	u.CTime = time
+	SetRandInt(&u.Nonce)
+	u.STime = time
+	return u
+}
+
+var (
+	testNow = time.Now()
+)
+
+func NewTestBlock(bi *BlockIndex) *BlockInfo {
+	b := bi.NewBlock()
+	cli := TestCliPri.PublicKey()
+
+	cliBestId, _ := bi.GetCliBestId(cli.Hash())
+
+	testNow = testNow.Add(time.Hour * 3)
+	u1 := newTestUnit(tuid1, 116.29331, 39.985513, testNow.UnixNano(), cliBestId)
+
+	testNow = testNow.Add(time.Hour * 3)
+	u2 := newTestUnit(tuid2, 116.545698, 39.944812, testNow.UnixNano(), u1.Hash())
 
 	us := &Units{u1, u2}
-	b.Uts = []*Units{us}
 
-	tx := &TX{}
-	txin := &TxIn{
-		Script: BaseScript(b.Meta.Height, []byte("test script")),
+	err := b.AddUnits(bi, us)
+	if err != nil {
+		panic(err)
 	}
-	txout := &TxOut{
-		Value:  VarUInt(rand.Uint32() % 1000),
-		Script: StdLockedScript(conf.minerpk),
-	}
-	tx.Ins = []*TxIn{txin}
-	tx.Outs = []*TxOut{txout}
-	b.Txs = []*TX{tx}
-
-	err := b.SetMerkle()
+	calcer := NewTokenCalcer(TestMinePri.PublicKey().Hash())
+	err = b.Finish(bi, calcer)
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +72,7 @@ func NewBlock(bi *BlockIndex) *BlockInfo {
 func TestBlockChain(t *testing.T) {
 	bi := NewBlockIndex()
 	testnum := uint32(10)
-	fb := NewBlock(bi)
+	fb := NewTestBlock(bi)
 	conf.genesisId = fb.ID()
 	log.Println("genesis_block=", fb.ID())
 	_, err := bi.LinkTo(fb)
@@ -52,7 +81,7 @@ func TestBlockChain(t *testing.T) {
 		t.FailNow()
 	}
 	for i := uint32(1); i < testnum; i++ {
-		cb := NewBlock(bi)
+		cb := NewTestBlock(bi)
 		_, err = bi.LinkTo(cb)
 		if err != nil {
 			t.Error(err)
@@ -70,6 +99,107 @@ func TestBlockChain(t *testing.T) {
 	bi.db.Sync()
 }
 
+func TestLRUCache(t *testing.T) {
+	c := NewCache(4)
+	id := HASH256{1}
+	v1 := c.Get(id, func() (size int, value Value) {
+		log.Println("a1")
+		return 5, 100
+	})
+
+	log.Println(v1.Value())
+
+	v1 = c.Get(HASH256{3}, func() (size int, value Value) {
+		log.Println("a2")
+		return 5, 101
+	})
+	v1.Release()
+
+	v2 := c.Get(HASH256{3}, func() (size int, value Value) {
+		log.Println("a3")
+		return 5, 102
+	})
+	log.Println(v2.Value())
+}
+
+func TestBlockSign(t *testing.T) {
+
+	bi := NewBlockIndex()
+	err := bi.LoadAll()
+	if err != nil {
+		panic(err)
+	}
+
+	//获取矿工的所有输出
+	ds, err := bi.ListTokens(TestMinePri.PublicKey().Hash())
+	if err != nil {
+		panic(err)
+	}
+	//获取标签的输出
+	//ds, err = bi.ListTokens(TestTagPri.PublicKey().Hash())
+	//if err != nil {
+	//	panic(err)
+	//}
+	////获取用户的输出
+	//ds, err = bi.ListTokens(TestCliPri.PublicKey().Hash())
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	b := bi.NewBlock()
+	//组装交易
+	tx := &TX{Ver: 1}
+	ins := []*TxIn{}
+	txout := &TxOut{}
+	//转到miner
+	txout.Script = StdLockedScript(TestMinePri.PublicKey())
+	for _, v := range ds {
+		ins = append(ins, v.GetTxIn())
+		txout.Value += v.Value
+	}
+	outs := []*TxOut{txout}
+	tx.Ins = ins
+	tx.Outs = outs
+	//添加签名
+	err = tx.Sign(bi)
+	if err != nil {
+		panic(err)
+	}
+	err = b.AddTx(bi, tx)
+	if err != nil {
+		panic(err)
+	}
+
+	cli := TestCliPri.PublicKey()
+
+	cliBestId, _ := bi.GetCliBestId(cli.Hash())
+
+	u1 := &Unit{}
+	u1.CPks.Set(cli)
+	u1.Prev = cliBestId
+	SetRandInt(&u1.Nonce)
+	u1.STime = time.Now().UnixNano()
+
+	u2 := &Unit{}
+	u2.CPks.Set(cli)
+	u2.Prev = u1.Hash()
+	SetRandInt(&u2.Nonce)
+	u2.STime = time.Now().UnixNano()
+
+	us := &Units{u1, u2}
+
+	err = b.AddUnits(bi, us)
+	if err != nil {
+		panic(err)
+	}
+
+	calcer := NewTokenCalcer(TestMinePri.PublicKey().Hash())
+	err = b.Finish(bi, calcer)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestUnlinkBlock(t *testing.T) {
 	bi := NewBlockIndex()
 	err := bi.LoadAll()
@@ -77,7 +207,7 @@ func TestUnlinkBlock(t *testing.T) {
 		panic(err)
 	}
 	for {
-		bv := bi.db.GetBestValue()
+		bv := bi.GetBestValue()
 		if !bv.IsValid() {
 			log.Println("not has best block")
 			break
@@ -111,7 +241,7 @@ func TestValueScale(t *testing.T) {
 
 func TestCalcDistance(t *testing.T) {
 	bits := NewUINT256(conf.PowLimit).Compact(false)
-	calcer := NewTokenCalcer()
+	calcer := NewTokenCalcer(TestMinePri.PublicKey().Hash())
 	now := time.Now().UnixNano()
 	//i1 first
 	i1 := &Unit{}

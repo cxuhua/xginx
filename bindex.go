@@ -8,8 +8,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"github.com/patrickmn/go-cache"
 )
 
 const (
@@ -73,10 +71,10 @@ type BlockIndex struct {
 	hmap map[uint32]*list.Element
 	//按id缓存
 	imap map[HASH256]*list.Element
-	//缓存,存放块，交易，单元
-	cacher *cache.Cache
+	//lru缓存
+	lru *Cache
 	//存储
-	db IStore
+	db IBlkStore
 }
 
 //计算当前难度
@@ -171,25 +169,27 @@ func (bi *BlockIndex) Current() *TBEle {
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
-	if v, has := bi.cacher.Get(id.ToString()); has {
-		return v.(*BlockInfo), nil
+	hptr := bi.lru.Get(id, func() (size int, value Value) {
+		ele, has := bi.imap[id]
+		if !has {
+			return 0, nil
+		}
+		smeta := ele.Value.(*TBEle)
+		bptr := &BlockInfo{}
+		lmeta, err := bi.LoadTo(id, bptr)
+		if err != nil {
+			return 0, nil
+		}
+		if !lmeta.Hash().Equal(smeta.Hash()) {
+			return 0, nil
+		}
+		bptr.Meta = smeta
+		return smeta.Blk.Len.ToInt(), bptr
+	})
+	if hptr.Value() == nil {
+		return nil, errors.New("load block failed")
 	}
-	ele, has := bi.imap[id]
-	if !has {
-		return nil, fmt.Errorf("block meta not load %v", id)
-	}
-	smeta := ele.Value.(*TBEle)
-	bptr := &BlockInfo{}
-	lmeta, err := bi.LoadTo(id, bptr)
-	if err != nil {
-		return nil, err
-	}
-	if !lmeta.Hash().Equal(smeta.Hash()) {
-		return nil, fmt.Errorf("meta data error")
-	}
-	bptr.Meta = smeta
-	bi.cacher.Set(id.ToString(), bptr, time.Minute*30)
-	return bptr, nil
+	return hptr.Value().(*BlockInfo), nil
 }
 
 //上一个
@@ -325,7 +325,7 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		return nil, FirstIsGenesis
 	} else if fe != nil {
 		id = fe.Value.(*TBEle).Prev
-	} else if bv := bi.db.GetBestValue(); !bv.IsValid() {
+	} else if bv := bi.GetBestValue(); !bv.IsValid() {
 		return nil, NotFoundBest
 	} else {
 		id = bv.Id
@@ -383,19 +383,25 @@ func (bi *BlockIndex) LinkBack(meta *TBMeta) (*TBEle, error) {
 }
 
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
-	if vv, has := bi.cacher.Get(id.ToString()); has {
-		return vv.(*TX), nil
+	hptr := bi.lru.Get(id, func() (size int, value Value) {
+		txv, err := bi.LoadTxValue(id)
+		if err != nil {
+			return 0, nil
+		}
+		tx, err := txv.GetTX(bi)
+		if err != nil {
+			return 0, nil
+		}
+		buf := &bytes.Buffer{}
+		if err := tx.Encode(buf); err != nil {
+			return 0, nil
+		}
+		return buf.Len(), tx
+	})
+	if hptr.Value() == nil {
+		return nil, errors.New("not found")
 	}
-	txv, err := bi.LoadTxValue(id)
-	if err != nil {
-		return nil, err
-	}
-	tx, err := txv.GetTX(bi)
-	if err != nil {
-		return nil, err
-	}
-	bi.cacher.Set(id.ToString(), tx, time.Minute*10)
-	return tx, nil
+	return hptr.Value().(*TX), nil
 }
 
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
@@ -410,19 +416,25 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 }
 
 func (bi *BlockIndex) LoadUnit(id HASH256) (*Unit, error) {
-	if vv, has := bi.cacher.Get(id.ToString()); has {
-		return vv.(*Unit), nil
+	hptr := bi.lru.Get(id, func() (size int, value Value) {
+		uv, err := bi.LoadUvValue(id)
+		if err != nil {
+			return 0, nil
+		}
+		uvp, err := uv.GetUnit(bi)
+		if err != nil {
+			return 0, nil
+		}
+		buf := &bytes.Buffer{}
+		if err := uvp.Encode(buf); err != nil {
+			return 0, nil
+		}
+		return buf.Len(), uvp
+	})
+	if hptr.Value() == nil {
+		return nil, errors.New("not found")
 	}
-	uv, err := bi.LoadUvValue(id)
-	if err != nil {
-		return nil, err
-	}
-	uvp, err := uv.GetUnit(bi)
-	if err != nil {
-		return nil, err
-	}
-	bi.cacher.Set(id.ToString(), uvp, time.Minute*10)
-	return uvp, nil
+	return hptr.Value().(*Unit), nil
 }
 
 func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
@@ -436,7 +448,7 @@ func (bi *BlockIndex) LoadUvValue(id HASH256) (*UvValue, error) {
 	return vv, err
 }
 
-func (bi *BlockIndex) LoadCliLastUnit(cli HASH160) (HASH256, error) {
+func (bi *BlockIndex) GetCliBestId(cli HASH160) (HASH256, error) {
 	id := HASH256{}
 	ckey := GetDBKey(CBI_PREFIX, cli[:])
 	bb, err := bi.db.Index().Get(ckey)
@@ -479,7 +491,7 @@ func (bi *BlockIndex) UnlinkLast() error {
 	}
 	err = bi.Unlink(b)
 	if err == nil {
-		bi.cacher.Delete(last.ID().ToString())
+		bi.lru.Delete(last.ID())
 	}
 	return err
 }
@@ -509,6 +521,19 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	}
 	//断开链接
 	return bi.UnlinkBack()
+}
+
+//获取最高块信息
+func (bi *BlockIndex) GetBestValue() BestValue {
+	bv := BestValue{}
+	b, err := bi.db.Index().Get(BestBlockKey)
+	if err != nil {
+		return InvalidBest
+	}
+	if err := bv.From(b); err != nil {
+		return InvalidBest
+	}
+	return bv
 }
 
 //获取某个id的所有积分
@@ -551,13 +576,25 @@ func (bi *BlockIndex) WriteLastToRev(bp *BlockInfo, bt *Batch) error {
 
 //暂时缓存交易
 func (bi *BlockIndex) SetTx(tx *TX) error {
-	bi.cacher.Set(tx.Hash().ToString(), tx, time.Minute*5)
+	bi.lru.Get(tx.Hash(), func() (size int, value Value) {
+		buf := &bytes.Buffer{}
+		if err := tx.Encode(buf); err != nil {
+			return 0, nil
+		}
+		return buf.Len(), tx
+	})
 	return nil
 }
 
 //暂时缓存单元数据
 func (bi *BlockIndex) SetUnit(uv *Unit) error {
-	bi.cacher.Set(uv.Hash().ToString(), uv, time.Minute*5)
+	bi.lru.Get(uv.Hash(), func() (size int, value Value) {
+		buf := &bytes.Buffer{}
+		if err := uv.Encode(buf); err != nil {
+			return 0, nil
+		}
+		return buf.Len(), uv
+	})
 	return nil
 }
 
@@ -619,11 +656,11 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 
 func NewBlockIndex() *BlockIndex {
 	bi := &BlockIndex{
-		lis:    list.New(),
-		hmap:   map[uint32]*list.Element{},
-		imap:   map[HASH256]*list.Element{},
-		cacher: cache.New(time.Minute*30, time.Hour),
-		db:     store,
+		lis:  list.New(),
+		hmap: map[uint32]*list.Element{},
+		imap: map[HASH256]*list.Element{},
+		db:   NewLevelDBStore(conf.DataDir),
+		lru:  NewCache(1024 * 1024 * 256),
 	}
 	return bi
 }

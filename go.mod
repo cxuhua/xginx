@@ -7,9 +7,9 @@ require (
 	github.com/dchest/siphash v1.2.1 // indirect
 	github.com/gin-gonic/gin v1.4.0
 	github.com/go-stack/stack v1.8.0 // indirect
+	github.com/hashicorp/golang-lru v0.5.3
 	github.com/mattn/go-colorable v0.1.4
-	github.com/patrickmn/go-cache v2.1.0+incompatible
-	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/spaolacci/murmur3 v1.1.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/willf/bitset v1.1.10
 	github.com/willf/bloom v2.0.3+incompatible

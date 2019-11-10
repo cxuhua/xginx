@@ -3,10 +3,8 @@ package xginx
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 const (
@@ -347,12 +345,20 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-func (b *BlockInfo) AddUnits(us *Units) {
+func (b *BlockInfo) AddUnits(bi *BlockIndex, us *Units) error {
+	if err := us.Check(bi); err != nil {
+		return err
+	}
 	b.Uts = append(b.Uts, us)
+	return nil
 }
 
-func (b *BlockInfo) AddTx(tx *TX) {
+func (b *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	if err := tx.Check(bi); err != nil {
+		return err
+	}
 	b.Txs = append(b.Txs, tx)
+	return nil
 }
 
 func (b *BlockInfo) ID() HASH256 {
@@ -429,8 +435,8 @@ func (v BlockInfo) CheckUts(bi *BlockIndex) error {
 	return nil
 }
 
-//结算积分
-func (v *BlockInfo) CalcToken(bi *BlockIndex) error {
+//完成块数据
+func (v *BlockInfo) Finish(bi *BlockIndex, calcer ITokenCalcer) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -438,19 +444,16 @@ func (v *BlockInfo) CalcToken(bi *BlockIndex) error {
 		return errors.New("uts miss, too little")
 	}
 	//计算积分分配
-	calcer := NewTokenCalcer()
 	for _, uv := range v.Uts {
-		uc := NewTokenCalcer()
-		err := uv.CalcToken(bi, v.Header.Bits, uc)
+		err := uv.CalcToken(bi, v.Header.Bits, calcer)
 		if err != nil {
 			return err
 		}
-		calcer.Merge(uc)
 	}
 	outs := []*TxOut{}
 	for ck, cv := range calcer.Outs() {
 		out := &TxOut{}
-		out.Value = cv
+		out.Value = VarUInt(cv)
 		out.Script = StdLockedScript(ck)
 		outs = append(outs, out)
 	}
@@ -459,7 +462,7 @@ func (v *BlockInfo) CalcToken(bi *BlockIndex) error {
 	return v.SetMerkle()
 }
 
-func (v *BlockInfo) Check(bi *BlockIndex) error {
+func (v *BlockInfo) Check(bi *BlockIndex, calcer ITokenCalcer) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -497,14 +500,11 @@ func (v *BlockInfo) Check(bi *BlockIndex) error {
 		return err
 	}
 	//计算积分分配
-	calcer := NewTokenCalcer()
 	for _, uv := range v.Uts {
-		uc := NewTokenCalcer()
-		err := uv.CalcToken(bi, v.Header.Bits, uc)
+		err := uv.CalcToken(bi, v.Header.Bits, calcer)
 		if err != nil {
 			return err
 		}
-		calcer.Merge(uc)
 	}
 	//检验分配是否正确
 	for ck, cv := range calcer.Outs() {
@@ -621,10 +621,9 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  HASH256     //输出交易hash
-	OutIndex VarUInt     //对应的输出索引
-	Script   Script      //解锁脚本
-	private  *PrivateKey //消费用私钥，临时设置用来消费签名
+	OutHash  HASH256 //输出交易hash
+	OutIndex VarUInt //对应的输出索引
+	Script   Script  //解锁脚本
 }
 
 //获取对应的输出
@@ -1051,7 +1050,7 @@ func (b BlockInfo) FindUnits(cpk PKBytes) *Units {
 
 //获取上一个unit
 func (v *Units) LastUnit(bi *BlockIndex) (*Unit, error) {
-	lid, err := bi.LoadCliLastUnit(v.CliId())
+	lid, err := bi.GetCliBestId(v.CliId())
 	//client不存在last unit的清空下，如果是第一个直接返回
 	if len(*v) > 0 && (*v)[0].IsFirst() && err != nil {
 		return (*v)[0], nil
@@ -1126,187 +1125,4 @@ func (v *Units) CalcToken(bi *BlockIndex, bits uint32, calcer ITokenCalcer) erro
 	}
 	*is = append(*is, *v...)
 	return calcer.Calc(bits, is)
-}
-
-//积分分配比例 矿工，标签属主，签到人
-type TokenAlloc uint8
-
-func (v TokenAlloc) ToUInt8() uint8 {
-	return uint8(v)
-}
-
-func (v TokenAlloc) Encode(w IWriter) error {
-	return binary.Write(w, Endian, v)
-}
-
-func (v *TokenAlloc) Decode(r IReader) error {
-	return binary.Read(r, Endian, &v)
-}
-
-//矿工，标签，用户，获得积分比例
-func (v TokenAlloc) Scale() (float64, float64, float64) {
-	m := float64((v >> 5) & 0b111)
-	t := float64((v >> 2) & 0b111)
-	c := float64(v & 0b11)
-	return m / 10.0, t / 10.0, c / 10.0
-}
-
-//3个值之和应该为10
-func (v TokenAlloc) Check() error {
-	av := ((v >> 5) & 0b111) + ((v >> 2) & 0b111) + (v & 0b11)
-	if av != 10 {
-		return errors.New("value error,alloc sum != 10")
-	}
-	return nil
-}
-
-const (
-	S631 = TokenAlloc(0b110_011_01)
-	S622 = TokenAlloc(0b110_010_10)
-	S640 = TokenAlloc(0b110_100_00)
-	S550 = TokenAlloc(0b101_101_00)
-	S721 = TokenAlloc(0b111_010_01)
-)
-
-//token结算接口
-type ITokenCalcer interface {
-	Calc(bits uint32, items *Units) error
-	//总的积分
-	Total() VarUInt
-	//标签获得的积分
-	Outs() map[HASH160]VarUInt
-	//重置
-	Reset()
-	//合并
-	Merge(c *TokenCalcer)
-}
-
-type TokenCalcer struct {
-	total float64             //总的的积分
-	vmap  map[HASH160]float64 //标签获得的积分
-}
-
-func NewTokenCalcer() *TokenCalcer {
-	return &TokenCalcer{
-		total: 0,
-		vmap:  map[HASH160]float64{},
-	}
-}
-
-func (calcer TokenCalcer) String() string {
-	sb := strings.Builder{}
-	sb.WriteString(fmt.Sprintf("Total=%d\n", calcer.Total()))
-	for k, v := range calcer.Outs() {
-		sb.WriteString(fmt.Sprintf("Tag=%s Value=%d\n", hex.EncodeToString(k[:]), v))
-	}
-	return sb.String()
-}
-
-func (calcer *TokenCalcer) Reset() {
-	calcer.total = 0
-	calcer.vmap = map[HASH160]float64{}
-}
-
-func (calcer *TokenCalcer) Total() VarUInt {
-	return VarUInt(calcer.total)
-}
-
-//标签获得的积分
-func (calcer *TokenCalcer) Outs() map[HASH160]VarUInt {
-	ret := map[HASH160]VarUInt{}
-	for k, v := range calcer.vmap {
-		ret[k] += VarUInt(v)
-	}
-	return ret
-}
-
-func (calcer *TokenCalcer) Merge(c *TokenCalcer) {
-	calcer.total += c.total
-	for k, v := range c.vmap {
-		calcer.vmap[k] += v
-	}
-}
-
-//多个连续的记录信息，记录client链,至少有两个记录
-//两个点之间的服务器时间差超过1天将忽略距离 SpanTime(秒）设置
-//定位点与标签点差距超过1km，距离递减 GetDisRate 计算
-//以上都不影响链的链接，只是会减少距离提成
-//标签距离合计，后一个经纬度与前一个距离之和 单位：米,如果有prevhash需要计算第一个与prevhash指定的最后一个单元距离
-//所有distance之和就是clientid的总的distance
-//bits 区块难度
-func (calcer *TokenCalcer) Calc(bits uint32, items *Units) error {
-	if len(*items) < 2 {
-		return errors.New("items count error")
-	}
-	if !CheckProofOfWorkBits(bits) {
-		return errors.New("proof of work bits error")
-	}
-	mph := conf.minerpk.Hash()
-	calcer.Reset()
-	tpv := CalculateWorkTimeScale(bits)
-	for i := 1; i < len(*items); i++ {
-		cv := (*items)[i+0]
-		//使用当前标签设定的分配比例
-		if err := cv.TASV.Check(); err != nil {
-			return fmt.Errorf("item asv error %w", err)
-		}
-		mr, tr, cr := cv.TASV.Scale()
-		pv := (*items)[i-1]
-		if !cv.ClientID().Equal(pv.ClientID()) {
-			return errors.New("client error")
-		}
-		if cv.IsFirst() {
-			return errors.New("curr point error")
-		}
-		//记录时间差太多忽略这个点
-		if cv.TimeSub() > conf.TimeErr {
-			continue
-		}
-		if !cv.Prev.Equal(pv.Hash()) {
-			return errors.New("prev hash error")
-		}
-		//两次记录时间必须连续 st=两次时间间隔，单位：秒
-		st := pv.STimeSub(cv)
-		if st < 0 {
-			return errors.New("stime error")
-		}
-		//两次记录时间差太大将被忽略,根据当前区块难度放宽
-		if st > conf.SpanTime*tpv {
-			continue
-		}
-		//忽略超人的存在，速度太快
-		sp := pv.TTSpeed(cv)
-		if sp < 0 || sp > conf.MaxSpeed {
-			continue
-		}
-		dis := float64(0)
-		//如果两次都是同一打卡点，按时间获得积分
-		if cv.TUID.Equal(pv.TUID) {
-			//按每小时1km速度结算
-			dis = st / 3.6
-		} else {
-			//获取定位不准惩罚系数
-			csr := cv.CTLocDisRate()
-			//上一点的定位差
-			psr := pv.CTLocDisRate()
-			//计算距离奖励 rr为递减
-			dis = pv.TTLocDis(cv) * csr * psr
-		}
-		//所有和不能超过总量
-		calcer.total += dis
-		//矿工获得
-		mdis := dis * mr
-		//标签所有者获得,两标签平分
-		tdis := (dis * tr) * 0.5
-		calcer.vmap[cv.TPKH] += tdis
-		calcer.vmap[pv.TPKH] += tdis
-		cdis := dis * cr
-		calcer.vmap[cv.ClientID()] += cdis
-		//保存矿工获得的总量
-		calcer.vmap[mph] += mdis
-	}
-	if calcer.total < 0 || calcer.total > EARTH_RADIUS {
-		return errors.New("total range error")
-	}
-	return nil
 }

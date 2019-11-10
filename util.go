@@ -86,7 +86,7 @@ func Ripemd160(b []byte) []byte {
 	return h160.Sum(nil)
 }
 
-func Hash160To(b []byte) HASH160 {
+func Hash160From(b []byte) HASH160 {
 	hv := HASH160{}
 	copy(hv[:], Hash160(b))
 	return hv
@@ -97,7 +97,7 @@ func Hash160(b []byte) []byte {
 	return Ripemd160(v1)
 }
 
-func Hash256To(b []byte) HASH256 {
+func Hash256From(b []byte) HASH256 {
 	hv := HASH256{}
 	copy(hv[:], Hash256(b))
 	return hv
