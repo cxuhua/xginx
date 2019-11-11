@@ -3,7 +3,6 @@ package xginx
 import (
 	"bytes"
 	"errors"
-	"fmt"
 )
 
 //获取签名数据接口
@@ -125,16 +124,6 @@ func (sr *stdsigner) Sign(pri *PrivateKey) error {
 	if !pri.PublicKey().Hash().Equal(pkh) {
 		return errors.New("not mine txout")
 	}
-	tk := CoinKeyValue{}
-	tk.CPkh = pkh
-	tk.TxId = sr.in.OutHash
-	tk.Index = sr.in.OutIndex
-	key := tk.GetKey()
-	bv, err := sr.bi.db.Index().Get(key)
-	if err != nil {
-		return fmt.Errorf("out token value miss %w", err)
-	}
-	tk.Value.From(bv)
 	sigb, err := sr.GetSigBytes()
 	if err != nil {
 		return err

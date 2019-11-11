@@ -152,7 +152,7 @@ func (v *BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) er
 		return errors.New("batch miss rev")
 	}
 	for _, in := range ins {
-		if in.IsBase() {
+		if in.IsCoinBase() {
 			continue
 		}
 		//out将被消耗掉
@@ -294,7 +294,7 @@ func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	}
 	//检测所有交易
 	for i, tx := range v.Txs {
-		if i == 0 && !tx.IsBase() {
+		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
 		err := tx.Check(bi, v)
@@ -477,7 +477,7 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
-	if v.IsBase() {
+	if v.IsCoinBase() {
 		return nil
 	} else if v.Script.IsStdUnlockScript() {
 		return nil
@@ -513,7 +513,7 @@ func (v *TxIn) Decode(r IReader) error {
 }
 
 //是否基本单元，txs的第一个一定是base类型
-func (in *TxIn) IsBase() bool {
+func (in *TxIn) IsCoinBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsBaseScript()
 }
 
@@ -646,15 +646,15 @@ type TX struct {
 }
 
 //第一个必须是base交易
-func (tx *TX) IsBase() bool {
-	return len(tx.Ins) == 1 && tx.Ins[0].IsBase()
+func (tx *TX) IsCoinBase() bool {
+	return len(tx.Ins) == 1 && tx.Ins[0].IsCoinBase()
 }
 
 //验证交易输入数据
 func (tx *TX) Verify(bi *BlockIndex) error {
 	for idx, in := range tx.Ins {
 		//不验证base的签名
-		if in.IsBase() {
+		if in.IsCoinBase() {
 			continue
 		}
 		out, err := in.LoadTxOut(bi)
@@ -680,11 +680,14 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 		return errors.New("block index listener null,can't sign")
 	}
 	for idx, in := range tx.Ins {
-		if in.IsBase() {
+		if in.IsCoinBase() {
 			continue
 		}
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
+			return err
+		}
+		if err := out.IsSpent(in, bi); err != nil {
 			return err
 		}
 		signer, err := out.GetSigner(bi, tx, in, idx)
@@ -716,7 +719,7 @@ func (tx *TX) Hash() HASH256 {
 
 //获取coinse out fee sum
 func (v *TX) CoinbaseFee() Amount {
-	if !v.IsBase() {
+	if !v.IsCoinBase() {
 		panic(errors.New("tx not coinbase"))
 	}
 	a := Amount(0)
@@ -728,7 +731,7 @@ func (v *TX) CoinbaseFee() Amount {
 
 //获取此交易交易费
 func (v *TX) GetFee(bi *BlockIndex) Amount {
-	if v.IsBase() {
+	if v.IsCoinBase() {
 		return 0
 	}
 	a := Amount(0)
@@ -755,7 +758,7 @@ func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
 		return errors.New("tx ins too slow")
 	}
 	//这里不检测coinbase交易
-	if v.IsBase() {
+	if v.IsCoinBase() {
 		return nil
 	}
 	itv := Amount(0)

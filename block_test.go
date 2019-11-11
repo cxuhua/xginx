@@ -27,20 +27,20 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	}
 	//设置base out script
 	//创建coinbase tx
-	btx := &TX{}
-	btx.Ver = 1
+	tx := &TX{}
+	tx.Ver = 1
 
 	//base tx
 	in := &TxIn{}
 	in.Script = BaseScript(blk.Meta.Height, []byte("Test Block"))
-	btx.Ins = []*TxIn{in}
+	tx.Ins = []*TxIn{in}
 
 	out := &TxOut{}
 	out.Value = GetCoinbaseReward(blk.Meta.Height)
 	out.Script = script
-	btx.Outs = []*TxOut{out}
+	tx.Outs = []*TxOut{out}
 
-	blk.Txs = []*TX{btx}
+	blk.Txs = []*TX{tx}
 
 	return nil
 }
@@ -72,7 +72,7 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 
 func TestBlockChain(t *testing.T) {
 	bi := NewBlockIndex(&tlis{})
-	testnum := uint32(210001)
+	testnum := uint32(500)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		_, err := bi.LinkTo(cb)
@@ -94,7 +94,9 @@ func TestBlockChain(t *testing.T) {
 func TestBlockSign(t *testing.T) {
 
 	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll()
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -121,7 +123,7 @@ func TestBlockSign(t *testing.T) {
 	outs := []*TxOut{txout}
 	tx.Ins = ins
 	tx.Outs = outs
-	//添加签名
+	//为每个输入添加签名
 	err = tx.Sign(bi, b)
 	if err != nil {
 		panic(err)
@@ -145,7 +147,9 @@ func TestBlockSign(t *testing.T) {
 
 func TestUnlinkBlock(t *testing.T) {
 	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll()
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
 	if err != nil {
 		panic(err)
 	}

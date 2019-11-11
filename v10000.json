@@ -1,5 +1,5 @@
 {
-  "data_dir": "f:/datadir",
+  "data_dir": "/Users/xuhua/datadir",
   "flags": "bcxh",
   "version":10000,
   "tcp_port": 9333,

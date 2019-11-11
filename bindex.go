@@ -51,19 +51,19 @@ func EmptyTBEle(h uint32, i *BlockIndex) *TBEle {
 	}
 }
 
-func NewTBEle(meta *TBMeta, idx *BlockIndex) *TBEle {
+func NewTBEle(meta *TBMeta, height uint32, idx *BlockIndex) *TBEle {
 	return &TBEle{
 		flags:  TBELoadedMeta,
 		TBMeta: *meta,
-		Height: InvalidHeight,
+		Height: height,
 		idx:    idx,
 	}
 }
 
 type IListener interface {
-	//当块创建完毕
+	//当块创建时，可以添加，修改块内信息
 	OnNewBlock(bi *BlockIndex, blk *BlockInfo) error
-	//完成区块
+	//完成区块，当检测完成
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
 	//获取签名私钥
 	OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error)
@@ -295,7 +295,8 @@ func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
 }
 
 //加载所有链meta
-func (bi *BlockIndex) LoadAll() error {
+//f进度回调 0-100
+func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	log.Println("start load main chain block header")
 	hh := InvalidHeight
 	vv := uint(0)
@@ -311,11 +312,14 @@ func (bi *BlockIndex) LoadAll() error {
 			hh = ele.Height + 1
 		}
 		p := 1 - (float32(ele.Height) / float32(hh))
-		cv := uint((p * 10))
-		if cv != vv {
-			log.Println("load main chain progress ", cv*10, "%", bi.Len())
-			vv = cv
+		cv := uint((p * 100))
+		if cv == vv {
+			continue
 		}
+		if fn != nil && cv > 0 {
+			fn(cv)
+		}
+		vv = cv
 	}
 	log.Println("load finished", bi.Len())
 	return nil
@@ -373,31 +377,34 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 func (bi *BlockIndex) IsLinkBack(meta *TBMeta) (uint32, HASH256, bool) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
+	hash := HASH256{}
 	last := bi.lis.Back()
 	if last == nil {
-		return 0, HASH256{}, true
+		return 0, hash, true
 	}
 	lv := last.Value.(*TBEle)
 	if !meta.Prev.Equal(lv.ID()) {
-		return 0, HASH256{}, false
+		return 0, hash, false
 	}
-	return lv.Height, lv.ID(), true
+	hash = lv.ID()
+	return lv.Height, hash, true
 }
 
 //加入一个队列尾并设置高度
-func (bi *BlockIndex) LinkBack(meta *TBMeta) (*TBEle, error) {
+func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
-	ele := NewTBEle(meta, bi)
 	last := bi.lis.Back()
 	if last == nil {
 		return bi.pushback(ele)
 	}
 	lv := last.Value.(*TBEle)
 	if !ele.Prev.Equal(lv.ID()) {
-		return nil, errors.New("prev hash error")
+		return nil, errors.New("ele prev hash error")
 	}
-	ele.Height = lv.Height + 1
+	if lv.Height+1 != ele.Height {
+		return nil, errors.New("ele height error")
+	}
 	return bi.pushback(ele)
 }
 
@@ -526,12 +533,12 @@ func (bi *BlockIndex) ListTokens(id HASH160) ([]*CoinKeyValue, error) {
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {
-		kv := &CoinKeyValue{}
-		err := kv.From(iter.Key(), iter.Value())
+		tk := &CoinKeyValue{}
+		err := tk.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		kvs = append(kvs, kv)
+		kvs = append(kvs, tk)
 	}
 	return kvs, nil
 }
@@ -554,6 +561,7 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	if err != nil {
 		return nil, err
 	}
+	nexth := InvalidHeight
 	//是否能连接到主链后
 	phv, pid, isok := bi.IsLinkBack(meta)
 	if !isok {
@@ -565,10 +573,12 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	rt := bt.SetRev(NewBatch())
 	//第一个
 	if pid.IsZero() {
-		bv := BestValue{Id: cid, Height: phv}
+		nexth = phv
+		bv := BestValue{Id: cid, Height: nexth}
 		bt.Put(BestBlockKey, bv.Bytes())
 	} else {
-		bv := BestValue{Id: cid, Height: phv + 1}
+		nexth = phv + 1
+		bv := BestValue{Id: cid, Height: nexth}
 		bt.Put(BestBlockKey, bv.Bytes())
 		//写回退
 		cv := BestValue{Id: pid, Height: phv}
@@ -601,8 +611,9 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	if err := bi.db.Index().Write(bt); err != nil {
 		return nil, err
 	}
+	ele := NewTBEle(meta, nexth, bi)
 	//连接区块
-	return bi.LinkBack(meta)
+	return bi.LinkBack(ele)
 }
 
 func NewBlockIndex(lptr IListener) *BlockIndex {
