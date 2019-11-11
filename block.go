@@ -11,7 +11,7 @@ const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
 	//最大ExtScript大小
-	MAX_EXT_SCRIPT_SIZE = 64 * 1024
+	MAX_SCRIPT_SIZE = 8 * 1024
 )
 
 //存储交易索引值
@@ -99,7 +99,7 @@ type BlockInfo struct {
 }
 
 //消费out
-func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
+func (v *BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
@@ -125,7 +125,7 @@ func (v BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Bat
 }
 
 //添加out
-func (v BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
+func (v *BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("rev batch miss")
@@ -146,7 +146,7 @@ func (v BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batc
 	return nil
 }
 
-func (v BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) error {
+func (v *BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) error {
 	r := b.GetRev()
 	if r == nil {
 		return errors.New("batch miss rev")
@@ -168,7 +168,7 @@ func (v BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) err
 	return nil
 }
 
-func (v BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch) error {
+func (v *BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
@@ -182,7 +182,7 @@ func (v BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch)
 	return nil
 }
 
-func (v BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
+func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
@@ -213,7 +213,7 @@ func (v BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	return nil
 }
 
-func (v BlockInfo) GetMerkle() (HASH256, error) {
+func (v *BlockInfo) GetMerkle() (HASH256, error) {
 	if h, b := v.merher.IsSet(); b {
 		return h, nil
 	}
@@ -268,22 +268,90 @@ func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	return id, meta, buf.Bytes(), nil
 }
 
+//获取coinse out fee sum
+func (v *BlockInfo) CoinbaseFee() Amount {
+	if len(v.Txs) == 0 {
+		panic(errors.New("miss txs"))
+	}
+	return v.Txs[0].CoinbaseFee()
+}
+
+//获取总的交易费
+func (v *BlockInfo) GetFee(bi *BlockIndex) Amount {
+	fee := Amount(0)
+	for _, tx := range v.Txs {
+		fee += tx.GetFee(bi)
+	}
+	return fee
+}
+
 //检查所有的交易
 func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
+	//奖励
+	rfee := GetCoinbaseReward(v.Meta.Height)
+	if !rfee.IsRange() {
+		return errors.New("coinbase reward amount error")
+	}
+	//检测所有交易
 	for i, tx := range v.Txs {
 		if i == 0 && !tx.IsBase() {
-			return errors.New("base tx miss")
+			return errors.New("coinbase tx miss")
 		}
 		err := tx.Check(bi, v)
 		if err != nil {
 			return err
 		}
 	}
+	//获取交易费
+	tfee := v.GetFee(bi)
+	if !tfee.IsRange() {
+		return errors.New("trans fee error")
+	}
+	//coinbase输出
+	cfee := v.CoinbaseFee()
+	if !cfee.IsRange() {
+		return errors.New("coinbase fee error")
+	}
+	fee := rfee + tfee
+	if !fee.IsRange() {
+		return errors.New("sum fee fee error")
+	}
+	if cfee > fee {
+		return errors.New("coinbase fee error")
+	}
 	return nil
 }
 
 //完成块数据
-func (v *BlockInfo) Finish(bi *BlockIndex) error {
+func (blk *BlockInfo) Finish(bi *BlockIndex) error {
+	lptr := bi.GetListener()
+	if lptr == nil {
+		return errors.New("listener null")
+	}
+	if len(blk.Txs) == 0 {
+		return errors.New("txs miss, too little")
+	}
+	//检查所有的交易
+	if err := blk.CheckTxs(bi); err != nil {
+		return err
+	}
+	//最后设置merkleid
+	if err := blk.SetMerkle(); err != nil {
+		return err
+	}
+	return lptr.OnFinished(bi, blk)
+}
+
+//检查工作难度
+func (v *BlockInfo) CheckPow() error {
+	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
+		return errors.New("proof of work bits error")
+	}
+	return nil
+}
+
+//检查区块数据
+func (v *BlockInfo) Check(bi *BlockIndex) error {
 	if len(v.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
@@ -291,16 +359,7 @@ func (v *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := v.CheckTxs(bi); err != nil {
 		return err
 	}
-	return v.SetMerkle()
-}
-
-func (v *BlockInfo) Check(bi *BlockIndex) error {
-	if len(v.Txs) == 0 {
-		return errors.New("txs miss, too little")
-	}
-	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
-		return errors.New("proof of work bits error")
-	}
+	//检查merkle树
 	merkle, err := v.GetMerkle()
 	if err != nil {
 		return err
@@ -308,14 +367,18 @@ func (v *BlockInfo) Check(bi *BlockIndex) error {
 	if !merkle.Equal(v.Header.Merkle) {
 		return errors.New("txs merkle hash error")
 	}
-	//检查所有的交易
-	if err := v.CheckTxs(bi); err != nil {
+	//检查区块大小
+	buf := &bytes.Buffer{}
+	if err := v.Encode(buf); err != nil {
 		return err
+	}
+	if buf.Len() > MAX_BLOCK_SIZE {
+		return errors.New("block size > MAX_BLOCK_SIZE")
 	}
 	return nil
 }
 
-func (v BlockHeader) Encode(w IWriter) error {
+func (v *BlockHeader) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, v.Ver); err != nil {
 		return err
 	}
@@ -337,7 +400,7 @@ func (v BlockHeader) Encode(w IWriter) error {
 	return nil
 }
 
-func (v BlockInfo) Encode(w IWriter) error {
+func (v *BlockInfo) Encode(w IWriter) error {
 	if err := v.Header.Encode(w); err != nil {
 		return err
 	}
@@ -401,7 +464,7 @@ type TxIn struct {
 }
 
 //获取对应的输出
-func (v TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
+func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	otx, err := bi.LoadTX(v.OutHash)
 	if err != nil {
 		return nil, fmt.Errorf("txin outtx miss %w", err)
@@ -413,19 +476,17 @@ func (v TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	return otx.Outs[idx], nil
 }
 
-func (v TxIn) Check(bi *BlockIndex) error {
+func (v *TxIn) Check(bi *BlockIndex) error {
 	if v.IsBase() {
 		return nil
 	} else if v.Script.IsStdUnlockScript() {
-		return nil
-	} else if v.Script.IsAucUnlockScript() {
 		return nil
 	} else {
 		return errors.New("txin unlock script type error")
 	}
 }
 
-func (v TxIn) Encode(w IWriter) error {
+func (v *TxIn) Encode(w IWriter) error {
 	if err := v.OutHash.Encode(w); err != nil {
 		return err
 	}
@@ -452,7 +513,7 @@ func (v *TxIn) Decode(r IReader) error {
 }
 
 //是否基本单元，txs的第一个一定是base类型
-func (in TxIn) IsBase() bool {
+func (in *TxIn) IsBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsBaseScript()
 }
 
@@ -461,6 +522,7 @@ const (
 	MAX_MONEY = Amount(21000000 * COIN)
 )
 
+//结算当前奖励
 func GetCoinbaseReward(h uint32) Amount {
 	halvings := int(h) / conf.Halving
 	if halvings >= 64 {
@@ -474,7 +536,13 @@ func GetCoinbaseReward(h uint32) Amount {
 type Amount int64
 
 func (a *Amount) Decode(r IReader) error {
-	return binary.Read(r, Endian, &a)
+	v := int64(0)
+	err := binary.Read(r, Endian, &v)
+	if err != nil {
+		return err
+	}
+	*a = Amount(v)
+	return nil
 }
 
 func (a Amount) Bytes() []byte {
@@ -494,7 +562,7 @@ func (a Amount) ToVarUInt() VarUInt {
 }
 
 func (a Amount) Encode(w IWriter) error {
-	return binary.Write(w, Endian, a)
+	return binary.Write(w, Endian, int64(a))
 }
 
 func (a Amount) IsRange() bool {
@@ -516,74 +584,40 @@ func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) (ISigner, e
 }
 
 //获取输出金额所属公钥hash
-func (v TxOut) GetPKH() (HASH160, error) {
+func (v *TxOut) GetPKH() (HASH160, error) {
 	pkh := HASH160{}
 	if v.Script.IsStdLockedcript() {
 		return v.Script.StdPKH(), nil
 	}
-	if v.Script.IsAucLockScript() {
-		auc, err := v.Script.ToAucLock()
-		if err != nil {
-			return pkh, err
-		}
-		return auc.BidId, nil
-	}
-	if v.Script.IsArbLockScript() {
-		arb, err := v.Script.ToArbLock()
-		if err != nil {
-			return pkh, err
-		}
-		return arb.Buyer, nil
-	}
-	return pkh, errors.New("not support")
+	return pkh, errors.New("unknow script type")
 }
 
-//获取竞价脚本
-func (v TxOut) ToAuctionScript() (*AucLockScript, error) {
-	typ := v.Script.Type()
-	//其他类型可消费
-	if typ != SCRIPT_AUCLOCKED_TYPE {
-		return nil, errors.New("type error")
+//输出是否可以被in消费
+func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) error {
+	tk := CoinKeyValue{}
+	tk.Value = v.Value.ToVarUInt()
+	pkh, err := v.GetPKH()
+	if err != nil {
+		return err
 	}
-	return v.Script.ToAucLock()
+	tk.CPkh = pkh
+	tk.Index = in.OutIndex
+	tk.TxId = in.OutHash
+	key := tk.GetKey()
+	if !bi.db.Index().Has(key) {
+		return errors.New("out is spent")
+	}
+	return nil
 }
 
-//获取区块中所有指定类型的拍卖输出
-func (b *BlockInfo) FindAucScript(obj ObjectId) []*AucLockScript {
-	ass := []*AucLockScript{}
-	//获取区块中所有和obj相关的竞价输出
-	for _, tx := range b.Txs {
-		for _, out := range tx.Outs {
-			as, err := out.ToAuctionScript()
-			if err != nil {
-				continue
-			}
-			if !as.ObjId.Equal(obj) {
-				continue
-			}
-			ass = append(ass, as)
-		}
-	}
-	return ass
-}
-
-func (v TxOut) Check(bi *BlockIndex) error {
-	if v.Value == 0 {
-		return errors.New("value zero")
-	}
+func (v *TxOut) Check(bi *BlockIndex) error {
 	if v.Script.IsStdLockedcript() {
-		return nil
-	}
-	if v.Script.IsAucLockScript() {
-		return nil
-	}
-	if v.Script.IsArbLockScript() {
 		return nil
 	}
 	return errors.New("unknow script type")
 }
 
-func (v TxOut) Encode(w IWriter) error {
+func (v *TxOut) Encode(w IWriter) error {
 	if err := v.Value.Encode(w); err != nil {
 		return err
 	}
@@ -640,7 +674,11 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 }
 
 //签名交易数据
-func (tx *TX) Sign(bi *BlockIndex) error {
+func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
+	lptr := bi.GetListener()
+	if lptr == nil {
+		return errors.New("block index listener null,can't sign")
+	}
 	for idx, in := range tx.Ins {
 		if in.IsBase() {
 			continue
@@ -653,7 +691,11 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		err = signer.Sign()
+		pri, err := lptr.OnPrivateKey(bi, blk, out)
+		if err != nil {
+			return err
+		}
+		err = signer.Sign(pri)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}
@@ -672,55 +714,90 @@ func (tx *TX) Hash() HASH256 {
 	return tx.hasher.Hash(buf.Bytes())
 }
 
-func (v *TX) checkBase(bi *BlockIndex, b *BlockInfo) error {
-	out := Amount(0)
-	for _, ov := range v.Outs {
-		out += ov.Value
+//获取coinse out fee sum
+func (v *TX) CoinbaseFee() Amount {
+	if !v.IsBase() {
+		panic(errors.New("tx not coinbase"))
 	}
-	rev := GetCoinbaseReward(b.Meta.Height)
-	if !out.IsRange() || !rev.IsRange() || out > rev {
-		return errors.New("coinbase tx error")
+	a := Amount(0)
+	for _, out := range v.Outs {
+		a += out.Value
 	}
-	return nil
+	return a
 }
 
-func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
+//获取此交易交易费
+func (v *TX) GetFee(bi *BlockIndex) Amount {
 	if v.IsBase() {
-		return v.checkBase(bi, b)
+		return 0
 	}
+	a := Amount(0)
+	for _, in := range v.Ins {
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			panic(err)
+		}
+		err = out.IsSpent(in, bi)
+		if err != nil {
+			panic(err)
+		}
+		a += out.Value
+	}
+	for _, out := range v.Outs {
+		a -= out.Value
+	}
+	return a
+}
+
+//检测除coinbase交易外的交易金额
+func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
-	if len(v.Outs) == 0 {
-		return errors.New("tx outs too slow")
+	//这里不检测coinbase交易
+	if v.IsBase() {
+		return nil
 	}
 	itv := Amount(0)
-	for _, v := range v.Ins {
-		err := v.Check(bi)
+	for _, in := range v.Ins {
+		err := in.Check(bi)
 		if err != nil {
 			return err
 		}
-		out, err := v.LoadTxOut(bi)
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		err = out.IsSpent(in, bi)
 		if err != nil {
 			return err
 		}
 		itv += out.Value
 	}
 	otv := Amount(0)
-	for _, v := range v.Outs {
-		err := v.Check(bi)
+	for _, out := range v.Outs {
+		err := out.Check(bi)
 		if err != nil {
 			return err
 		}
-		otv += v.Value
+		otv += out.Value
 	}
+	//金额必须在合理的范围
+	if !itv.IsRange() {
+		return errors.New("in amount error")
+	}
+	if !otv.IsRange() {
+		return errors.New("out amount error")
+	}
+	//每个交易的输出不能大于输入
 	if itv < 0 || otv < 0 || otv > itv {
-		return errors.New("input token must < out token")
+		return errors.New("ins amount must >= outs amount")
 	}
+	//检查签名
 	return v.Verify(bi)
 }
 
-func (v TX) Encode(w IWriter) error {
+func (v *TX) Encode(w IWriter) error {
 	if err := v.Ver.Encode(w); err != nil {
 		return err
 	}

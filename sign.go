@@ -6,12 +6,17 @@ import (
 	"fmt"
 )
 
+//获取签名数据接口
+type IGetSigBytes interface {
+	GetSigBytes() ([]byte, error)
+}
+
 //签名验证接口
 type ISigner interface {
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
-	Sign() error
+	Sign(pri *PrivateKey) error
 }
 
 //标准签名器
@@ -103,6 +108,7 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 			return nil, err
 		}
 	}
+	//
 	//最后放签名类型，默认为1
 	if err := VarUInt(1).Encode(buf); err != nil {
 		return nil, err
@@ -111,13 +117,7 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 }
 
 //签名生成解锁脚本
-func (sr *stdsigner) Sign() error {
-	//先用写死的私钥测试签名
-	tkey := "L1nCGebMDc8T7BN4BnDpg9UoEfUdyAAuUnPf6gCkGVrqLWqUcBTP"
-	pri, err := LoadPrivateKey(tkey)
-	if err != nil {
-		return err
-	}
+func (sr *stdsigner) Sign(pri *PrivateKey) error {
 	pkh, err := sr.out.GetPKH()
 	if err != nil {
 		return err
@@ -135,9 +135,6 @@ func (sr *stdsigner) Sign() error {
 		return fmt.Errorf("out token value miss %w", err)
 	}
 	tk.Value.From(bv)
-	if tk.Value == 0 {
-		return fmt.Errorf("ouot token value == 0")
-	}
 	sigb, err := sr.GetSigBytes()
 	if err != nil {
 		return err

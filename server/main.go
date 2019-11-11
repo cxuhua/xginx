@@ -23,10 +23,6 @@ func main() {
 	if gv.Miner != nil {
 		gv.Miner.Start(ctx)
 	}
-	//是否启动http服务
-	if gv.Http != nil {
-		gv.Http.Start(ctx)
-	}
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()
@@ -38,9 +34,5 @@ func main() {
 	if gv.Miner != nil {
 		gv.Miner.Stop()
 		gv.Miner.Wait()
-	}
-	if gv.Http != nil {
-		gv.Http.Stop()
-		gv.Http.Wait()
 	}
 }

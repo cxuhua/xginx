@@ -43,10 +43,30 @@ func (h *HashCacher) Hash(b []byte) HASH256 {
 //公钥HASH160
 type HASH160 [20]byte
 
-func NewHASH160(b []byte) HASH160 {
-	id := HASH160{}
-	copy(id[:], b)
-	return id
+func NewHASH160(v interface{}) HASH160 {
+	var hash HASH160
+	switch v.(type) {
+	case *PublicKey:
+		pub := v.(*PublicKey)
+		hash = pub.Hash()
+	case HASH160:
+		hash = v.(HASH160)
+	case []byte:
+		bb := v.([]byte)
+		copy(hash[:], bb)
+	case PKBytes:
+		pks := v.(PKBytes)
+		hash = Hash160From(pks[:])
+	case string:
+		pub, err := LoadPublicKey(v.(string))
+		if err != nil {
+			panic(err)
+		}
+		hash = pub.Hash()
+	default:
+		panic(errors.New("v args type error"))
+	}
+	return hash
 }
 
 func (v *HASH160) SetPK(pk *PublicKey) {

@@ -107,7 +107,7 @@ func TestRandomEncodeDecode(t *testing.T) {
 		}
 
 		// parse the segwit address we just created back into data
-		data2, err = SegWitAddressDecode(segWitAdr)
+		_, data2, err = SegWitAddressDecode(segWitAdr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,7 +130,7 @@ func TestHardCoded(t *testing.T) {
 
 	// invalid addresses should all have some kind of error
 	for _, adr := range invalidAddress {
-		data, err := SegWitAddressDecode(adr)
+		_, data, err := SegWitAddressDecode(adr)
 		if err == nil {
 			t.Logf("data %x\n", data)
 			t.Fatalf("address %s should fail but didn't", adr)
@@ -140,7 +140,7 @@ func TestHardCoded(t *testing.T) {
 	// check that all the valid segwit addresses come out valid, and that
 	// they match the data provided
 	for _, swadr := range validSegwitAddresses {
-		data, err := SegWitAddressDecode(swadr.address)
+		_, data, err := SegWitAddressDecode(swadr.address)
 		if err != nil {
 			t.Logf("data: %x\n", data)
 			t.Fatalf("address %s failed: %s", swadr.address, err.Error())

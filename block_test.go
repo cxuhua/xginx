@@ -15,41 +15,74 @@ var (
 	TestCliPri, _     = LoadPrivateKey(TestCliPrivateKey)
 )
 
-func NewTestBlock(bi *BlockIndex) *BlockInfo {
-	b := bi.NewBlock()
+//测试用监听器
+type tlis struct {
+}
+
+//当块创建完毕
+func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+	script, err := NewStdLockedScript(TestMinePri.PublicKey())
+	if err != nil {
+		return err
+	}
+	//设置base out script
+	//创建coinbase tx
+	btx := &TX{}
+	btx.Ver = 1
+
+	//base tx
+	in := &TxIn{}
+	in.Script = BaseScript(blk.Meta.Height, []byte("Test Block"))
+	btx.Ins = []*TxIn{in}
+
 	out := &TxOut{}
-	out.Value = GetCoinbaseReward(b.Meta.Height)
-	out.Script = StdLockedScript(TestMinePri.PublicKey())
-	b.Txs[0].Outs = []*TxOut{out}
-	err := b.Finish(bi)
+	out.Value = GetCoinbaseReward(blk.Meta.Height)
+	out.Script = script
+	btx.Outs = []*TxOut{out}
+
+	blk.Txs = []*TX{btx}
+
+	return nil
+}
+
+//完成区块
+func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
+	return nil
+}
+
+//获取签名私钥
+func (lis *tlis) OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error) {
+	return TestMinePri, nil
+}
+
+func NewTestBlock(bi *BlockIndex) *BlockInfo {
+	blk, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
 	}
-	return b
+	if err := blk.Finish(bi); err != nil {
+		panic(err)
+	}
+	err = blk.Check(bi)
+	if err != nil {
+		panic(err)
+	}
+	return blk
 }
 
 func TestBlockChain(t *testing.T) {
-	bi := NewBlockIndex()
-	testnum := uint32(10)
-	fb := NewTestBlock(bi)
-	conf.genesisId = fb.ID()
-	log.Println("genesis_block=", fb.ID())
-	_, err := bi.LinkTo(fb)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	for i := uint32(1); i < testnum; i++ {
+	bi := NewBlockIndex(&tlis{})
+	testnum := uint32(210001)
+	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
-		_, err = bi.LinkTo(cb)
+		_, err := bi.LinkTo(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
 		}
-		if i%10000 == 0 {
+		if i > 0 && i%10000 == 0 {
 			log.Println(i, "block")
 		}
-		fb = cb
 	}
 	if bi.Len() != int(testnum) {
 		t.Errorf("add main chain error")
@@ -58,69 +91,38 @@ func TestBlockChain(t *testing.T) {
 	bi.db.Sync()
 }
 
-func TestLRUCache(t *testing.T) {
-	c := NewCache(4)
-	id := HASH256{1}
-	v1 := c.Get(id, func() (size int, value Value) {
-		log.Println("a1")
-		return 5, 100
-	})
-
-	log.Println(v1.Value())
-
-	v1 = c.Get(HASH256{3}, func() (size int, value Value) {
-		log.Println("a2")
-		return 5, 101
-	})
-	v1.Release()
-
-	v2 := c.Get(HASH256{3}, func() (size int, value Value) {
-		log.Println("a3")
-		return 5, 102
-	})
-	log.Println(v2.Value())
-}
-
 func TestBlockSign(t *testing.T) {
 
-	bi := NewBlockIndex()
+	bi := NewBlockIndex(&tlis{})
 	err := bi.LoadAll()
 	if err != nil {
 		panic(err)
 	}
-
 	//获取矿工的所有输出
 	ds, err := bi.ListTokens(TestMinePri.PublicKey().Hash())
 	if err != nil {
 		panic(err)
 	}
-	//获取标签的输出
-	//ds, err = bi.ListTokens(TestTagPri.PublicKey().Hash())
-	//if err != nil {
-	//	panic(err)
-	//}
-	////获取用户的输出
-	//ds, err = bi.ListTokens(TestCliPri.PublicKey().Hash())
-	//if err != nil {
-	//	panic(err)
-	//}
 
-	b := bi.NewBlock()
+	b, err := bi.NewBlock(1)
 	//组装交易
 	tx := &TX{Ver: 1}
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script = StdLockedScript(TestMinePri.PublicKey())
-	for _, v := range ds {
+	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
+	for i, v := range ds {
 		ins = append(ins, v.GetTxIn())
 		txout.Value += v.Value.ToAmount()
+		if i > 500 {
+			break
+		}
 	}
 	outs := []*TxOut{txout}
 	tx.Ins = ins
 	tx.Outs = outs
 	//添加签名
-	err = tx.Sign(bi)
+	err = tx.Sign(bi, b)
 	if err != nil {
 		panic(err)
 	}
@@ -128,10 +130,21 @@ func TestBlockSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	if err := b.Finish(bi); err != nil {
+		panic(err)
+	}
+	err = b.Check(bi)
+	if err != nil {
+		panic(err)
+	}
+	_, err = bi.LinkTo(b)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestUnlinkBlock(t *testing.T) {
-	bi := NewBlockIndex()
+	bi := NewBlockIndex(&tlis{})
 	err := bi.LoadAll()
 	if err != nil {
 		panic(err)

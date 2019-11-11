@@ -402,7 +402,7 @@ func (r *Cache) Delete(key HASH256) bool {
 // simply call Cacher.Evict.
 //
 // Evict return true is such 'cache node' exist.
-func (r *Cache) Evict(ns uint64, key HASH256) bool {
+func (r *Cache) Evict(key HASH256) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {

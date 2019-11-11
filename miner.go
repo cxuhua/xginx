@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"context"
-	"errors"
 	"log"
 	"sync"
 )
@@ -25,7 +24,6 @@ var (
 
 type minerEngine struct {
 	wg     sync.WaitGroup
-	mpk    *PublicKey
 	ctx    context.Context
 	cancel context.CancelFunc
 	tc     chan *TX
@@ -90,10 +88,6 @@ func (m *minerEngine) loop(i int) {
 
 //开始工作
 func (m *minerEngine) Start(ctx context.Context) {
-	m.mpk = conf.GetMinerPubKey()
-	if m.mpk == nil {
-		panic(errors.New("miner pubkey miss"))
-	}
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	for i := 0; i < 4; i++ {
 		go m.loop(i)

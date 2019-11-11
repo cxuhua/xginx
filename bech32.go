@@ -313,10 +313,10 @@ func SegWitAddressEncode(hrp string, data []byte) (string, error) {
 
 // SegWitAddressDecode takes a segwit address and returns the pkscript that
 // can go directly into the txout.  (includes version byte and data push byte)
-func SegWitAddressDecode(adr string) ([]byte, error) {
-	_, squashedData, err := DecodeSquashed(adr)
+func SegWitAddressDecode(adr string) (string, []byte, error) {
+	hrp, squashedData, err := DecodeSquashed(adr)
 	if err != nil {
-		return nil, err
+		return hrp, nil, err
 	}
 	// the segwit version byte is directly put into a 5bit squashed byte
 	// since it maxes out at 16, wasting ~1 byte instead of 4.
@@ -324,21 +324,21 @@ func SegWitAddressDecode(adr string) ([]byte, error) {
 	version := squashedData[0]
 	data, err := Bytes5to8(squashedData[1:])
 	if err != nil {
-		return nil, err
+		return hrp, nil, err
 	}
 	// Allow alts
 	//	if hrp != "bc" && hrp != "tb" {
 	//		return nil, fmt.Errorf("prefix %s is not bitcoin or testnet", hrp)
 	//	}
 	if len(data) < 2 || len(data) > 40 {
-		return nil, fmt.Errorf("Data length %d out of bounds", len(data))
+		return hrp, nil, fmt.Errorf("Data length %d out of bounds", len(data))
 	}
 
 	if version > 16 {
-		return nil, fmt.Errorf("Invalid witness program version %d", data[0])
+		return hrp, nil, fmt.Errorf("Invalid witness program version %d", data[0])
 	}
 	if version == 0 && len(data) != 20 && len(data) != 32 {
-		return nil, fmt.Errorf("expect 20 or 32 byte v0 witprog, got %d", len(data))
+		return hrp, nil, fmt.Errorf("expect 20 or 32 byte v0 witprog, got %d", len(data))
 	}
 
 	// first give version byte, then push length
@@ -348,7 +348,7 @@ func SegWitAddressDecode(adr string) ([]byte, error) {
 	outputScript := append([]byte{version}, byte(len(data)))
 	outputScript = append(outputScript, data...)
 
-	return outputScript, nil
+	return hrp, outputScript, nil
 }
 
 // SegWitV0Encode takes an hrp prefix string and a 20 or 32 byte witness program

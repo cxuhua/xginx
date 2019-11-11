@@ -362,8 +362,8 @@ func (ss *leveldbstore) Index() DBImp {
 }
 
 //扩展存储
-func (ss *leveldbstore) Ext() IChunkStore {
-	return ss.ext
+func (ss *leveldbstore) Blk() IChunkStore {
+	return ss.blk
 }
 
 //事物回退文件

@@ -374,7 +374,10 @@ func LoadPublicKey(s string) (*PublicKey, error) {
 
 func DecodeAddress(addr string) (HASH160, error) {
 	hv := HASH160{}
-	b, err := SegWitAddressDecode(addr)
+	hrp, b, err := SegWitAddressDecode(addr)
+	if hrp != conf.AddrPrefix {
+		return hv, errors.New("address prefix error")
+	}
 	if err != nil {
 		return hv, err
 	}
