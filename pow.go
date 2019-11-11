@@ -63,7 +63,7 @@ func CalculateWorkRequired(ct uint32, pt uint32, pw uint32) uint32 {
 	span := uint32(conf.PowTime)
 	limit := NewUINT256(conf.PowLimit)
 	sub := ct - pt
-	if sub < 0 {
+	if sub <= 0 {
 		panic(errors.New("ct pt error"))
 	}
 	if sv := span / 4; sub < sv {
