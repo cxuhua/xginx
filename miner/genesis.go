@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	//ctx, cancel := context.WithCancel(context.Background())
 	//defer cancel()
 	wg := &sync.WaitGroup{}

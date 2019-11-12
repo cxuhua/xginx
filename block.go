@@ -11,7 +11,7 @@ const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
 	//最大ExtScript大小
-	MAX_SCRIPT_SIZE = 8 * 1024
+	MAX_SCRIPT_SIZE = 4 * 1024
 )
 
 //存储交易索引值
@@ -58,6 +58,33 @@ func (v TxValue) Bytes() ([]byte, error) {
 	return buf.Bytes(), err
 }
 
+//区块头数据
+type HeaderBytes []byte
+
+func (b *HeaderBytes) SetNonce(v uint32) {
+	l := len(*b)
+	Endian.PutUint32((*b)[l-4:], v)
+}
+
+func (b *HeaderBytes) SetTime(v uint32) {
+	l := len(*b)
+	Endian.PutUint32((*b)[l-12:], v)
+}
+
+func (b *HeaderBytes) Hash() HASH256 {
+	return Hash256From(*b)
+}
+
+func (b *HeaderBytes) Header() *BlockHeader {
+	buf := bytes.NewReader(*b)
+	hptr := &BlockHeader{}
+	err := hptr.Decode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return hptr
+}
+
 //区块头
 type BlockHeader struct {
 	Ver    uint32  //block ver
@@ -67,6 +94,15 @@ type BlockHeader struct {
 	Bits   uint32  //难度
 	Nonce  uint32  //随机值
 	hasher HashCacher
+}
+
+func (v BlockHeader) Bytes() HeaderBytes {
+	buf := &bytes.Buffer{}
+	err := v.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
 }
 
 func (v BlockHeader) IsGenesis() bool {
@@ -240,6 +276,8 @@ func (b *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 		return err
 	}
 	b.Txs = append(b.Txs, tx)
+	//发布交易
+	bi.PublishTx(b, tx)
 	return nil
 }
 
@@ -336,10 +374,10 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 		return err
 	}
 	//最后设置merkleid
-	if err := blk.SetMerkle(); err != nil {
+	if err := lptr.OnFinished(bi, blk); err != nil {
 		return err
 	}
-	return lptr.OnFinished(bi, blk)
+	return blk.SetMerkle()
 }
 
 //检查工作难度
@@ -375,6 +413,8 @@ func (v *BlockInfo) Check(bi *BlockIndex) error {
 	if buf.Len() > MAX_BLOCK_SIZE {
 		return errors.New("block size > MAX_BLOCK_SIZE")
 	}
+	//发布区块
+	bi.PublishBlk(v)
 	return nil
 }
 

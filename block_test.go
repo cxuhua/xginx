@@ -15,6 +15,26 @@ var (
 	TestCliPri, _     = LoadPrivateKey(TestCliPrivateKey)
 )
 
+func TestBlockHeader(t *testing.T) {
+	h := BlockHeader{}
+	h.Time = 1
+	h.Nonce = 2
+
+	b := h.Bytes()
+	b.SetTime(3)
+	b.SetNonce(4)
+
+	h2 := b.Header()
+
+	if h2.Time != 3 {
+		t.Errorf("time set error")
+	}
+
+	if h2.Nonce != 4 {
+		t.Errorf("nonce set error")
+	}
+}
+
 //测试用监听器
 type tlis struct {
 }
@@ -47,7 +67,19 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 //完成区块
 func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
-	return nil
+	if len(blk.Txs) == 0 {
+		return errors.New("txs miss")
+	}
+	btx := blk.Txs[0]
+	if !btx.IsCoinBase() {
+		return errors.New("coinbase tx miss")
+	}
+	fee := blk.GetFee(bi)
+	if fee == 0 {
+		return nil
+	}
+	btx.Outs[0].Value += fee
+	return blk.CheckTxs(bi)
 }
 
 //获取签名私钥
@@ -72,6 +104,22 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 
 func TestBlockChain(t *testing.T) {
 	bi := NewBlockIndex(&tlis{})
+	//订阅测试
+	//sblk, cblk := bi.SubscribeBlk(10)
+	//defer sblk.Unsubscribe()
+	//go func() {
+	//	for {
+	//		select {
+	//		case blk := <-cblk:
+	//			log.Println(blk)
+	//		case err := <-sblk.Err():
+	//			if err != nil {
+	//				log.Println(err)
+	//			}
+	//			return
+	//		}
+	//	}
+	//}()
 	testnum := uint32(500)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
@@ -120,7 +168,7 @@ func TestBlockSign(t *testing.T) {
 			break
 		}
 	}
-	outs := []*TxOut{txout}
+	outs := []*TxOut{}
 	tx.Ins = ins
 	tx.Outs = outs
 	//为每个输入添加签名
@@ -139,10 +187,10 @@ func TestBlockSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	_, err = bi.LinkTo(b)
-	if err != nil {
-		panic(err)
-	}
+	//_, err = bi.LinkTo(b)
+	//if err != nil {
+	//	panic(err)
+	//}
 }
 
 func TestUnlinkBlock(t *testing.T) {

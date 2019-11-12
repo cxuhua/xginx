@@ -7,10 +7,6 @@ import (
 	"net"
 	"os"
 	"sync"
-
-	"github.com/mattn/go-colorable"
-
-	"github.com/gin-gonic/gin"
 )
 
 func LoadPrivateKeys(file string) []*PrivateKey {
@@ -99,20 +95,14 @@ func (c *Config) Init() error {
 		c.logFile = file
 		log.SetOutput(file)
 		log.SetFlags(logflags)
-		gin.DefaultWriter = file
-		gin.DefaultErrorWriter = file
 	} else {
 		c.logFile = nil
 		log.SetOutput(os.Stdout)
 		log.SetFlags(logflags)
-		gin.DefaultWriter = colorable.NewColorableStdout()
-		gin.DefaultErrorWriter = colorable.NewColorableStderr()
 	}
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
-	//加载矿工私钥
 	c.LimitHash = NewUINT256(c.PowLimit)
-	//随机生成节点ID
 	c.NodeID = NewNodeID()
 	return nil
 }

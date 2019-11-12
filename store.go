@@ -85,6 +85,7 @@ type DBImp interface {
 	Get(ks ...[]byte) ([]byte, error)
 	Del(ks ...[]byte) error
 	Write(b *Batch) error
+	Compact(r *Range) error
 	Close()
 	Iterator(slice ...*Range) *Iterator
 	Sync()

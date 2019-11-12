@@ -66,10 +66,18 @@ func (s *Script) Decode(r IReader) error {
 func BaseScript(h uint32, bs ...[]byte) Script {
 	s := Script{SCRIPT_BASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
+	//当前块高度
 	Endian.PutUint32(hb, h)
 	s = append(s, hb...)
+	//加当前时间戳
 	Endian.PutUint32(hb, uint32(time.Now().Unix()))
 	s = append(s, hb...)
+	//加点随机值
+	rv := uint32(0)
+	SetRandInt(&rv)
+	Endian.PutUint32(hb, rv)
+	s = append(s, hb...)
+	//自定义数据
 	for _, v := range bs {
 		s = append(s, v...)
 	}

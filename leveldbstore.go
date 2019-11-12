@@ -146,6 +146,10 @@ func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
 	}
 }
 
+func (db *leveldbimp) Compact(r *Range) error {
+	return db.l.CompactRange(*r.r)
+}
+
 func (db *leveldbimp) Close() {
 	err := db.l.Close()
 	if err != nil {

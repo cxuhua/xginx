@@ -8,6 +8,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 const (
@@ -63,14 +65,31 @@ func NewTBEle(meta *TBMeta, height uint32, idx *BlockIndex) *TBEle {
 type IListener interface {
 	//当块创建时，可以添加，修改块内信息
 	OnNewBlock(bi *BlockIndex, blk *BlockInfo) error
-	//完成区块，当检测完成
+	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
 	//获取签名私钥
 	OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error)
 }
 
+//区块发布交易参数
+type BlockEvent struct {
+	Idx *BlockIndex
+	Blk *BlockInfo
+}
+
+//交易发布订阅参数
+type TxEvent struct {
+	Idx *BlockIndex
+	Blk *BlockInfo //如果交易在块中blk != nil
+	Tx  *TX
+}
+
 //区块链索引
 type BlockIndex struct {
+	//当一个块产生
+	blkfeed Feed
+	//当一个已经验证的交易产生
+	txfeed Feed
 	//链监听器
 	lptr IListener
 	//
@@ -89,8 +108,39 @@ type BlockIndex struct {
 	db IBlkStore
 }
 
+//发布块
+func (bi *BlockIndex) PublishBlk(blk *BlockInfo) {
+	bi.blkfeed.Send(BlockEvent{
+		Idx: bi,
+		Blk: blk,
+	})
+}
+
+//订阅块
+func (bi *BlockIndex) SubscribeBlk(cap int) (Subscription, chan BlockEvent) {
+	c := make(chan BlockEvent, cap)
+	sub := bi.blkfeed.Subscribe(c)
+	return sub, c
+}
+
+//发布交易
+func (bi *BlockIndex) PublishTx(blk *BlockInfo, tx *TX) {
+	bi.txfeed.Send(TxEvent{
+		Idx: bi,
+		Blk: blk,
+		Tx:  tx,
+	})
+}
+
+//订阅交易
+func (bi *BlockIndex) SubscribeTx(cap int) (Subscription, chan TxEvent) {
+	c := make(chan TxEvent, cap)
+	sub := bi.txfeed.Subscribe(c)
+	return sub, c
+}
+
 //获取当前监听器
-func (bi BlockIndex) GetListener() IListener {
+func (bi *BlockIndex) GetListener() IListener {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	return bi.lptr
@@ -350,26 +400,26 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		id = bv.Id
 		ih = bv.Height
 	}
-	meta, err := bi.LoadTBEle(id)
+	ele, err := bi.LoadTBEle(id)
 	if err != nil {
 		return nil, err
 	}
-	if meta.Prev.IsZero() {
+	if ele.Prev.IsZero() {
 		//到达第一个
-		meta.Height = 0
+		ele.Height = 0
 	} else if fe != nil {
-		meta.Height = fe.Value.(*TBEle).Height - 1
+		ele.Height = fe.Value.(*TBEle).Height - 1
 	} else {
 		//最后一个
-		meta.Height = ih
+		ele.Height = ih
 	}
-	if _, err := bi.pushfront(meta); err != nil {
+	if _, err := bi.pushfront(ele); err != nil {
 		return nil, err
 	}
-	if meta.Prev.IsZero() {
-		return meta, FirstBlockErr
+	if ele.Height == 0 {
+		return ele, FirstBlockErr
 	} else {
-		return meta, nil
+		return ele, nil
 	}
 }
 
@@ -623,7 +673,7 @@ func NewBlockIndex(lptr IListener) *BlockIndex {
 		hmap: map[uint32]*list.Element{},
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
-		lru:  NewCache(1024 * 1024 * 256),
+		lru:  NewCache(256 * opt.MiB),
 	}
 	return bi
 }

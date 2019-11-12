@@ -3,17 +3,8 @@ module github.com/cxuhua/xginx
 go 1.13
 
 require (
-	github.com/cxuhua/aescmac v1.0.1
-	github.com/dchest/siphash v1.2.1 // indirect
-	github.com/gin-gonic/gin v1.4.0
-	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/hashicorp/golang-lru v0.5.3
-	github.com/mattn/go-colorable v0.1.4
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/syndtr/goleveldb v1.0.0
 	github.com/willf/bitset v1.1.10
-	github.com/willf/bloom v2.0.3+incompatible
-	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c // indirect
-	github.com/xdg/stringprep v1.0.0 // indirect
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
+	golang.org/x/crypto v0.0.0-20191111213947-16651526fdb4
 )
