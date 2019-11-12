@@ -8,6 +8,7 @@ import (
 
 //测试用监听器
 type listener struct {
+	wallet xx.IWallet
 }
 
 //当块创建完毕
@@ -56,5 +57,16 @@ func (lis *listener) OnFinished(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 
 //获取签名私钥
 func (lis *listener) OnPrivateKey(bi *xx.BlockIndex, blk *xx.BlockInfo, out *xx.TxOut) (*xx.PrivateKey, error) {
-	return nil, nil
+	pkh, err := out.GetPKH()
+	if err != nil {
+		return nil, err
+	}
+	addr, err := xx.EncodeAddress(pkh)
+	if err != nil {
+		return nil, err
+	}
+	if lis.wallet == nil {
+		return nil, errors.New("wallet not set")
+	}
+	return lis.wallet.GetPrivate(addr)
 }

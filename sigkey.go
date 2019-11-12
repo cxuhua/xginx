@@ -372,6 +372,17 @@ func LoadPublicKey(s string) (*PublicKey, error) {
 	return new(PublicKey).Load(s)
 }
 
+func EncodeAddress(pkh HASH160) (string, error) {
+	ver := byte(0)
+	b := []byte{ver, byte(len(pkh))}
+	b = append(b, pkh[:]...)
+	addr, err := SegWitAddressEncode(conf.AddrPrefix, b)
+	if err != nil {
+		return "", err
+	}
+	return addr, nil
+}
+
 func DecodeAddress(addr string) (HASH160, error) {
 	hv := HASH160{}
 	hrp, b, err := SegWitAddressDecode(addr)
@@ -393,11 +404,8 @@ func DecodeAddress(addr string) (HASH160, error) {
 
 func (pub PublicKey) Address() string {
 	pks := pub.Encode()
-	ver := byte(0)
-	a := Hash160(pks)
-	b := []byte{ver, byte(len(a))}
-	b = append(b, a...)
-	addr, err := SegWitAddressEncode(conf.AddrPrefix, b)
+	pkh := Hash160From(pks)
+	addr, err := EncodeAddress(pkh)
 	if err != nil {
 		panic(err)
 	}
