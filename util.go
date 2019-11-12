@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
-
-	"golang.org/x/crypto/ripemd160"
 )
 
 var (
@@ -69,7 +67,7 @@ func Sha256(b []byte) []byte {
 }
 
 func Ripemd160(b []byte) []byte {
-	h160 := ripemd160.New()
+	h160 := NewRipemd160()
 	h160.Write(b)
 	return h160.Sum(nil)
 }
