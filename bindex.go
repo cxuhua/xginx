@@ -84,6 +84,24 @@ type TxEvent struct {
 	Tx  *TX
 }
 
+var (
+	midx *BlockIndex = nil
+)
+
+//获取主链
+func GetChainInstance() *BlockIndex {
+	if midx == nil {
+		panic(errors.New("main chain not init"))
+	}
+	return midx
+}
+
+//初始化主链
+func InitChainInstance(lis IListener) *BlockIndex {
+	midx = NewBlockIndex(lis)
+	return midx
+}
+
 //区块链索引
 type BlockIndex struct {
 	//当一个块产生
@@ -664,6 +682,23 @@ func (bi *BlockIndex) LinkTo(bp *BlockInfo) (*TBEle, error) {
 	ele := NewTBEle(meta, nexth, bi)
 	//连接区块
 	return bi.LinkBack(ele)
+}
+
+//关闭链数据
+func (bi *BlockIndex) Close() {
+	if bi.hmap == nil {
+		return
+	}
+	bi.mu.Lock()
+	defer bi.mu.Unlock()
+	log.Println("block index closing")
+	bi.db.Close()
+	bi.lis.Init()
+	bi.hmap = nil
+	bi.imap = nil
+	bi.lru.EvictAll()
+	_ = bi.lru.Close()
+	log.Println("block index closed")
 }
 
 func NewBlockIndex(lptr IListener) *BlockIndex {

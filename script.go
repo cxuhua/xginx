@@ -63,7 +63,7 @@ func (s *Script) Decode(r IReader) error {
 }
 
 //加入区块高度
-func BaseScript(h uint32, bs ...[]byte) Script {
+func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
 	s := Script{SCRIPT_BASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
 	//当前块高度

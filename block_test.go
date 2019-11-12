@@ -52,11 +52,11 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	//base tx
 	in := &TxIn{}
-	in.Script = BaseScript(blk.Meta.Height, []byte("Test Block"))
+	in.Script = blk.CoinbaseScript([]byte("Test Block"))
 	tx.Ins = []*TxIn{in}
 
 	out := &TxOut{}
-	out.Value = GetCoinbaseReward(blk.Meta.Height)
+	out.Value = blk.CoinbaseReward()
 	out.Script = script
 	tx.Outs = []*TxOut{out}
 

@@ -134,6 +134,16 @@ type BlockInfo struct {
 	merher HashCacher  //mer hash 缓存
 }
 
+//创建Cosinbase 脚本
+func (blk *BlockInfo) CoinbaseScript(bs ...[]byte) Script {
+	return GetCoinbaseScript(blk.Meta.Height, bs...)
+}
+
+//获取区块奖励
+func (blk *BlockInfo) CoinbaseReward() Amount {
+	return GetCoinbaseReward(blk.Meta.Height)
+}
+
 //消费out
 func (v *BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
 	rt := bt.GetRev()

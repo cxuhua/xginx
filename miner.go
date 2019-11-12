@@ -8,8 +8,6 @@ import (
 
 //矿工接口
 type IMiner interface {
-	//收到交易数据
-	OnTx(tx *TX)
 	//开始工作
 	Start(ctx context.Context)
 	//停止
@@ -39,11 +37,6 @@ func newMinerEngine() IMiner {
 		txs: map[HASH256]*TX{},
 		dok: make(chan bool),
 	}
-}
-
-//收到有效的交易数据
-func (m *minerEngine) OnTx(tx *TX) {
-	m.tc <- tx
 }
 
 //计算打包数据
