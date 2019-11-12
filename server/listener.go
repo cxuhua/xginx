@@ -26,14 +26,13 @@ func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 	in := &xx.TxIn{}
 	in.Script = blk.CoinbaseScript([]byte("Test Block"))
 	tx.Ins = []*xx.TxIn{in}
-
+	//
 	out := &xx.TxOut{}
 	out.Value = blk.CoinbaseReward()
 	out.Script = script
 	tx.Outs = []*xx.TxOut{out}
 
 	blk.Txs = []*xx.TX{tx}
-
 	return nil
 }
 

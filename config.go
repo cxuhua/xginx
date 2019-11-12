@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"sync"
+
+	"github.com/gin-gonic/gin"
 )
 
 func LoadPrivateKeys(file string) []*PrivateKey {
@@ -95,10 +97,16 @@ func (c *Config) Init() error {
 		c.logFile = file
 		log.SetOutput(file)
 		log.SetFlags(logflags)
+		gin.DefaultWriter = file
+		gin.DefaultErrorWriter = file
+		gin.SetMode(gin.ReleaseMode)
 	} else {
 		c.logFile = nil
 		log.SetOutput(os.Stdout)
 		log.SetFlags(logflags)
+		gin.DefaultWriter = os.Stdout
+		gin.DefaultErrorWriter = os.Stderr
+		gin.SetMode(gin.DebugMode)
 	}
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)

@@ -94,22 +94,7 @@ func LoadPrivateKey(s string) (*PrivateKey, error) {
 	return key, err
 }
 
-func (pk *PrivateKey) Dump() string {
-	pb := pk.D.Bytes()
-	buf := &bytes.Buffer{}
-	buf.Write(PREFIX_SECRET_KEY)
-	buf.Write(pb)
-	buf.WriteByte(1)
-	hv := Hash256(buf.Bytes())
-	buf.Write(hv[:4])
-	return B58Encode(buf.Bytes(), BitcoinAlphabet)
-}
-
-func (pk *PrivateKey) Load(s string) error {
-	data, err := B58Decode(s, BitcoinAlphabet)
-	if err != nil {
-		return err
-	}
+func (pk *PrivateKey) Decode(data []byte) error {
 	if len(data) < 4 {
 		return errors.New("size error")
 	}
@@ -124,6 +109,30 @@ func (pk *PrivateKey) Load(s string) error {
 		pk.SetBytes(data[pl : dl-1])
 	}
 	return nil
+}
+
+func (pk *PrivateKey) Encode() []byte {
+	pb := pk.D.Bytes()
+	buf := &bytes.Buffer{}
+	buf.Write(PREFIX_SECRET_KEY)
+	buf.Write(pb)
+	buf.WriteByte(1)
+	hv := Hash256(buf.Bytes())
+	buf.Write(hv[:4])
+	return buf.Bytes()
+}
+
+func (pk *PrivateKey) Dump() string {
+	bb := pk.Encode()
+	return B58Encode(bb, BitcoinAlphabet)
+}
+
+func (pk *PrivateKey) Load(s string) error {
+	data, err := B58Decode(s, BitcoinAlphabet)
+	if err != nil {
+		return err
+	}
+	return pk.Decode(data)
 }
 
 func (pk *PrivateKey) IsValid() bool {

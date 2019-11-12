@@ -19,10 +19,15 @@ func main() {
 	if xx.Server != nil {
 		xx.Server.Start(ctx)
 	}
-	//是否启动矿工结算
+	//是否启动矿工
 	if xx.Miner != nil {
 		xx.Miner.Start(ctx)
 	}
+	//启动http服务
+	if xx.Http != nil {
+		xx.Http.Start(ctx)
+	}
+	//
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()
