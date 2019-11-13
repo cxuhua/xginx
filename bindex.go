@@ -544,18 +544,17 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 }
 
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
+	vv := &TxValue{}
 	vk := GetDBKey(TXS_PREFIX, id[:])
-	vb, err := bi.db.Index().Get(vk)
-	mem := false
+	vb, err := bi.mem.Get(vk)
+	ismem := err == nil
 	if err != nil {
-		vb, err = bi.mem.Get(vk)
-		mem = true
+		vb, err = bi.db.Index().Get(vk)
 	}
 	if err != nil {
 		return nil, err
 	}
-	vv := &TxValue{}
-	if mem {
+	if ismem {
 		buf := bytes.NewReader(vb)
 		tx := &TX{}
 		if err := tx.Decode(buf); err != nil {
@@ -564,12 +563,13 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 		vv.txptr = tx
 		vv.txsiz = len(vb)
 		return vv, nil
+	} else {
+		err = vv.Decode(bytes.NewReader(vb))
+		if err != nil {
+			return nil, err
+		}
+		return vv, err
 	}
-	err = vv.Decode(bytes.NewReader(vb))
-	if err != nil {
-		return nil, err
-	}
-	return vv, err
 }
 
 //加载块数据
