@@ -12,16 +12,20 @@ import (
 const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
-	//最大ExtScript大小
+	//最大Script大小
 	MAX_SCRIPT_SIZE = 4 * 1024
 	//最大索引数据大小
 	MAX_LOG_SIZE = 1024 * 1024
+	//最大扩展数据
+	MAX_EXT_SIZE = 4 * 1024
 )
 
 //存储交易索引值
 type TxValue struct {
 	BlkId  HASH256 //块hash
 	TxsIdx VarUInt //txs 索引
+	txptr  *TX     //来自内存直接设置
+	txsiz  int
 }
 
 func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
@@ -239,14 +243,17 @@ func (v *BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch
 	return nil
 }
 
-func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
-	rt := bt.GetRev()
-	if rt == nil {
-		return errors.New("batch miss rev")
-	}
-	for i, tv := range v.Txs {
-		//保存交易id对应的区块和位置
-		tid := tv.Hash()
+func (v *BlockInfo) WriteTx(bi *BlockIndex, i int, tx *TX, bt *Batch) error {
+	//保存交易id对应的区块和位置
+	tid := tx.Hash()
+	//如果是写内存直接写事物数据
+	if bt.IsMem() {
+		buf := &bytes.Buffer{}
+		if err := tx.Encode(buf); err != nil {
+			return err
+		}
+		bt.Put(TXS_PREFIX, tid[:], buf.Bytes())
+	} else {
 		vval := TxValue{
 			BlkId:  v.ID(),
 			TxsIdx: VarUInt(i),
@@ -256,13 +263,27 @@ func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			return err
 		}
 		bt.Put(TXS_PREFIX, tid[:], vbys)
-		//处理交易输入
-		err = v.writeTxIns(bi, tv, tv.Ins, bt)
-		if err != nil {
-			return err
-		}
-		//处理交易输出
-		err = v.writeTxOuts(bi, tv, tv.Outs, bt)
+	}
+	//处理交易输入
+	err := v.writeTxIns(bi, tx, tx.Ins, bt)
+	if err != nil {
+		return err
+	}
+	//处理交易输出
+	err = v.writeTxOuts(bi, tx, tx.Outs, bt)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("batch miss rev")
+	}
+	for i, tx := range v.Txs {
+		err := v.WriteTx(bi, i, tx, bt)
 		if err != nil {
 			return err
 		}
@@ -297,6 +318,19 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 		return err
 	}
 	blk.Txs = append(blk.Txs, tx)
+	//保存到内存中
+	//放入内存db缓存,包括coinkeyvalue信息
+	bt := bi.mem.NewBatch()
+	rt := bt.NewRev()
+	idx := len(blk.Txs) - 1
+	if err := blk.WriteTx(bi, idx, tx, bt); err != nil {
+		_ = bi.mem.Write(rt)
+		return err
+	}
+	if err := bi.mem.Write(bt); err != nil {
+		_ = bi.mem.Write(rt)
+		return err
+	}
 	return nil
 }
 
@@ -391,7 +425,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 }
 
 //10000000
-func (blk *BlockInfo) CalcBits(cnt uint32, bi *BlockIndex) error {
+func (blk *BlockInfo) CalcPowHash(cnt uint32, bi *BlockIndex) error {
 	hb := blk.Header.Bytes()
 	for i := uint32(0); i < cnt; i++ {
 		id := hb.Hash()
@@ -542,9 +576,10 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  HASH256 //输出交易hash
-	OutIndex VarUInt //对应的输出索引
-	Script   Script  //解锁脚本
+	OutHash  HASH256  //输出交易hash
+	OutIndex VarUInt  //对应的输出索引
+	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定义区块中某个交易的某个输入
+	Script   Script   //解锁脚本
 }
 
 //获取对应的输出
@@ -564,6 +599,9 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
+	if v.ExtBytes.Len() > MAX_EXT_SIZE {
+		return errors.New("ext bytes len > MAX_EXT_SIZE")
+	}
 	if v.IsCoinBase() {
 		return nil
 	} else if v.Script.IsStdUnlockScript() {
@@ -580,6 +618,9 @@ func (v *TxIn) Encode(w IWriter) error {
 	if err := v.OutIndex.Encode(w); err != nil {
 		return err
 	}
+	if err := v.ExtBytes.Encode(w); err != nil {
+		return err
+	}
 	if err := v.Script.Encode(w); err != nil {
 		return err
 	}
@@ -591,6 +632,9 @@ func (v *TxIn) Decode(r IReader) error {
 		return err
 	}
 	if err := v.OutIndex.Decode(r); err != nil {
+		return err
+	}
+	if err := v.ExtBytes.Decode(r); err != nil {
 		return err
 	}
 	if err := v.Script.Decode(r); err != nil {
@@ -693,12 +737,19 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) error {
 	tk.CPkh = pkh
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
-	key := tk.GetKey()
-	//key存在表明此输出还未被消费
-	if !bi.db.Index().Has(key) {
-		return errors.New("out is spent")
+	if tk.Value == 0 {
+		panic(errors.New("CoinKeyValue save 0 value!!!"))
 	}
-	return nil
+	key := tk.GetKey()
+	//存在内存
+	if bi.mem.Has(key) {
+		return nil
+	}
+	//key存在链索引中
+	if bi.db.Index().Has(key) {
+		return nil
+	}
+	return errors.New("out is spent")
 }
 
 func (v *TxOut) Check(bi *BlockIndex) error {
@@ -734,6 +785,7 @@ type TX struct {
 	Ins    []*TxIn    //输入
 	Outs   []*TxOut   //输出
 	hasher HashCacher //hash缓存
+	rt     *Batch
 }
 
 //第一个必须是base交易
@@ -762,7 +814,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 		}
 	}
 	//放置到缓存
-	return bi.SetTx(tx)
+	return nil
 }
 
 //签名交易数据
@@ -774,6 +826,9 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 	for idx, in := range tx.Ins {
 		if in.IsCoinBase() {
 			continue
+		}
+		if in.ExtBytes.Len() > MAX_EXT_SIZE {
+			return errors.New("ext bytes len > MAX_EXT_SIZE")
 		}
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
@@ -795,8 +850,17 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}
 	}
-	//放置到缓存
-	return bi.SetTx(tx)
+	return nil
+}
+
+func (tx *TX) HashTo() (HASH256, []byte, error) {
+	buf := &bytes.Buffer{}
+	if err := tx.Encode(buf); err != nil {
+		return ZERO, nil, err
+	}
+	bb := buf.Bytes()
+	id := Hash256From(bb)
+	return id, bb, nil
 }
 
 func (tx *TX) Hash() HASH256 {
@@ -857,9 +921,16 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 	if v.IsCoinBase() {
 		return nil
 	}
+	//同一个交易中一个输出不能有多个输入消费
+	inm := map[HASH256]uint32{}
 	//总的输入金额
 	itv := Amount(0)
 	for _, in := range v.Ins {
+		if _, has := inm[in.OutHash]; has {
+			return errors.New("tx repeat use out")
+		} else {
+			inm[in.OutHash] = in.OutIndex.ToUInt32()
+		}
 		err := in.Check(bi)
 		if err != nil {
 			return err
@@ -873,6 +944,9 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 			return err
 		}
 		itv += out.Value
+	}
+	if itv == 0 {
+		return errors.New("input amount zero error")
 	}
 	//总的输入出金额
 	otv := Amount(0)

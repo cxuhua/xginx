@@ -391,6 +391,10 @@ func (v *VarInt) Decode(r IReader) error {
 
 type VarBytes []byte
 
+func (v VarBytes) Len() int {
+	return len(v)
+}
+
 func (v VarBytes) Equal(b VarBytes) bool {
 	return bytes.Equal(v, b)
 }

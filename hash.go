@@ -101,6 +101,7 @@ var (
 	SizeError  = errors.New("size data error")
 	Endian     = binary.LittleEndian
 	VarSizeErr = errors.New("var size too big")
+	ZERO       = HASH256{}
 )
 
 //bytes hash

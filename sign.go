@@ -89,6 +89,10 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		err = v.ExtBytes.Encode(buf)
+		if err != nil {
+			return nil, err
+		}
 		if i == sr.idx {
 			err = sr.out.Script.Encode(buf)
 		} else {

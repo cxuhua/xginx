@@ -90,6 +90,8 @@ type DBImp interface {
 	Iterator(slice ...*Range) *Iterator
 	Sync()
 	Transaction() (TRImp, error)
+	NewBatch() *Batch
+	LoadBatch(d []byte) (*Batch, error)
 }
 
 var (

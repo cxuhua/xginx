@@ -60,6 +60,7 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	//base tx
 	in := &TxIn{}
+	in.ExtBytes = []byte("ext data test")
 	in.Script = blk.CoinbaseScript([]byte("Test Block"))
 	tx.Ins = []*TxIn{in}
 
@@ -106,7 +107,7 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
-	if err := blk.CalcBits(1000000, bi); err != nil {
+	if err := blk.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
 	err = blk.Check(bi)
@@ -147,6 +148,85 @@ func TestBlockChain(t *testing.T) {
 		t.FailNow()
 	}
 	bi.db.Sync()
+}
+
+//测试一个区块中消费同区块之前的交易
+func TestBlockMulTXS(t *testing.T) {
+	bi := NewBlockIndex(&tlis{})
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
+	if err != nil {
+		panic(err)
+	}
+	//获取矿工的所有输出
+	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
+	if err != nil {
+		panic(err)
+	}
+
+	b, err := bi.NewBlock(1)
+	//组装交易
+	tx1 := &TX{Ver: 1}
+	ins := []*TxIn{}
+	txout := &TxOut{}
+	//转到miner
+	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
+	for _, v := range ds {
+		ins = append(ins, v.GetTxIn())
+		txout.Value += v.Value.ToAmount()
+	}
+	outs := []*TxOut{txout}
+	tx1.Ins = ins
+	tx1.Outs = outs
+	//为每个输入添加签名
+	err = tx1.Sign(bi, b)
+	if err != nil {
+		panic(err)
+	}
+	err = b.AddTx(bi, tx1)
+	if err != nil {
+		panic(err)
+	}
+	if err := b.Finish(bi); err != nil {
+		panic(err)
+	}
+	//交易2消费交易1
+	tx2 := &TX{}
+	tx2.Ver = 1
+
+	in2 := &TxIn{}
+	in2.OutHash = tx1.Hash()
+	in2.OutIndex = 0
+	in2.ExtBytes = []byte{1, 1, 9}
+
+	ins2 := []*TxIn{in2}
+
+	out2 := &TxOut{}
+	out2.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
+	out2.Value = txout.Value
+
+	outs2 := []*TxOut{out2}
+	tx2.Ins = ins2
+	tx2.Outs = outs2
+	//为每个输入添加签名
+	err = tx2.Sign(bi, b)
+	if err != nil {
+		panic(err)
+	}
+	err = b.AddTx(bi, tx2)
+	if err != nil {
+		panic(err)
+	}
+
+	err = b.Check(bi)
+	if err != nil {
+		panic(err)
+	}
+	err = bi.LinkTo(b)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestBlockSign(t *testing.T) {

@@ -117,6 +117,8 @@ func InitChain(lis IListener) *BlockIndex {
 
 //区块链索引
 type BlockIndex struct {
+	//内存db
+	mem DBImp
 	//链监听器
 	lptr IListener
 	//
@@ -522,6 +524,9 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 		if err != nil {
 			return 0, nil
 		}
+		if txv.txptr != nil && txv.txsiz > 0 {
+			return txv.txsiz, txv.txptr
+		}
 		tx, err := txv.GetTX(bi)
 		if err != nil {
 			return 0, nil
@@ -541,11 +546,29 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vk := GetDBKey(TXS_PREFIX, id[:])
 	vb, err := bi.db.Index().Get(vk)
+	mem := false
+	if err != nil {
+		vb, err = bi.mem.Get(vk)
+		mem = true
+	}
 	if err != nil {
 		return nil, err
 	}
 	vv := &TxValue{}
+	if mem {
+		buf := bytes.NewReader(vb)
+		tx := &TX{}
+		if err := tx.Decode(buf); err != nil {
+			return nil, err
+		}
+		vv.txptr = tx
+		vv.txsiz = len(vb)
+		return vv, nil
+	}
 	err = vv.Decode(bytes.NewReader(vb))
+	if err != nil {
+		return nil, err
+	}
 	return vv, err
 }
 
@@ -610,7 +633,7 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return fmt.Errorf("read block rev data error %w", err)
 	}
-	bt, err := LoadBatch(rb)
+	bt, err := bi.db.Index().LoadBatch(rb)
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
@@ -659,16 +682,13 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) ([]*CoinKeyValue, error) {
 	return kvs, nil
 }
 
-//暂时缓存交易
+//缓存交易直接写入mem
 func (bi *BlockIndex) SetTx(tx *TX) error {
-	bi.lru.Get(tx.Hash(), func() (size int, value Value) {
-		buf := &bytes.Buffer{}
-		if err := tx.Encode(buf); err != nil {
-			return 0, nil
-		}
-		return buf.Len(), tx
-	})
-	return nil
+	id, bb, err := tx.HashTo()
+	if err != nil {
+		return err
+	}
+	return bi.mem.Put(TXS_PREFIX, id[:], bb)
 }
 
 //链接一个区块
@@ -684,9 +704,9 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 		return fmt.Errorf("can't link to main chain hash=%v", cid)
 	}
 	//区块状态写入
-	bt := NewBatch()
+	bt := bi.db.Index().NewBatch()
 	//设置事物回退
-	rt := bt.SetRev(NewBatch())
+	rt := bt.NewRev()
 	//第一个
 	if pid.IsZero() {
 		nexth = phv
@@ -749,6 +769,7 @@ func (bi *BlockIndex) Close() {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	log.Println("block index closing")
+	bi.mem.Close()
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
@@ -767,6 +788,7 @@ func NewBlockIndex(lptr IListener) *BlockIndex {
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
 		lru:  NewCache(256 * opt.MiB),
+		mem:  NewMemDB(),
 	}
 	return bi
 }
