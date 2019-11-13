@@ -11,9 +11,11 @@ import (
 )
 
 func main() {
-	lis := newListener()
+
 	conf := xx.InitConfig("v10000.json")
 	defer conf.Close()
+
+	lis := newListener(conf.WalletDir)
 
 	bi := xx.InitChain(lis)
 	defer bi.Close()

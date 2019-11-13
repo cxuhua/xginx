@@ -17,8 +17,8 @@ type listener struct {
 	wallet xx.IWallet
 }
 
-func newListener() *listener {
-	w, err := xx.NewLevelDBWallet("/Users/xuhua/wallet")
+func newListener(wdir string) *listener {
+	w, err := xx.NewLevelDBWallet(wdir)
 	if err != nil {
 		panic(err)
 	}

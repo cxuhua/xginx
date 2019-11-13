@@ -33,6 +33,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	WalletDir    string       `json:"wallet_dir"`    //钱包地址
 	DataDir      string       `json:"data_dir"`      //数据路径
 	ObjIdPrefix  string       `json:"oid_prefix"`    //物品id前缀
 	AddrPrefix   string       `json:"addr_prefix"`   //地址前缀
