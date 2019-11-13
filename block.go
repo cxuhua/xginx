@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -389,6 +390,25 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	return nil
 }
 
+//10000000
+func (blk *BlockInfo) CalcBits(cnt uint32, bi *BlockIndex) error {
+	hb := blk.Header.Bytes()
+	for i := uint32(0); i < cnt; i++ {
+		id := hb.Hash()
+		if !CheckProofOfWork(id, blk.Header.Bits) {
+			hb.SetNonce(i)
+		} else {
+			blk.Header = hb.Header()
+			log.Printf("new block success ID=%v Bits=%x Height=%x\n", blk.ID(), blk.Meta.Bits, blk.Meta.Height)
+			return nil
+		}
+		if cnt > 0 && i%(cnt/10) == 0 {
+			log.Printf("genblock bits=%x ID=%v Nonce=%x Height=%d\n", blk.Meta.Bits, id, i, blk.Meta.Height)
+		}
+	}
+	return errors.New("calc bits failed")
+}
+
 //完成块数据
 func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	lptr := bi.GetListener()
@@ -411,8 +431,13 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 
 //检查区块数据
 func (blk *BlockInfo) Check(bi *BlockIndex) error {
+	//必须有交易
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
+	}
+	//检测工作难度
+	if !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
+		return errors.New("block bits error")
 	}
 	//检查所有的交易
 	if err := blk.CheckTxs(bi); err != nil {

@@ -6,11 +6,32 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"strings"
+	"sync/atomic"
 )
 
 var (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
 )
+
+//方法同时只能被一个线程执行
+type ONE int32
+
+func (f *ONE) IsRunning() bool {
+	return atomic.CompareAndSwapInt32((*int32)(f), 1, 1)
+}
+
+func (f *ONE) Running() bool {
+	if f.IsRunning() {
+		return false
+	} else {
+		atomic.AddInt32((*int32)(f), 1)
+		return true
+	}
+}
+
+func (f *ONE) Reset() {
+	atomic.AddInt32((*int32)(f), -1)
+}
 
 //max : 60 bits
 func CompressUInt(n uint64) uint64 {

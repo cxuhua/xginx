@@ -11,10 +11,11 @@ import (
 )
 
 func main() {
+	lis := newListener()
 	conf := xx.InitConfig("v10000.json")
 	defer conf.Close()
 
-	bi := xx.InitChain(newListener())
+	bi := xx.InitChain(lis)
 	defer bi.Close()
 
 	csig := make(chan os.Signal)

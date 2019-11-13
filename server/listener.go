@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	xx "github.com/cxuhua/xginx"
@@ -36,14 +37,13 @@ func (lis *listener) OnLinkBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) {
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
-	pri, err := lis.wallet.GetPrivate(maddr)
+	id, err := xx.DecodeAddress(maddr)
 	if err != nil {
 		return err
 	}
-	pub := pri.PublicKey()
-	script, err := xx.NewStdLockedScript(pub)
+	script, err := xx.NewStdLockedScript(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("new stdlocked script error %w", err)
 	}
 	//设置base out script
 	//创建coinbase tx
@@ -76,7 +76,10 @@ func (lis *listener) OnFinished(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 		return errors.New("coinbase tx miss")
 	}
 	//交易费用处理
-	fee := blk.GetFee(bi)
+	fee, err := blk.GetFee(bi)
+	if err != nil {
+		return err
+	}
 	if fee == 0 {
 		return nil
 	}

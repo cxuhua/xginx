@@ -106,6 +106,9 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
+	if err := blk.CalcBits(1000000, bi); err != nil {
+		panic(err)
+	}
 	err = blk.Check(bi)
 	if err != nil {
 		panic(err)

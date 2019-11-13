@@ -673,10 +673,6 @@ func (bi *BlockIndex) SetTx(tx *TX) error {
 
 //链接一个区块
 func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
-	//非测试环境才检测工作难度
-	if !conf.IsTest && !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
-		return errors.New("proof of work bits error")
-	}
 	cid, meta, bb, err := blk.ToTBMeta()
 	if err != nil {
 		return err

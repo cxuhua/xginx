@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -29,7 +28,7 @@ type minerEngine struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	mbc    chan uint32
-	gening int32
+	gening ONE
 }
 
 func newMinerEngine() IMiner {
@@ -38,18 +37,17 @@ func newMinerEngine() IMiner {
 	}
 }
 
+//创建新块任务
 func (m *minerEngine) NewBlock(ver uint32) {
-	if atomic.CompareAndSwapInt32(&m.gening, 1, 1) {
-		log.Println("gening new block,please wait finished")
-		return
-	}
 	m.mbc <- ver
 }
 
 //创建一个区块
 func (m *minerEngine) genBlock(ver uint32) {
-	atomic.AddInt32(&m.gening, 1)
-	defer atomic.AddInt32(&m.gening, -1)
+	if !m.gening.Running() {
+		return
+	}
+	defer m.gening.Reset()
 	bi := GetChain()
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
@@ -83,7 +81,7 @@ func (m *minerEngine) genBlock(ver uint32) {
 			break
 		}
 		if i%10000000 == 0 {
-			log.Printf("genblock 10000000 bits=%x ID=%v Nonce=%x\n", blk.Header.Bits, id, i)
+			log.Printf("genblock 10000000 bits=%x ID=%v Nonce=%x Height=%d\n", blk.Meta.Bits, id, i, blk.Meta.Height)
 		}
 		if i > (^uint32(0))-1 {
 			hb.SetTime(time.Now())
@@ -104,25 +102,27 @@ func (m *minerEngine) genBlock(ver uint32) {
 
 //定时分配工作
 func (m *minerEngine) dispatch() {
-
+	log.Println("miner dispatch worker start")
+	m.wg.Add(1)
+	defer m.wg.Done()
+	wtimer := time.NewTimer(time.Second * 60)
+	for {
+		select {
+		case <-wtimer.C:
+			m.NewBlock(1)
+			wtimer.Reset(time.Second * 60)
+		case <-m.ctx.Done():
+			return
+		}
+	}
 }
 
 func (m *minerEngine) loop(i int) {
 	log.Println("miner worker", i, "start")
-	//defer func() {
-	//	if err := recover(); err != nil {
-	//		log.Println("miner worker error id=", i, err)
-	//		m.cancel()
-	//	}
-	//}()
 	m.wg.Add(1)
 	defer m.wg.Done()
-	dtimer := time.NewTimer(time.Second * 5)
 	for {
 		select {
-		case <-dtimer.C:
-			m.dispatch()
-			dtimer.Reset(time.Second * 5)
 		case ver := <-m.mbc:
 			m.genBlock(ver)
 		case <-m.ctx.Done():
@@ -137,6 +137,7 @@ func (m *minerEngine) Start(ctx context.Context) {
 	for i := 0; i < 4; i++ {
 		go m.loop(i)
 	}
+	go m.dispatch()
 }
 
 //停止

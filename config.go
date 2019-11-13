@@ -57,7 +57,6 @@ type Config struct {
 	logFile      *os.File     `json:"-"`             //日志文件
 	genesisId    HASH256      `json:"-"`             //第一个区块id
 	LimitHash    UINT256      `json:"-"`             //最小工作难度
-	IsTest       bool         `json:"-"`             //是否在测试环境
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {
@@ -97,15 +96,12 @@ func (c *Config) Init() error {
 			panic(err)
 		}
 		c.logFile = file
-		log.SetOutput(file)
-		gin.DefaultWriter = file
-		gin.DefaultErrorWriter = file
 	} else {
-		c.logFile = nil
-		log.SetOutput(os.Stdout)
-		gin.DefaultWriter = os.Stdout
-		gin.DefaultErrorWriter = os.Stderr
+		c.logFile = os.Stdout
 	}
+	log.SetOutput(c.logFile)
+	gin.DefaultWriter = c.logFile
+	gin.DefaultErrorWriter = c.logFile
 	log.SetFlags(logflags)
 	if c.Debug {
 		gin.SetMode(gin.DebugMode)

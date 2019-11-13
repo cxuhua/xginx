@@ -9,7 +9,28 @@ import (
 	"log"
 	"math/big"
 	"testing"
+	"time"
 )
+
+func TestOne(t *testing.T) {
+	var f ONE
+
+	fn := func(i int) {
+		if !f.Running() {
+			log.Println("fn isrunning", i)
+			return
+		}
+		time.Sleep(time.Second)
+		defer f.Reset()
+	}
+
+	for i := 0; i < 10; i++ {
+		go func(x int) {
+			fn(x)
+		}(i)
+	}
+	time.Sleep(time.Second * 60)
+}
 
 func TestCompressAmount(t *testing.T) {
 	log.Println(CompressUInt(1000001))
