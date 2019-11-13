@@ -50,6 +50,7 @@ type Config struct {
 	TcpPort      int          `json:"tcp_port"`      //服务端口和ip
 	TcplIp       string       `json:"tcp_lip"`       //服务ip
 	TcprIp       string       `json:"tcp_rip"`       //节点远程连接ip
+	Debug        bool         `json:"debug"`         //是否在测试模式
 	mu           sync.RWMutex `json:"-"`             //
 	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
 	minerpk      *PublicKey   `json:"-"`             //矿工公钥
@@ -91,23 +92,25 @@ func (c *Config) Init() error {
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {
-		file, err := os.OpenFile(c.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+		file, err := os.OpenFile(c.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
 		if err != nil {
 			panic(err)
 		}
 		c.logFile = file
 		log.SetOutput(file)
-		log.SetFlags(logflags)
 		gin.DefaultWriter = file
 		gin.DefaultErrorWriter = file
-		gin.SetMode(gin.ReleaseMode)
 	} else {
 		c.logFile = nil
 		log.SetOutput(os.Stdout)
-		log.SetFlags(logflags)
 		gin.DefaultWriter = os.Stdout
 		gin.DefaultErrorWriter = os.Stderr
+	}
+	log.SetFlags(logflags)
+	if c.Debug {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
