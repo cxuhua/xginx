@@ -7,11 +7,12 @@ import (
 )
 
 func TestWalletEnc(t *testing.T) {
-	w, err := NewLevelDBWallet("wallet")
+	w, err := NewLevelDBWallet("/Users/xuhua/wtest")
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
+	defer w.Close()
 	ds := w.ListAddress()
 	if len(ds) != 0 {
 		t.Error("address error")
@@ -43,15 +44,15 @@ func TestWalletEnc(t *testing.T) {
 		t.Errorf("address exp")
 		t.FailNow()
 	}
-	w.Close()
 }
 
 func TestWallet(t *testing.T) {
-	w, err := NewLevelDBWallet("wallet")
+	w, err := NewLevelDBWallet("/Users/xuhua/wtest")
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
 	}
+	defer w.Close()
 	ds := w.ListAddress()
 	if len(ds) != 0 {
 		t.Error("address error")

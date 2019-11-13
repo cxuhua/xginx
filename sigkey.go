@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"sync"
 )
 
 const (
@@ -77,8 +78,9 @@ func (p *SigBytes) Set(sig *SigValue) {
 }
 
 type PrivateKey struct {
-	D   *big.Int
-	pub *PublicKey
+	D    *big.Int
+	pub  *PublicKey
+	once sync.Once
 }
 
 func (p *PrivateKey) Clone() *PrivateKey {
@@ -190,11 +192,10 @@ func (pk PrivateKey) Marshal() []byte {
 }
 
 func (pk *PrivateKey) PublicKey() *PublicKey {
-	if pk.pub != nil {
-		return pk.pub
-	}
-	pk.pub = &PublicKey{}
-	pk.pub.X, pk.pub.Y = curve.ScalarBaseMult(pk.Marshal())
+	pk.once.Do(func() {
+		pk.pub = &PublicKey{}
+		pk.pub.X, pk.pub.Y = curve.ScalarBaseMult(pk.Marshal())
+	})
 	return pk.pub
 }
 

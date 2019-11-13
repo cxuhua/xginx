@@ -136,31 +136,32 @@ func (tree *MerkleTree) ExtractRoot() HASH256 {
 }
 
 func (tree *MerkleTree) Extract() (HASH256, []HASH256, []int) {
+	hash := HASH256{}
 	ids := make([]HASH256, 0)
 	idx := make([]int, 0)
 	tree.bad = false
 	if tree.trans == 0 {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
 	if len(tree.vhash) > tree.trans {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
 	if len(tree.bits) < len(tree.vhash) {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
 	h := tree.Height()
 	nbits, nhash := 0, 0
-	root := tree.extract(h, 0, &nbits, &nhash, &ids, &idx)
+	hash = tree.extract(h, 0, &nbits, &nhash, &ids, &idx)
 	if tree.bad {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
 	if (nbits+7)/8 != (len(tree.bits)+7)/8 {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
 	if nhash != len(tree.vhash) {
-		return HASH256{}, nil, nil
+		return hash, nil, nil
 	}
-	return root, ids, idx
+	return hash, ids, idx
 }
 
 func (tree *MerkleTree) extract(h int, pos int, nbits *int, nhash *int, ids *[]HASH256, idx *[]int) HASH256 {

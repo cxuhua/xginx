@@ -11,10 +11,16 @@ import (
 )
 
 func main() {
-	defer xx.Close()
+	conf := xx.InitConfig("v10000.json")
+	defer conf.Close()
+
+	bi := xx.InitChain(newListener())
+	defer bi.Close()
+
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	//是否启动tcp节点服务器
 	if xx.Server != nil {
 		xx.Server.Start(ctx)

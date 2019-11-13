@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const (
@@ -12,6 +13,8 @@ const (
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
 	//最大ExtScript大小
 	MAX_SCRIPT_SIZE = 4 * 1024
+	//最大索引数据大小
+	MAX_LOG_SIZE = 1024 * 1024
 )
 
 //存储交易索引值
@@ -66,18 +69,18 @@ func (b *HeaderBytes) SetNonce(v uint32) {
 	Endian.PutUint32((*b)[l-4:], v)
 }
 
-func (b *HeaderBytes) SetTime(v uint32) {
+func (b *HeaderBytes) SetTime(v time.Time) {
 	l := len(*b)
-	Endian.PutUint32((*b)[l-12:], v)
+	Endian.PutUint32((*b)[l-12:], uint32(v.Unix()))
 }
 
 func (b *HeaderBytes) Hash() HASH256 {
 	return Hash256From(*b)
 }
 
-func (b *HeaderBytes) Header() *BlockHeader {
+func (b *HeaderBytes) Header() BlockHeader {
 	buf := bytes.NewReader(*b)
-	hptr := &BlockHeader{}
+	hptr := BlockHeader{}
 	err := hptr.Decode(buf)
 	if err != nil {
 		panic(err)
@@ -150,8 +153,11 @@ func (v *BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Ba
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
+	if !out.Value.IsRange() {
+		return errors.New("out value range error")
+	}
 	if out.Value == 0 {
-		return errors.New("out value zero")
+		return nil
 	}
 	tk := CoinKeyValue{}
 	tk.Value = out.Value.ToVarUInt()
@@ -176,8 +182,12 @@ func (v *BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Bat
 	if rt == nil {
 		return errors.New("rev batch miss")
 	}
+	if !out.Value.IsRange() {
+		return errors.New("out value range error")
+	}
+	//金额为0不写入coin索引
 	if out.Value == 0 {
-		return errors.New("out value zero")
+		return nil
 	}
 	tk := CoinKeyValue{}
 	tk.Value = out.Value.ToVarUInt()
@@ -281,33 +291,31 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-func (b *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
-	if err := tx.Check(bi, b); err != nil {
+func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	if err := tx.Check(bi, blk); err != nil {
 		return err
 	}
-	b.Txs = append(b.Txs, tx)
-	//发布交易
-	bi.PublishTx(b, tx)
+	blk.Txs = append(blk.Txs, tx)
 	return nil
 }
 
-func (b *BlockInfo) ID() HASH256 {
-	return b.Header.ID()
+func (blk *BlockInfo) ID() HASH256 {
+	return blk.Header.ID()
 }
 
-func (b *BlockInfo) IsGenesis() bool {
-	return b.Header.IsGenesis()
+func (blk *BlockInfo) IsGenesis() bool {
+	return blk.Header.IsGenesis()
 }
 
 //HASH256 meta,bytes
-func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
+func (blk *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	meta := &TBMeta{
-		BlockHeader: b.Header,
-		Txs:         VarUInt(len(b.Txs)),
+		BlockHeader: blk.Header,
+		Txs:         VarUInt(len(blk.Txs)),
 	}
 	id := meta.ID()
 	buf := &bytes.Buffer{}
-	if err := b.Encode(buf); err != nil {
+	if err := blk.Encode(buf); err != nil {
 		return id, nil, nil, err
 	}
 	if buf.Len() > MAX_BLOCK_SIZE {
@@ -317,54 +325,65 @@ func (b *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 }
 
 //获取coinse out fee sum
-func (v *BlockInfo) CoinbaseFee() Amount {
-	if len(v.Txs) == 0 {
-		panic(errors.New("miss txs"))
+func (blk *BlockInfo) CoinbaseFee() (Amount, error) {
+	if len(blk.Txs) == 0 {
+		return 0, errors.New("miss txs")
 	}
-	return v.Txs[0].CoinbaseFee()
+	return blk.Txs[0].CoinbaseFee()
 }
 
 //获取总的交易费
-func (v *BlockInfo) GetFee(bi *BlockIndex) Amount {
+func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 	fee := Amount(0)
-	for _, tx := range v.Txs {
-		fee += tx.GetFee(bi)
+	for _, tx := range blk.Txs {
+		if tx.IsCoinBase() {
+			continue
+		}
+		f, err := tx.GetFee(bi, blk)
+		if err != nil {
+			return fee, err
+		}
+		fee += f
 	}
-	return fee
+	if !fee.IsRange() {
+		return 0, errors.New("amount range error")
+	}
+	return fee, nil
 }
 
 //检查所有的交易
-func (v *BlockInfo) CheckTxs(bi *BlockIndex) error {
+func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	//奖励
-	rfee := GetCoinbaseReward(v.Meta.Height)
+	rfee := GetCoinbaseReward(blk.Meta.Height)
 	if !rfee.IsRange() {
 		return errors.New("coinbase reward amount error")
 	}
 	//检测所有交易
-	for i, tx := range v.Txs {
+	for i, tx := range blk.Txs {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, v)
+		err := tx.Check(bi, blk)
 		if err != nil {
 			return err
 		}
 	}
 	//获取交易费
-	tfee := v.GetFee(bi)
-	if !tfee.IsRange() {
-		return errors.New("trans fee error")
+	tfee, err := blk.GetFee(bi)
+	if err != nil {
+		return err
 	}
 	//coinbase输出
-	cfee := v.CoinbaseFee()
-	if !cfee.IsRange() {
-		return errors.New("coinbase fee error")
+	cfee, err := blk.CoinbaseFee()
+	if err != nil {
+		return err
 	}
-	fee := rfee + tfee
-	if !fee.IsRange() {
+	//奖励+交易费之和不能大于coinbase输出
+	sfee := rfee + tfee
+	if !sfee.IsRange() {
 		return errors.New("sum fee fee error")
 	}
-	if cfee > fee {
+	if cfee > sfee {
 		return errors.New("coinbase fee error")
 	}
 	return nil
@@ -390,41 +409,31 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	return blk.SetMerkle()
 }
 
-//检查工作难度
-func (v *BlockInfo) CheckPow() error {
-	if !CheckProofOfWork(v.ID(), v.Header.Bits) {
-		return errors.New("proof of work bits error")
-	}
-	return nil
-}
-
 //检查区块数据
-func (v *BlockInfo) Check(bi *BlockIndex) error {
-	if len(v.Txs) == 0 {
+func (blk *BlockInfo) Check(bi *BlockIndex) error {
+	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
 	//检查所有的交易
-	if err := v.CheckTxs(bi); err != nil {
+	if err := blk.CheckTxs(bi); err != nil {
 		return err
 	}
 	//检查merkle树
-	merkle, err := v.GetMerkle()
+	merkle, err := blk.GetMerkle()
 	if err != nil {
 		return err
 	}
-	if !merkle.Equal(v.Header.Merkle) {
+	if !merkle.Equal(blk.Header.Merkle) {
 		return errors.New("txs merkle hash error")
 	}
 	//检查区块大小
 	buf := &bytes.Buffer{}
-	if err := v.Encode(buf); err != nil {
+	if err := blk.Encode(buf); err != nil {
 		return err
 	}
 	if buf.Len() > MAX_BLOCK_SIZE {
 		return errors.New("block size > MAX_BLOCK_SIZE")
 	}
-	//发布区块
-	bi.PublishBlk(v)
 	return nil
 }
 
@@ -515,6 +524,9 @@ type TxIn struct {
 
 //获取对应的输出
 func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
+	if v.OutHash.IsZero() {
+		return nil, errors.New("zero hash id")
+	}
 	otx, err := bi.LoadTX(v.OutHash)
 	if err != nil {
 		return nil, fmt.Errorf("txin outtx miss %w", err)
@@ -569,7 +581,7 @@ func (in *TxIn) IsCoinBase() bool {
 
 const (
 	COIN      = Amount(100000000)
-	MAX_MONEY = Amount(21000000 * COIN)
+	MAX_MONEY = 21000000 * COIN
 )
 
 //结算当前奖励
@@ -642,8 +654,11 @@ func (v *TxOut) GetPKH() (HASH160, error) {
 	return pkh, errors.New("unknow script type")
 }
 
-//输出是否可以被in消费
-func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) error {
+//输出是否可以被in消费在blk区块中
+func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) error {
+	if !bi.IsCheckSpent(blk) {
+		return nil
+	}
 	tk := CoinKeyValue{}
 	tk.Value = v.Value.ToVarUInt()
 	pkh, err := v.GetPKH()
@@ -654,6 +669,7 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) error {
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
+	//key存在表明此输出还未被消费
 	if !bi.db.Index().Has(key) {
 		return errors.New("out is spent")
 	}
@@ -720,6 +736,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
 	}
+	//放置到缓存
 	return bi.SetTx(tx)
 }
 
@@ -737,7 +754,7 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 		if err != nil {
 			return err
 		}
-		if err := out.IsSpent(in, bi); err != nil {
+		if err := out.IsSpent(in, bi, blk); err != nil {
 			return err
 		}
 		signer, err := out.GetSigner(bi, tx, in, idx)
@@ -753,6 +770,7 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}
 	}
+	//放置到缓存
 	return bi.SetTx(tx)
 }
 
@@ -760,50 +778,53 @@ func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
 	}
-	h := HASH256{}
 	buf := &bytes.Buffer{}
-	_ = tx.Encode(buf)
-	copy(h[:], Hash256(buf.Bytes()))
+	if err := tx.Encode(buf); err != nil {
+		panic(err)
+	}
 	return tx.hasher.Hash(buf.Bytes())
 }
 
 //获取coinse out fee sum
-func (v *TX) CoinbaseFee() Amount {
+func (v *TX) CoinbaseFee() (Amount, error) {
 	if !v.IsCoinBase() {
-		panic(errors.New("tx not coinbase"))
+		return 0, errors.New("tx not coinbase")
 	}
-	a := Amount(0)
+	fee := Amount(0)
 	for _, out := range v.Outs {
-		a += out.Value
+		fee += out.Value
 	}
-	return a
+	if !fee.IsRange() {
+		return 0, errors.New("amount range error")
+	}
+	return fee, nil
 }
 
 //获取此交易交易费
-func (v *TX) GetFee(bi *BlockIndex) Amount {
+func (v *TX) GetFee(bi *BlockIndex, bp *BlockInfo) (Amount, error) {
 	if v.IsCoinBase() {
-		return 0
+		return 0, errors.New("coinbase not trans fee")
 	}
-	a := Amount(0)
+	fee := Amount(0)
 	for _, in := range v.Ins {
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
-			panic(err)
+			return 0, err
 		}
-		err = out.IsSpent(in, bi)
+		err = out.IsSpent(in, bi, bp)
 		if err != nil {
-			panic(err)
+			return 0, err
 		}
-		a += out.Value
+		fee += out.Value
 	}
 	for _, out := range v.Outs {
-		a -= out.Value
+		fee -= out.Value
 	}
-	return a
+	return fee, nil
 }
 
 //检测除coinbase交易外的交易金额
-func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
+func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -811,6 +832,7 @@ func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
 	if v.IsCoinBase() {
 		return nil
 	}
+	//总的输入金额
 	itv := Amount(0)
 	for _, in := range v.Ins {
 		err := in.Check(bi)
@@ -821,12 +843,13 @@ func (v *TX) Check(bi *BlockIndex, b *BlockInfo) error {
 		if err != nil {
 			return err
 		}
-		err = out.IsSpent(in, bi)
+		err = out.IsSpent(in, bi, blk)
 		if err != nil {
 			return err
 		}
 		itv += out.Value
 	}
+	//总的输入出金额
 	otv := Amount(0)
 	for _, out := range v.Outs {
 		err := out.Check(bi)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"testing"
+	"time"
 )
 
 var (
@@ -21,7 +22,7 @@ func TestBlockHeader(t *testing.T) {
 	h.Nonce = 2
 
 	b := h.Bytes()
-	b.SetTime(3)
+	b.SetTime(time.Now())
 	b.SetNonce(4)
 
 	h2 := b.Header()
@@ -37,6 +38,13 @@ func TestBlockHeader(t *testing.T) {
 
 //测试用监听器
 type tlis struct {
+}
+
+func (lis *tlis) OnClose(bi *BlockIndex) {
+
+}
+
+func (lis *tlis) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 }
 
 //当块创建完毕
@@ -74,7 +82,10 @@ func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if !btx.IsCoinBase() {
 		return errors.New("coinbase tx miss")
 	}
-	fee := blk.GetFee(bi)
+	fee, err := blk.GetFee(bi)
+	if err != nil {
+		return err
+	}
 	if fee == 0 {
 		return nil
 	}
@@ -104,26 +115,22 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 
 func TestBlockChain(t *testing.T) {
 	bi := NewBlockIndex(&tlis{})
-	//订阅测试
-	//sblk, cblk := bi.SubscribeBlk(10)
-	//defer sblk.Unsubscribe()
-	//go func() {
-	//	for {
-	//		select {
-	//		case blk := <-cblk:
-	//			log.Println(blk)
-	//		case err := <-sblk.Err():
-	//			if err != nil {
-	//				log.Println(err)
-	//			}
-	//			return
-	//		}
-	//	}
-	//}()
-	testnum := uint32(500)
+	defer bi.Close()
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
+	if err == EmptyBlockChain {
+		log.Println(err)
+	} else if err == ArriveFirstBlock {
+		log.Println(err)
+	} else if err != nil {
+		panic(err)
+	}
+
+	testnum := uint32(5)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
-		_, err := bi.LinkTo(cb)
+		err := bi.LinkTo(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
@@ -140,7 +147,6 @@ func TestBlockChain(t *testing.T) {
 }
 
 func TestBlockSign(t *testing.T) {
-
 	bi := NewBlockIndex(&tlis{})
 	err := bi.LoadAll(func(pv uint) {
 		log.Printf("load block chian %d%%\n", pv)
@@ -149,7 +155,7 @@ func TestBlockSign(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListTokens(TestMinePri.PublicKey().Hash())
+	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
 	if err != nil {
 		panic(err)
 	}
@@ -161,12 +167,9 @@ func TestBlockSign(t *testing.T) {
 	txout := &TxOut{}
 	//转到miner
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
-	for i, v := range ds {
+	for _, v := range ds {
 		ins = append(ins, v.GetTxIn())
 		txout.Value += v.Value.ToAmount()
-		if i > 500 {
-			break
-		}
 	}
 	outs := []*TxOut{}
 	tx.Ins = ins
@@ -187,10 +190,10 @@ func TestBlockSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	//_, err = bi.LinkTo(b)
-	//if err != nil {
-	//	panic(err)
-	//}
+	err = bi.LinkTo(b)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func TestUnlinkBlock(t *testing.T) {

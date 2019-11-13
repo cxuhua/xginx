@@ -178,20 +178,20 @@ func (s *TcpServer) run() {
 }
 
 //生成一个临时id全网唯一
-func NewNodeID() HASH160 {
+func NewNodeID(c *Config) HASH160 {
 	id := HASH160{}
 	_ = binary.Read(rand.Reader, Endian, id[:])
 	buf := &bytes.Buffer{}
 	buf.Write(id[:])
-	buf.Write([]byte(conf.TcprIp))
+	buf.Write([]byte(c.TcprIp))
 	_ = binary.Write(buf, Endian, time.Now().UnixNano())
 	copy(id[:], Hash160(buf.Bytes()))
 	return id
 }
 
-func NewTcpServer(ctx context.Context, conf *Config) (*TcpServer, error) {
+func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s := &TcpServer{}
-	s.addr = conf.GetListenAddr().ToTcpAddr()
+	s.addr = c.GetListenAddr().ToTcpAddr()
 	lis, err := net.ListenTCP(s.addr.Network(), s.addr)
 	if err != nil {
 		return nil, err

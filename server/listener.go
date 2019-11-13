@@ -2,8 +2,13 @@ package main
 
 import (
 	"errors"
+	"time"
 
 	xx "github.com/cxuhua/xginx"
+)
+
+const (
+	maddr = "st1q363x0zvheem0a5f0r0z9qr9puj7l900jc8glh0" //区块奖励地址
 )
 
 //测试用监听器
@@ -11,9 +16,32 @@ type listener struct {
 	wallet xx.IWallet
 }
 
+func newListener() *listener {
+	w, err := xx.NewLevelDBWallet("/Users/xuhua/wallet")
+	if err != nil {
+		panic(err)
+	}
+	return &listener{
+		wallet: w,
+	}
+}
+
+func (lis *listener) OnClose(bi *xx.BlockIndex) {
+	lis.wallet.Close()
+}
+
+func (lis *listener) OnLinkBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) {
+
+}
+
 //当块创建完毕
 func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
-	script, err := xx.NewStdLockedScript(nil)
+	pri, err := lis.wallet.GetPrivate(maddr)
+	if err != nil {
+		return err
+	}
+	pub := pri.PublicKey()
+	script, err := xx.NewStdLockedScript(pub)
 	if err != nil {
 		return err
 	}
@@ -22,9 +50,11 @@ func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 	tx := &xx.TX{}
 	tx.Ver = 1
 
+	txt := time.Now().Format("2006-01-02 15:04:05")
+
 	//base tx
 	in := &xx.TxIn{}
-	in.Script = blk.CoinbaseScript([]byte("Test Block"))
+	in.Script = blk.CoinbaseScript([]byte(txt))
 	tx.Ins = []*xx.TxIn{in}
 	//
 	out := &xx.TxOut{}

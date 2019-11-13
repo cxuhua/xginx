@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"sync"
 	"time"
 
@@ -113,7 +114,7 @@ func TrimAESKey(key []byte) ([]byte, error) {
 }
 
 //创建加密算法
-func NewAESChpher(key []byte) (cipher.Block, error) {
+func NewAESCipher(key []byte) (cipher.Block, error) {
 	ikey, err := TrimAESKey(key)
 	if err != nil {
 		return nil, err
@@ -211,7 +212,7 @@ func (db *LevelDBWallet) ImportAddr(pks string, pw string) error {
 		vbs = append(vbs, pri.Encode()...)
 		return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
 	} else {
-		block, err := NewAESChpher([]byte(pw))
+		block, err := NewAESCipher([]byte(pw))
 		if err != nil {
 			return err
 		}
@@ -235,7 +236,7 @@ func (db *LevelDBWallet) Decryption(addr string, pw string, st time.Duration) er
 	if vbs[0] == StdPKPrefix[0] {
 		return errors.New("address not crypt")
 	}
-	block, err := NewAESChpher([]byte(pw))
+	block, err := NewAESCipher([]byte(pw))
 	if err != nil {
 		return err
 	}
@@ -267,7 +268,7 @@ func (db *LevelDBWallet) Encryption(addr string, pw string) error {
 	if vbs[0] == EncPKPrefix[0] {
 		return nil
 	}
-	block, err := NewAESChpher([]byte(pw))
+	block, err := NewAESCipher([]byte(pw))
 	if err != nil {
 		return err
 	}
@@ -319,7 +320,7 @@ func (db *LevelDBWallet) GetPrivate(addr string) (*PrivateKey, error) {
 }
 
 func (db *LevelDBWallet) checkTimer() {
-	timer := time.NewTimer(time.Second * 1)
+	timer := time.NewTimer(time.Second * 5)
 	for {
 		select {
 		case <-timer.C:
@@ -332,12 +333,15 @@ func (db *LevelDBWallet) checkTimer() {
 				}
 				dkeys = append(dkeys, k)
 			}
+			if len(dkeys) > 0 {
+				log.Println("delete expire keys", len(dkeys))
+			}
 			for _, k := range dkeys {
 				delete(db.cache, k)
 				delete(db.times, k)
 			}
 			db.mu.Unlock()
-			timer.Reset(time.Second * 1)
+			timer.Reset(time.Second * 5)
 		case <-db.done:
 			return
 		}

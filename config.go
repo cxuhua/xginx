@@ -56,6 +56,7 @@ type Config struct {
 	logFile      *os.File     `json:"-"`             //日志文件
 	genesisId    HASH256      `json:"-"`             //第一个区块id
 	LimitHash    UINT256      `json:"-"`             //最小工作难度
+	IsTest       bool         `json:"-"`             //是否在测试环境
 }
 
 func (c *Config) GetMinerPubKey() *PublicKey {
@@ -111,7 +112,7 @@ func (c *Config) Init() error {
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
 	c.LimitHash = NewUINT256(c.PowLimit)
-	c.NodeID = NewNodeID()
+	c.NodeID = NewNodeID(c)
 	return nil
 }
 
@@ -119,25 +120,22 @@ var (
 	conf *Config = nil
 )
 
-func init() {
-	//加载默认配置文件
-	LoadConfig("v10000.json") //测试配置文件
+func InitConfig(f string) *Config {
+	conf = LoadConfig(f)
+	return conf
 }
 
-func Close() {
-	conf.Close()
-}
-
-func LoadConfig(f string) {
+func LoadConfig(f string) *Config {
 	d, err := ioutil.ReadFile(f)
 	if err != nil {
 		panic(err)
 	}
-	conf = &Config{}
-	if err := json.Unmarshal(d, conf); err != nil {
+	sconf := &Config{}
+	if err := json.Unmarshal(d, sconf); err != nil {
 		panic(err)
 	}
-	if err := conf.Init(); err != nil {
+	if err := sconf.Init(); err != nil {
 		panic(err)
 	}
+	return sconf
 }
