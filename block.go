@@ -474,23 +474,8 @@ func (v *BlockInfo) Decode(r IReader) error {
 type TxIn struct {
 	OutHash  HASH256  //输出交易hash
 	OutIndex VarUInt  //对应的输出索引
-	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定义区块中某个交易的某个输入
-	Script   Script   //解锁脚本
-	Witness  WitnessScript
-}
-
-//设置输入脚本为
-func (in *TxIn) SetScript(bi *BlockIndex, blk *BlockInfo) error {
-	idx := len(blk.Txs) - 1
-	if in.OutHash.IsZero() {
-		return errors.New("out hash not set")
-	}
-	out, _, err := in.LoadTxOut(bi, blk, idx)
-	if err != nil {
-		return err
-	}
-	in.Script = NewStdUnlockScript(out.GetPKH())
-	return nil
+	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定位区块中某个交易的某个输入
+	Script   Script
 }
 
 //获取对应的输出
@@ -521,7 +506,7 @@ func (v *TxIn) Check(bi *BlockIndex) error {
 	}
 	if v.IsCoinBase() {
 		return nil
-	} else if v.Script.IsStdUnlockScript() {
+	} else if v.Script.IsWitness() {
 		return nil
 	} else {
 		return errors.New("txin unlock script type error")
@@ -538,7 +523,7 @@ func (v *TxIn) ForID(w IWriter) error {
 	if err := v.ExtBytes.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Script.Encode(w); err != nil {
+	if err := v.Script.ForID(w); err != nil {
 		return err
 	}
 	return nil
@@ -557,9 +542,6 @@ func (v *TxIn) Encode(w IWriter) error {
 	if err := v.Script.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Witness.Encode(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -576,15 +558,12 @@ func (v *TxIn) Decode(r IReader) error {
 	if err := v.Script.Decode(r); err != nil {
 		return err
 	}
-	if err := v.Witness.Decode(r); err != nil {
-		return err
-	}
 	return nil
 }
 
 //是否基本单元，txs的第一个一定是base类型
 func (in *TxIn) IsCoinBase() bool {
-	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsBaseScript()
+	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsCoinBase()
 }
 
 const (
@@ -651,19 +630,8 @@ type TxOut struct {
 }
 
 //获取签名解锁器
-func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) (ISigner, error) {
-	if v.Script.IsStdLockedcript() {
-		return newStdSigner(bi, tx, v, in, idx), nil
-	}
-	return nil, errors.New("not support")
-}
-
-//获取输出金额所属公钥hash
-func (v *TxOut) GetPKH() HASH160 {
-	if v.Script.IsStdLockedcript() {
-		return v.Script.StdPKH()
-	}
-	panic(errors.New("unknow script type"))
+func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) ISigner {
+	return newStdSigner(bi, tx, v, in, idx)
 }
 
 //输出是否可以被in消费在blk区块中
@@ -673,19 +641,18 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) bool {
 	}
 	tk := CoinKeyValue{}
 	tk.Value = v.Value
-	tk.CPkh = v.GetPKH()
+	tk.CPkh = v.Script.GetPkh()
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
-	//检测区块索引中是否存在
 	return !bi.db.Index().Has(key)
 }
 
 func (v *TxOut) Check(bi *BlockIndex) error {
-	if v.Script.IsStdLockedcript() {
-		return nil
+	if !v.Script.IsLocked() {
+		return errors.New("unknow script type")
 	}
-	return errors.New("unknow script type")
+	return nil
 }
 
 func (v *TxOut) Encode(w IWriter) error {
@@ -710,10 +677,19 @@ func (v *TxOut) Decode(r IReader) error {
 
 //交易
 type TX struct {
-	Ver    VarUInt    //版本
-	Ins    []*TxIn    //输入
-	Outs   []*TxOut   //输出
-	hasher HashCacher //hash缓存
+	Ver  VarUInt    //版本
+	Ins  []*TxIn    //输入
+	Outs []*TxOut   //输出
+	idhc HashCacher //hash缓存
+	outs HashCacher //签名hash缓存
+	pres HashCacher //签名hash缓存
+}
+
+//重置缓存
+func (tx *TX) ResetAll() {
+	tx.idhc.Reset()
+	tx.outs.Reset()
+	tx.pres.Reset()
 }
 
 //第一个必须是base交易
@@ -751,7 +727,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		tk.CPkh = out.GetPKH()
+		tk.CPkh = out.Script.GetPkh()
 		tk.Index = in.OutIndex
 		tk.TxId = in.OutHash
 		key := tk.GetKey()
@@ -768,7 +744,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		tk.CPkh = out.GetPKH()
+		tk.CPkh = out.Script.GetPkh()
 		tk.Index = VarUInt(idx)
 		tk.TxId = tx.ID()
 		key := tk.GetKey()
@@ -788,11 +764,7 @@ func (tx *TX) Verify(bi *BlockIndex, blk *BlockInfo, idx int) error {
 		if err != nil {
 			return err
 		}
-		signer, err := out.GetSigner(bi, tx, in, iidx)
-		if err != nil {
-			return err
-		}
-		err = signer.Verify()
+		err = out.GetSigner(bi, tx, in, iidx).Verify()
 		if err != nil {
 			return fmt.Errorf("Verify in %d error %w", iidx, err)
 		}
@@ -830,15 +802,11 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 		if !self && out.IsSpent(in, bi, blk) {
 			return errors.New("out is spent")
 		}
-		signer, err := out.GetSigner(bi, tx, in, iidx)
-		if err != nil {
-			return err
-		}
 		pri, err := lptr.OnPrivateKey(bi, blk, out)
 		if err != nil {
 			return err
 		}
-		err = signer.Sign(pri)
+		err = out.GetSigner(bi, tx, in, iidx).Sign(pri)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", iidx, err)
 		}
@@ -848,7 +816,7 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 
 //交易id计算
 func (tx *TX) ID() HASH256 {
-	if hash, ok := tx.hasher.IsSet(); ok {
+	if hash, ok := tx.idhc.IsSet(); ok {
 		return hash
 	}
 	buf := &bytes.Buffer{}
@@ -859,8 +827,7 @@ func (tx *TX) ID() HASH256 {
 		panic(err)
 	}
 	for _, v := range tx.Ins {
-		err := v.ForID(buf)
-		if err != nil {
+		if err := v.ForID(buf); err != nil {
 			panic(err)
 		}
 	}
@@ -868,12 +835,11 @@ func (tx *TX) ID() HASH256 {
 		panic(err)
 	}
 	for _, v := range tx.Outs {
-		err := v.Encode(buf)
-		if err != nil {
+		if err := v.Encode(buf); err != nil {
 			panic(err)
 		}
 	}
-	return tx.hasher.Hash(buf.Bytes())
+	return tx.idhc.Hash(buf.Bytes())
 }
 
 //获取coinse out fee sum

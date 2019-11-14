@@ -41,7 +41,7 @@ func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	script, err := xx.NewStdLockedScript(id)
+	script, err := xx.NewLockedScript(id)
 	if err != nil {
 		return fmt.Errorf("new stdlocked script error %w", err)
 	}
@@ -89,10 +89,7 @@ func (lis *listener) OnFinished(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 
 //获取签名私钥
 func (lis *listener) OnPrivateKey(bi *xx.BlockIndex, blk *xx.BlockInfo, out *xx.TxOut) (*xx.PrivateKey, error) {
-	pkh, err := out.GetPKH()
-	if err != nil {
-		return nil, err
-	}
+	pkh := out.Script.GetPkh()
 	addr, err := xx.EncodeAddress(pkh)
 	if err != nil {
 		return nil, err

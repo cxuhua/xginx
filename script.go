@@ -8,10 +8,9 @@ import (
 )
 
 const (
-	SCRIPT_BASE_TYPE      = uint8(0) //coinbase input 0
-	SCRIPT_STDUNLOCK_TYPE = uint8(1) //标准解锁脚本 pubkey sigvalue
-	SCRIPT_STDLOCKED_TYPE = uint8(2) //标准锁定脚本 HASH160(pubkey)
-	SCRIPT_WITNESS_TYPE   = uint8(3) //witness type
+	SCRIPT_BASE_TYPE    = uint8(0) //coinbase input 0
+	SCRIPT_LOCKED_TYPE  = uint8(1) //标准锁定脚本 HASH160(pubkey)
+	SCRIPT_WITNESS_TYPE = uint8(2) //witness type
 )
 
 type Script []byte
@@ -24,30 +23,24 @@ func (s Script) Type() uint8 {
 	return s[0]
 }
 
-func (s Script) IsStdUnlockScript() bool {
-	return s.Len() > 1 && s.Len() < MAX_SCRIPT_SIZE && s[0] == SCRIPT_STDUNLOCK_TYPE
-}
-
-func (s Script) StdLockedHash() HASH160 {
-	hash := HASH160{}
-	copy(hash[:], s[1:])
-	return hash
-}
-
-//out
-func (s Script) IsStdLockedcript() bool {
-	return s.Len() > 1 && s.Len() < 64 && s[0] == SCRIPT_STDLOCKED_TYPE
-}
-
-func (s Script) StdPKH() HASH160 {
-	hash := HASH160{}
-	copy(hash[:], s[1:])
-	return hash
-}
-
 //in
-func (s Script) IsBaseScript() bool {
+func (s Script) IsCoinBase() bool {
 	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_BASE_TYPE
+}
+
+func (s Script) IsWitness() bool {
+	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_WITNESS_TYPE
+}
+
+func (s Script) IsLocked() bool {
+	return s.Len() > 1 && s.Len() < 32 && s[0] == SCRIPT_LOCKED_TYPE
+}
+
+//coinbase交易没有pkh
+func (s Script) GetPkh() HASH160 {
+	pkh := HASH160{}
+	copy(pkh[:], s[1:1+len(pkh)])
+	return pkh
 }
 
 //获取coinbase中的区块高度
@@ -59,8 +52,34 @@ func (s Script) Encode(w IWriter) error {
 	return VarBytes(s).Encode(w)
 }
 
+func (s Script) ForID(w IWriter) error {
+	if s.IsCoinBase() {
+		return VarBytes(s).Encode(w)
+	} else {
+		return s.ToWitness().ForID(w)
+	}
+}
+
+//签名，验证写入
+func (s Script) ForVerify(w IWriter) error {
+	return s.ToWitness().ForVerify(w)
+}
+
 func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
+}
+
+func (s Script) ToWitness() WitnessScript {
+	if !s.IsWitness() {
+		panic(errors.New("witness error"))
+	}
+	buf := bytes.NewReader(s)
+	wit := WitnessScript{}
+	err := wit.Decode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return wit
 }
 
 //加入区块高度
@@ -86,12 +105,12 @@ func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
 }
 
 //标准锁定脚本
-type StdLockedScript struct {
+type LockedScript struct {
 	Type uint8
 	Pkh  HASH160
 }
 
-func (ss StdLockedScript) Encode(w IWriter) error {
+func (ss LockedScript) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, ss.Type); err != nil {
 		return err
 	}
@@ -101,7 +120,7 @@ func (ss StdLockedScript) Encode(w IWriter) error {
 	return nil
 }
 
-func (ss *StdLockedScript) Decode(r IReader) error {
+func (ss *LockedScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Type); err != nil {
 		return err
 	}
@@ -111,24 +130,9 @@ func (ss *StdLockedScript) Decode(r IReader) error {
 	return nil
 }
 
-func StdLockedScriptFrom(s Script) (*StdLockedScript, error) {
-	if !s.IsStdLockedcript() {
-		return nil, errors.New("type error")
-	}
-	buf := bytes.NewReader(s)
-	std := &StdLockedScript{}
-	if err := std.Decode(buf); err != nil {
-		return nil, err
-	}
-	if std.Type != SCRIPT_STDLOCKED_TYPE {
-		return nil, errors.New("type error")
-	}
-	return std, nil
-}
-
-func NewStdLockedScript(v interface{}) (Script, error) {
-	std := &StdLockedScript{}
-	std.Type = SCRIPT_STDLOCKED_TYPE
+func NewLockedScript(v interface{}) (Script, error) {
+	std := &LockedScript{}
+	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = NewHASH160(v)
 	buf := &bytes.Buffer{}
 	if err := std.Encode(buf); err != nil {
@@ -141,6 +145,21 @@ type WitnessScript struct {
 	Type uint8    //SCRIPT_WITNESS_TYPE
 	Pks  PKBytes  //物品公钥 hash160=objId
 	Sig  SigBytes //签名
+}
+
+func (ss WitnessScript) ForID(w IWriter) error {
+	if err := binary.Write(w, Endian, ss.Type); err != nil {
+		return err
+	}
+	return nil
+}
+
+//编码需要签名的数据
+func (ss WitnessScript) ForVerify(w IWriter) error {
+	if err := binary.Write(w, Endian, ss.Type); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (ss WitnessScript) Encode(w IWriter) error {
@@ -159,6 +178,15 @@ func (ss WitnessScript) Encode(w IWriter) error {
 	return nil
 }
 
+func (ss WitnessScript) ToScript() Script {
+	buf := &bytes.Buffer{}
+	err := ss.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
 func (ss *WitnessScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Type); err != nil {
 		return err
@@ -173,6 +201,12 @@ func (ss *WitnessScript) Decode(r IReader) error {
 		return err
 	}
 	return nil
+}
+
+func EmptyWitnessScript() Script {
+	wit := WitnessScript{}
+	wit.Type = SCRIPT_WITNESS_TYPE
+	return wit.ToScript()
 }
 
 func NewWitnessScript(pub *PublicKey, sig *SigValue) WitnessScript {
@@ -207,31 +241,4 @@ func (ss *StdUnlockScript) Decode(r IReader) error {
 		return err
 	}
 	return nil
-}
-
-func StdUnlockScriptFrom(s Script) (*StdUnlockScript, error) {
-	if !s.IsStdUnlockScript() {
-		return nil, errors.New("type error")
-	}
-	buf := bytes.NewReader(s)
-	std := &StdUnlockScript{}
-	if err := std.Decode(buf); err != nil {
-		return nil, err
-	}
-	if std.Type != SCRIPT_STDUNLOCK_TYPE {
-		return nil, errors.New("type error")
-	}
-	return std, nil
-}
-
-func NewStdUnlockScript(pkh HASH160) Script {
-	std := &StdUnlockScript{}
-	std.Type = SCRIPT_STDUNLOCK_TYPE
-	std.Pkh = pkh
-	buf := &bytes.Buffer{}
-	err := std.Encode(buf)
-	if err != nil {
-		panic(err)
-	}
-	return buf.Bytes()
 }

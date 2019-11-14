@@ -40,24 +40,18 @@ func newStdSigner(bi *BlockIndex, tx *TX, out *TxOut, in *TxIn, idx int) ISigner
 
 //签名校验
 func (sr *stdsigner) Verify() error {
-	if sr.in.Witness.Type != SCRIPT_WITNESS_TYPE {
+	wits := sr.in.Script.ToWitness()
+	if wits.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("witness script type error")
 	}
-	std, err := StdUnlockScriptFrom(sr.in.Script)
+	pub, err := NewPublicKey(wits.Pks[:])
 	if err != nil {
 		return err
 	}
-	pub, err := NewPublicKey(sr.in.Witness.Pks[:])
-	if err != nil {
-		return err
-	}
-	if !pub.Hash().Equal(std.Pkh) {
+	if !pub.Hash().Equal(sr.out.Script.GetPkh()) {
 		return errors.New("not mine txout")
 	}
-	if !pub.Hash().Equal(sr.out.GetPKH()) {
-		return errors.New("not mine txout")
-	}
-	sig, err := NewSigValue(sr.in.Witness.Sig[:])
+	sig, err := NewSigValue(wits.Sig[:])
 	if err != nil {
 		return err
 	}
@@ -72,6 +66,9 @@ func (sr *stdsigner) Verify() error {
 }
 
 func (sp *stdsigner) OutputsHash() HASH256 {
+	if hash, set := sp.tx.outs.IsSet(); set {
+		return hash
+	}
 	buf := &bytes.Buffer{}
 	for _, v := range sp.tx.Outs {
 		err := v.Encode(buf)
@@ -79,10 +76,13 @@ func (sp *stdsigner) OutputsHash() HASH256 {
 			panic(err)
 		}
 	}
-	return Hash256From(buf.Bytes())
+	return sp.tx.outs.Hash(buf.Bytes())
 }
 
 func (sp *stdsigner) PrevoutHash() HASH256 {
+	if hash, set := sp.tx.pres.IsSet(); set {
+		return hash
+	}
 	buf := &bytes.Buffer{}
 	for _, v := range sp.tx.Ins {
 		err := v.OutHash.Encode(buf)
@@ -94,7 +94,7 @@ func (sp *stdsigner) PrevoutHash() HASH256 {
 			panic(err)
 		}
 	}
-	return Hash256From(buf.Bytes())
+	return sp.tx.pres.Hash(buf.Bytes())
 }
 
 //获取输入签名数据
@@ -116,7 +116,7 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 	if err := sr.in.ExtBytes.Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.in.Script.Encode(buf); err != nil {
+	if err := sr.in.Script.ForVerify(buf); err != nil {
 		return nil, err
 	}
 	if err := sr.out.Value.Encode(buf); err != nil {
@@ -130,15 +130,8 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 
 //签名生成解锁脚本
 func (sr *stdsigner) Sign(pri *PrivateKey) error {
-	std, err := StdUnlockScriptFrom(sr.in.Script)
-	if err != nil {
-		return err
-	}
 	pub := pri.PublicKey()
-	if !pub.Hash().Equal(sr.out.GetPKH()) {
-		return errors.New("not mine txout")
-	}
-	if !pub.Hash().Equal(std.Pkh) {
+	if !pub.Hash().Equal(sr.out.Script.GetPkh()) {
 		return errors.New("not mine txout")
 	}
 	sigb, err := sr.GetSigBytes()
@@ -149,6 +142,6 @@ func (sr *stdsigner) Sign(pri *PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	sr.in.Witness = NewWitnessScript(pri.PublicKey(), sig)
+	sr.in.Script = NewWitnessScript(pri.PublicKey(), sig).ToScript()
 	return nil
 }

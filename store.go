@@ -130,14 +130,11 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-func (tk CoinKeyValue) GetTxIn(bi *BlockIndex, blk *BlockInfo) *TxIn {
+func (tk CoinKeyValue) GetTxIn() *TxIn {
 	in := &TxIn{}
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
-	err := in.SetScript(bi, blk)
-	if err != nil {
-		panic(err)
-	}
+	in.Script = EmptyWitnessScript()
 	return in
 }
 
