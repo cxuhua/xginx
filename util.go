@@ -33,6 +33,12 @@ func (f *ONE) Reset() {
 	atomic.AddInt32((*int32)(f), -1)
 }
 
+func UR32() uint32 {
+	v := uint32(0)
+	SetRandInt(&v)
+	return v
+}
+
 //max : 60 bits
 func CompressUInt(n uint64) uint64 {
 	if n > MAX_COMPRESS_UINT {

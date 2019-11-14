@@ -349,34 +349,8 @@ func TestUnlinkBlock(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	bv := bi.GetBestValue()
-	if !bv.IsValid() {
-		log.Println("not has best block")
-		return
-	}
-	last := bi.Last()
-	id := last.ID()
-	_, err = bi.db.Index().Get(BLOCK_PREFIX, id[:])
+	err = bi.UnlinkLast()
 	if err != nil {
 		panic(err)
 	}
-	if !bv.Id.Equal(last.ID()) {
-		panic(errors.New("best id error"))
-	}
-	if bv.Height != last.Height {
-		panic(errors.New("best height error"))
-	}
-	b, err := bi.LoadBlock(last.ID())
-	if err != nil {
-		panic(err)
-	}
-	err = bi.Unlink(b)
-	if err != nil {
-		panic(err)
-	}
-	_, err = bi.db.Index().Get(BLOCK_PREFIX, id[:])
-	if err == nil {
-		panic(err)
-	}
-	bi.db.Sync()
 }

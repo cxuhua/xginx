@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 //矿工接口
@@ -65,27 +67,29 @@ func (m *minerEngine) genBlock(ver uint32) {
 	}
 	genok := false
 	hb := blk.Header.Bytes()
-	r := uint32(0)
-	SetRandInt(&r)
-	for i := uint32(0); ; i++ {
+	times := uint32(opt.MiB * 10)
+	for i, j := UR32(), uint32(0); ; i++ {
 		if err := m.ctx.Err(); err != nil {
 			log.Println("gen block ctx err igonre", err)
 			break
 		}
 		id := hb.Hash()
 		if !CheckProofOfWork(id, blk.Header.Bits) {
+			j++
 			hb.SetNonce(i)
 		} else {
 			blk.Header = hb.Header()
 			genok = true
 			break
 		}
-		if i%10000000 == 0 {
-			log.Printf("genblock 10000000 bits=%x ID=%v Nonce=%x Height=%d\n", blk.Meta.Bits, id, i, blk.Meta.Height)
+		if j%times == 0 {
+			log.Printf("genblock %d times, bits=%x id=%v nonce=%x height=%d\n", times, blk.Meta.Bits, id, i, blk.Meta.Height)
+			i = UR32()
+			j = 0
 		}
 		if i > (^uint32(0))-1 {
 			hb.SetTime(time.Now())
-			i = 0
+			i = UR32()
 		}
 	}
 	if !genok {

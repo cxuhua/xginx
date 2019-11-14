@@ -573,7 +573,9 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 }
 
 //清除区块相关的缓存
-func (bi *BlockIndex) cleanBlockCache(b *BlockInfo) {
+func (bi *BlockIndex) cleancache(b *BlockInfo) {
+	bi.mu.Lock()
+	defer bi.mu.Unlock()
 	for _, tv := range b.Txs {
 		bi.lru.Delete(tv.Hash())
 	}
@@ -592,7 +594,7 @@ func (bi *BlockIndex) UnlinkLast() error {
 	}
 	err = bi.Unlink(b)
 	if err == nil {
-		bi.cleanBlockCache(b)
+		bi.cleancache(b)
 	}
 	return err
 }
@@ -762,7 +764,7 @@ func NewBlockIndex(lptr IListener) *BlockIndex {
 		hmap: map[uint32]*list.Element{},
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
-		lru:  NewCache(256 * opt.MiB),
+		lru:  NewCache(64 * opt.MiB),
 	}
 	return bi
 }

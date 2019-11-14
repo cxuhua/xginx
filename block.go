@@ -766,7 +766,6 @@ func (tx *TX) Verify(bi *BlockIndex, blk *BlockInfo, idx int) error {
 			return fmt.Errorf("Verify in %d error %w", iidx, err)
 		}
 	}
-	//放置到缓存
 	return nil
 }
 
@@ -899,11 +898,8 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
 		otv += out.Value
 	}
 	//金额必须在合理的范围
-	if !itv.IsRange() {
-		return errors.New("in amount error")
-	}
-	if !otv.IsRange() {
-		return errors.New("out amount error")
+	if !itv.IsRange() || !otv.IsRange() {
+		return errors.New("in or out amount error")
 	}
 	//每个交易的输出不能大于输入
 	if itv < 0 || otv < 0 || otv > itv {
