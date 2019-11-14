@@ -58,7 +58,7 @@ func (m *minerEngine) genBlock(ver uint32) {
 		log.Println("finish block error ", err)
 		return
 	}
-	err = blk.Check(bi)
+	err = blk.Check(bi, false)
 	if err != nil {
 		log.Println("check block error ", err)
 		return

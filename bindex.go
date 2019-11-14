@@ -421,7 +421,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele.ID(), err)
 		}
-		err = bp.Check(bi)
+		err = bp.Check(bi, true)
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele.ID(), err)
 		}
@@ -666,6 +666,10 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) ([]*CoinKeyValue, error) {
 
 //链接一个区块
 func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
+	//检测区块
+	if err := blk.Check(bi, true); err != nil {
+		return err
+	}
 	cid, meta, bb, err := blk.ToTBMeta()
 	if err != nil {
 		return err

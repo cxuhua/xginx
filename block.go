@@ -338,10 +338,25 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	return blk.SetMerkle()
 }
 
+//检查是否有多个输入消费同一个输出
+func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
+	imap := map[string]bool{}
+	for _, tx := range blk.Txs {
+		for _, in := range tx.Ins {
+			key := fmt.Sprintf("%v-%d", in.OutHash, in.OutIndex)
+			if _, has := imap[key]; has {
+				return errors.New("mul txin cost one txout error")
+			}
+			imap[key] = true
+		}
+	}
+	return nil
+}
+
 //检查区块数据
-func (blk *BlockInfo) Check(bi *BlockIndex) error {
+func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 	//检测工作难度
-	if !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
+	if cpow && !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
 		return errors.New("block bits error")
 	}
 	//检查merkle树
@@ -351,6 +366,9 @@ func (blk *BlockInfo) Check(bi *BlockIndex) error {
 	}
 	if !merkle.Equal(blk.Header.Merkle) {
 		return errors.New("txs merkle hash error")
+	}
+	if err := blk.CheckMulCostTxOut(bi); err != nil {
+		return err
 	}
 	//检查所有的交易
 	if err := blk.CheckTxs(bi); err != nil {

@@ -110,10 +110,6 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	if err := blk.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
-	err = blk.Check(bi)
-	if err != nil {
-		panic(err)
-	}
 	return blk
 }
 
@@ -131,7 +127,7 @@ func TestBlockChain(t *testing.T) {
 		panic(err)
 	}
 
-	testnum := uint32(5)
+	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		err := bi.LinkTo(cb)
@@ -148,6 +144,57 @@ func TestBlockChain(t *testing.T) {
 		t.FailNow()
 	}
 	bi.db.Sync()
+}
+
+func TestMulTxInCostOneTxOut(t *testing.T) {
+	bi := NewBlockIndex(&tlis{})
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
+	if err != nil {
+		panic(err)
+	}
+	//获取矿工的所有输出
+	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
+	if err != nil {
+		panic(err)
+	}
+	b, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	//组装交易
+	tx1 := &TX{Ver: 1}
+	ins := []*TxIn{}
+	txout := &TxOut{}
+	//转到miner
+	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
+	for _, v := range ds {
+		ins = append(ins, v.GetTxIn())
+		txout.Value += v.Value
+	}
+	outs := []*TxOut{txout}
+	tx1.Ins = ins
+	tx1.Outs = outs
+	//为每个输入添加签名
+	err = tx1.Sign(bi, b)
+	if err != nil {
+		panic(err)
+	}
+	err = b.AddTx(bi, tx1)
+	if err != nil {
+		panic(err)
+	}
+	if err := b.Finish(bi); err != nil {
+		panic(err)
+	}
+	if err := b.CalcPowHash(1000000, bi); err != nil {
+		panic(err)
+	}
+	err = bi.LinkTo(b)
+	if err != nil {
+		panic(err)
+	}
 }
 
 //测试一个区块中消费同区块之前的交易
@@ -223,14 +270,26 @@ func TestBlockMulTXS(t *testing.T) {
 	if err := b.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
-	err = b.Check(bi)
-	if err != nil {
-		panic(err)
-	}
 	err = bi.LinkTo(b)
 	if err != nil {
 		panic(err)
 	}
+}
+
+func TestListAddressCoins(t *testing.T) {
+	bi := NewBlockIndex(&tlis{})
+	err := bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
+	if err != nil {
+		panic(err)
+	}
+	//获取矿工的所有输出
+	ds, err := bi.ListCoins("st1q363x0zvheem0a5f0r0z9qr9puj7l900jc8glh0")
+	if err != nil {
+		panic(err)
+	}
+	log.Println(ds)
 }
 
 func TestBlockSign(t *testing.T) {
@@ -273,8 +332,7 @@ func TestBlockSign(t *testing.T) {
 	if err := b.Finish(bi); err != nil {
 		panic(err)
 	}
-	err = b.Check(bi)
-	if err != nil {
+	if err := b.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
 	err = bi.LinkTo(b)
