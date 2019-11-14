@@ -23,17 +23,45 @@ func (s Script) Type() uint8 {
 	return s[0]
 }
 
-//in
+func getwitnesssize() int {
+	x := WitnessScript{}
+	x.Type = SCRIPT_WITNESS_TYPE
+	buf := &bytes.Buffer{}
+	_ = x.Encode(buf)
+	return buf.Len()
+}
+
+func getcoinbaseminsize() int {
+	return GetCoinbaseScript(0, []byte{}).Len()
+}
+
+func getlockedsize() int {
+	x := LockedScript{}
+	x.Type = SCRIPT_LOCKED_TYPE
+	buf := &bytes.Buffer{}
+	_ = x.Encode(buf)
+	return buf.Len()
+}
+
+var (
+	witnesssize    = getwitnesssize()
+	lockedsize     = getlockedsize()
+	conbaseminsize = getcoinbaseminsize()
+)
+
+//in script
 func (s Script) IsCoinBase() bool {
-	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_BASE_TYPE
+	return s.Len() >= conbaseminsize && s.Len() <= 128 && s[0] == SCRIPT_BASE_TYPE
 }
 
+//in script
 func (s Script) IsWitness() bool {
-	return s.Len() > 1 && s.Len() < 128 && s[0] == SCRIPT_WITNESS_TYPE
+	return s.Len() == witnesssize && s[0] == SCRIPT_WITNESS_TYPE
 }
 
+//out script
 func (s Script) IsLocked() bool {
-	return s.Len() > 1 && s.Len() < 32 && s[0] == SCRIPT_LOCKED_TYPE
+	return s.Len() == lockedsize && s[0] == SCRIPT_LOCKED_TYPE
 }
 
 //coinbase交易没有pkh

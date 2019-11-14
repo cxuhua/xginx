@@ -12,8 +12,6 @@ import (
 const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
-	//最大Script大小
-	MAX_SCRIPT_SIZE = 4 * 1024
 	//最大索引数据大小
 	MAX_LOG_SIZE = 1024 * 1024
 	//最大扩展数据
