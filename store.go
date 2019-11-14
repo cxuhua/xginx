@@ -105,7 +105,7 @@ type CoinKeyValue struct {
 	CPkh  HASH160 //cli hash
 	TxId  HASH256 //tx id
 	Index VarUInt //txout idx
-	Value VarUInt //list时设置不包含在key中
+	Value Amount  //list时设置不包含在key中
 }
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {

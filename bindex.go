@@ -117,8 +117,6 @@ func InitChain(lis IListener) *BlockIndex {
 
 //区块链索引
 type BlockIndex struct {
-	//内存db
-	mem DBImp
 	//链监听器
 	lptr IListener
 	//
@@ -519,16 +517,6 @@ func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
 }
 
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
-	//先从内存池获取
-	vb, err := bi.mem.Get(TXS_PREFIX, id[:])
-	if err == nil {
-		tx := &TX{}
-		err := tx.Decode(bytes.NewReader(vb))
-		if err != nil {
-			return nil, err
-		}
-		return tx, nil
-	}
 	//从缓存和区块获取
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
 		txv, err := bi.LoadTxValue(id)
@@ -629,6 +617,8 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
+	//删除区块头
+	bt.Del(BLOCK_PREFIX, id[:])
 	if err := bi.db.Index().Write(bt); err != nil {
 		return err
 	}
@@ -672,23 +662,6 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) ([]*CoinKeyValue, error) {
 		kvs = append(kvs, tk)
 	}
 	return kvs, nil
-}
-
-//缓存交易直接写入mem
-//返回回退事务日志
-func (bi *BlockIndex) SetTx(tx *TX) error {
-	bt := bi.mem.NewBatch()
-	rt := bt.NewRev()
-	if err := tx.Write(bi, nil, 0, bt); err != nil {
-		_ = bi.mem.Write(rt)
-		return err
-	}
-	if err := bi.mem.Write(bt); err != nil {
-		_ = bi.mem.Write(rt)
-		return err
-	}
-	tx.rt = rt
-	return nil
 }
 
 //链接一个区块
@@ -743,10 +716,9 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 		return err
 	}
 	bt.Put(BLOCK_PREFIX, cid[:], hbs)
-	//
-	blk.Meta = NewTBEle(meta, nexth, bi)
 	//连接区块
-	ele, err := bi.LinkBack(blk.Meta)
+	ele := NewTBEle(meta, nexth, bi)
+	ele, err = bi.LinkBack(ele)
 	if err != nil {
 		return err
 	}
@@ -755,7 +727,6 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 	err = bi.db.Index().Write(bt)
 	if err == nil {
 		bi.lptr.OnLinkBlock(bi, blk)
-		blk.Clean(bi)
 	} else {
 		err = bi.UnlinkBack()
 	}
@@ -770,7 +741,6 @@ func (bi *BlockIndex) Close() {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	log.Println("block index closing")
-	bi.mem.Close()
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
@@ -789,7 +759,6 @@ func NewBlockIndex(lptr IListener) *BlockIndex {
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
 		lru:  NewCache(256 * opt.MiB),
-		mem:  NewMemDB(),
 	}
 	return bi
 }

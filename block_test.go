@@ -164,12 +164,10 @@ func TestBlockMulTXS(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
 	b, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
 	}
-	defer b.Clean(bi)
 	//组装交易
 	tx1 := &TX{Ver: 1}
 	ins := []*TxIn{}
@@ -178,7 +176,7 @@ func TestBlockMulTXS(t *testing.T) {
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
 	for _, v := range ds {
 		ins = append(ins, v.GetTxIn())
-		txout.Value += v.Value.ToAmount()
+		txout.Value += v.Value
 	}
 	outs := []*TxOut{txout}
 	tx1.Ins = ins
@@ -258,7 +256,7 @@ func TestBlockSign(t *testing.T) {
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
 	for _, v := range ds {
 		ins = append(ins, v.GetTxIn())
-		txout.Value += v.Value.ToAmount()
+		txout.Value += v.Value
 	}
 	outs := []*TxOut{}
 	tx.Ins = ins
@@ -293,27 +291,34 @@ func TestUnlinkBlock(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	for {
-		bv := bi.GetBestValue()
-		if !bv.IsValid() {
-			log.Println("not has best block")
-			break
-		}
-		last := bi.Last()
-		if !bv.Id.Equal(last.ID()) {
-			panic(errors.New("best id error"))
-		}
-		if bv.Height != last.Height {
-			panic(errors.New("best height error"))
-		}
-		b, err := bi.LoadBlock(last.ID())
-		if err != nil {
-			panic(err)
-		}
-		err = bi.Unlink(b)
-		if err != nil {
-			panic(err)
-		}
+	bv := bi.GetBestValue()
+	if !bv.IsValid() {
+		log.Println("not has best block")
+		return
+	}
+	last := bi.Last()
+	id := last.ID()
+	_, err = bi.db.Index().Get(BLOCK_PREFIX, id[:])
+	if err != nil {
+		panic(err)
+	}
+	if !bv.Id.Equal(last.ID()) {
+		panic(errors.New("best id error"))
+	}
+	if bv.Height != last.Height {
+		panic(errors.New("best height error"))
+	}
+	b, err := bi.LoadBlock(last.ID())
+	if err != nil {
+		panic(err)
+	}
+	err = bi.Unlink(b)
+	if err != nil {
+		panic(err)
+	}
+	_, err = bi.db.Index().Get(BLOCK_PREFIX, id[:])
+	if err == nil {
+		panic(err)
 	}
 	bi.db.Sync()
 }

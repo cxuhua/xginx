@@ -5,9 +5,6 @@ import (
 	"log"
 	"sync"
 
-	"github.com/syndtr/goleveldb/leveldb/comparer"
-	"github.com/syndtr/goleveldb/leveldb/memdb"
-
 	"github.com/syndtr/goleveldb/leveldb/filter"
 
 	"github.com/syndtr/goleveldb/leveldb/iterator"
@@ -34,7 +31,6 @@ type Batch struct {
 	db   DBImp
 	bptr *leveldb.Batch
 	rb   *Batch //事务回退日志
-	mem  bool   //是否是内存操作
 }
 
 func (b *Batch) ReplayDB(db DBImp) error {
@@ -44,14 +40,6 @@ func (b *Batch) ReplayDB(db DBImp) error {
 
 func (b *Batch) GetRev() *Batch {
 	return b.rb
-}
-
-func (b *Batch) IsMem() bool {
-	return b.mem
-}
-
-func (b *Batch) SetMem(v bool) {
-	b.mem = v
 }
 
 func (b *Batch) NewRev() *Batch {
@@ -95,17 +83,14 @@ func (b *Batch) Reset() {
 
 func loadBatch(d []byte) (*Batch, error) {
 	bp := newBatch()
-	return bp, bp.Load(d)
+	err := bp.Load(d)
+	return bp, err
 }
 
-func newBatch(mem ...bool) *Batch {
-	b := &Batch{
+func newBatch() *Batch {
+	return &Batch{
 		bptr: &leveldb.Batch{},
 	}
-	if len(mem) > 0 {
-		b.mem = mem[0]
-	}
-	return b
 }
 
 type Range struct {
@@ -342,81 +327,6 @@ func (db *leveldbtr) Commit() error {
 
 func (db *leveldbtr) Discard() {
 	db.tr.Discard()
-}
-
-func NewMemDB() DBImp {
-	db := memdb.New(comparer.DefaultComparer, 128)
-	return &leveldbmem{l: db}
-}
-
-type leveldbmem struct {
-	l *memdb.DB
-}
-
-func (db *leveldbmem) Iterator(slice ...*Range) *Iterator {
-	var rptr *util.Range = nil
-	if len(slice) > 0 {
-		rptr = slice[0].r
-	}
-	return &Iterator{
-		iter: db.l.NewIterator(rptr),
-	}
-}
-
-func (db *leveldbmem) Compact(r *Range) error {
-	panic(errors.New("not imp"))
-}
-
-func (db *leveldbmem) Close() {
-	db.l.Reset()
-}
-
-func (db *leveldbmem) Has(ks ...[]byte) bool {
-	k := getDBKey(ks...)
-	return db.l.Contains(k)
-}
-
-func (db *leveldbmem) Put(ks ...[]byte) error {
-	k, v := getDBKeyValue(ks...)
-	return db.l.Put(k, v)
-}
-
-func (db *leveldbmem) Get(ks ...[]byte) ([]byte, error) {
-	k := getDBKey(ks...)
-	return db.l.Get(k)
-}
-
-func (db *leveldbmem) Del(ks ...[]byte) error {
-	k := getDBKey(ks...)
-	return db.l.Delete(k)
-}
-
-func (db *leveldbmem) Transaction() (TRImp, error) {
-	panic(errors.New("not imp"))
-}
-
-func (db *leveldbmem) Sync() {
-	panic(errors.New("not imp"))
-}
-
-func (db *leveldbmem) Write(b *Batch) error {
-	return b.ReplayDB(db)
-}
-
-func (db *leveldbmem) LoadBatch(b []byte) (*Batch, error) {
-	bt, err := loadBatch(b)
-	if err != nil {
-		return nil, err
-	}
-	bt.mem = true
-	bt.db = db
-	return bt, nil
-}
-
-func (db *leveldbmem) NewBatch() *Batch {
-	bt := newBatch(true)
-	bt.db = db
-	return bt
 }
 
 type leveldbstore struct {

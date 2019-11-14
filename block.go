@@ -140,6 +140,20 @@ type BlockInfo struct {
 	merher HashCacher  //mer hash 缓存
 }
 
+//查询本区块中的交易
+//只查找之前添加的交易
+func (blk *BlockInfo) FindTx(id HASH256, idx int) (*TX, error) {
+	for i, v := range blk.Txs {
+		if i > idx {
+			return nil, errors.New("find out bound")
+		}
+		if id.Equal(v.Hash()) {
+			return v, nil
+		}
+	}
+	return nil, errors.New("not found tx in block")
+}
+
 //创建Cosinbase 脚本
 func (blk *BlockInfo) CoinbaseScript(bs ...[]byte) Script {
 	return GetCoinbaseScript(blk.Meta.Height, bs...)
@@ -182,30 +196,10 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-//区块创建成功后清理临时缓存
-func (blk *BlockInfo) Clean(bi *BlockIndex) {
-	for i := len(blk.Txs) - 1; i >= 0; i-- {
-		tx := blk.Txs[i]
-		if tx.rt == nil {
-			continue
-		}
-		err := bi.mem.Write(tx.rt)
-		if err != nil {
-			panic(err)
-		}
-		tx.rt = nil
-	}
-}
-
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	idx := len(blk.Txs) - 1
 	//检测交易是否可进行
-	if err := tx.Check(bi, blk); err != nil {
-		return err
-	}
-	//保存到内存中
-	//放入内存db缓存,包括coinkeyvalue信息
-	//存入的临时数据会被blk.Clean()清理
-	if err := bi.SetTx(tx); err != nil {
+	if err := tx.Check(bi, blk, idx); err != nil {
 		return err
 	}
 	blk.Txs = append(blk.Txs, tx)
@@ -248,11 +242,11 @@ func (blk *BlockInfo) CoinbaseFee() (Amount, error) {
 //获取总的交易费
 func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 	fee := Amount(0)
-	for _, tx := range blk.Txs {
+	for idx, tx := range blk.Txs {
 		if tx.IsCoinBase() {
 			continue
 		}
-		f, err := tx.GetFee(bi, blk)
+		f, err := tx.GetFee(bi, blk, idx)
 		if err != nil {
 			return fee, err
 		}
@@ -266,7 +260,10 @@ func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 
 //检查所有的交易
 func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
-	//奖励
+	//必须有交易
+	if len(blk.Txs) == 0 {
+		return errors.New("txs miss, too little")
+	}
 	rfee := GetCoinbaseReward(blk.Meta.Height)
 	if !rfee.IsRange() {
 		return errors.New("coinbase reward amount error")
@@ -276,7 +273,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, blk)
+		err := tx.Check(bi, blk, i)
 		if err != nil {
 			return err
 		}
@@ -343,17 +340,9 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 
 //检查区块数据
 func (blk *BlockInfo) Check(bi *BlockIndex) error {
-	//必须有交易
-	if len(blk.Txs) == 0 {
-		return errors.New("txs miss, too little")
-	}
 	//检测工作难度
 	if !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
 		return errors.New("block bits error")
-	}
-	//检查所有的交易
-	if err := blk.CheckTxs(bi); err != nil {
-		return err
 	}
 	//检查merkle树
 	merkle, err := blk.GetMerkle()
@@ -362,6 +351,10 @@ func (blk *BlockInfo) Check(bi *BlockIndex) error {
 	}
 	if !merkle.Equal(blk.Header.Merkle) {
 		return errors.New("txs merkle hash error")
+	}
+	//检查所有的交易
+	if err := blk.CheckTxs(bi); err != nil {
+		return err
 	}
 	//检查区块大小
 	buf := &bytes.Buffer{}
@@ -461,19 +454,25 @@ type TxIn struct {
 }
 
 //获取对应的输出
-func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
+//并区分是否来自本区块
+func (v *TxIn) LoadTxOut(bi *BlockIndex, blk *BlockInfo, idx int) (*TxOut, bool, error) {
 	if v.OutHash.IsZero() {
-		return nil, errors.New("zero hash id")
+		return nil, false, errors.New("zero hash id")
 	}
+	self := false
 	otx, err := bi.LoadTX(v.OutHash)
 	if err != nil {
-		return nil, fmt.Errorf("txin outtx miss %w", err)
+		otx, err = blk.FindTx(v.OutHash, idx) //消费的交易在本区块中，并且肯定在之前就已经添加进去
+		self = err == nil
 	}
-	idx := v.OutIndex.ToInt()
-	if idx < 0 || idx >= len(otx.Outs) {
-		return nil, fmt.Errorf("outindex out of bound")
+	if err != nil {
+		return nil, self, fmt.Errorf("txin outtx miss %w", err)
 	}
-	return otx.Outs[idx], nil
+	oidx := v.OutIndex.ToInt()
+	if oidx < 0 || oidx >= len(otx.Outs) {
+		return nil, self, fmt.Errorf("outindex out of bound")
+	}
+	return otx.Outs[oidx], self, nil
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
@@ -607,35 +606,22 @@ func (v *TxOut) GetPKH() (HASH160, error) {
 }
 
 //输出是否可以被in消费在blk区块中
-func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) error {
+func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) bool {
 	if !bi.IsCheckSpent(blk) {
-		return nil
+		return false
 	}
 	tk := CoinKeyValue{}
-	tk.Value = v.Value.ToVarUInt()
+	tk.Value = v.Value
 	pkh, err := v.GetPKH()
 	if err != nil {
-		return err
+		panic(err)
 	}
 	tk.CPkh = pkh
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
-	//检测内存中是否被消费
-	tb, err := bi.mem.Get(key)
-	//金额为0表示已经被消费在内存数据记录中
-	if err == nil && AmountFrom(tb) == 0 {
-		return errors.New("out is spent")
-	}
-	//内存记录中存在表示可消费
-	if err == nil {
-		return nil
-	}
 	//检测区块索引中是否存在
-	if bi.db.Index().Has(key) {
-		return nil
-	}
-	return errors.New("out is spent")
+	return !bi.db.Index().Has(key)
 }
 
 func (v *TxOut) Check(bi *BlockIndex) error {
@@ -671,7 +657,6 @@ type TX struct {
 	Ins    []*TxIn    //输入
 	Outs   []*TxOut   //输出
 	hasher HashCacher //hash缓存
-	rt     *Batch     //不为nil表示已经检测过tx是正确的
 }
 
 //第一个必须是base交易
@@ -685,32 +670,22 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		return errors.New("batch miss rev")
 	}
 	id := tx.Hash()
-	if bt.IsMem() {
-		buf := &bytes.Buffer{}
-		if err := tx.Encode(buf); err != nil {
-			return err
-		}
-		bt.Put(TXS_PREFIX, id[:], buf.Bytes())
-	} else if blk != nil {
-		vval := TxValue{
-			BlkId:  blk.ID(),
-			TxsIdx: VarUInt(idx),
-		}
-		vbys, err := vval.Bytes()
-		if err != nil {
-			return err
-		}
-		bt.Put(TXS_PREFIX, id[:], vbys)
-	} else {
-		return errors.New("args error")
+	vval := TxValue{
+		BlkId:  blk.ID(),
+		TxsIdx: VarUInt(idx),
 	}
+	vbys, err := vval.Bytes()
+	if err != nil {
+		return err
+	}
+	bt.Put(TXS_PREFIX, id[:], vbys)
 	//输入coin
 	for _, in := range tx.Ins {
 		if in.IsCoinBase() {
 			continue
 		}
 		//out将被消耗掉
-		out, err := in.LoadTxOut(bi)
+		out, self, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return err
 		}
@@ -718,7 +693,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 			continue
 		}
 		tk := CoinKeyValue{}
-		tk.Value = out.Value.ToVarUInt()
+		tk.Value = out.Value
 		pkh, err := out.GetPKH()
 		if err != nil {
 			return err
@@ -727,11 +702,8 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		tk.Index = in.OutIndex
 		tk.TxId = in.OutHash
 		key := tk.GetKey()
-		if bt.IsMem() {
-			//临时放置一个金额为0的表示已经被消费
-			bt.Put(key, Amount(0).Bytes())
-		} else {
-			bt.Del(key)
+		bt.Del(key)
+		if !self {
 			rt.Put(key, out.Value.Bytes())
 		}
 	}
@@ -742,7 +714,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 			continue
 		}
 		tk := CoinKeyValue{}
-		tk.Value = out.Value.ToVarUInt()
+		tk.Value = out.Value
 		pkh, err := out.GetPKH()
 		if err != nil {
 			return err
@@ -757,23 +729,23 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 }
 
 //验证交易输入数据
-func (tx *TX) Verify(bi *BlockIndex) error {
-	for idx, in := range tx.Ins {
+func (tx *TX) Verify(bi *BlockIndex, blk *BlockInfo, idx int) error {
+	for iidx, in := range tx.Ins {
 		//不验证base的签名
 		if in.IsCoinBase() {
 			continue
 		}
-		out, err := in.LoadTxOut(bi)
+		out, _, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return err
 		}
-		signer, err := out.GetSigner(bi, tx, in, idx)
+		signer, err := out.GetSigner(bi, tx, in, iidx)
 		if err != nil {
 			return err
 		}
 		err = signer.Verify()
 		if err != nil {
-			return fmt.Errorf("Verify in %d error %w", idx, err)
+			return fmt.Errorf("Verify in %d error %w", iidx, err)
 		}
 	}
 	//放置到缓存
@@ -781,26 +753,36 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 }
 
 //签名交易数据
-func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
+func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 	lptr := bi.GetListener()
 	if lptr == nil {
 		return errors.New("block index listener null,can't sign")
 	}
-	for idx, in := range tx.Ins {
+	idx := -1
+	if len(idxs) == 0 {
+		idx = len(blk.Txs) - 1
+	} else {
+		idx = idxs[0]
+	}
+	if idx < 0 {
+		return errors.New("idx args error")
+	}
+	for iidx, in := range tx.Ins {
 		if in.IsCoinBase() {
 			continue
 		}
 		if in.ExtBytes.Len() > MAX_EXT_SIZE {
 			return errors.New("ext bytes len > MAX_EXT_SIZE")
 		}
-		out, err := in.LoadTxOut(bi)
+		out, self, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return err
 		}
-		if err := out.IsSpent(in, bi, blk); err != nil {
-			return err
+		//来自自身不检查是否被消费，因为索引中肯定没有
+		if !self && out.IsSpent(in, bi, blk) {
+			return errors.New("out is spent")
 		}
-		signer, err := out.GetSigner(bi, tx, in, idx)
+		signer, err := out.GetSigner(bi, tx, in, iidx)
 		if err != nil {
 			return err
 		}
@@ -810,7 +792,7 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 		}
 		err = signer.Sign(pri)
 		if err != nil {
-			return fmt.Errorf("sign in %d error %w", idx, err)
+			return fmt.Errorf("sign in %d error %w", iidx, err)
 		}
 	}
 	return nil
@@ -843,13 +825,13 @@ func (v *TX) CoinbaseFee() (Amount, error) {
 }
 
 //获取此交易交易费
-func (v *TX) GetFee(bi *BlockIndex, bp *BlockInfo) (Amount, error) {
+func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 	if v.IsCoinBase() {
 		return 0, errors.New("coinbase not trans fee")
 	}
 	fee := Amount(0)
 	for _, in := range v.Ins {
-		out, err := in.LoadTxOut(bi)
+		out, _, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return 0, err
 		}
@@ -862,11 +844,7 @@ func (v *TX) GetFee(bi *BlockIndex, bp *BlockInfo) (Amount, error) {
 }
 
 //检测除coinbase交易外的交易金额
-func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
-	//表示已经验证过
-	if v.rt != nil {
-		return nil
-	}
+func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -881,13 +859,12 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 		if err != nil {
 			return err
 		}
-		out, err := in.LoadTxOut(bi)
+		out, self, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return err
 		}
-		err = out.IsSpent(in, bi, blk)
-		if err != nil {
-			return err
+		if !self && out.IsSpent(in, bi, blk) {
+			return errors.New("out is spent")
 		}
 		itv += out.Value
 	}
@@ -915,7 +892,7 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 		return errors.New("ins amount must >= outs amount")
 	}
 	//检查签名
-	return v.Verify(bi)
+	return v.Verify(bi, blk, idx)
 }
 
 func (v *TX) Encode(w IWriter) error {
