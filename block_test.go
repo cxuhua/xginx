@@ -166,6 +166,10 @@ func TestBlockMulTXS(t *testing.T) {
 	}
 
 	b, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	defer b.Clean(bi)
 	//组装交易
 	tx1 := &TX{Ver: 1}
 	ins := []*TxIn{}
@@ -186,9 +190,6 @@ func TestBlockMulTXS(t *testing.T) {
 	}
 	err = b.AddTx(bi, tx1)
 	if err != nil {
-		panic(err)
-	}
-	if err := b.Finish(bi); err != nil {
 		panic(err)
 	}
 	//交易2消费交易1
@@ -218,7 +219,12 @@ func TestBlockMulTXS(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
+	if err := b.Finish(bi); err != nil {
+		panic(err)
+	}
+	if err := b.CalcPowHash(1000000, bi); err != nil {
+		panic(err)
+	}
 	err = b.Check(bi)
 	if err != nil {
 		panic(err)

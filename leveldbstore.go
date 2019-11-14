@@ -19,15 +19,15 @@ import (
 
 //用于将写入内存数据库
 type dbbatchreplay struct {
-	mem DBImp
+	db DBImp
 }
 
 func (r *dbbatchreplay) Put(key, value []byte) {
-	_ = r.mem.Put(key, value)
+	_ = r.db.Put(key, value)
 }
 
 func (r *dbbatchreplay) Delete(key []byte) {
-	_ = r.mem.Del(key)
+	_ = r.db.Del(key)
 }
 
 type Batch struct {
@@ -37,8 +37,8 @@ type Batch struct {
 	mem  bool   //是否是内存操作
 }
 
-func (b *Batch) ReplayMem(mem DBImp) error {
-	dbr := &dbbatchreplay{mem: mem}
+func (b *Batch) ReplayDB(db DBImp) error {
+	dbr := &dbbatchreplay{db: db}
 	return b.bptr.Replay(dbr)
 }
 
@@ -256,7 +256,7 @@ func (db *leveldbimp) Transaction() (TRImp, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &leveldbtrimp{tr: tr}, nil
+	return &leveldbtr{tr: tr}, nil
 }
 
 func (db *leveldbimp) Sync() {
@@ -274,11 +274,11 @@ func (db *leveldbimp) Write(b *Batch) error {
 	return db.l.Write(b.GetBatch(), opts)
 }
 
-type leveldbtrimp struct {
+type leveldbtr struct {
 	tr *leveldb.Transaction
 }
 
-func (db *leveldbtrimp) Has(ks ...[]byte) (bool, error) {
+func (db *leveldbtr) Has(ks ...[]byte) (bool, error) {
 	k := getDBKey(ks...)
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
@@ -287,7 +287,7 @@ func (db *leveldbtrimp) Has(ks ...[]byte) (bool, error) {
 	return db.tr.Has(k, opts)
 }
 
-func (db *leveldbtrimp) Put(ks ...[]byte) error {
+func (db *leveldbtr) Put(ks ...[]byte) error {
 	k, v := getDBKeyValue(ks...)
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
@@ -296,7 +296,7 @@ func (db *leveldbtrimp) Put(ks ...[]byte) error {
 	return db.tr.Put(k, v, opts)
 }
 
-func (db *leveldbtrimp) Get(ks ...[]byte) ([]byte, error) {
+func (db *leveldbtr) Get(ks ...[]byte) ([]byte, error) {
 	k := getDBKey(ks...)
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
@@ -305,7 +305,7 @@ func (db *leveldbtrimp) Get(ks ...[]byte) ([]byte, error) {
 	return db.tr.Get(k, opts)
 }
 
-func (db *leveldbtrimp) Del(ks ...[]byte) error {
+func (db *leveldbtr) Del(ks ...[]byte) error {
 	k := getDBKey(ks...)
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
@@ -314,7 +314,7 @@ func (db *leveldbtrimp) Del(ks ...[]byte) error {
 	return db.tr.Delete(k, opts)
 }
 
-func (db *leveldbtrimp) Write(b *Batch) error {
+func (db *leveldbtr) Write(b *Batch) error {
 	opts := &opt.WriteOptions{
 		NoWriteMerge: false,
 		Sync:         false,
@@ -322,7 +322,7 @@ func (db *leveldbtrimp) Write(b *Batch) error {
 	return db.tr.Write(b.bptr, opts)
 }
 
-func (db *leveldbtrimp) Iterator(slice ...*Range) *Iterator {
+func (db *leveldbtr) Iterator(slice ...*Range) *Iterator {
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
@@ -336,24 +336,24 @@ func (db *leveldbtrimp) Iterator(slice ...*Range) *Iterator {
 	}
 }
 
-func (db *leveldbtrimp) Commit() error {
+func (db *leveldbtr) Commit() error {
 	return db.tr.Commit()
 }
 
-func (db *leveldbtrimp) Discard() {
+func (db *leveldbtr) Discard() {
 	db.tr.Discard()
 }
 
 func NewMemDB() DBImp {
 	db := memdb.New(comparer.DefaultComparer, 128)
-	return &levelmemdb{l: db}
+	return &leveldbmem{l: db}
 }
 
-type levelmemdb struct {
+type leveldbmem struct {
 	l *memdb.DB
 }
 
-func (db *levelmemdb) Iterator(slice ...*Range) *Iterator {
+func (db *leveldbmem) Iterator(slice ...*Range) *Iterator {
 	var rptr *util.Range = nil
 	if len(slice) > 0 {
 		rptr = slice[0].r
@@ -363,47 +363,47 @@ func (db *levelmemdb) Iterator(slice ...*Range) *Iterator {
 	}
 }
 
-func (db *levelmemdb) Compact(r *Range) error {
+func (db *leveldbmem) Compact(r *Range) error {
 	panic(errors.New("not imp"))
 }
 
-func (db *levelmemdb) Close() {
+func (db *leveldbmem) Close() {
 	db.l.Reset()
 }
 
-func (db *levelmemdb) Has(ks ...[]byte) bool {
+func (db *leveldbmem) Has(ks ...[]byte) bool {
 	k := getDBKey(ks...)
 	return db.l.Contains(k)
 }
 
-func (db *levelmemdb) Put(ks ...[]byte) error {
+func (db *leveldbmem) Put(ks ...[]byte) error {
 	k, v := getDBKeyValue(ks...)
 	return db.l.Put(k, v)
 }
 
-func (db *levelmemdb) Get(ks ...[]byte) ([]byte, error) {
+func (db *leveldbmem) Get(ks ...[]byte) ([]byte, error) {
 	k := getDBKey(ks...)
 	return db.l.Get(k)
 }
 
-func (db *levelmemdb) Del(ks ...[]byte) error {
+func (db *leveldbmem) Del(ks ...[]byte) error {
 	k := getDBKey(ks...)
 	return db.l.Delete(k)
 }
 
-func (db *levelmemdb) Transaction() (TRImp, error) {
+func (db *leveldbmem) Transaction() (TRImp, error) {
 	panic(errors.New("not imp"))
 }
 
-func (db *levelmemdb) Sync() {
+func (db *leveldbmem) Sync() {
 	panic(errors.New("not imp"))
 }
 
-func (db *levelmemdb) Write(b *Batch) error {
-	return b.ReplayMem(db)
+func (db *leveldbmem) Write(b *Batch) error {
+	return b.ReplayDB(db)
 }
 
-func (db *levelmemdb) LoadBatch(b []byte) (*Batch, error) {
+func (db *leveldbmem) LoadBatch(b []byte) (*Batch, error) {
 	bt, err := loadBatch(b)
 	if err != nil {
 		return nil, err
@@ -413,7 +413,7 @@ func (db *levelmemdb) LoadBatch(b []byte) (*Batch, error) {
 	return bt, nil
 }
 
-func (db *levelmemdb) NewBatch() *Batch {
+func (db *leveldbmem) NewBatch() *Batch {
 	bt := newBatch(true)
 	bt.db = db
 	return bt

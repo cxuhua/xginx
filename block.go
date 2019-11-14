@@ -24,8 +24,6 @@ const (
 type TxValue struct {
 	BlkId  HASH256 //块hash
 	TxsIdx VarUInt //txs 索引
-	txptr  *TX     //来自内存直接设置
-	txsiz  int
 }
 
 func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
@@ -152,138 +150,9 @@ func (blk *BlockInfo) CoinbaseReward() Amount {
 	return GetCoinbaseReward(blk.Meta.Height)
 }
 
-//消费out
-func (v *BlockInfo) costOut(bi *BlockIndex, tv *TX, in *TxIn, out *TxOut, bt *Batch) error {
-	rt := bt.GetRev()
-	if rt == nil {
-		return errors.New("batch miss rev")
-	}
-	if !out.Value.IsRange() {
-		return errors.New("out value range error")
-	}
-	if out.Value == 0 {
-		return nil
-	}
-	tk := CoinKeyValue{}
-	tk.Value = out.Value.ToVarUInt()
-	pkh, err := out.GetPKH()
-	if err != nil {
-		return err
-	}
-	tk.CPkh = pkh
-	tk.Index = in.OutIndex
-	tk.TxId = in.OutHash
-	key := tk.GetKey()
-	//消耗积分后删除输出
-	bt.Del(key)
-	//添加恢复日志
-	rt.Put(key, out.Value.Bytes())
-	return nil
-}
-
-//添加out
-func (v *BlockInfo) incrOut(bi *BlockIndex, tv *TX, idx int, out *TxOut, bt *Batch) error {
-	rt := bt.GetRev()
-	if rt == nil {
-		return errors.New("rev batch miss")
-	}
-	if !out.Value.IsRange() {
-		return errors.New("out value range error")
-	}
-	//金额为0不写入coin索引
-	if out.Value == 0 {
-		return nil
-	}
-	tk := CoinKeyValue{}
-	tk.Value = out.Value.ToVarUInt()
-	pkh, err := out.GetPKH()
-	if err != nil {
-		return err
-	}
-	tk.CPkh = pkh
-	tk.Index = VarUInt(idx)
-	tk.TxId = tv.Hash()
-	bt.Put(tk.GetKey(), tk.GetValue())
-	return nil
-}
-
-func (v *BlockInfo) writeTxIns(bi *BlockIndex, tv *TX, ins []*TxIn, b *Batch) error {
-	r := b.GetRev()
-	if r == nil {
-		return errors.New("batch miss rev")
-	}
-	for _, in := range ins {
-		if in.IsCoinBase() {
-			continue
-		}
-		//out将被消耗掉
-		out, err := in.LoadTxOut(bi)
-		if err != nil {
-			return err
-		}
-		err = v.costOut(bi, tv, in, out, b)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (v *BlockInfo) writeTxOuts(bi *BlockIndex, tv *TX, outs []*TxOut, bt *Batch) error {
-	rt := bt.GetRev()
-	if rt == nil {
-		return errors.New("batch miss rev")
-	}
-	for idx, out := range outs {
-		err := v.incrOut(bi, tv, idx, out, bt)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (v *BlockInfo) WriteTx(bi *BlockIndex, i int, tx *TX, bt *Batch) error {
-	//保存交易id对应的区块和位置
-	tid := tx.Hash()
-	//如果是写内存直接写事物数据
-	if bt.IsMem() {
-		buf := &bytes.Buffer{}
-		if err := tx.Encode(buf); err != nil {
-			return err
-		}
-		bt.Put(TXS_PREFIX, tid[:], buf.Bytes())
-	} else {
-		vval := TxValue{
-			BlkId:  v.ID(),
-			TxsIdx: VarUInt(i),
-		}
-		vbys, err := vval.Bytes()
-		if err != nil {
-			return err
-		}
-		bt.Put(TXS_PREFIX, tid[:], vbys)
-	}
-	//处理交易输入
-	err := v.writeTxIns(bi, tx, tx.Ins, bt)
-	if err != nil {
-		return err
-	}
-	//处理交易输出
-	err = v.writeTxOuts(bi, tx, tx.Outs, bt)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
-	rt := bt.GetRev()
-	if rt == nil {
-		return errors.New("batch miss rev")
-	}
 	for i, tx := range v.Txs {
-		err := v.WriteTx(bi, i, tx, bt)
+		err := tx.Write(bi, v, i, bt)
 		if err != nil {
 			return err
 		}
@@ -313,24 +182,33 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
+//区块创建成功后清理临时缓存
+func (blk *BlockInfo) Clean(bi *BlockIndex) {
+	for i := len(blk.Txs) - 1; i >= 0; i-- {
+		tx := blk.Txs[i]
+		if tx.rt == nil {
+			continue
+		}
+		err := bi.mem.Write(tx.rt)
+		if err != nil {
+			panic(err)
+		}
+		tx.rt = nil
+	}
+}
+
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	//检测交易是否可进行
 	if err := tx.Check(bi, blk); err != nil {
 		return err
 	}
-	blk.Txs = append(blk.Txs, tx)
 	//保存到内存中
 	//放入内存db缓存,包括coinkeyvalue信息
-	bt := bi.mem.NewBatch()
-	rt := bt.NewRev()
-	idx := len(blk.Txs) - 1
-	if err := blk.WriteTx(bi, idx, tx, bt); err != nil {
-		_ = bi.mem.Write(rt)
+	//存入的临时数据会被blk.Clean()清理
+	if err := bi.SetTx(tx); err != nil {
 		return err
 	}
-	if err := bi.mem.Write(bt); err != nil {
-		_ = bi.mem.Write(rt)
-		return err
-	}
+	blk.Txs = append(blk.Txs, tx)
 	return nil
 }
 
@@ -676,16 +554,21 @@ func (a *Amount) Decode(r IReader) error {
 	return nil
 }
 
+func AmountFrom(b []byte) Amount {
+	a := Amount(0)
+	return a.From(b)
+}
+
 func (a Amount) Bytes() []byte {
 	lb := make([]byte, binary.MaxVarintLen64)
 	l := binary.PutVarint(lb, int64(a))
 	return lb[:l]
 }
 
-func (v *Amount) From(b []byte) int {
-	vv, l := binary.Varint(b)
+func (v *Amount) From(b []byte) Amount {
+	vv, _ := binary.Varint(b)
 	*v = Amount(vv)
-	return l
+	return *v
 }
 
 func (a Amount) ToVarUInt() VarUInt {
@@ -737,15 +620,18 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) error {
 	tk.CPkh = pkh
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
-	if tk.Value == 0 {
-		panic(errors.New("CoinKeyValue save 0 value!!!"))
-	}
 	key := tk.GetKey()
-	//存在内存
-	if bi.mem.Has(key) {
+	//检测内存中是否被消费
+	tb, err := bi.mem.Get(key)
+	//金额为0表示已经被消费在内存数据记录中
+	if err == nil && AmountFrom(tb) == 0 {
+		return errors.New("out is spent")
+	}
+	//内存记录中存在表示可消费
+	if err == nil {
 		return nil
 	}
-	//key存在链索引中
+	//检测区块索引中是否存在
 	if bi.db.Index().Has(key) {
 		return nil
 	}
@@ -785,12 +671,89 @@ type TX struct {
 	Ins    []*TxIn    //输入
 	Outs   []*TxOut   //输出
 	hasher HashCacher //hash缓存
-	rt     *Batch
+	rt     *Batch     //不为nil表示已经检测过tx是正确的
 }
 
 //第一个必须是base交易
 func (tx *TX) IsCoinBase() bool {
 	return len(tx.Ins) == 1 && tx.Ins[0].IsCoinBase()
+}
+
+func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
+	rt := bt.GetRev()
+	if rt == nil {
+		return errors.New("batch miss rev")
+	}
+	id := tx.Hash()
+	if bt.IsMem() {
+		buf := &bytes.Buffer{}
+		if err := tx.Encode(buf); err != nil {
+			return err
+		}
+		bt.Put(TXS_PREFIX, id[:], buf.Bytes())
+	} else if blk != nil {
+		vval := TxValue{
+			BlkId:  blk.ID(),
+			TxsIdx: VarUInt(idx),
+		}
+		vbys, err := vval.Bytes()
+		if err != nil {
+			return err
+		}
+		bt.Put(TXS_PREFIX, id[:], vbys)
+	} else {
+		return errors.New("args error")
+	}
+	//输入coin
+	for _, in := range tx.Ins {
+		if in.IsCoinBase() {
+			continue
+		}
+		//out将被消耗掉
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return err
+		}
+		if out.Value == 0 {
+			continue
+		}
+		tk := CoinKeyValue{}
+		tk.Value = out.Value.ToVarUInt()
+		pkh, err := out.GetPKH()
+		if err != nil {
+			return err
+		}
+		tk.CPkh = pkh
+		tk.Index = in.OutIndex
+		tk.TxId = in.OutHash
+		key := tk.GetKey()
+		if bt.IsMem() {
+			//临时放置一个金额为0的表示已经被消费
+			bt.Put(key, Amount(0).Bytes())
+		} else {
+			bt.Del(key)
+			rt.Put(key, out.Value.Bytes())
+		}
+	}
+	//输出coin
+	for idx, out := range tx.Outs {
+		//金额为0不写入coin索引
+		if out.Value == 0 {
+			continue
+		}
+		tk := CoinKeyValue{}
+		tk.Value = out.Value.ToVarUInt()
+		pkh, err := out.GetPKH()
+		if err != nil {
+			return err
+		}
+		tk.CPkh = pkh
+		tk.Index = VarUInt(idx)
+		tk.TxId = tx.Hash()
+		key := tk.GetKey()
+		bt.Put(key, tk.GetValue())
+	}
+	return nil
 }
 
 //验证交易输入数据
@@ -853,16 +816,6 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo) error {
 	return nil
 }
 
-func (tx *TX) HashTo() (HASH256, []byte, error) {
-	buf := &bytes.Buffer{}
-	if err := tx.Encode(buf); err != nil {
-		return ZERO, nil, err
-	}
-	bb := buf.Bytes()
-	id := Hash256From(bb)
-	return id, bb, nil
-}
-
 func (tx *TX) Hash() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
@@ -900,10 +853,6 @@ func (v *TX) GetFee(bi *BlockIndex, bp *BlockInfo) (Amount, error) {
 		if err != nil {
 			return 0, err
 		}
-		err = out.IsSpent(in, bi, bp)
-		if err != nil {
-			return 0, err
-		}
 		fee += out.Value
 	}
 	for _, out := range v.Outs {
@@ -914,6 +863,10 @@ func (v *TX) GetFee(bi *BlockIndex, bp *BlockInfo) (Amount, error) {
 
 //检测除coinbase交易外的交易金额
 func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
+	//表示已经验证过
+	if v.rt != nil {
+		return nil
+	}
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -921,16 +874,9 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo) error {
 	if v.IsCoinBase() {
 		return nil
 	}
-	//同一个交易中一个输出不能有多个输入消费
-	inm := map[HASH256]uint32{}
 	//总的输入金额
 	itv := Amount(0)
 	for _, in := range v.Ins {
-		if _, has := inm[in.OutHash]; has {
-			return errors.New("tx repeat use out")
-		} else {
-			inm[in.OutHash] = in.OutIndex.ToUInt32()
-		}
 		err := in.Check(bi)
 		if err != nil {
 			return err

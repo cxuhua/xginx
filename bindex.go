@@ -519,13 +519,21 @@ func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
 }
 
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
+	//先从内存池获取
+	vb, err := bi.mem.Get(TXS_PREFIX, id[:])
+	if err == nil {
+		tx := &TX{}
+		err := tx.Decode(bytes.NewReader(vb))
+		if err != nil {
+			return nil, err
+		}
+		return tx, nil
+	}
+	//从缓存和区块获取
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
 		txv, err := bi.LoadTxValue(id)
 		if err != nil {
 			return 0, nil
-		}
-		if txv.txptr != nil && txv.txsiz > 0 {
-			return txv.txsiz, txv.txptr
 		}
 		tx, err := txv.GetTX(bi)
 		if err != nil {
@@ -545,31 +553,15 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vv := &TxValue{}
-	vk := GetDBKey(TXS_PREFIX, id[:])
-	vb, err := bi.mem.Get(vk)
-	ismem := err == nil
-	if err != nil {
-		vb, err = bi.db.Index().Get(vk)
-	}
+	vb, err := bi.db.Index().Get(TXS_PREFIX, id[:])
 	if err != nil {
 		return nil, err
 	}
-	if ismem {
-		buf := bytes.NewReader(vb)
-		tx := &TX{}
-		if err := tx.Decode(buf); err != nil {
-			return nil, err
-		}
-		vv.txptr = tx
-		vv.txsiz = len(vb)
-		return vv, nil
-	} else {
-		err = vv.Decode(bytes.NewReader(vb))
-		if err != nil {
-			return nil, err
-		}
-		return vv, err
+	err = vv.Decode(bytes.NewReader(vb))
+	if err != nil {
+		return nil, err
 	}
+	return vv, err
 }
 
 //加载块数据
@@ -683,12 +675,20 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) ([]*CoinKeyValue, error) {
 }
 
 //缓存交易直接写入mem
+//返回回退事务日志
 func (bi *BlockIndex) SetTx(tx *TX) error {
-	id, bb, err := tx.HashTo()
-	if err != nil {
+	bt := bi.mem.NewBatch()
+	rt := bt.NewRev()
+	if err := tx.Write(bi, nil, 0, bt); err != nil {
+		_ = bi.mem.Write(rt)
 		return err
 	}
-	return bi.mem.Put(TXS_PREFIX, id[:], bb)
+	if err := bi.mem.Write(bt); err != nil {
+		_ = bi.mem.Write(rt)
+		return err
+	}
+	tx.rt = rt
+	return nil
 }
 
 //链接一个区块
@@ -755,6 +755,7 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 	err = bi.db.Index().Write(bt)
 	if err == nil {
 		bi.lptr.OnLinkBlock(bi, blk)
+		blk.Clean(bi)
 	} else {
 		err = bi.UnlinkBack()
 	}
