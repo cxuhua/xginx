@@ -25,7 +25,6 @@ type xhttp struct {
 	shttp  *http.Server
 	ctx    context.Context
 	cancel context.CancelFunc
-	dbkey  string
 }
 
 //输出错误

@@ -170,16 +170,24 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	//转到miner
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn())
+		ins = append(ins, v.GetTxIn(bi, b))
 		txout.Value += v.Value
 	}
+	txout.Value -= 1 * COIN //给点交易费
 	outs := []*TxOut{txout}
 	tx1.Ins = ins
 	tx1.Outs = outs
+
+	id1 := tx1.ID()
 	//为每个输入添加签名
 	err = tx1.Sign(bi, b)
 	if err != nil {
 		panic(err)
+	}
+	tx1.hasher.Reset()
+	id2 := tx1.ID()
+	if !id1.Equal(id2) {
+		panic(errors.New("id error"))
 	}
 	err = b.AddTx(bi, tx1)
 	if err != nil {
@@ -222,7 +230,8 @@ func TestBlockMulTXS(t *testing.T) {
 	//转到miner
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn())
+		in := v.GetTxIn(bi, b)
+		ins = append(ins, in)
 		txout.Value += v.Value
 	}
 	outs := []*TxOut{txout}
@@ -242,7 +251,7 @@ func TestBlockMulTXS(t *testing.T) {
 	tx2.Ver = 1
 
 	in2 := &TxIn{}
-	in2.OutHash = tx1.Hash()
+	in2.OutHash = tx1.ID()
 	in2.OutIndex = 0
 	in2.ExtBytes = []byte{1, 1, 9}
 
@@ -314,7 +323,7 @@ func TestBlockSign(t *testing.T) {
 	//转到miner
 	txout.Script, _ = NewStdLockedScript(TestMinePri.PublicKey())
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn())
+		ins = append(ins, v.GetTxIn(bi, b))
 		txout.Value += v.Value
 	}
 	outs := []*TxOut{}

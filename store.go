@@ -130,10 +130,16 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-func (tk CoinKeyValue) GetTxIn() *TxIn {
+func (tk CoinKeyValue) GetTxIn(bi *BlockIndex, blk *BlockInfo) *TxIn {
+	idx := len(blk.Txs) - 1
 	in := &TxIn{}
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
+	out, _, err := in.LoadTxOut(bi, blk, idx)
+	if err != nil {
+		panic(err) //输入对应的输出不存在
+	}
+	in.Script = NewStdUnlockScript(out.GetPKH())
 	return in
 }
 

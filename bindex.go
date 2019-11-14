@@ -577,7 +577,7 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	for _, tv := range b.Txs {
-		bi.lru.Delete(tv.Hash())
+		bi.lru.Delete(tv.ID())
 	}
 	bi.lru.Delete(b.ID())
 }

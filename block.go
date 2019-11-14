@@ -147,7 +147,7 @@ func (blk *BlockInfo) FindTx(id HASH256, idx int) (*TX, error) {
 		if i > idx {
 			return nil, errors.New("find out bound")
 		}
-		if id.Equal(v.Hash()) {
+		if id.Equal(v.ID()) {
 			return v, nil
 		}
 	}
@@ -180,7 +180,7 @@ func (v *BlockInfo) GetMerkle() (HASH256, error) {
 	}
 	ids := []HASH256{}
 	for _, tv := range v.Txs {
-		ids = append(ids, tv.Hash())
+		ids = append(ids, tv.ID())
 	}
 	root := BuildMerkleTree(ids).ExtractRoot()
 	v.merher.SetHash(root)
@@ -197,12 +197,18 @@ func (v *BlockInfo) SetMerkle() error {
 }
 
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	otxs := blk.Txs
 	idx := len(blk.Txs) - 1
 	//检测交易是否可进行
 	if err := tx.Check(bi, blk, idx); err != nil {
 		return err
 	}
 	blk.Txs = append(blk.Txs, tx)
+	//不允许重复消费同一个输出
+	if err := blk.CheckMulCostTxOut(bi); err != nil {
+		blk.Txs = otxs
+		return err
+	}
 	return nil
 }
 
@@ -350,6 +356,7 @@ func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
 			imap[key] = true
 		}
 	}
+	imap = nil
 	return nil
 }
 
@@ -469,6 +476,7 @@ type TxIn struct {
 	OutIndex VarUInt  //对应的输出索引
 	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定义区块中某个交易的某个输入
 	Script   Script   //解锁脚本
+	Wits     WitnessScript
 }
 
 //获取对应的输出
@@ -481,7 +489,7 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex, blk *BlockInfo, idx int) (*TxOut, bool,
 	otx, err := bi.LoadTX(v.OutHash)
 	if err != nil {
 		otx, err = blk.FindTx(v.OutHash, idx) //消费的交易在本区块中，并且肯定在之前就已经添加进去
-		self = err == nil
+		self = true
 	}
 	if err != nil {
 		return nil, self, fmt.Errorf("txin outtx miss %w", err)
@@ -506,6 +514,22 @@ func (v *TxIn) Check(bi *BlockIndex) error {
 	}
 }
 
+func (v *TxIn) ForID(w IWriter) error {
+	if err := v.OutHash.Encode(w); err != nil {
+		return err
+	}
+	if err := v.OutIndex.Encode(w); err != nil {
+		return err
+	}
+	if err := v.ExtBytes.Encode(w); err != nil {
+		return err
+	}
+	if err := v.Script.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (v *TxIn) Encode(w IWriter) error {
 	if err := v.OutHash.Encode(w); err != nil {
 		return err
@@ -517,6 +541,9 @@ func (v *TxIn) Encode(w IWriter) error {
 		return err
 	}
 	if err := v.Script.Encode(w); err != nil {
+		return err
+	}
+	if err := v.Wits.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -533,6 +560,9 @@ func (v *TxIn) Decode(r IReader) error {
 		return err
 	}
 	if err := v.Script.Decode(r); err != nil {
+		return err
+	}
+	if err := v.Wits.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -615,12 +645,11 @@ func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) (ISigner, e
 }
 
 //获取输出金额所属公钥hash
-func (v *TxOut) GetPKH() (HASH160, error) {
-	pkh := HASH160{}
+func (v *TxOut) GetPKH() HASH160 {
 	if v.Script.IsStdLockedcript() {
-		return v.Script.StdPKH(), nil
+		return v.Script.StdPKH()
 	}
-	return pkh, errors.New("unknow script type")
+	panic(errors.New("unknow script type"))
 }
 
 //输出是否可以被in消费在blk区块中
@@ -630,11 +659,7 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) bool {
 	}
 	tk := CoinKeyValue{}
 	tk.Value = v.Value
-	pkh, err := v.GetPKH()
-	if err != nil {
-		panic(err)
-	}
-	tk.CPkh = pkh
+	tk.CPkh = v.GetPKH()
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
@@ -687,7 +712,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
-	id := tx.Hash()
+	id := tx.ID()
 	vval := TxValue{
 		BlkId:  blk.ID(),
 		TxsIdx: VarUInt(idx),
@@ -712,11 +737,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		pkh, err := out.GetPKH()
-		if err != nil {
-			return err
-		}
-		tk.CPkh = pkh
+		tk.CPkh = out.GetPKH()
 		tk.Index = in.OutIndex
 		tk.TxId = in.OutHash
 		key := tk.GetKey()
@@ -733,13 +754,9 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		pkh, err := out.GetPKH()
-		if err != nil {
-			return err
-		}
-		tk.CPkh = pkh
+		tk.CPkh = out.GetPKH()
 		tk.Index = VarUInt(idx)
-		tk.TxId = tx.Hash()
+		tk.TxId = tx.ID()
 		key := tk.GetKey()
 		bt.Put(key, tk.GetValue())
 	}
@@ -815,13 +832,32 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 	return nil
 }
 
-func (tx *TX) Hash() HASH256 {
+//交易id计算
+func (tx *TX) ID() HASH256 {
 	if hash, ok := tx.hasher.IsSet(); ok {
 		return hash
 	}
 	buf := &bytes.Buffer{}
-	if err := tx.Encode(buf); err != nil {
+	if err := tx.Ver.Encode(buf); err != nil {
 		panic(err)
+	}
+	if err := VarUInt(len(tx.Ins)).Encode(buf); err != nil {
+		panic(err)
+	}
+	for _, v := range tx.Ins {
+		err := v.ForID(buf)
+		if err != nil {
+			panic(err)
+		}
+	}
+	if err := VarUInt(len(tx.Outs)).Encode(buf); err != nil {
+		panic(err)
+	}
+	for _, v := range tx.Outs {
+		err := v.Encode(buf)
+		if err != nil {
+			panic(err)
+		}
 	}
 	return tx.hasher.Hash(buf.Bytes())
 }

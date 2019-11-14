@@ -11,6 +11,7 @@ const (
 	SCRIPT_BASE_TYPE      = uint8(0) //coinbase input 0
 	SCRIPT_STDUNLOCK_TYPE = uint8(1) //标准解锁脚本 pubkey sigvalue
 	SCRIPT_STDLOCKED_TYPE = uint8(2) //标准锁定脚本 HASH160(pubkey)
+	SCRIPT_WITNESS_TYPE   = uint8(3) //witness type
 )
 
 type Script []byte
@@ -136,14 +137,13 @@ func NewStdLockedScript(v interface{}) (Script, error) {
 	return buf.Bytes(), nil
 }
 
-//标准解锁脚本
-type StdUnlockScript struct {
-	Type uint8
+type WitnessScript struct {
+	Type uint8    //SCRIPT_WITNESS_TYPE
 	Pks  PKBytes  //物品公钥 hash160=objId
 	Sig  SigBytes //签名
 }
 
-func (ss StdUnlockScript) Encode(w IWriter) error {
+func (ss WitnessScript) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, ss.Type); err != nil {
 		return err
 	}
@@ -156,7 +156,7 @@ func (ss StdUnlockScript) Encode(w IWriter) error {
 	return nil
 }
 
-func (ss *StdUnlockScript) Decode(r IReader) error {
+func (ss *WitnessScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Type); err != nil {
 		return err
 	}
@@ -164,6 +164,40 @@ func (ss *StdUnlockScript) Decode(r IReader) error {
 		return err
 	}
 	if err := ss.Sig.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+func NewWitnessScript(pub *PublicKey, sig *SigValue) WitnessScript {
+	wit := WitnessScript{}
+	wit.Type = SCRIPT_WITNESS_TYPE
+	wit.Pks.Set(pub)
+	wit.Sig.Set(sig)
+	return wit
+}
+
+//标准解锁脚本
+type StdUnlockScript struct {
+	Type uint8
+	Pkh  HASH160
+}
+
+func (ss StdUnlockScript) Encode(w IWriter) error {
+	if err := binary.Write(w, Endian, ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Pkh.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ss *StdUnlockScript) Decode(r IReader) error {
+	if err := binary.Read(r, Endian, &ss.Type); err != nil {
+		return err
+	}
+	if err := ss.Pkh.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -184,14 +218,14 @@ func StdUnlockScriptFrom(s Script) (*StdUnlockScript, error) {
 	return std, nil
 }
 
-func NewStdUnlockScript(pub *PublicKey, sig *SigValue) (Script, error) {
+func NewStdUnlockScript(pkh HASH160) Script {
 	std := &StdUnlockScript{}
 	std.Type = SCRIPT_STDUNLOCK_TYPE
-	std.Pks.Set(pub)
-	std.Sig.Set(sig)
+	std.Pkh = pkh
 	buf := &bytes.Buffer{}
-	if err := std.Encode(buf); err != nil {
-		return nil, err
+	err := std.Encode(buf)
+	if err != nil {
+		panic(err)
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
