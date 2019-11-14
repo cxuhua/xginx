@@ -476,7 +476,21 @@ type TxIn struct {
 	OutIndex VarUInt  //对应的输出索引
 	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定义区块中某个交易的某个输入
 	Script   Script   //解锁脚本
-	Wits     WitnessScript
+	Witness  WitnessScript
+}
+
+//设置输入脚本为
+func (in *TxIn) SetScript(bi *BlockIndex, blk *BlockInfo) error {
+	idx := len(blk.Txs) - 1
+	if in.OutHash.IsZero() {
+		return errors.New("out hash not set")
+	}
+	out, _, err := in.LoadTxOut(bi, blk, idx)
+	if err != nil {
+		return err
+	}
+	in.Script = NewStdUnlockScript(out.GetPKH())
+	return nil
 }
 
 //获取对应的输出
@@ -543,7 +557,7 @@ func (v *TxIn) Encode(w IWriter) error {
 	if err := v.Script.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Wits.Encode(w); err != nil {
+	if err := v.Witness.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -562,7 +576,7 @@ func (v *TxIn) Decode(r IReader) error {
 	if err := v.Script.Decode(r); err != nil {
 		return err
 	}
-	if err := v.Wits.Decode(r); err != nil {
+	if err := v.Witness.Decode(r); err != nil {
 		return err
 	}
 	return nil

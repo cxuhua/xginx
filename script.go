@@ -147,6 +147,9 @@ func (ss WitnessScript) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, ss.Type); err != nil {
 		return err
 	}
+	if ss.Type != SCRIPT_WITNESS_TYPE {
+		return nil
+	}
 	if err := ss.Pks.Encode(w); err != nil {
 		return err
 	}
@@ -159,6 +162,9 @@ func (ss WitnessScript) Encode(w IWriter) error {
 func (ss *WitnessScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Type); err != nil {
 		return err
+	}
+	if ss.Type != SCRIPT_WITNESS_TYPE {
+		return nil
 	}
 	if err := ss.Pks.Decode(r); err != nil {
 		return err

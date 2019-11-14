@@ -254,6 +254,10 @@ func TestBlockMulTXS(t *testing.T) {
 	in2.OutHash = tx1.ID()
 	in2.OutIndex = 0
 	in2.ExtBytes = []byte{1, 1, 9}
+	err = in2.SetScript(bi, b)
+	if err != nil {
+		panic(err)
+	}
 
 	ins2 := []*TxIn{in2}
 

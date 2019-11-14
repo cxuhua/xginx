@@ -40,14 +40,14 @@ func newStdSigner(bi *BlockIndex, tx *TX, out *TxOut, in *TxIn, idx int) ISigner
 
 //签名校验
 func (sr *stdsigner) Verify() error {
-	if sr.in.Wits.Type != SCRIPT_WITNESS_TYPE {
+	if sr.in.Witness.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("witness script type error")
 	}
 	std, err := StdUnlockScriptFrom(sr.in.Script)
 	if err != nil {
 		return err
 	}
-	pub, err := NewPublicKey(sr.in.Wits.Pks[:])
+	pub, err := NewPublicKey(sr.in.Witness.Pks[:])
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (sr *stdsigner) Verify() error {
 	if !pub.Hash().Equal(sr.out.GetPKH()) {
 		return errors.New("not mine txout")
 	}
-	sig, err := NewSigValue(sr.in.Wits.Sig[:])
+	sig, err := NewSigValue(sr.in.Witness.Sig[:])
 	if err != nil {
 		return err
 	}
@@ -149,6 +149,6 @@ func (sr *stdsigner) Sign(pri *PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	sr.in.Wits = NewWitnessScript(pri.PublicKey(), sig)
+	sr.in.Witness = NewWitnessScript(pri.PublicKey(), sig)
 	return nil
 }
