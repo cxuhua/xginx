@@ -472,9 +472,8 @@ func (v *BlockInfo) Decode(r IReader) error {
 
 //交易输入
 type TxIn struct {
-	OutHash  HASH256  //输出交易hash
-	OutIndex VarUInt  //对应的输出索引
-	ExtBytes VarBytes //自定义扩展数据包含在签名数据中,扩展数据的hash将被索引，定位区块中某个交易的某个输入
+	OutHash  HASH256 //输出交易hash
+	OutIndex VarUInt //对应的输出索引
 	Script   Script
 }
 
@@ -501,9 +500,6 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex, blk *BlockInfo, idx int) (*TxOut, bool,
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
-	if v.ExtBytes.Len() > MAX_EXT_SIZE {
-		return errors.New("ext bytes len > MAX_EXT_SIZE")
-	}
 	if v.IsCoinBase() {
 		return nil
 	} else if v.Script.IsWitness() {
@@ -520,9 +516,6 @@ func (v *TxIn) ForID(w IWriter) error {
 	if err := v.OutIndex.Encode(w); err != nil {
 		return err
 	}
-	if err := v.ExtBytes.Encode(w); err != nil {
-		return err
-	}
 	if err := v.Script.ForID(w); err != nil {
 		return err
 	}
@@ -536,9 +529,6 @@ func (v *TxIn) Encode(w IWriter) error {
 	if err := v.OutIndex.Encode(w); err != nil {
 		return err
 	}
-	if err := v.ExtBytes.Encode(w); err != nil {
-		return err
-	}
 	if err := v.Script.Encode(w); err != nil {
 		return err
 	}
@@ -550,9 +540,6 @@ func (v *TxIn) Decode(r IReader) error {
 		return err
 	}
 	if err := v.OutIndex.Decode(r); err != nil {
-		return err
-	}
-	if err := v.ExtBytes.Decode(r); err != nil {
 		return err
 	}
 	if err := v.Script.Decode(r); err != nil {
@@ -680,6 +667,8 @@ type TX struct {
 	Ver  VarUInt    //版本
 	Ins  []*TxIn    //输入
 	Outs []*TxOut   //输出
+	ExtH HASH256    //扩展数据hash，参与id和签名计算
+	ExtB VarBytes   //扩展数据，不参与签名和id计算
 	idhc HashCacher //hash缓存
 	outs HashCacher //签名hash缓存
 	pres HashCacher //签名hash缓存
@@ -791,9 +780,6 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 		if in.IsCoinBase() {
 			continue
 		}
-		if in.ExtBytes.Len() > MAX_EXT_SIZE {
-			return errors.New("ext bytes len > MAX_EXT_SIZE")
-		}
 		out, self, err := in.LoadTxOut(bi, blk, idx)
 		if err != nil {
 			return err
@@ -812,6 +798,12 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 		}
 	}
 	return nil
+}
+
+//设置扩展数据
+func (tx *TX) SetExt(b []byte) {
+	tx.ExtH = Hash256From(b)
+	tx.ExtB = b
 }
 
 //交易id计算
@@ -838,6 +830,9 @@ func (tx *TX) ID() HASH256 {
 		if err := v.Encode(buf); err != nil {
 			panic(err)
 		}
+	}
+	if err := tx.ExtH.Encode(buf); err != nil {
+		panic(err)
 	}
 	return tx.idhc.Hash(buf.Bytes())
 }
@@ -878,6 +873,12 @@ func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 
 //检测除coinbase交易外的交易金额
 func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
+	if v.ExtB.Len() > MAX_EXT_SIZE {
+		return errors.New("ext data too big")
+	}
+	if v.ExtB.Len() > 0 && !v.ExtH.Equal(Hash256From(v.ExtB)) {
+		return errors.New("ext data hash error")
+	}
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
 	}
@@ -947,6 +948,12 @@ func (v *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
+	if err := v.ExtH.Encode(w); err != nil {
+		return err
+	}
+	if err := v.ExtB.Encode(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -979,6 +986,12 @@ func (v *TX) Decode(r IReader) error {
 			return err
 		}
 		v.Outs[i] = out
+	}
+	if err := v.ExtH.Decode(r); err != nil {
+		return err
+	}
+	if err := v.ExtB.Decode(r); err != nil {
+		return err
 	}
 	return nil
 }

@@ -60,7 +60,6 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	//base tx
 	in := &TxIn{}
-	in.ExtBytes = []byte("ext data test")
 	in.Script = blk.CoinbaseScript([]byte("Test Block"))
 	tx.Ins = []*TxIn{in}
 
@@ -162,6 +161,7 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	}
 	//组装交易
 	tx1 := &TX{Ver: 1}
+	tx1.SetExt([]byte{1, 2, 3, 4, 5, 6})
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
@@ -250,7 +250,6 @@ func TestBlockMulTXS(t *testing.T) {
 	in2 := &TxIn{}
 	in2.OutHash = tx1.ID()
 	in2.OutIndex = 0
-	in2.ExtBytes = []byte{1, 1, 9}
 	in2.Script = EmptyWitnessScript()
 
 	ins2 := []*TxIn{in2}

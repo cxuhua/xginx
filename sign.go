@@ -20,11 +20,11 @@ type ISigner interface {
 
 //标准签名器
 type stdsigner struct {
-	bi  *BlockIndex
-	tx  *TX
-	out *TxOut
-	in  *TxIn
-	idx int
+	bi  *BlockIndex //链
+	tx  *TX         //当前交易
+	out *TxOut      //输入消耗的输出
+	in  *TxIn       //当前签名的输入
+	idx int         //输入索引
 }
 
 //新建标准签名
@@ -113,16 +113,19 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 	if err := sr.in.OutIndex.Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.in.ExtBytes.Encode(buf); err != nil {
+	if err := sr.in.Script.ForVerify(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.in.Script.ForVerify(buf); err != nil {
+	if err := sr.out.Script.Encode(buf); err != nil {
 		return nil, err
 	}
 	if err := sr.out.Value.Encode(buf); err != nil {
 		return nil, err
 	}
 	if err := sr.OutputsHash().Encode(buf); err != nil {
+		return nil, err
+	}
+	if err := sr.tx.ExtH.Encode(buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
