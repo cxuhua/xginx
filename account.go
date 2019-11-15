@@ -188,7 +188,7 @@ func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
 		ap.pris = append(ap.pris, pri)
 		ap.pubs = append(ap.pubs, pri.PublicKey())
 	}
-	//最后一个为仲裁公钥
+	//如果启用arb，最后后一个为仲裁公钥
 	if num > 0 && less > 0 && arb && less < num {
 		ap.arb = ap.num - 1
 	}

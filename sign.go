@@ -52,7 +52,7 @@ func (sr *stdsigner) Verify() error {
 	if hash, err := wits.Hash(); err != nil {
 		return err
 	} else if !hash.Equal(sr.out.Script.GetPkh()) {
-		return errors.New("hash error txout")
+		return errors.New("hash equal errort")
 	}
 	//至少需要签名正确的数量
 	less := int(wits.Less)
@@ -86,6 +86,8 @@ func (sr *stdsigner) Verify() error {
 		//如果启用仲裁，并且当前仲裁验证成功立即返回
 		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
 			less = 0
+		}
+		if less == 0 {
 			break
 		}
 		k++
@@ -171,7 +173,7 @@ func (sr *stdsigner) Sign(acc *Account) error {
 	if hash, err := wits.Hash(); err != nil {
 		return err
 	} else if !hash.Equal(sr.out.Script.GetPkh()) {
-		return errors.New("out pubs hash error")
+		return errors.New("hash queal error")
 	}
 	sigb, err := sr.GetSigBytes()
 	if err != nil {

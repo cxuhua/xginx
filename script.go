@@ -314,7 +314,9 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 		return id, err
 	}
 	for _, pk := range pks {
-		buf.Write(pk[:])
+		if _, err := buf.Write(pk[:]); err != nil {
+			return id, err
+		}
 	}
 	copy(id[:], Hash160(buf.Bytes()))
 	return id, nil
