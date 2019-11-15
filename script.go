@@ -67,21 +67,23 @@ func (s Script) IsLocked() bool {
 
 //从锁定脚本获取输出地址
 func (s Script) GetAddress() (string, error) {
-	if !s.IsLocked() {
-		return "", errors.New("script type error")
-	}
-	addr, err := EncodeAddress(s.GetPkh())
-	if err != nil {
+	if pkh, err := s.GetPkh(); err != nil {
 		return "", err
+	} else if addr, err := EncodeAddress(pkh); err != nil {
+		return "", err
+	} else {
+		return addr, nil
 	}
-	return addr, nil
 }
 
 //coinbase交易没有pkh
-func (s Script) GetPkh() HASH160 {
+func (s Script) GetPkh() (HASH160, error) {
 	pkh := HASH160{}
-	copy(pkh[:], s[1:1+len(pkh)])
-	return pkh
+	if ss, err := s.ToLocked(); err != nil {
+		return pkh, err
+	} else {
+		return ss.Pkh, nil
+	}
 }
 
 //获取coinbase中的区块高度
@@ -95,7 +97,7 @@ func (s Script) Encode(w IWriter) error {
 
 func (s Script) ForID(w IWriter) error {
 	if s.IsCoinBase() {
-		return VarBytes(s).Encode(w)
+		return s.Encode(w)
 	} else if wit, err := s.ToWitness(); err != nil {
 		return err
 	} else {
@@ -116,12 +118,25 @@ func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
 }
 
-func (s Script) ToWitness() (WitnessScript, error) {
-	if !s.IsWitness() {
-		panic(errors.New("witness error"))
+func (s Script) ToLocked() (LockedScript, error) {
+	rs := LockedScript{}
+	if !s.IsLocked() {
+		return rs, errors.New("script type error")
 	}
 	buf := bytes.NewReader(s)
+	err := rs.Decode(buf)
+	if err != nil {
+		return rs, err
+	}
+	return rs, nil
+}
+
+func (s Script) ToWitness() (WitnessScript, error) {
 	wit := WitnessScript{}
+	if !s.IsWitness() {
+		return wit, errors.New("witness error")
+	}
+	buf := bytes.NewReader(s)
 	err := wit.Decode(buf)
 	if err != nil {
 		return wit, err

@@ -68,7 +68,7 @@ type IListener interface {
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
 	//获取签名账户
-	GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error)
+	GetAccount(bi *BlockIndex, out *TxOut) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
 	//当一个块连接到链之前
@@ -133,25 +133,6 @@ type BlockIndex struct {
 	lru *Cache
 	//存储
 	db IBlkStore
-}
-
-//是否检测块中的txout是否被消费
-//只有新块链入的时候消费输出的时候才会检测是否被消费
-func (bi *BlockIndex) IsCheckSpent(blk *BlockInfo) bool {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
-	le := bi.lis.Back()
-	if le == nil {
-		return false
-	}
-	ele := le.Value.(*TBEle)
-	if ele == nil {
-		panic(errors.New("last ele nil"))
-	}
-	if blk.Meta == nil {
-		panic(errors.New("block meta nil"))
-	}
-	return blk.Meta.Height > ele.Height
 }
 
 //获取当前监听器
@@ -504,7 +485,7 @@ func (bi *BlockIndex) Transfre(blk *BlockInfo, acc *Account, addr string, av Amo
 		tx.Outs = append(tx.Outs, mine)
 	}
 	tx.ID()
-	err = tx.Sign(bi, blk)
+	err = tx.Sign(bi)
 	if err != nil {
 		return nil, fmt.Errorf("sign tx error %w", err)
 	}

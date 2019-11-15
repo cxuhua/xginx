@@ -23,11 +23,11 @@ type AccountJson struct {
 
 //账号地址
 type Account struct {
-	num  uint8         //总的密钥数量
-	less uint8         //至少需要签名的数量
-	arb  uint8         //仲裁，当less  < num时可启用，必须是最后一个公钥
-	pubs []*PublicKey  //所有的密钥公钥
-	pris []*PrivateKey //私钥可能在多个地方，现在测试都统一先放这里
+	num  uint8                   //总的密钥数量
+	less uint8                   //至少需要签名的数量
+	arb  uint8                   //仲裁，当less  < num时可启用，必须是最后一个公钥
+	pubs []*PublicKey            //所有的密钥公钥
+	pris map[HASH160]*PrivateKey //私钥可能在多个地方，现在测试都统一先放这里
 }
 
 func LoadAccount(s string) (*Account, error) {
@@ -39,12 +39,7 @@ func LoadAccount(s string) (*Account, error) {
 //根据公钥索引获取私钥
 func (ap Account) GetPrivateKey(pi int) *PrivateKey {
 	pkh := ap.pubs[pi].Hash()
-	for _, v := range ap.pris {
-		if v.PublicKey().Hash().Equal(pkh) {
-			return v
-		}
-	}
-	return nil
+	return ap.pris[pkh]
 }
 
 func (ap Account) IsEnableArb() bool {
@@ -105,7 +100,7 @@ func (ap *Account) Load(s string) error {
 		return errors.New("checksum error")
 	}
 	ap.pubs = []*PublicKey{}
-	ap.pris = []*PrivateKey{}
+	ap.pris = map[HASH160]*PrivateKey{}
 	aj := &AccountJson{}
 	err = json.Unmarshal(data[:dl-4], aj)
 	if err != nil {
@@ -122,11 +117,11 @@ func (ap *Account) Load(s string) error {
 		ap.pubs = append(ap.pubs, pp)
 	}
 	for _, ss := range aj.Pris {
-		pr, err := LoadPrivateKey(ss)
+		pri, err := LoadPrivateKey(ss)
 		if err != nil {
 			return err
 		}
-		ap.pris = append(ap.pris, pr)
+		ap.pris[pri.PublicKey().Hash()] = pri
 	}
 	return ap.Check()
 }
@@ -180,6 +175,39 @@ func (ap Account) GetAddress() (string, error) {
 	}
 }
 
+//创建无私钥账号
+//不能用来签名
+func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account, error) {
+	if len(pkss) != int(num) {
+		return nil, errors.New("pubs num error")
+	}
+	ap := &Account{
+		num:  num,
+		less: less,
+		arb:  InvalidArb,
+	}
+	if arb && num == less {
+		return nil, errors.New("can't use arb")
+	}
+	ap.pubs = []*PublicKey{}
+	ap.pris = map[HASH160]*PrivateKey{}
+	for _, pks := range pkss {
+		pub, err := LoadPublicKey(pks)
+		if err != nil {
+			return nil, err
+		}
+		ap.pubs = append(ap.pubs, pub)
+	}
+	//如果启用arb，最后后一个为仲裁公钥
+	if num > 0 && less > 0 && arb && less < num {
+		ap.arb = ap.num - 1
+	}
+	if err := ap.Check(); err != nil {
+		return nil, err
+	}
+	return ap, nil
+}
+
 //创建num个证书的账号,至少需要less个签名
 func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
 	ap := &Account{
@@ -191,14 +219,15 @@ func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
 		return nil, errors.New("can't use arb")
 	}
 	ap.pubs = []*PublicKey{}
-	ap.pris = []*PrivateKey{}
+	ap.pris = map[HASH160]*PrivateKey{}
 	for i := 0; i < int(num); i++ {
 		pri, err := NewPrivateKey()
 		if err != nil {
 			return nil, err
 		}
-		ap.pris = append(ap.pris, pri)
-		ap.pubs = append(ap.pubs, pri.PublicKey())
+		pub := pri.PublicKey()
+		ap.pris[pub.Hash()] = pri
+		ap.pubs = append(ap.pubs, pub)
 	}
 	//如果启用arb，最后后一个为仲裁公钥
 	if num > 0 && less > 0 && arb && less < num {

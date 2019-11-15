@@ -51,7 +51,9 @@ func (sr *stdsigner) Verify() error {
 	}
 	if hash, err := wits.Hash(); err != nil {
 		return err
-	} else if !hash.Equal(sr.out.Script.GetPkh()) {
+	} else if pkh, err := sr.out.Script.GetPkh(); err != nil {
+		return err
+	} else if !hash.Equal(pkh) {
 		return errors.New("hash equal errort")
 	}
 	//至少需要签名正确的数量
@@ -172,8 +174,10 @@ func (sr *stdsigner) Sign(acc *Account) error {
 	wits := acc.NewWitnessScript()
 	if hash, err := wits.Hash(); err != nil {
 		return err
-	} else if !hash.Equal(sr.out.Script.GetPkh()) {
-		return errors.New("hash queal error")
+	} else if pkh, err := sr.out.Script.GetPkh(); err != nil {
+		return err
+	} else if !hash.Equal(pkh) {
+		return errors.New("hash equal errort")
 	}
 	sigb, err := sr.GetSigBytes()
 	if err != nil {

@@ -138,22 +138,6 @@ type BlockInfo struct {
 	merher HashCacher  //mer hash 缓存
 }
 
-//查询本区块中的交易
-//只查找之前添加的交易
-func (blk *BlockInfo) FindTx(id HASH256, idx int) (*TX, error) {
-	for i, v := range blk.Txs {
-		if i > idx {
-			return nil, errors.New("find out bound")
-		}
-		if vid, err := v.ID(); err != nil {
-			return nil, err
-		} else if id.Equal(vid) {
-			return v, nil
-		}
-	}
-	return nil, errors.New("not found tx in block")
-}
-
 //创建Cosinbase 脚本
 func (blk *BlockInfo) CoinbaseScript(bs ...[]byte) Script {
 	return GetCoinbaseScript(blk.Meta.Height, bs...)
@@ -203,9 +187,8 @@ func (v *BlockInfo) SetMerkle() error {
 
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	otxs := blk.Txs
-	idx := len(blk.Txs) - 1
 	//检测交易是否可进行
-	if err := tx.Check(bi, blk, idx); err != nil {
+	if err := tx.Check(bi, true); err != nil {
 		return err
 	}
 	blk.Txs = append(blk.Txs, tx)
@@ -284,7 +267,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, blk, i)
+		err := tx.Check(bi, false)
 		if err != nil {
 			return err
 		}
@@ -484,24 +467,19 @@ type TxIn struct {
 
 //获取对应的输出
 //并区分是否来自本区块
-func (v *TxIn) LoadTxOut(bi *BlockIndex, blk *BlockInfo, idx int) (*TxOut, bool, error) {
+func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	if v.OutHash.IsZero() {
-		return nil, false, errors.New("zero hash id")
+		return nil, errors.New("zero hash id")
 	}
-	self := false
 	otx, err := bi.LoadTX(v.OutHash)
 	if err != nil {
-		otx, err = blk.FindTx(v.OutHash, idx) //消费的交易在本区块中，并且肯定在之前就已经添加进去
-		self = true
-	}
-	if err != nil {
-		return nil, self, fmt.Errorf("txin outtx miss %w", err)
+		return nil, fmt.Errorf("txin outtx miss %w", err)
 	}
 	oidx := v.OutIndex.ToInt()
 	if oidx < 0 || oidx >= len(otx.Outs) {
-		return nil, self, fmt.Errorf("outindex out of bound")
+		return nil, fmt.Errorf("outindex out of bound")
 	}
-	return otx.Outs[oidx], self, nil
+	return otx.Outs[oidx], nil
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
@@ -570,13 +548,14 @@ func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) ISigner {
 }
 
 //输出是否可以被in消费在blk区块中
-func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) bool {
-	if !bi.IsCheckSpent(blk) {
-		return false
-	}
+func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
 	tk := CoinKeyValue{}
 	tk.Value = v.Value
-	tk.CPkh = v.Script.GetPkh()
+	if pkh, err := v.Script.GetPkh(); err != nil {
+		return true
+	} else {
+		tk.CPkh = pkh
+	}
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
@@ -747,7 +726,7 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 			continue
 		}
 		//out将被消耗掉
-		out, self, err := in.LoadTxOut(bi, blk, idx)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
 		}
@@ -756,14 +735,16 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		tk.CPkh = out.Script.GetPkh()
+		if pkh, err := out.Script.GetPkh(); err != nil {
+			return err
+		} else {
+			tk.CPkh = pkh
+		}
 		tk.Index = in.OutIndex
 		tk.TxId = in.OutHash
 		key := tk.GetKey()
 		bt.Del(key)
-		if !self {
-			rt.Put(key, out.Value.Bytes())
-		}
+		rt.Put(key, out.Value.Bytes())
 	}
 	//输出coin
 	for idx, out := range tx.Outs {
@@ -773,7 +754,11 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
-		tk.CPkh = out.Script.GetPkh()
+		if pkh, err := out.Script.GetPkh(); err != nil {
+			return err
+		} else {
+			tk.CPkh = pkh
+		}
 		tk.Index = VarUInt(idx)
 		if tid, err := tx.ID(); err != nil {
 			return err
@@ -800,13 +785,13 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 }
 
 //验证交易输入数据
-func (tx *TX) Verify(bi *BlockIndex, blk *BlockInfo, idx int) error {
+func (tx *TX) Verify(bi *BlockIndex) error {
 	for iidx, in := range tx.Ins {
 		//不验证base的签名
 		if in.IsCoinBase() {
 			continue
 		}
-		out, _, err := in.LoadTxOut(bi, blk, idx)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
 		}
@@ -819,33 +804,24 @@ func (tx *TX) Verify(bi *BlockIndex, blk *BlockInfo, idx int) error {
 }
 
 //签名交易数据
-func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
+//cspent 是否检测输出金额是否存在
+func (tx *TX) Sign(bi *BlockIndex) error {
 	lptr := bi.GetListener()
 	if lptr == nil {
 		return errors.New("block index listener null,can't sign")
-	}
-	idx := -1
-	if len(idxs) == 0 {
-		idx = len(blk.Txs) - 1
-	} else {
-		idx = idxs[0]
-	}
-	if idx < 0 {
-		return errors.New("idx args error")
 	}
 	for iidx, in := range tx.Ins {
 		if in.IsCoinBase() {
 			continue
 		}
-		out, self, err := in.LoadTxOut(bi, blk, idx)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
 		}
-		//来自自身不检查是否被消费，因为索引中肯定没有
-		if !self && out.IsSpent(in, bi, blk) {
+		if out.IsSpent(in, bi) {
 			return errors.New("out is spent")
 		}
-		acc, err := lptr.GetAccount(bi, blk, out)
+		acc, err := lptr.GetAccount(bi, out)
 		if err != nil {
 			return err
 		}
@@ -930,7 +906,7 @@ func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 	}
 	fee := Amount(0)
 	for _, in := range v.Ins {
-		out, _, err := in.LoadTxOut(bi, blk, idx)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return 0, err
 		}
@@ -943,7 +919,8 @@ func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 }
 
 //检测除coinbase交易外的交易金额
-func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
+//csp是否检测输出金额是否已经被使用
+func (v *TX) Check(bi *BlockIndex, csp bool) error {
 	if err := v.Ext.Check(); err != nil {
 		return err
 	}
@@ -961,11 +938,11 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
 		if err != nil {
 			return err
 		}
-		out, self, err := in.LoadTxOut(bi, blk, idx)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
 		}
-		if !self && out.IsSpent(in, bi, blk) {
+		if csp && out.IsSpent(in, bi) {
 			return errors.New("out is spent")
 		}
 		itv += out.Value
@@ -991,7 +968,7 @@ func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
 		return errors.New("ins amount must >= outs amount")
 	}
 	//检查签名
-	return v.Verify(bi, blk, idx)
+	return v.Verify(bi)
 }
 
 func (v *TX) Encode(w IWriter) error {
