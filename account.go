@@ -9,7 +9,7 @@ import (
 
 const (
 	//账号最大的私钥数量
-	ACCOUNT_KEY_MAX_SIZA = 16
+	ACCOUNT_KEY_MAX_SIZE = 16
 )
 
 //导出json结构
@@ -182,9 +182,9 @@ func NewAccount(num uint8, less uint8) (*Account, error) {
 //csp=true 检查签名证书数量
 func (ap Account) Check() error {
 	if ap.num == 0 ||
-		ap.num > ACCOUNT_KEY_MAX_SIZA ||
+		ap.num > ACCOUNT_KEY_MAX_SIZE ||
 		ap.less == 0 ||
-		ap.less > ACCOUNT_KEY_MAX_SIZA ||
+		ap.less > ACCOUNT_KEY_MAX_SIZE ||
 		ap.less > ap.num {
 		return errors.New("num less error")
 	}

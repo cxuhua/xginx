@@ -55,7 +55,7 @@ func (s Script) IsCoinBase() bool {
 
 //in script
 func (s Script) IsWitness() bool {
-	return s.Len() > 3 && s.Len() < ACCOUNT_KEY_MAX_SIZA*128 && s[0] == SCRIPT_WITNESS_TYPE
+	return s.Len() > 3 && s.Len() < ACCOUNT_KEY_MAX_SIZE*128 && s[0] == SCRIPT_WITNESS_TYPE
 }
 
 //out script
