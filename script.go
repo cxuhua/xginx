@@ -8,6 +8,8 @@ import (
 )
 
 const (
+	InvalidArb = ^uint8(0) //无效的仲裁
+
 	SCRIPT_COINBASE_TYPE = uint8(0) //coinbase input 0
 	SCRIPT_LOCKED_TYPE   = uint8(1) //标准锁定脚本 HASH160(pubkey)
 	SCRIPT_WITNESS_TYPE  = uint8(2) //witness type
@@ -191,8 +193,14 @@ type WitnessScript struct {
 	Type uint8      //SCRIPT_WITNESS_TYPE
 	Num  uint8      //签名数量
 	Less uint8      //至少正确的数量
+	Arb  uint8      //是否启用仲裁
 	Pks  []PKBytes  //公钥
 	Sig  []SigBytes //签名
+}
+
+//是否启用仲裁
+func (ss WitnessScript) IsEnableArb() bool {
+	return ss.Arb != InvalidArb
 }
 
 //id计算
@@ -204,6 +212,9 @@ func (ss WitnessScript) ForID(w IWriter) error {
 		return err
 	}
 	if err := binary.Write(w, Endian, ss.Less); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, ss.Arb); err != nil {
 		return err
 	}
 	return nil
@@ -218,6 +229,9 @@ func (ss WitnessScript) Encode(w IWriter) error {
 		return err
 	}
 	if err := binary.Write(w, Endian, ss.Less); err != nil {
+		return err
+	}
+	if err := binary.Write(w, Endian, ss.Arb); err != nil {
 		return err
 	}
 	if err := binary.Write(w, Endian, uint8(len(ss.Pks))); err != nil {
@@ -249,6 +263,9 @@ func (ss *WitnessScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Less); err != nil {
 		return err
 	}
+	if err := binary.Read(r, Endian, &ss.Arb); err != nil {
+		return err
+	}
 	pnum := uint8(0)
 	if err := binary.Read(r, Endian, &pnum); err != nil {
 		return err
@@ -277,11 +294,11 @@ func (ss *WitnessScript) Decode(r IReader) error {
 }
 
 func (ss WitnessScript) Hash() (HASH160, error) {
-	return HashPks(ss.Num, ss.Less, ss.Pks)
+	return HashPks(ss.Num, ss.Less, ss.Arb, ss.Pks)
 }
 
 //hash公钥。地址也将又这个方法生成
-func HashPks(num uint8, less uint8, pks []PKBytes) (HASH160, error) {
+func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	if int(num) != len(pks) {
 		panic(errors.New("pub num error"))
 	}
@@ -291,6 +308,9 @@ func HashPks(num uint8, less uint8, pks []PKBytes) (HASH160, error) {
 		return id, err
 	}
 	if err := binary.Write(buf, Endian, less); err != nil {
+		return id, err
+	}
+	if err := binary.Write(buf, Endian, arb); err != nil {
 		return id, err
 	}
 	for _, pk := range pks {
@@ -310,17 +330,27 @@ func (ss WitnessScript) ToScript() (Script, error) {
 }
 
 //csp=true 检查签名证书数量
-func (ss WitnessScript) Check(csp bool) error {
+func (ss WitnessScript) Check() error {
 	if ss.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("type errpor")
 	}
 	if ss.Num == 0 || ss.Num > 16 || ss.Less == 0 || ss.Less > 16 || ss.Less > ss.Num {
 		return errors.New("num less error")
 	}
-	if csp && len(ss.Pks) != int(ss.Num) {
+	//启用arb的情况下，less不能和num相等
+	if ss.IsEnableArb() && ss.Num == ss.Less {
+		return errors.New("arb set error")
+	}
+	//必须是最后一个
+	if ss.IsEnableArb() && ss.Arb != ss.Num-1 {
+		return errors.New("arb set error")
+	}
+	if len(ss.Pks) != int(ss.Num) {
 		return errors.New("pks num error")
 	}
-	if csp && len(ss.Sig) < int(ss.Less) {
+	if ss.IsEnableArb() && len(ss.Sig) < 0 {
+		return errors.New("arb sig num error")
+	} else if !ss.IsEnableArb() && len(ss.Sig) < int(ss.Less) {
 		return errors.New("sig num error")
 	}
 	return nil

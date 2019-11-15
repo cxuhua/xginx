@@ -18,7 +18,7 @@ func TestWalletEnc(t *testing.T) {
 		t.Error("address error")
 		t.FailNow()
 	}
-	addr, err := w.NewAccount(3, 3)
+	addr, err := w.NewAccount(3, 3, false)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -58,7 +58,7 @@ func TestWallet(t *testing.T) {
 		t.Error("address error")
 		t.FailNow()
 	}
-	addr, err := w.NewAccount(3, 2)
+	addr, err := w.NewAccount(3, 2, true)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()

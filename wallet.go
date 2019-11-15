@@ -133,7 +133,7 @@ type IWallet interface {
 	//关闭钱包
 	Close()
 	//新建地址
-	NewAccount(num uint8, less uint8) (string, error)
+	NewAccount(num uint8, less uint8, arb bool) (string, error)
 	//导入私钥 pw != ""添加密码
 	ImportAccount(pri string, pw string) error
 	//获取所有地址
@@ -177,8 +177,8 @@ func (db *LevelDBWallet) RemoveAccount(addr string) error {
 	return nil
 }
 
-func (db *LevelDBWallet) NewAccount(num uint8, less uint8) (string, error) {
-	acc, err := NewAccount(num, less)
+func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (string, error) {
+	acc, err := NewAccount(num, less, arb)
 	if err != nil {
 		return "", err
 	}

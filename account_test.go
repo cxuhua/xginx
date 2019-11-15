@@ -7,7 +7,7 @@ import (
 )
 
 func TestLoadDumpAccount(t *testing.T) {
-	a, err := NewAccount(3, 2)
+	a, err := NewAccount(3, 2, false)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -25,6 +25,10 @@ func TestLoadDumpAccount(t *testing.T) {
 		t.FailNow()
 	}
 	if a.num != b.num && a.less != b.less {
+		t.Error("num error")
+		t.FailNow()
+	}
+	if a.arb != b.arb {
 		t.Error("num error")
 		t.FailNow()
 	}

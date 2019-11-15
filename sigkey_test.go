@@ -5,28 +5,6 @@ import (
 	"testing"
 )
 
-func TestAddress(t *testing.T) {
-	pri, err := NewPrivateKey()
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	pub := pri.PublicKey()
-	addr, err := pub.Address()
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	x, err := DecodeAddress(addr)
-	if err != nil {
-		t.Error(err)
-		t.FailNow()
-	}
-	if !x.Equal(pub.Hash()) {
-		t.Error("equal error")
-	}
-}
-
 func BenchmarkVerify(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		msg := make([]byte, rand.Uint32()%500)

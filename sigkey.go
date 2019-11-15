@@ -426,20 +426,6 @@ func DecodeAddress(addr string) (HASH160, error) {
 	return hv, nil
 }
 
-func (pub PublicKey) Address() (string, error) {
-	pks := PKBytes{}
-	pks.Set(&pub)
-	pkh, err := HashPks(1, 1, []PKBytes{pks})
-	if err != nil {
-		return "", err
-	}
-	addr, err := EncodeAddress(pkh)
-	if err != nil {
-		return "", err
-	}
-	return addr, nil
-}
-
 func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 	b, err := B58Decode(s, BitcoinAlphabet)
 	if err != nil {

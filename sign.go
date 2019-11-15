@@ -46,7 +46,7 @@ func (sr *stdsigner) Verify() error {
 	if err != nil {
 		return err
 	}
-	if err := wits.Check(true); err != nil {
+	if err := wits.Check(); err != nil {
 		return err
 	}
 	if hash, err := wits.Hash(); err != nil {
@@ -78,9 +78,15 @@ func (sr *stdsigner) Verify() error {
 		if err != nil {
 			return err
 		}
-		if pub.Verify(sigh, sig) {
+		vok := pub.Verify(sigh, sig)
+		if vok {
 			less--
 			i++
+		}
+		//如果启用仲裁，并且当前仲裁验证成功立即返回
+		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
+			less = 0
+			break
 		}
 		k++
 	}
@@ -180,8 +186,8 @@ func (sr *stdsigner) Sign(acc *Account) error {
 		}
 		wits.Sig = append(wits.Sig, sigs)
 	}
-	if len(wits.Sig) < int(wits.Less) {
-		return errors.New("sig num too low")
+	if err := wits.Check(); err != nil {
+		return err
 	}
 	if script, err := wits.ToScript(); err != nil {
 		return err

@@ -14,8 +14,9 @@ const (
 
 //导出json结构
 type AccountJson struct {
-	Num  int      `json:"num"`
-	Less int      `json:"less"`
+	Num  uint8    `json:"num"`
+	Less uint8    `json:"less"`
+	Arb  uint8    `json:"arb"`
 	Pubs []string `json:"pubs"`
 	Pris []string `json:"pris"`
 }
@@ -24,6 +25,7 @@ type AccountJson struct {
 type Account struct {
 	num  uint8         //总的密钥数量
 	less uint8         //至少需要签名的数量
+	arb  uint8         //仲裁，当less  < num时可启用，必须是最后一个公钥
 	pubs []*PublicKey  //所有的密钥公钥
 	pris []*PrivateKey //私钥可能在多个地方，现在测试都统一先放这里
 }
@@ -38,6 +40,9 @@ func LoadAccount(s string) (*Account, error) {
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	sigb := SigBytes{}
+	if pi < int(ap.arb) {
+		return sigb, errors.New("skip 1")
+	}
 	if pi >= len(ap.pris) {
 		return sigb, errors.New("skip 1")
 	}
@@ -55,6 +60,7 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 	w.Type = SCRIPT_WITNESS_TYPE
 	w.Num = ap.num
 	w.Less = ap.less
+	w.Arb = ap.arb
 	w.Pks = []PKBytes{}
 	for _, pub := range ap.pubs {
 		w.Pks = append(w.Pks, pub.GetPks())
@@ -93,8 +99,9 @@ func (ap *Account) Load(s string) error {
 	if err != nil {
 		return err
 	}
-	ap.num = uint8(aj.Num)
-	ap.less = uint8(aj.Less)
+	ap.num = aj.Num
+	ap.less = aj.Less
+	ap.arb = aj.Arb
 	for _, ss := range aj.Pubs {
 		pp, err := LoadPublicKey(ss)
 		if err != nil {
@@ -115,8 +122,9 @@ func (ap *Account) Load(s string) error {
 //导出账号信息
 func (ap Account) Dump() (string, error) {
 	aj := AccountJson{
-		Num:  int(ap.num),
-		Less: int(ap.less),
+		Num:  ap.num,
+		Less: ap.less,
+		Arb:  ap.arb,
 		Pubs: []string{},
 		Pris: []string{},
 	}
@@ -146,7 +154,7 @@ func (ap Account) GetPkh() (HASH160, error) {
 	for _, pub := range ap.pubs {
 		pks = append(pks, pub.GetPks())
 	}
-	return HashPks(ap.num, ap.less, pks)
+	return HashPks(ap.num, ap.less, ap.arb, pks)
 }
 
 //获取账号地址
@@ -161,8 +169,15 @@ func (ap Account) GetAddress() (string, error) {
 }
 
 //创建num个证书的账号,至少需要less个签名
-func NewAccount(num uint8, less uint8) (*Account, error) {
-	ap := &Account{num: num, less: less}
+func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
+	ap := &Account{
+		num:  num,
+		less: less,
+		arb:  InvalidArb,
+	}
+	if arb && num == less {
+		return nil, errors.New("can't use arb")
+	}
 	ap.pubs = []*PublicKey{}
 	ap.pris = []*PrivateKey{}
 	for i := 0; i < int(num); i++ {
@@ -172,6 +187,10 @@ func NewAccount(num uint8, less uint8) (*Account, error) {
 		}
 		ap.pris = append(ap.pris, pri)
 		ap.pubs = append(ap.pubs, pri.PublicKey())
+	}
+	//最后一个为仲裁公钥
+	if num > 0 && less > 0 && arb && less < num {
+		ap.arb = ap.num - 1
 	}
 	if err := ap.Check(); err != nil {
 		return nil, err
@@ -187,6 +206,9 @@ func (ap Account) Check() error {
 		ap.less > ACCOUNT_KEY_MAX_SIZE ||
 		ap.less > ap.num {
 		return errors.New("num less error")
+	}
+	if ap.less == ap.num && ap.arb != InvalidArb {
+		return errors.New("arb error")
 	}
 	if len(ap.pubs) != int(ap.num) {
 		return errors.New("pubs num error")
