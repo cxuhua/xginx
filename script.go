@@ -66,15 +66,15 @@ func (s Script) IsLocked() bool {
 }
 
 //从锁定脚本获取输出地址
-func (s Script) GetAddress() string {
+func (s Script) GetAddress() (string, error) {
 	if !s.IsLocked() {
-		panic(errors.New("script type error"))
+		return "", errors.New("script type error")
 	}
 	addr, err := EncodeAddress(s.GetPkh())
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return addr
+	return addr, nil
 }
 
 //coinbase交易没有pkh

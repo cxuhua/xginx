@@ -98,6 +98,10 @@ func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 
 //获取签名私钥
 func (lis *tlis) GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error) {
+	//addr, err := out.Script.GetAddress()
+	//if err != nil {
+	//	return nil, err
+	//}
 	return TestAccount, nil
 }
 
