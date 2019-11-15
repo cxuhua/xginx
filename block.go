@@ -145,7 +145,9 @@ func (blk *BlockInfo) FindTx(id HASH256, idx int) (*TX, error) {
 		if i > idx {
 			return nil, errors.New("find out bound")
 		}
-		if id.Equal(v.ID()) {
+		if vid, err := v.ID(); err != nil {
+			return nil, err
+		} else if id.Equal(vid) {
 			return v, nil
 		}
 	}
@@ -176,11 +178,16 @@ func (v *BlockInfo) GetMerkle() (HASH256, error) {
 	if h, b := v.merher.IsSet(); b {
 		return h, nil
 	}
+	root := HASH256{}
 	ids := []HASH256{}
 	for _, tv := range v.Txs {
-		ids = append(ids, tv.ID())
+		if vid, err := tv.ID(); err != nil {
+			return root, err
+		} else {
+			ids = append(ids, vid)
+		}
 	}
-	root := BuildMerkleTree(ids).ExtractRoot()
+	root = BuildMerkleTree(ids).ExtractRoot()
 	v.merher.SetHash(root)
 	return root, nil
 }
@@ -695,8 +702,9 @@ func (tx *TX) ExtID() (HASH160, bool) {
 	if err != nil {
 		return id, false
 	}
-	err = tx.ID().Encode(buf)
-	if err != nil {
+	if tid, err := tx.ID(); err != nil {
+		return id, false
+	} else if err = tid.Encode(buf); err != nil {
 		return id, false
 	}
 	id = Hash160From(buf.Bytes())
@@ -720,7 +728,10 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
-	id := tx.ID()
+	id, err := tx.ID()
+	if err != nil {
+		return err
+	}
 	vval := TxValue{
 		BlkId:  blk.ID(),
 		TxsIdx: VarUInt(idx),
@@ -764,7 +775,11 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		tk.Value = out.Value
 		tk.CPkh = out.Script.GetPkh()
 		tk.Index = VarUInt(idx)
-		tk.TxId = tx.ID()
+		if tid, err := tx.ID(); err != nil {
+			return err
+		} else {
+			tk.TxId = tid
+		}
 		key := tk.GetKey()
 		bt.Put(key, tk.GetValue())
 	}
@@ -857,34 +872,40 @@ func (tx *TX) SetExt(bb []byte) {
 }
 
 //交易id计算
-func (tx *TX) ID() HASH256 {
+func (tx *TX) ID() (HASH256, error) {
 	if hash, ok := tx.idhc.IsSet(); ok {
-		return hash
+		return hash, nil
 	}
+	id := HASH256{}
 	buf := &bytes.Buffer{}
 	if err := tx.Ver.Encode(buf); err != nil {
-		panic(err)
+		return id, err
 	}
-	if err := VarUInt(len(tx.Ins)).Encode(buf); err != nil {
-		panic(err)
+	err := VarUInt(len(tx.Ins)).Encode(buf)
+	if err != nil {
+		return id, err
 	}
 	for _, v := range tx.Ins {
-		if err := v.ForID(buf); err != nil {
-			panic(err)
+		err := v.ForID(buf)
+		if err != nil {
+			return id, err
 		}
 	}
-	if err := VarUInt(len(tx.Outs)).Encode(buf); err != nil {
-		panic(err)
+	err = VarUInt(len(tx.Outs)).Encode(buf)
+	if err != nil {
+		return id, err
 	}
 	for _, v := range tx.Outs {
-		if err := v.Encode(buf); err != nil {
-			panic(err)
+		err := v.Encode(buf)
+		if err != nil {
+			return id, err
 		}
 	}
-	if err := tx.Ext.ForID(buf); err != nil {
-		panic(err)
+	err = tx.Ext.ForID(buf)
+	if err != nil {
+		return id, err
 	}
-	return tx.idhc.Hash(buf.Bytes())
+	return tx.idhc.Hash(buf.Bytes()), nil
 }
 
 //获取coinse out fee sum

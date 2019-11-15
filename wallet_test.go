@@ -86,8 +86,10 @@ func TestWallet(t *testing.T) {
 			t.Error(err)
 			t.FailNow()
 		}
-
-		if acc.GetAddress() != v {
+		if addr, err := acc.GetAddress(); err != nil {
+			t.Error(err)
+			t.FailNow()
+		} else if addr != v {
 			t.Error("address data error")
 			t.FailNow()
 		}

@@ -16,6 +16,8 @@ type ISigner interface {
 	Verify() error
 	//签名生成解锁脚本
 	Sign(acc *Account) error
+	//获取签名数据
+	GetSigBytes() ([]byte, error)
 }
 
 //标准签名器
@@ -40,11 +42,16 @@ func newStdSigner(bi *BlockIndex, tx *TX, out *TxOut, in *TxIn, idx int) ISigner
 
 //签名校验
 func (sr *stdsigner) Verify() error {
-	wits := sr.in.Script.ToWitness()
+	wits, err := sr.in.Script.ToWitness()
+	if err != nil {
+		return err
+	}
 	if err := wits.Check(true); err != nil {
 		return err
 	}
-	if !wits.Hash().Equal(sr.out.Script.GetPkh()) {
+	if hash, err := wits.Hash(); err != nil {
+		return err
+	} else if !hash.Equal(sr.out.Script.GetPkh()) {
 		return errors.New("hash error txout")
 	}
 	//至少需要签名正确的数量
@@ -155,7 +162,9 @@ func (sr *stdsigner) Sign(acc *Account) error {
 		return err
 	}
 	wits := acc.NewWitnessScript()
-	if !wits.Hash().Equal(sr.out.Script.GetPkh()) {
+	if hash, err := wits.Hash(); err != nil {
+		return err
+	} else if !hash.Equal(sr.out.Script.GetPkh()) {
 		return errors.New("out pubs hash error")
 	}
 	sigb, err := sr.GetSigBytes()
@@ -174,6 +183,10 @@ func (sr *stdsigner) Sign(acc *Account) error {
 	if len(wits.Sig) < int(wits.Less) {
 		return errors.New("sig num too low")
 	}
-	sr.in.Script = wits.ToScript()
+	if script, err := wits.ToScript(); err != nil {
+		return err
+	} else {
+		sr.in.Script = script
+	}
 	return nil
 }

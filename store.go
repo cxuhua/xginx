@@ -183,12 +183,16 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-func (tk CoinKeyValue) GetTxIn(acc *Account) *TxIn {
+func (tk CoinKeyValue) GetTxIn(acc *Account) (*TxIn, error) {
 	in := &TxIn{}
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
-	in.Script = acc.NewWitnessScript().ToScript()
-	return in
+	if script, err := acc.NewWitnessScript().ToScript(); err != nil {
+		return nil, err
+	} else {
+		in.Script = script
+	}
+	return in, nil
 }
 
 func (tk CoinKeyValue) GetValue() []byte {

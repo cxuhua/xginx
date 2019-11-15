@@ -426,15 +426,18 @@ func DecodeAddress(addr string) (HASH160, error) {
 	return hv, nil
 }
 
-func (pub PublicKey) Address() string {
+func (pub PublicKey) Address() (string, error) {
 	pks := PKBytes{}
 	pks.Set(&pub)
-	pkh := HashPks(1, 1, []PKBytes{pks})
+	pkh, err := HashPks(1, 1, []PKBytes{pks})
+	if err != nil {
+		return "", err
+	}
 	addr, err := EncodeAddress(pkh)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	return addr
+	return addr, nil
 }
 
 func (pk *PublicKey) Load(s string) (*PublicKey, error) {

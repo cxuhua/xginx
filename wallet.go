@@ -182,7 +182,10 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	addr := acc.GetAddress()
+	addr, err := acc.GetAddress()
+	if err != nil {
+		return "", err
+	}
 	dump, err := acc.Dump()
 	if err != nil {
 		return "", err
@@ -205,7 +208,10 @@ func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
 	if err != nil {
 		return err
 	}
-	addr := acc.GetAddress()
+	addr, err := acc.GetAddress()
+	if err != nil {
+		return err
+	}
 	dump, err := acc.Dump()
 	if err != nil {
 		return err

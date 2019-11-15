@@ -63,6 +63,18 @@ func (s Script) IsLocked() bool {
 	return s.Len() == lockedsize && s[0] == SCRIPT_LOCKED_TYPE
 }
 
+//从锁定脚本获取输出地址
+func (s Script) GetAddress() string {
+	if !s.IsLocked() {
+		panic(errors.New("script type error"))
+	}
+	addr, err := EncodeAddress(s.GetPkh())
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
 //coinbase交易没有pkh
 func (s Script) GetPkh() HASH160 {
 	pkh := HASH160{}
@@ -82,21 +94,27 @@ func (s Script) Encode(w IWriter) error {
 func (s Script) ForID(w IWriter) error {
 	if s.IsCoinBase() {
 		return VarBytes(s).Encode(w)
+	} else if wit, err := s.ToWitness(); err != nil {
+		return err
 	} else {
-		return s.ToWitnessForID().ForID(w)
+		return wit.ForID(w)
 	}
 }
 
 //签名，验证写入
 func (s Script) ForVerify(w IWriter) error {
-	return s.ToWitnessForID().ForID(w)
+	if wit, err := s.ToWitness(); err != nil {
+		return err
+	} else {
+		return wit.ForID(w)
+	}
 }
 
 func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
 }
 
-func (s Script) ToWitness() WitnessScript {
+func (s Script) ToWitness() (WitnessScript, error) {
 	if !s.IsWitness() {
 		panic(errors.New("witness error"))
 	}
@@ -104,22 +122,9 @@ func (s Script) ToWitness() WitnessScript {
 	wit := WitnessScript{}
 	err := wit.Decode(buf)
 	if err != nil {
-		panic(err)
+		return wit, err
 	}
-	return wit
-}
-
-func (s Script) ToWitnessForID() WitnessScript {
-	if !s.IsWitness() {
-		panic(errors.New("witness error"))
-	}
-	buf := bytes.NewReader(s)
-	wit := WitnessScript{}
-	err := wit.DecodeForID(buf)
-	if err != nil {
-		panic(err)
-	}
-	return wit
+	return wit, nil
 }
 
 func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
@@ -169,16 +174,16 @@ func (ss *LockedScript) Decode(r IReader) error {
 	return nil
 }
 
-func NewLockedScript(pkh HASH160) Script {
+func NewLockedScript(pkh HASH160) (Script, error) {
 	std := &LockedScript{}
 	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = pkh
 	buf := &bytes.Buffer{}
 	err := std.Encode(buf)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 //隔离见证
@@ -234,19 +239,6 @@ func (ss WitnessScript) Encode(w IWriter) error {
 	return nil
 }
 
-func (ss *WitnessScript) DecodeForID(r IReader) error {
-	if err := binary.Read(r, Endian, &ss.Type); err != nil {
-		return err
-	}
-	if err := binary.Read(r, Endian, &ss.Num); err != nil {
-		return err
-	}
-	if err := binary.Read(r, Endian, &ss.Less); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (ss *WitnessScript) Decode(r IReader) error {
 	if err := binary.Read(r, Endian, &ss.Type); err != nil {
 		return err
@@ -284,35 +276,37 @@ func (ss *WitnessScript) Decode(r IReader) error {
 	return nil
 }
 
-func (ss WitnessScript) Hash() HASH160 {
+func (ss WitnessScript) Hash() (HASH160, error) {
 	return HashPks(ss.Num, ss.Less, ss.Pks)
 }
 
 //hash公钥。地址也将又这个方法生成
-func HashPks(num uint8, less uint8, pks []PKBytes) HASH160 {
+func HashPks(num uint8, less uint8, pks []PKBytes) (HASH160, error) {
 	if int(num) != len(pks) {
 		panic(errors.New("pub num error"))
 	}
+	id := HASH160{}
 	buf := &bytes.Buffer{}
 	if err := binary.Write(buf, Endian, num); err != nil {
-		panic(err)
+		return id, err
 	}
 	if err := binary.Write(buf, Endian, less); err != nil {
-		panic(err)
+		return id, err
 	}
 	for _, pk := range pks {
 		buf.Write(pk[:])
 	}
-	return Hash160From(buf.Bytes())
+	copy(id[:], Hash160(buf.Bytes()))
+	return id, nil
 }
 
-func (ss WitnessScript) ToScript() Script {
+func (ss WitnessScript) ToScript() (Script, error) {
 	buf := &bytes.Buffer{}
 	err := ss.Encode(buf)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 //csp=true 检查签名证书数量

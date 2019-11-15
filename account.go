@@ -38,7 +38,7 @@ func LoadAccount(s string) (*Account, error) {
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	sigb := SigBytes{}
-	if pi == 1 {
+	if pi >= len(ap.pris) {
 		return sigb, errors.New("skip 1")
 	}
 	pri := ap.pris[pi]
@@ -63,8 +63,12 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 	return w
 }
 
-func (ap Account) NewLockedScript() Script {
-	return NewLockedScript(ap.GetPkh())
+func (ap Account) NewLockedScript() (Script, error) {
+	if pkh, err := ap.GetPkh(); err != nil {
+		return nil, err
+	} else {
+		return NewLockedScript(pkh)
+	}
 }
 
 func (ap Account) String() string {
@@ -133,9 +137,10 @@ func (ap Account) Dump() (string, error) {
 }
 
 //获取账号地址
-func (ap Account) GetPkh() HASH160 {
+func (ap Account) GetPkh() (HASH160, error) {
+	id := HASH160{}
 	if err := ap.Check(); err != nil {
-		panic(err)
+		return id, err
 	}
 	pks := []PKBytes{}
 	for _, pub := range ap.pubs {
@@ -145,12 +150,14 @@ func (ap Account) GetPkh() HASH160 {
 }
 
 //获取账号地址
-func (ap Account) GetAddress() string {
-	addr, err := EncodeAddress(ap.GetPkh())
-	if err != nil {
-		panic(err)
+func (ap Account) GetAddress() (string, error) {
+	if pkh, err := ap.GetPkh(); err != nil {
+		return "", err
+	} else if addr, err := EncodeAddress(pkh); err != nil {
+		return "", err
+	} else {
+		return addr, nil
 	}
-	return addr
 }
 
 //创建num个证书的账号,至少需要less个签名

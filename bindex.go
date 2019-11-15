@@ -447,9 +447,14 @@ func (ekv ExtKeyValue) GetBytes(bi *BlockIndex) ([]byte, error) {
 }
 
 //转账交易
-//从src转到dst形成交易
-func (bi *BlockIndex) Transfre(w IWallet, src string, dst string, av Amount, fee Amount) (*TX, error) {
-	ds, err := bi.ListCoins(src)
+//从acc账号转向addr地址
+//在区块中操作
+func (bi *BlockIndex) Transfre(blk *BlockInfo, acc *Account, addr string, av Amount, fee Amount) (*TX, error) {
+	addr, err := acc.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+	ds, err := bi.ListCoins(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -457,7 +462,53 @@ func (bi *BlockIndex) Transfre(w IWallet, src string, dst string, av Amount, fee
 	if (av + fee) > bv {
 		return nil, errors.New("Insufficient balance")
 	}
-	return nil, nil
+	pkh, err := DecodeAddress(addr)
+	if err != nil {
+		return nil, err
+	}
+	tx := &TX{}
+	tx.Ver = 1
+	sum := Amount(0)
+	tx.Outs = []*TxOut{}
+	//创建目标输出
+	out := &TxOut{}
+	out.Value = av
+	if script, err := NewLockedScript(pkh); err != nil {
+		return nil, err
+	} else {
+		out.Script = script
+	}
+	tx.Outs = append(tx.Outs, out)
+	//获取需要的输入
+	tx.Ins = []*TxIn{}
+	for _, cv := range ds {
+		if in, err := cv.GetTxIn(acc); err != nil {
+			return nil, err
+		} else {
+			tx.Ins = append(tx.Ins, in)
+		}
+		sum += cv.Value
+		if sum >= av+fee {
+			break
+		}
+	}
+	//找零钱
+	if rv := sum - fee - av; rv > 0 {
+		mine := &TxOut{}
+		if script, err := acc.NewLockedScript(); err != nil {
+			return nil, err
+		} else {
+			mine.Script = script
+		}
+		mine.Value = rv
+		tx.Outs = append(tx.Outs, mine)
+	}
+	tx.ID()
+	err = tx.Sign(bi, blk)
+	if err != nil {
+		return nil, fmt.Errorf("sign tx error %w", err)
+	}
+	return tx, nil
 }
 
 func (bi *BlockIndex) GetExt(extid HASH160) (ExtKeyValue, error) {
@@ -616,7 +667,10 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	for _, tv := range b.Txs {
-		bi.lru.Delete(tv.ID())
+		id, err := tv.ID()
+		if err == nil {
+			bi.lru.Delete(id)
+		}
 	}
 	bi.lru.Delete(b.ID())
 }

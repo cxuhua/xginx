@@ -15,6 +15,7 @@ var (
 	a33 = "ioYe4X4Bwi3KxzVy45g6LvQJjs2nnxLdHbEWX88QunLuPW3oMj1zLCJfndQFqgJtzSUsuJd3iACTvig5LEEp7k92V8uCMrqpEUzpCJ1qtgByCS4mneJAoQiMVxKYnmGwngHrQRrCFi94qHFMS3QTinGPFdvxacjNqjj7mzWp5rRehF297VkvXp1gd8gDQtxz1qU4bFxqoS9i2uLzxAcJUSxe5Nu8DUPXgyAAg3bGzhBXGbdfAqHUutErw5Hj5pc97B9VGcBy1GfNWJqb8jCJL1FX5BrrgeubQaVVkUPwvBbLSMdy42qiRUgQ7CbWkeoU4xvwvDwC8CFo2GNgeaXpfgge61vwbSnCY8dGCGwtxQzP1aY6twcTZCWDRjmg3yPBjE8bSPHYrPADQZUETPGgoMb36DmpxiXAXp5SusRhtswxQvyDZV8NhHwGSVND89WVbLmXvAAtvgS5kyxm2VkDYxjBPBuunkJgtLLheQrHfsNvU1hXH"
 
 	TestAccount, _ = LoadAccount(a32)
+	DstAccount, _  = LoadAccount(a33)
 )
 
 func TestBlockHeader(t *testing.T) {
@@ -63,7 +64,11 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
-	out.Script = TestAccount.NewLockedScript()
+	if script, err := TestAccount.NewLockedScript(); err != nil {
+		return err
+	} else {
+		out.Script = script
+	}
 	tx.Outs = []*TxOut{out}
 
 	blk.Txs = []*TX{tx}
@@ -124,7 +129,7 @@ func TestBlockChain(t *testing.T) {
 		panic(err)
 	}
 
-	testnum := uint32(1)
+	testnum := uint32(5)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		err := bi.LinkTo(cb)
@@ -149,7 +154,11 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoinsWithID(TestAccount.GetPkh())
+	pkh, err := TestAccount.GetPkh()
+	if err != nil {
+		panic(err)
+	}
+	ds, err := bi.ListCoinsWithID(pkh)
 	if err != nil {
 		panic(err)
 	}
@@ -163,9 +172,16 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script = TestAccount.NewLockedScript()
+	if script, err := TestAccount.NewLockedScript(); err != nil {
+		panic(err)
+	} else {
+		txout.Script = script
+	}
 	for _, v := range ds {
-		in := v.GetTxIn(TestAccount)
+		in, err := v.GetTxIn(TestAccount)
+		if err != nil {
+			panic(err)
+		}
 		ins = append(ins, in)
 		txout.Value += v.Value
 	}
@@ -174,14 +190,20 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	tx1.Ins = ins
 	tx1.Outs = outs
 
-	id1 := tx1.ID()
+	id1, err := tx1.ID()
+	if err != nil {
+		panic(err)
+	}
 	//为每个输入添加签名
 	err = tx1.Sign(bi, b)
 	if err != nil {
 		panic(err)
 	}
 	tx1.ResetAll()
-	id2 := tx1.ID()
+	id2, err := tx1.ID()
+	if err != nil {
+		panic(err)
+	}
 	if !id1.Equal(id2) {
 		panic(errors.New("id error"))
 	}
@@ -201,6 +223,48 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	}
 }
 
+func TestTransfire(t *testing.T) {
+	addr, err := DstAccount.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	bi := NewBlockIndex(&tlis{})
+	err = bi.LoadAll(func(pv uint) {
+		log.Printf("load block chian %d%%\n", pv)
+	})
+	if err != nil {
+		panic(err)
+	}
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+
+	tx, err := bi.Transfre(blk, TestAccount, addr, 3*COIN, 1*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx)
+	if err != nil {
+		panic(err)
+	}
+	if err := blk.Finish(bi); err != nil {
+		panic(err)
+	}
+	if err := blk.CalcPowHash(1000000, bi); err != nil {
+		panic(err)
+	}
+	err = bi.LinkTo(blk)
+	if err != nil {
+		panic(err)
+	}
+	ds, err := bi.ListCoins(addr)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(ds)
+}
+
 //测试一个区块中消费同区块之前的交易
 func TestBlockMulTXS(t *testing.T) {
 	bi := NewBlockIndex(&tlis{})
@@ -211,7 +275,11 @@ func TestBlockMulTXS(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoinsWithID(TestAccount.GetPkh())
+	pkh, err := TestAccount.GetPkh()
+	if err != nil {
+		panic(err)
+	}
+	ds, err := bi.ListCoinsWithID(pkh)
 	if err != nil {
 		panic(err)
 	}
@@ -224,9 +292,16 @@ func TestBlockMulTXS(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script = TestAccount.NewLockedScript()
+	if script, err := TestAccount.NewLockedScript(); err != nil {
+		panic(err)
+	} else {
+		txout.Script = script
+	}
 	for _, v := range ds {
-		in := v.GetTxIn(TestAccount)
+		in, err := v.GetTxIn(TestAccount)
+		if err != nil {
+			panic(err)
+		}
 		ins = append(ins, in)
 		txout.Value += v.Value
 	}
@@ -247,14 +322,18 @@ func TestBlockMulTXS(t *testing.T) {
 	tx2.Ver = 1
 
 	in2 := &TxIn{}
-	in2.OutHash = tx1.ID()
+	in2.OutHash, _ = tx1.ID()
 	in2.OutIndex = 0
 
 	ins2 := []*TxIn{in2}
 
 	out2 := &TxOut{}
 
-	out2.Script = TestAccount.NewLockedScript()
+	if script, err := TestAccount.NewLockedScript(); err != nil {
+		panic(err)
+	} else {
+		out2.Script = script
+	}
 	out2.Value = txout.Value
 
 	outs2 := []*TxOut{out2}
@@ -305,8 +384,12 @@ func TestBlockSign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	addr, err := TestAccount.GetAddress()
+	if err != nil {
+		panic(err)
+	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoins(TestAccount.GetAddress())
+	ds, err := bi.ListCoins(addr)
 	if err != nil {
 		panic(err)
 	}
@@ -317,9 +400,17 @@ func TestBlockSign(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script = TestAccount.NewLockedScript()
+	script, err := TestAccount.NewLockedScript()
+	if err != nil {
+		panic(err)
+	}
+	txout.Script = script
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn(TestAccount))
+		in, err := v.GetTxIn(TestAccount)
+		if err != nil {
+			panic(err)
+		}
+		ins = append(ins, in)
 		txout.Value += v.Value
 	}
 	outs := []*TxOut{}

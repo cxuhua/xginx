@@ -2,14 +2,13 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	. "github.com/cxuhua/xginx"
 )
 
 var (
-	MinerAccount, _ = LoadAccount("")
+	MinerAccount, _ = LoadAccount("ioYe4X4Bwi3KxzVy45g6LvQJjs2nnxLdHbEWX88QunLuPW3oMj1zLCJfndQFqgJtzSUsuJd3iACTvig5LEEp7k92V8uCMrqpEUzpCJ1qtgByCS4mneJAoQiMVxKYnmGwngHrQRrCFi94qHFMS3QTinGPFdvxacjNqjj7mzWp5rRehF297VkvXp1gd8gDQtxz1qU4bFxqoS9i2uLzxAcJUSxe5Nu8DUPXgyAAg3bGzhBXGbdfAqHUutErw5Hj5pc97B9VGcBy1GfNWJqb8jCJL1FX5BrrgeubQaVVkUPwvBbLSMdy42qiRUgQ7CbWkeoU4xvwvDwC8CFo2GNgeaXpfgge61vwbSnCY8dGCGwtxQzP1aY6twcTZCWDRjmg3yPBjE8bSPHYrPADQZUETPGgoMb36DmpxiXAXp5SusRhtswxQvyDZV8NhHwGSVND89WVbLmXvAAtvgS5kyxm2VkDYxjBPBuunkJgtLLheQrHfsNvU1hXH")
 )
 
 //测试用监听器
@@ -37,14 +36,6 @@ func (lis *listener) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
-	id, err := DecodeAddress(maddr)
-	if err != nil {
-		return err
-	}
-	script, err := NewLockedScript(id)
-	if err != nil {
-		return fmt.Errorf("new stdlocked script error %w", err)
-	}
 	//设置base out script
 	//创建coinbase tx
 	tx := &TX{}
@@ -59,7 +50,11 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	//
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
-	out.Script = script
+	if script, err := MinerAccount.NewLockedScript(); err != nil {
+		return err
+	} else {
+		out.Script = script
+	}
 	tx.Outs = []*TxOut{out}
 
 	blk.Txs = []*TX{tx}
@@ -89,5 +84,5 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 
 //获取签名私钥
 func (lis *listener) GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error) {
-
+	return MinerAccount, nil
 }

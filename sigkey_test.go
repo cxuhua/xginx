@@ -12,7 +12,11 @@ func TestAddress(t *testing.T) {
 		t.FailNow()
 	}
 	pub := pri.PublicKey()
-	addr := pub.Address()
+	addr, err := pub.Address()
+	if err != nil {
+		t.Error(err)
+		t.FailNow()
+	}
 	x, err := DecodeAddress(addr)
 	if err != nil {
 		t.Error(err)
