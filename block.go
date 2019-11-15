@@ -679,11 +679,15 @@ type TX struct {
 	pres HashCacher //签名hash缓存
 }
 
+func (tx *TX) HasExt() bool {
+	return tx.Ext.Bytes.Len() > 0
+}
+
 //扩展数据id
 //hash160(exthash+txid) -> blockid+txindx
 func (tx *TX) ExtID() (HASH160, bool) {
 	id := HASH160{}
-	if tx.Ext.Bytes.Len() == 0 {
+	if !tx.HasExt() {
 		return id, false
 	}
 	buf := &bytes.Buffer{}

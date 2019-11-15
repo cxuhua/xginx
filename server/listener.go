@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	xx "github.com/cxuhua/xginx"
+	. "github.com/cxuhua/xginx"
 )
 
 const (
@@ -14,11 +14,11 @@ const (
 
 //测试用监听器
 type listener struct {
-	wallet xx.IWallet
+	wallet IWallet
 }
 
 func newListener(wdir string) *listener {
-	w, err := xx.NewLevelDBWallet(wdir)
+	w, err := NewLevelDBWallet(wdir)
 	if err != nil {
 		panic(err)
 	}
@@ -27,47 +27,47 @@ func newListener(wdir string) *listener {
 	}
 }
 
-func (lis *listener) OnClose(bi *xx.BlockIndex) {
+func (lis *listener) OnClose(bi *BlockIndex) {
 	lis.wallet.Close()
 }
 
-func (lis *listener) OnLinkBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) {
+func (lis *listener) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 
 }
 
 //当块创建完毕
-func (lis *listener) OnNewBlock(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
-	id, err := xx.DecodeAddress(maddr)
+func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+	id, err := DecodeAddress(maddr)
 	if err != nil {
 		return err
 	}
-	script, err := xx.NewLockedScript(id)
+	script, err := NewLockedScript(id)
 	if err != nil {
 		return fmt.Errorf("new stdlocked script error %w", err)
 	}
 	//设置base out script
 	//创建coinbase tx
-	tx := &xx.TX{}
+	tx := &TX{}
 	tx.Ver = 1
 
 	txt := time.Now().Format("2006-01-02 15:04:05")
 
 	//base tx
-	in := &xx.TxIn{}
+	in := &TxIn{}
 	in.Script = blk.CoinbaseScript([]byte(txt))
-	tx.Ins = []*xx.TxIn{in}
+	tx.Ins = []*TxIn{in}
 	//
-	out := &xx.TxOut{}
+	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
 	out.Script = script
-	tx.Outs = []*xx.TxOut{out}
+	tx.Outs = []*TxOut{out}
 
-	blk.Txs = []*xx.TX{tx}
+	blk.Txs = []*TX{tx}
 	return nil
 }
 
 //完成区块
-func (lis *listener) OnFinished(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
+func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss")
 	}
@@ -88,9 +88,9 @@ func (lis *listener) OnFinished(bi *xx.BlockIndex, blk *xx.BlockInfo) error {
 }
 
 //获取签名私钥
-func (lis *listener) OnPrivateKey(bi *xx.BlockIndex, blk *xx.BlockInfo, out *xx.TxOut) (*xx.PrivateKey, error) {
+func (lis *listener) OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error) {
 	pkh := out.Script.GetPkh()
-	addr, err := xx.EncodeAddress(pkh)
+	addr, err := EncodeAddress(pkh)
 	if err != nil {
 		return nil, err
 	}

@@ -7,17 +7,17 @@ import (
 	"os/signal"
 	"syscall"
 
-	xx "github.com/cxuhua/xginx"
+	. "github.com/cxuhua/xginx"
 )
 
 func main() {
 
-	conf := xx.InitConfig("v10000.json")
+	conf := InitConfig("v10000.json")
 	defer conf.Close()
 
 	lis := newListener(conf.WalletDir)
 
-	bi := xx.InitChain(lis)
+	bi := InitChain(lis)
 	defer bi.Close()
 
 	csig := make(chan os.Signal)
@@ -25,28 +25,28 @@ func main() {
 	defer cancel()
 
 	//是否启动tcp节点服务器
-	if xx.Server != nil {
-		xx.Server.Start(ctx)
+	if Server != nil {
+		Server.Start(ctx)
 	}
 	//是否启动矿工
-	if xx.Miner != nil {
-		xx.Miner.Start(ctx)
+	if Miner != nil {
+		Miner.Start(ctx)
 	}
 	//启动http服务
-	if xx.Http != nil {
-		xx.Http.Start(ctx)
+	if Http != nil {
+		Http.Start(ctx)
 	}
 	//
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()
 	log.Println("recv sig :", sig, ",system exited")
-	if xx.Server != nil {
-		xx.Server.Stop()
-		xx.Server.Wait()
+	if Server != nil {
+		Server.Stop()
+		Server.Wait()
 	}
-	if xx.Miner != nil {
-		xx.Miner.Stop()
-		xx.Miner.Wait()
+	if Miner != nil {
+		Miner.Stop()
+		Miner.Wait()
 	}
 }
