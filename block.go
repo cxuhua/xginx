@@ -557,7 +557,7 @@ type TxOut struct {
 	Script Script //锁定脚本
 }
 
-//获取签名解锁器
+//获取签名器
 func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) ISigner {
 	return newStdSigner(bi, tx, v, in, idx)
 }
@@ -830,11 +830,11 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 		if !self && out.IsSpent(in, bi, blk) {
 			return errors.New("out is spent")
 		}
-		pri, err := lptr.OnPrivateKey(bi, blk, out)
+		acc, err := lptr.GetAccount(bi, blk, out)
 		if err != nil {
 			return err
 		}
-		err = out.GetSigner(bi, tx, in, iidx).Sign(pri)
+		err = out.GetSigner(bi, tx, in, iidx).Sign(acc)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", iidx, err)
 		}

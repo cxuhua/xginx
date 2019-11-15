@@ -67,8 +67,8 @@ type IListener interface {
 	OnNewBlock(bi *BlockIndex, blk *BlockInfo) error
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
-	//获取签名私钥
-	OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error)
+	//获取签名账户
+	GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
 	//当一个块连接到链之前
@@ -436,10 +436,28 @@ func (ekv ExtKeyValue) GetBytes(bi *BlockIndex) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if ekv.TxIdx >= 0 && ekv.TxIdx.ToInt() < len(blk.Txs) {
-		return blk.Txs[ekv.TxIdx].Ext.Bytes, nil
+	if ekv.TxIdx < 0 || ekv.TxIdx.ToInt() >= len(blk.Txs) {
+		return nil, errors.New("data not found")
 	}
-	return nil, errors.New("data not found")
+	tx := blk.Txs[ekv.TxIdx]
+	if !tx.HasExt() {
+		return nil, errors.New("not ext data")
+	}
+	return tx.Ext.Bytes, nil
+}
+
+//转账交易
+//从src转到dst形成交易
+func (bi *BlockIndex) Transfre(w IWallet, src string, dst string, av Amount, fee Amount) (*TX, error) {
+	ds, err := bi.ListCoins(src)
+	if err != nil {
+		return nil, err
+	}
+	bv := ds.Balance()
+	if (av + fee) > bv {
+		return nil, errors.New("Insufficient balance")
+	}
+	return nil, nil
 }
 
 func (bi *BlockIndex) GetExt(extid HASH160) (ExtKeyValue, error) {
@@ -662,7 +680,7 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 	return bv
 }
 
-func (bi *BlockIndex) ListCoins(addr string) ([]*CoinKeyValue, error) {
+func (bi *BlockIndex) ListCoins(addr string) (Coins, error) {
 	id, err := DecodeAddress(addr)
 	if err != nil {
 		return nil, err
@@ -671,9 +689,9 @@ func (bi *BlockIndex) ListCoins(addr string) ([]*CoinKeyValue, error) {
 }
 
 //获取某个id的所有积分
-func (bi *BlockIndex) ListCoinsWithID(id HASH160) ([]*CoinKeyValue, error) {
+func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 	prefix := getDBKey(COIN_PREFIX, id[:])
-	kvs := []*CoinKeyValue{}
+	kvs := Coins{}
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {

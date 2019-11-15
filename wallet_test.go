@@ -13,12 +13,12 @@ func TestWalletEnc(t *testing.T) {
 		t.FailNow()
 	}
 	defer w.Close()
-	ds := w.ListAddress()
+	ds := w.ListAccount()
 	if len(ds) != 0 {
 		t.Error("address error")
 		t.FailNow()
 	}
-	addr, err := w.NewAddress()
+	addr, err := w.NewAccount(3, 3)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -28,7 +28,7 @@ func TestWalletEnc(t *testing.T) {
 		t.Error(err)
 		t.FailNow()
 	}
-	_, err = w.GetPrivate(addr)
+	_, err = w.GetAccount(addr)
 	if err == nil {
 		t.Errorf("address encryption,can't get")
 		t.FailNow()
@@ -39,7 +39,7 @@ func TestWalletEnc(t *testing.T) {
 		t.FailNow()
 	}
 	time.Sleep(time.Second * 5)
-	_, err = w.GetPrivate(addr)
+	_, err = w.GetAccount(addr)
 	if err == nil {
 		t.Errorf("address exp")
 		t.FailNow()
@@ -53,12 +53,12 @@ func TestWallet(t *testing.T) {
 		t.FailNow()
 	}
 	defer w.Close()
-	ds := w.ListAddress()
+	ds := w.ListAccount()
 	if len(ds) != 0 {
 		t.Error("address error")
 		t.FailNow()
 	}
-	addr, err := w.NewAddress()
+	addr, err := w.NewAccount(3, 2)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()
@@ -69,9 +69,9 @@ func TestWallet(t *testing.T) {
 		t.FailNow()
 	}
 	log.Println("new addr = ", addr)
-	ds = w.ListAddress()
+	ds = w.ListAccount()
 	for _, v := range ds {
-		pri, err := w.GetPrivate(v)
+		acc, err := w.GetAccount(v)
 		if err == nil {
 			t.Error(err)
 			t.FailNow()
@@ -81,23 +81,23 @@ func TestWallet(t *testing.T) {
 			t.Error(err)
 			t.FailNow()
 		}
-		pri, err = w.GetPrivate(v)
+		acc, err = w.GetAccount(v)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
 		}
 
-		if pri.PublicKey().Address() != v {
+		if acc.GetAddress() != v {
 			t.Error("address data error")
 			t.FailNow()
 		}
-		err = w.RemoveAddress(v)
+		err = w.RemoveAccount(v)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
 		}
 	}
-	ds = w.ListAddress()
+	ds = w.ListAccount()
 	if len(ds) != 0 {
 		t.Error("remove address error")
 		t.FailNow()

@@ -129,17 +129,17 @@ type IWallet interface {
 	//加密钱包
 	Encryption(addr string, pw string) error
 	//根据钱包地址获取私钥
-	GetPrivate(addr string) (*PrivateKey, error)
+	GetAccount(addr string) (*Account, error)
 	//关闭钱包
 	Close()
 	//新建地址
-	NewAddress() (string, error)
+	NewAccount(num uint8, less uint8) (string, error)
 	//导入私钥 pw != ""添加密码
-	ImportAddr(pri string, pw string) error
+	ImportAccount(pri string, pw string) error
 	//获取所有地址
-	ListAddress() []string
+	ListAccount() []string
 	//移除地址
-	RemoveAddress(addr string) error
+	RemoveAccount(addr string) error
 }
 
 type LevelDBWallet struct {
@@ -151,11 +151,11 @@ type LevelDBWallet struct {
 	//过期时间
 	times map[string]time.Time
 	//私钥缓存
-	cache map[string]*PrivateKey
+	cache map[string]*Account
 }
 
 //列出地址
-func (db *LevelDBWallet) ListAddress() []string {
+func (db *LevelDBWallet) ListAccount() []string {
 	ds := []string{}
 	iter := db.dptr.Iterator(NewPrefix(AddrPrefix))
 	defer iter.Close()
@@ -166,7 +166,7 @@ func (db *LevelDBWallet) ListAddress() []string {
 	return ds
 }
 
-func (db *LevelDBWallet) RemoveAddress(addr string) error {
+func (db *LevelDBWallet) RemoveAccount(addr string) error {
 	err := db.dptr.Del(AddrPrefix, []byte(addr))
 	if err != nil {
 		return err
@@ -177,46 +177,49 @@ func (db *LevelDBWallet) RemoveAddress(addr string) error {
 	return nil
 }
 
-func (db *LevelDBWallet) NewAddress() (string, error) {
-	pri, err := NewPrivateKey()
+func (db *LevelDBWallet) NewAccount(num uint8, less uint8) (string, error) {
+	acc, err := NewAccount(num, less)
 	if err != nil {
 		return "", err
 	}
-	pub := pri.PublicKey()
-	addr := pub.Address()
-	if _, err := db.GetPrivate(addr); err == nil {
-		return "", errors.New("repeat new address")
+	addr := acc.GetAddress()
+	dump, err := acc.Dump()
+	if err != nil {
+		return "", err
 	}
 	vbs := append([]byte{}, StdPKPrefix...)
-	vbs = append(vbs, pri.Encode()...)
+	vbs = append(vbs, []byte(dump)...)
 	err = db.dptr.Put(AddrPrefix, []byte(addr), vbs)
 	if err != nil {
 		return "", err
 	}
 	db.mu.Lock()
-	db.cache[addr] = pri
+	db.cache[addr] = acc
 	db.mu.Unlock()
 	return addr, nil
 }
 
 //导入私钥 pw != ""添加密码
-func (db *LevelDBWallet) ImportAddr(pks string, pw string) error {
-	pri, err := LoadPrivateKey(pks)
+func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
+	acc, err := LoadAccount(ss)
 	if err != nil {
 		return err
 	}
-	pub := pri.PublicKey()
-	addr := pub.Address()
+	addr := acc.GetAddress()
+	dump, err := acc.Dump()
+	if err != nil {
+		return err
+	}
 	if pw == "" {
 		vbs := append([]byte{}, StdPKPrefix...)
-		vbs = append(vbs, pri.Encode()...)
+		vbs = append(vbs, []byte(dump)...)
 		return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
 	} else {
 		block, err := NewAESCipher([]byte(pw))
 		if err != nil {
 			return err
 		}
-		data, err := AesEncrypt(block, pri.Encode())
+		data, err := AesEncrypt(block, []byte(dump))
 		if err != nil {
 			return fmt.Errorf("password error %w", err)
 		}
@@ -244,15 +247,12 @@ func (db *LevelDBWallet) Decryption(addr string, pw string, st time.Duration) er
 	if err != nil {
 		return fmt.Errorf("password error %w", err)
 	}
-	pri := &PrivateKey{}
-	if err := pri.Decode(data); err != nil {
+	acc, err := LoadAccount(string(data))
+	if err != nil {
 		return err
 	}
-	if pri.PublicKey().Address() != addr {
-		return errors.New("decrypt error")
-	}
 	db.mu.Lock()
-	db.cache[addr] = pri
+	db.cache[addr] = acc
 	db.times[addr] = time.Now().Add(st)
 	db.mu.Unlock()
 	return nil
@@ -290,7 +290,7 @@ func (db *LevelDBWallet) Encryption(addr string, pw string) error {
 }
 
 //根据钱包地址获取私钥
-func (db *LevelDBWallet) GetPrivate(addr string) (*PrivateKey, error) {
+func (db *LevelDBWallet) GetAccount(addr string) (*Account, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	//过期删除
@@ -311,12 +311,12 @@ func (db *LevelDBWallet) GetPrivate(addr string) (*PrivateKey, error) {
 	if vbs[0] != StdPKPrefix[0] {
 		return nil, errors.New("std address error,addr encryption")
 	}
-	pri := &PrivateKey{}
-	if err := pri.Decode(vbs[1:]); err != nil {
+	acc, err := LoadAccount(string(vbs[1:]))
+	if err != nil {
 		return nil, err
 	}
-	db.cache[addr] = pri
-	return pri, nil
+	db.cache[addr] = acc
+	return acc, nil
 }
 
 func (db *LevelDBWallet) checkTimer() {
@@ -363,7 +363,7 @@ func NewLevelDBWallet(dir string) (IWallet, error) {
 	if err != nil {
 		return nil, err
 	}
-	ss.cache = map[string]*PrivateKey{}
+	ss.cache = map[string]*Account{}
 	ss.times = map[string]time.Time{}
 	ss.dptr = NewDB(sdb)
 	ss.done = make(chan bool, 1)

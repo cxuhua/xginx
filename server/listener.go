@@ -8,8 +8,8 @@ import (
 	. "github.com/cxuhua/xginx"
 )
 
-const (
-	maddr = "st1q363x0zvheem0a5f0r0z9qr9puj7l900jc8glh0" //区块奖励地址
+var (
+	MinerAccount, _ = LoadAccount("")
 )
 
 //测试用监听器
@@ -88,14 +88,6 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 //获取签名私钥
-func (lis *listener) OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error) {
-	pkh := out.Script.GetPkh()
-	addr, err := EncodeAddress(pkh)
-	if err != nil {
-		return nil, err
-	}
-	if lis.wallet == nil {
-		return nil, errors.New("wallet not set")
-	}
-	return lis.wallet.GetPrivate(addr)
+func (lis *listener) GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error) {
+
 }

@@ -15,7 +15,7 @@ type ISigner interface {
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
-	Sign(pri *PrivateKey) error
+	Sign(acc *Account) error
 }
 
 //标准签名器
@@ -41,26 +41,44 @@ func newStdSigner(bi *BlockIndex, tx *TX, out *TxOut, in *TxIn, idx int) ISigner
 //签名校验
 func (sr *stdsigner) Verify() error {
 	wits := sr.in.Script.ToWitness()
-	if wits.Type != SCRIPT_WITNESS_TYPE {
-		return errors.New("witness script type error")
-	}
-	pub, err := NewPublicKey(wits.Pks[:])
-	if err != nil {
+	if err := wits.Check(true); err != nil {
 		return err
 	}
-	if !pub.Hash().Equal(sr.out.Script.GetPkh()) {
-		return errors.New("not mine txout")
+	if !wits.Hash().Equal(sr.out.Script.GetPkh()) {
+		return errors.New("hash error txout")
 	}
-	sig, err := NewSigValue(wits.Sig[:])
-	if err != nil {
-		return err
+	//至少需要签名正确的数量
+	less := int(wits.Less)
+	//总的数量
+	num := int(wits.Num)
+	if len(wits.Pks) != num {
+		return errors.New("pub num error")
+	}
+	if num < less {
+		return errors.New("pub num error,num must >= less")
 	}
 	sigb, err := sr.GetSigBytes()
 	if err != nil {
 		return err
 	}
-	if !pub.Verify(Hash256(sigb), sig) {
-		return errors.New("verify failed")
+	sigh := Hash256(sigb)
+	for i, k := 0, 0; i < len(wits.Sig) && k < len(wits.Pks); {
+		sig, err := NewSigValue(wits.Sig[i][:])
+		if err != nil {
+			return err
+		}
+		pub, err := NewPublicKey(wits.Pks[k][:])
+		if err != nil {
+			return err
+		}
+		if pub.Verify(sigh, sig) {
+			less--
+			i++
+		}
+		k++
+	}
+	if less > 0 {
+		return errors.New("sig verify error")
 	}
 	return nil
 }
@@ -132,19 +150,30 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 }
 
 //签名生成解锁脚本
-func (sr *stdsigner) Sign(pri *PrivateKey) error {
-	pub := pri.PublicKey()
-	if !pub.Hash().Equal(sr.out.Script.GetPkh()) {
-		return errors.New("not mine txout")
+func (sr *stdsigner) Sign(acc *Account) error {
+	if err := acc.Check(); err != nil {
+		return err
+	}
+	wits := acc.NewWitnessScript()
+	if !wits.Hash().Equal(sr.out.Script.GetPkh()) {
+		return errors.New("out pubs hash error")
 	}
 	sigb, err := sr.GetSigBytes()
 	if err != nil {
 		return err
 	}
-	sig, err := pri.Sign(Hash256(sigb))
-	if err != nil {
-		return err
+	sigh := Hash256(sigb)
+	//向acc请求签名
+	for i := 0; i < len(acc.pubs); i++ {
+		sigs, err := acc.Sign(i, sigh)
+		if err != nil {
+			continue
+		}
+		wits.Sig = append(wits.Sig, sigs)
 	}
-	sr.in.Script = NewWitnessScript(pri.PublicKey(), sig).ToScript()
+	if len(wits.Sig) < int(wits.Less) {
+		return errors.New("sig num too low")
+	}
+	sr.in.Script = wits.ToScript()
 	return nil
 }

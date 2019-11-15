@@ -141,6 +141,18 @@ func (ekv ExtKeyValue) GetValue() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+//金额记录
+type Coins []*CoinKeyValue
+
+//获取总金额
+func (c Coins) Balance() Amount {
+	a := Amount(0)
+	for _, v := range c {
+		a += v.Value
+	}
+	return a
+}
+
 //积分key
 type CoinKeyValue struct {
 	CPkh  HASH160 //cli hash
@@ -171,11 +183,11 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-func (tk CoinKeyValue) GetTxIn() *TxIn {
+func (tk CoinKeyValue) GetTxIn(acc *Account) *TxIn {
 	in := &TxIn{}
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
-	in.Script = EmptyWitnessScript()
+	in.Script = acc.NewWitnessScript().ToScript()
 	return in
 }
 

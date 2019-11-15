@@ -8,12 +8,13 @@ import (
 )
 
 var (
-	//测试用矿工私钥
-	TestMinerPrivateKey = "L4eSSzfWoTB9Y3eZo4Wp9TBPBsTJCcwmbioRcda3cM86MnUMrXhN"
-	TestMinePri, _      = LoadPrivateKey(TestMinerPrivateKey)
-	//测试用客户端key
-	TestCliPrivateKey = "KzVa4aqLziZWuiKFkPRkM46ZTrdzJhfuUxbe8pmxgosjoEYYnZuM"
-	TestCliPri, _     = LoadPrivateKey(TestCliPrivateKey)
+	//1-1
+	//3-2
+	a32 = "ioYe4X4Bwi3KxzVy45g6LvPgcXAx98H36csyb3WWt8VWZAkBX24toagwGEiXm9dhkj8rNQZmeerUkM8pQFKDQ5hKqW3UvEX394RTkf8KuMPtuLiACzNhRvW1UbwMXE3c7JBNkdFM9k5fKREcCoKLbCQMHbQbkQnLBioQeCKJM4YK61FPS22qqvTQuaZts8EV8L5XAMK7Nxf6TZaBR3J4VtKG37JjnaFucZo4BLyLs7cf8JvrNZCCbyqAmZWeZcacUseCwk7FoaudbL5x24wUmtrzv5DeuSVkgqDGGyLocVPKVTfxoZPqtkBTgt6DqRjPi4Bgb1G913fKFMKL1TvXDpS2adQNkakEGor1jfKdmPf8TiaGDymuiXuVnkRn5Q2Gn2ZfTD4LafiwaRBEKoZqmAt8NQtTPy8ZTSp74kzL1khUpkan5SgodxswtTwDAATWehZiBviG8ReewoABBDNNyWS5ViRUrf1peUH4fGQKG2XUj5aa3"
+	//3-3签名
+	a33 = "ioYe4X4Bwi3KxzVy45g6LvQJjs2nnxLdHbEWX88QunLuPW3oMj1zLCJfndQFqgJtzSUsuJd3iACTvig5LEEp7k92V8uCMrqpEUzpCJ1qtgByCS4mneJAoQiMVxKYnmGwngHrQRrCFi94qHFMS3QTinGPFdvxacjNqjj7mzWp5rRehF297VkvXp1gd8gDQtxz1qU4bFxqoS9i2uLzxAcJUSxe5Nu8DUPXgyAAg3bGzhBXGbdfAqHUutErw5Hj5pc97B9VGcBy1GfNWJqb8jCJL1FX5BrrgeubQaVVkUPwvBbLSMdy42qiRUgQ7CbWkeoU4xvwvDwC8CFo2GNgeaXpfgge61vwbSnCY8dGCGwtxQzP1aY6twcTZCWDRjmg3yPBjE8bSPHYrPADQZUETPGgoMb36DmpxiXAXp5SusRhtswxQvyDZV8NhHwGSVND89WVbLmXvAAtvgS5kyxm2VkDYxjBPBuunkJgtLLheQrHfsNvU1hXH"
+
+	TestAccount, _ = LoadAccount(a32)
 )
 
 func TestBlockHeader(t *testing.T) {
@@ -49,10 +50,7 @@ func (lis *tlis) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 
 //当块创建完毕
 func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
-	script, err := NewLockedScript(TestMinePri.PublicKey())
-	if err != nil {
-		return err
-	}
+
 	//设置base out script
 	//创建coinbase tx
 	tx := &TX{}
@@ -65,7 +63,7 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
-	out.Script = script
+	out.Script = TestAccount.NewLockedScript()
 	tx.Outs = []*TxOut{out}
 
 	blk.Txs = []*TX{tx}
@@ -94,8 +92,8 @@ func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 //获取签名私钥
-func (lis *tlis) OnPrivateKey(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*PrivateKey, error) {
-	return TestMinePri, nil
+func (lis *tlis) GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error) {
+	return TestAccount, nil
 }
 
 func NewTestBlock(bi *BlockIndex) *BlockInfo {
@@ -151,7 +149,7 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
+	ds, err := bi.ListCoinsWithID(TestAccount.GetPkh())
 	if err != nil {
 		panic(err)
 	}
@@ -165,9 +163,10 @@ func TestMulTxInCostOneTxOut(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script, _ = NewLockedScript(TestMinePri.PublicKey())
+	txout.Script = TestAccount.NewLockedScript()
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn())
+		in := v.GetTxIn(TestAccount)
+		ins = append(ins, in)
 		txout.Value += v.Value
 	}
 	txout.Value -= 1 * COIN //给点交易费
@@ -212,7 +211,7 @@ func TestBlockMulTXS(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
+	ds, err := bi.ListCoinsWithID(TestAccount.GetPkh())
 	if err != nil {
 		panic(err)
 	}
@@ -225,9 +224,9 @@ func TestBlockMulTXS(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script, _ = NewLockedScript(TestMinePri.PublicKey())
+	txout.Script = TestAccount.NewLockedScript()
 	for _, v := range ds {
-		in := v.GetTxIn()
+		in := v.GetTxIn(TestAccount)
 		ins = append(ins, in)
 		txout.Value += v.Value
 	}
@@ -250,12 +249,12 @@ func TestBlockMulTXS(t *testing.T) {
 	in2 := &TxIn{}
 	in2.OutHash = tx1.ID()
 	in2.OutIndex = 0
-	in2.Script = EmptyWitnessScript()
 
 	ins2 := []*TxIn{in2}
 
 	out2 := &TxOut{}
-	out2.Script, _ = NewLockedScript(TestMinePri.PublicKey())
+
+	out2.Script = TestAccount.NewLockedScript()
 	out2.Value = txout.Value
 
 	outs2 := []*TxOut{out2}
@@ -307,7 +306,7 @@ func TestBlockSign(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoins(TestMinePri.PublicKey().Address())
+	ds, err := bi.ListCoins(TestAccount.GetAddress())
 	if err != nil {
 		panic(err)
 	}
@@ -318,9 +317,9 @@ func TestBlockSign(t *testing.T) {
 	ins := []*TxIn{}
 	txout := &TxOut{}
 	//转到miner
-	txout.Script, _ = NewLockedScript(TestMinePri.PublicKey())
+	txout.Script = TestAccount.NewLockedScript()
 	for _, v := range ds {
-		ins = append(ins, v.GetTxIn())
+		ins = append(ins, v.GetTxIn(TestAccount))
 		txout.Value += v.Value
 	}
 	outs := []*TxOut{}

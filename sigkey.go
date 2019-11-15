@@ -24,6 +24,10 @@ var (
 
 type PKBytes [33]byte
 
+func (v PKBytes) Bytes() []byte {
+	return v[:]
+}
+
 func (v PKBytes) Hash() HASH160 {
 	return Hash160From(v[:])
 }
@@ -58,6 +62,10 @@ func (p *PKBytes) Set(pk *PublicKey) PKBytes {
 }
 
 type SigBytes [75]byte
+
+func (v SigBytes) Bytes() []byte {
+	return v[:]
+}
 
 func (v SigBytes) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
@@ -202,6 +210,12 @@ func (pk *PrivateKey) PublicKey() *PublicKey {
 type SigValue struct {
 	R *big.Int
 	S *big.Int
+}
+
+func (sig *SigValue) GetSigs() SigBytes {
+	sb := SigBytes{}
+	sb.Set(sig)
+	return sb
 }
 
 func NewSigValue(b []byte) (*SigValue, error) {
@@ -413,8 +427,9 @@ func DecodeAddress(addr string) (HASH160, error) {
 }
 
 func (pub PublicKey) Address() string {
-	pks := pub.Encode()
-	pkh := Hash160From(pks)
+	pks := PKBytes{}
+	pks.Set(&pub)
+	pkh := HashPks(1, 1, []PKBytes{pks})
 	addr, err := EncodeAddress(pkh)
 	if err != nil {
 		panic(err)
@@ -436,6 +451,12 @@ func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 		return nil, errors.New("check sum error")
 	}
 	return pk, pk.Decode(b[:l-4])
+}
+
+func (pk *PublicKey) GetPks() PKBytes {
+	pks := PKBytes{}
+	pks.Set(pk)
+	return pks
 }
 
 func (pk *PublicKey) Dump() string {
