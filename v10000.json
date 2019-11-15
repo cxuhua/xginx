@@ -11,7 +11,6 @@
   "pow_time":1209600,
   "pow_span": 2016,
   "http_port": 9334,
-  "http_scheme": "http",
   "addr_prefix": "st",
   "oid_prefix": "obj",
   "debug": true,

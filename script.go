@@ -8,9 +8,9 @@ import (
 )
 
 const (
-	SCRIPT_BASE_TYPE    = uint8(0) //coinbase input 0
-	SCRIPT_LOCKED_TYPE  = uint8(1) //标准锁定脚本 HASH160(pubkey)
-	SCRIPT_WITNESS_TYPE = uint8(2) //witness type
+	SCRIPT_COINBASE_TYPE = uint8(0) //coinbase input 0
+	SCRIPT_LOCKED_TYPE   = uint8(1) //标准锁定脚本 HASH160(pubkey)
+	SCRIPT_WITNESS_TYPE  = uint8(2) //witness type
 )
 
 type Script []byte
@@ -51,7 +51,7 @@ var (
 
 //in script
 func (s Script) IsCoinBase() bool {
-	return s.Len() >= conbaseminsize && s.Len() <= 128 && s[0] == SCRIPT_BASE_TYPE
+	return s.Len() >= conbaseminsize && s.Len() <= 128 && s[0] == SCRIPT_COINBASE_TYPE
 }
 
 //in script
@@ -110,9 +110,8 @@ func (s Script) ToWitness() WitnessScript {
 	return wit
 }
 
-//加入区块高度
 func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
-	s := Script{SCRIPT_BASE_TYPE}
+	s := Script{SCRIPT_COINBASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
 	//当前块高度
 	Endian.PutUint32(hb, h)
@@ -169,33 +168,27 @@ func NewLockedScript(v interface{}) (Script, error) {
 	return buf.Bytes(), nil
 }
 
+//隔离见证
 type WitnessScript struct {
 	Type uint8    //SCRIPT_WITNESS_TYPE
-	Pks  PKBytes  //物品公钥 hash160=objId
+	Pks  PKBytes  //公钥
 	Sig  SigBytes //签名
 }
 
+//id计算
 func (ss WitnessScript) ForID(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
-		return err
-	}
-	return nil
+	return binary.Write(w, Endian, ss.Type)
 }
 
 //编码需要签名的数据
 func (ss WitnessScript) ForVerify(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
-		return err
-	}
-	return nil
+	return binary.Write(w, Endian, ss.Type)
 }
 
+//编码
 func (ss WitnessScript) Encode(w IWriter) error {
 	if err := binary.Write(w, Endian, ss.Type); err != nil {
 		return err
-	}
-	if ss.Type != SCRIPT_WITNESS_TYPE {
-		return nil
 	}
 	if err := ss.Pks.Encode(w); err != nil {
 		return err
@@ -243,30 +236,4 @@ func NewWitnessScript(pub *PublicKey, sig *SigValue) WitnessScript {
 	wit.Pks.Set(pub)
 	wit.Sig.Set(sig)
 	return wit
-}
-
-//标准解锁脚本
-type StdUnlockScript struct {
-	Type uint8
-	Pkh  HASH160
-}
-
-func (ss StdUnlockScript) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
-		return err
-	}
-	if err := ss.Pkh.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ss *StdUnlockScript) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &ss.Type); err != nil {
-		return err
-	}
-	if err := ss.Pkh.Decode(r); err != nil {
-		return err
-	}
-	return nil
 }

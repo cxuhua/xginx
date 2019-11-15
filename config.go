@@ -35,13 +35,10 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 type Config struct {
 	WalletDir    string       `json:"wallet_dir"`    //钱包地址
 	DataDir      string       `json:"data_dir"`      //数据路径
-	ObjIdPrefix  string       `json:"oid_prefix"`    //物品id前缀
 	AddrPrefix   string       `json:"addr_prefix"`   //地址前缀
 	GenesisBlock string       `json:"genesis_block"` //第一个区块
-	HttpScheme   string       `json:"http_scheme"`   //http服务类型
 	LogFile      string       `json:"log_file"`      //日志文件路径
 	HttpPort     int          `json:"http_port"`     //http服务器端口
-	MinerPKey    string       `json:"miner_pkey"`    //矿工产出公钥
 	PowTime      uint         `json:"pow_time"`      //14 * 24 * 60 * 60=1209600
 	PowLimit     string       `json:"pow_limit"`     //最小难度设置
 	PowSpan      uint32       `json:"pow_span"`      //难度计算间隔 2016

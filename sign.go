@@ -20,11 +20,11 @@ type ISigner interface {
 
 //标准签名器
 type stdsigner struct {
-	bi  *BlockIndex //链
+	bi  *BlockIndex //链索引
 	tx  *TX         //当前交易
-	out *TxOut      //输入消耗的输出
-	in  *TxIn       //当前签名的输入
-	idx int         //输入索引
+	out *TxOut      //输入引用的输出
+	in  *TxIn       //当前签名验证的输入
+	idx int         //输入索引号
 }
 
 //新建标准签名

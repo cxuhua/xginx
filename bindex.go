@@ -430,6 +430,27 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	return nil
 }
 
+//获取对应的数据
+func (ekv ExtKeyValue) GetBytes(bi *BlockIndex) ([]byte, error) {
+	blk, err := bi.LoadBlock(ekv.BlkId)
+	if err != nil {
+		return nil, err
+	}
+	if ekv.TxIdx >= 0 && ekv.TxIdx.ToInt() < len(blk.Txs) {
+		return blk.Txs[ekv.TxIdx].Ext.Bytes, nil
+	}
+	return nil, errors.New("data not found")
+}
+
+func (bi *BlockIndex) GetExt(extid HASH160) (ExtKeyValue, error) {
+	ekv := ExtKeyValue{}
+	bb, err := bi.db.Index().Get(EXT_PREFIX, extid[:])
+	if err != nil {
+		return ekv, err
+	}
+	return ekv, ekv.From(bb)
+}
+
 func (bi *BlockIndex) LoadTBEle(id HASH256) (*TBEle, error) {
 	ele := &TBEle{idx: bi}
 	err := ele.LoadMeta(id)

@@ -307,7 +307,7 @@ func TestBlockSign(t *testing.T) {
 		panic(err)
 	}
 	//获取矿工的所有输出
-	ds, err := bi.ListCoinsWithID(TestMinePri.PublicKey().Hash())
+	ds, err := bi.ListCoins(TestMinePri.PublicKey().Address())
 	if err != nil {
 		panic(err)
 	}

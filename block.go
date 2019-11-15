@@ -577,10 +577,10 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex, blk *BlockInfo) bool {
 }
 
 func (v *TxOut) Check(bi *BlockIndex) error {
-	if !v.Script.IsLocked() {
-		return errors.New("unknow script type")
+	if v.Script.IsLocked() {
+		return nil
 	}
-	return nil
+	return errors.New("unknow script type")
 }
 
 func (v *TxOut) Encode(w IWriter) error {
@@ -679,6 +679,26 @@ type TX struct {
 	pres HashCacher //签名hash缓存
 }
 
+//扩展数据id
+//hash160(exthash+txid) -> blockid+txindx
+func (tx *TX) ExtID() (HASH160, bool) {
+	id := HASH160{}
+	if tx.Ext.Bytes.Len() == 0 {
+		return id, false
+	}
+	buf := &bytes.Buffer{}
+	err := tx.Ext.Hash.Encode(buf)
+	if err != nil {
+		return id, false
+	}
+	err = tx.ID().Encode(buf)
+	if err != nil {
+		return id, false
+	}
+	id = Hash160From(buf.Bytes())
+	return id, true
+}
+
 //重置缓存
 func (tx *TX) ResetAll() {
 	tx.idhc.Reset()
@@ -744,6 +764,19 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		key := tk.GetKey()
 		bt.Put(key, tk.GetValue())
 	}
+	//是否写入扩展数据
+	if extId, has := tx.ExtID(); has {
+		ev := ExtKeyValue{
+			BlkId:  blk.ID(),
+			TxIdx:  VarUInt(idx),
+			ExtLen: VarUInt(tx.Ext.Bytes.Len()),
+		}
+		eb, err := ev.GetValue()
+		if err != nil {
+			return err
+		}
+		bt.Put(EXT_PREFIX, extId[:], eb)
+	}
 	return nil
 }
 
@@ -806,16 +839,16 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 }
 
 //设置扩展数据
-func (tx *TX) SetExt(b []byte) {
-	if len(b) > MAX_EXT_SIZE {
+func (tx *TX) SetExt(bb []byte) {
+	if len(bb) > MAX_EXT_SIZE {
 		panic(errors.New("ext > max_ext_size"))
 	}
-	if len(b) == 0 {
+	if len(bb) == 0 {
 		return
 	}
 	tx.Ext = TxExt{
-		Bytes: b,
-		Hash:  Hash256From(b),
+		Bytes: bb,
+		Hash:  Hash256From(bb),
 	}
 }
 
