@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"sync"
 	"time"
+
+	"github.com/patrickmn/go-cache"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/filter"
@@ -124,34 +124,28 @@ func NewAESCipher(key []byte) (cipher.Block, error) {
 
 //钱包处理
 type IWallet interface {
-	//解密一段时间，时间到达后私钥失效
+	//解密一段时间，时间到达后账号失效
 	Decryption(addr string, pw string, time time.Duration) error
-	//加密钱包
+	//加密账号
 	Encryption(addr string, pw string) error
-	//根据钱包地址获取私钥
+	//根据地址获取账号
 	GetAccount(addr string) (*Account, error)
 	//关闭钱包
 	Close()
-	//新建地址
+	//新建账号
 	NewAccount(num uint8, less uint8, arb bool) (string, error)
-	//导入私钥 pw != ""添加密码
+	//导入账号 pw != ""添加密码
 	ImportAccount(pri string, pw string) error
-	//获取所有地址
+	//获取所有账号
 	ListAccount() []string
-	//移除地址
+	//删除账号
 	RemoveAccount(addr string) error
 }
 
 type LevelDBWallet struct {
-	done chan bool
-	//钱包地址
-	mu   sync.RWMutex
-	dir  string
-	dptr DBImp
-	//过期时间
-	times map[string]time.Time
-	//私钥缓存
-	cache map[string]*Account
+	dir   string
+	dptr  DBImp
+	cache *cache.Cache
 }
 
 //列出地址
@@ -171,9 +165,7 @@ func (db *LevelDBWallet) RemoveAccount(addr string) error {
 	if err != nil {
 		return err
 	}
-	db.mu.Lock()
-	delete(db.cache, addr)
-	db.mu.Unlock()
+	db.cache.Delete(addr)
 	return nil
 }
 
@@ -196,9 +188,7 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	db.mu.Lock()
-	db.cache[addr] = acc
-	db.mu.Unlock()
+	db.cache.Set(addr, acc, time.Hour*3)
 	return addr, nil
 }
 
@@ -220,19 +210,18 @@ func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
 		vbs := append([]byte{}, StdPKPrefix...)
 		vbs = append(vbs, []byte(dump)...)
 		return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
-	} else {
-		block, err := NewAESCipher([]byte(pw))
-		if err != nil {
-			return err
-		}
-		data, err := AesEncrypt(block, []byte(dump))
-		if err != nil {
-			return fmt.Errorf("password error %w", err)
-		}
-		vbs := append([]byte{}, EncPKPrefix...)
-		vbs = append(vbs, data...)
-		return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
 	}
+	block, err := NewAESCipher([]byte(pw))
+	if err != nil {
+		return err
+	}
+	data, err := AesEncrypt(block, []byte(dump))
+	if err != nil {
+		return fmt.Errorf("password error %w", err)
+	}
+	vbs := append([]byte{}, EncPKPrefix...)
+	vbs = append(vbs, data...)
+	return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
 }
 
 //解密一段时间，时间到达后私钥失效
@@ -257,10 +246,7 @@ func (db *LevelDBWallet) Decryption(addr string, pw string, st time.Duration) er
 	if err != nil {
 		return err
 	}
-	db.mu.Lock()
-	db.cache[addr] = acc
-	db.times[addr] = time.Now().Add(st)
-	db.mu.Unlock()
+	db.cache.Set(addr, acc, st)
 	return nil
 }
 
@@ -288,75 +274,34 @@ func (db *LevelDBWallet) Encryption(addr string, pw string) error {
 	if err != nil {
 		return err
 	}
-	db.mu.Lock()
-	delete(db.cache, addr)
-	delete(db.times, addr)
-	db.mu.Unlock()
+	db.cache.Delete(addr)
 	return nil
 }
 
 //根据钱包地址获取私钥
 func (db *LevelDBWallet) GetAccount(addr string) (*Account, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	//过期删除
-	if pt, has := db.times[addr]; has {
-		if time.Now().Sub(pt) > 0 {
-			delete(db.cache, addr)
-			delete(db.times, addr)
-		}
-	}
 	//从缓存获取
-	if pri, has := db.cache[addr]; has {
-		return pri, nil
+	if cpv, has := db.cache.Get(addr); has {
+		return cpv.(*Account), nil
 	}
 	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
 	if err != nil {
 		return nil, err
 	}
 	if vbs[0] != StdPKPrefix[0] {
-		return nil, errors.New("std address error,addr encryption")
+		return nil, errors.New("addr encryption,need Decryption")
 	}
 	acc, err := LoadAccount(string(vbs[1:]))
 	if err != nil {
 		return nil, err
 	}
-	db.cache[addr] = acc
+	db.cache.Set(addr, acc, time.Hour*3)
 	return acc, nil
-}
-
-func (db *LevelDBWallet) checkTimer() {
-	timer := time.NewTimer(time.Second * 5)
-	for {
-		select {
-		case <-timer.C:
-			//定时删除过期的私钥
-			db.mu.Lock()
-			dkeys := []string{}
-			for k, v := range db.times {
-				if time.Now().Sub(v) < 0 {
-					continue
-				}
-				dkeys = append(dkeys, k)
-			}
-			if len(dkeys) > 0 {
-				log.Println("delete expire keys", len(dkeys))
-			}
-			for _, k := range dkeys {
-				delete(db.cache, k)
-				delete(db.times, k)
-			}
-			db.mu.Unlock()
-			timer.Reset(time.Second * 5)
-		case <-db.done:
-			return
-		}
-	}
 }
 
 //关闭钱包
 func (db *LevelDBWallet) Close() {
-	db.done <- true
+	db.cache.Flush()
 	db.dptr.Close()
 }
 
@@ -369,10 +314,7 @@ func NewLevelDBWallet(dir string) (IWallet, error) {
 	if err != nil {
 		return nil, err
 	}
-	ss.cache = map[string]*Account{}
-	ss.times = map[string]time.Time{}
+	ss.cache = cache.New(time.Second*30, time.Minute*30)
 	ss.dptr = NewDB(sdb)
-	ss.done = make(chan bool, 1)
-	go ss.checkTimer()
 	return ss, nil
 }

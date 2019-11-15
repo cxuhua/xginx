@@ -430,7 +430,7 @@ func (ekv ExtKeyValue) GetBytes(bi *BlockIndex) ([]byte, error) {
 //转账交易
 //从acc账号转向addr地址
 //在区块中操作
-func (bi *BlockIndex) Transfre(blk *BlockInfo, acc *Account, addr string, av Amount, fee Amount) (*TX, error) {
+func (bi *BlockIndex) Transfer(acc *Account, addr string, av Amount, fee Amount) (*TX, error) {
 	addr, err := acc.GetAddress()
 	if err != nil {
 		return nil, err
@@ -463,11 +463,11 @@ func (bi *BlockIndex) Transfre(blk *BlockInfo, acc *Account, addr string, av Amo
 	//获取需要的输入
 	tx.Ins = []*TxIn{}
 	for _, cv := range ds {
-		if in, err := cv.GetTxIn(acc); err != nil {
+		in, err := cv.NewTxIn(acc)
+		if err != nil {
 			return nil, err
-		} else {
-			tx.Ins = append(tx.Ins, in)
 		}
+		tx.Ins = append(tx.Ins, in)
 		sum += cv.Value
 		if sum >= av+fee {
 			break
@@ -476,15 +476,14 @@ func (bi *BlockIndex) Transfre(blk *BlockInfo, acc *Account, addr string, av Amo
 	//找零钱
 	if rv := sum - fee - av; rv > 0 {
 		mine := &TxOut{}
-		if script, err := acc.NewLockedScript(); err != nil {
+		script, err := acc.NewLockedScript()
+		if err != nil {
 			return nil, err
-		} else {
-			mine.Script = script
 		}
+		mine.Script = script
 		mine.Value = rv
 		tx.Outs = append(tx.Outs, mine)
 	}
-	tx.ID()
 	err = tx.Sign(bi)
 	if err != nil {
 		return nil, fmt.Errorf("sign tx error %w", err)

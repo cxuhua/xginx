@@ -149,84 +149,6 @@ func TestBlockChain(t *testing.T) {
 	bi.db.Sync()
 }
 
-func TestMulTxInCostOneTxOut(t *testing.T) {
-	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err != nil {
-		panic(err)
-	}
-	//获取矿工的所有输出
-	pkh, err := TestAccount.GetPkh()
-	if err != nil {
-		panic(err)
-	}
-	ds, err := bi.ListCoinsWithID(pkh)
-	if err != nil {
-		panic(err)
-	}
-	b, err := bi.NewBlock(1)
-	if err != nil {
-		panic(err)
-	}
-	//组装交易
-	tx1 := &TX{Ver: 1}
-	tx1.SetExt([]byte{1, 2, 3, 4, 5, 6})
-	ins := []*TxIn{}
-	txout := &TxOut{}
-	//转到miner
-	if script, err := TestAccount.NewLockedScript(); err != nil {
-		panic(err)
-	} else {
-		txout.Script = script
-	}
-	for _, v := range ds {
-		in, err := v.GetTxIn(TestAccount)
-		if err != nil {
-			panic(err)
-		}
-		ins = append(ins, in)
-		txout.Value += v.Value
-	}
-	txout.Value -= 1 * COIN //给点交易费
-	outs := []*TxOut{txout}
-	tx1.Ins = ins
-	tx1.Outs = outs
-
-	id1, err := tx1.ID()
-	if err != nil {
-		panic(err)
-	}
-	//为每个输入添加签名
-	err = tx1.Sign(bi)
-	if err != nil {
-		panic(err)
-	}
-	tx1.ResetAll()
-	id2, err := tx1.ID()
-	if err != nil {
-		panic(err)
-	}
-	if !id1.Equal(id2) {
-		panic(errors.New("id error"))
-	}
-	err = b.AddTx(bi, tx1)
-	if err != nil {
-		panic(err)
-	}
-	if err := b.Finish(bi); err != nil {
-		panic(err)
-	}
-	if err := b.CalcPowHash(1000000, bi); err != nil {
-		panic(err)
-	}
-	err = bi.LinkTo(b)
-	if err != nil {
-		panic(err)
-	}
-}
-
 func TestTransfire(t *testing.T) {
 	addr, err := DstAccount.GetAddress()
 	if err != nil {
@@ -243,8 +165,7 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	tx, err := bi.Transfre(blk, TestAccount, addr, 3*COIN, 1*COIN)
+	tx, err := bi.Transfer(TestAccount, addr, 3*COIN, 1*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -267,83 +188,6 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	log.Println(ds)
-}
-
-func TestListAddressCoins(t *testing.T) {
-	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err != nil {
-		panic(err)
-	}
-	//获取矿工的所有输出
-	ds, err := bi.ListCoins("st1q363x0zvheem0a5f0r0z9qr9puj7l900jc8glh0")
-	if err != nil {
-		panic(err)
-	}
-	log.Println(ds)
-}
-
-func TestBlockSign(t *testing.T) {
-	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err != nil {
-		panic(err)
-	}
-	addr, err := TestAccount.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	//获取矿工的所有输出
-	ds, err := bi.ListCoins(addr)
-	if err != nil {
-		panic(err)
-	}
-
-	b, err := bi.NewBlock(1)
-	//组装交易
-	tx := &TX{Ver: 1}
-	ins := []*TxIn{}
-	txout := &TxOut{}
-	//转到miner
-	script, err := TestAccount.NewLockedScript()
-	if err != nil {
-		panic(err)
-	}
-	txout.Script = script
-	for _, v := range ds {
-		in, err := v.GetTxIn(TestAccount)
-		if err != nil {
-			panic(err)
-		}
-		ins = append(ins, in)
-		txout.Value += v.Value
-	}
-	outs := []*TxOut{}
-	tx.Ins = ins
-	tx.Outs = outs
-	//为每个输入添加签名
-	err = tx.Sign(bi)
-	if err != nil {
-		panic(err)
-	}
-	err = b.AddTx(bi, tx)
-	if err != nil {
-		panic(err)
-	}
-	if err := b.Finish(bi); err != nil {
-		panic(err)
-	}
-	if err := b.CalcPowHash(1000000, bi); err != nil {
-		panic(err)
-	}
-	err = bi.LinkTo(b)
-	if err != nil {
-		panic(err)
-	}
 }
 
 func TestUnlinkBlock(t *testing.T) {

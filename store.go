@@ -183,7 +183,7 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-func (tk CoinKeyValue) GetTxIn(acc *Account) (*TxIn, error) {
+func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
 	in := &TxIn{}
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
