@@ -36,15 +36,19 @@ func LoadAccount(s string) (*Account, error) {
 	return a, err
 }
 
+func (ap Account) IsEnableArb() bool {
+	return ap.arb != InvalidArb
+}
+
 //pi public index
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	sigb := SigBytes{}
-	if pi < int(ap.arb) {
+	if ap.IsEnableArb() && pi < int(ap.arb) {
 		return sigb, errors.New("skip 1")
 	}
 	if pi >= len(ap.pris) {
-		return sigb, errors.New("skip 1")
+		return sigb, errors.New("skip 2")
 	}
 	pri := ap.pris[pi]
 	sig, err := pri.Sign(hv)
