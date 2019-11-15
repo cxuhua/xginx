@@ -22,9 +22,9 @@ type AccountJson struct {
 
 //账号地址
 type Account struct {
-	num  uint8
-	less uint8
-	pubs []*PublicKey
+	num  uint8         //总的密钥数量
+	less uint8         //至少需要签名的数量
+	pubs []*PublicKey  //所有的密钥公钥
 	pris []*PrivateKey //私钥可能在多个地方，现在测试都统一先放这里
 }
 
