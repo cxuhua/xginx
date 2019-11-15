@@ -83,6 +83,6 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 //获取签名私钥
-func (lis *listener) GetAccount(bi *BlockIndex, blk *BlockInfo, out *TxOut) (*Account, error) {
+func (lis *listener) GetAccount(bi *BlockIndex, out *TxOut) (*Account, error) {
 	return MinerAccount, nil
 }
