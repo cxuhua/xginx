@@ -36,6 +36,17 @@ func LoadAccount(s string) (*Account, error) {
 	return a, err
 }
 
+//根据公钥索引获取私钥
+func (ap Account) GetPrivateKey(pi int) *PrivateKey {
+	pkh := ap.pubs[pi].Hash()
+	for _, v := range ap.pris {
+		if v.PublicKey().Hash().Equal(pkh) {
+			return v
+		}
+	}
+	return nil
+}
+
 func (ap Account) IsEnableArb() bool {
 	return ap.arb != InvalidArb
 }
@@ -44,13 +55,10 @@ func (ap Account) IsEnableArb() bool {
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	sigb := SigBytes{}
-	if ap.IsEnableArb() && pi < int(ap.arb) {
-		return sigb, errors.New("skip 1")
+	pri := ap.GetPrivateKey(pi)
+	if pri == nil {
+		return sigb, errors.New("private key miss")
 	}
-	if pi >= len(ap.pris) {
-		return sigb, errors.New("skip 2")
-	}
-	pri := ap.pris[pi]
 	sig, err := pri.Sign(hv)
 	if err != nil {
 		return sigb, err
