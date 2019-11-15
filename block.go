@@ -551,63 +551,6 @@ func (in *TxIn) IsCoinBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsCoinBase()
 }
 
-const (
-	COIN      = Amount(100000000)
-	MAX_MONEY = 21000000 * COIN
-)
-
-//结算当前奖励
-func GetCoinbaseReward(h uint32) Amount {
-	halvings := int(h) / conf.Halving
-	if halvings >= 64 {
-		return 0
-	}
-	n := 50 * COIN
-	n >>= halvings
-	return n
-}
-
-type Amount int64
-
-func (a *Amount) Decode(r IReader) error {
-	v := int64(0)
-	err := binary.Read(r, Endian, &v)
-	if err != nil {
-		return err
-	}
-	*a = Amount(v)
-	return nil
-}
-
-func AmountFrom(b []byte) Amount {
-	a := Amount(0)
-	return a.From(b)
-}
-
-func (a Amount) Bytes() []byte {
-	lb := make([]byte, binary.MaxVarintLen64)
-	l := binary.PutVarint(lb, int64(a))
-	return lb[:l]
-}
-
-func (v *Amount) From(b []byte) Amount {
-	vv, _ := binary.Varint(b)
-	*v = Amount(vv)
-	return *v
-}
-
-func (a Amount) ToVarUInt() VarUInt {
-	return VarUInt(a)
-}
-
-func (a Amount) Encode(w IWriter) error {
-	return binary.Write(w, Endian, int64(a))
-}
-
-func (a Amount) IsRange() bool {
-	return a >= 0 && a < MAX_MONEY
-}
-
 //交易输出
 type TxOut struct {
 	Value  Amount //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
@@ -660,13 +603,77 @@ func (v *TxOut) Decode(r IReader) error {
 	return nil
 }
 
+type TxExt struct {
+	Bytes VarBytes //扩展数据，不参与签名和id计算
+	Hash  HASH256  //扩展数据hash，有数据时参与id和签名计算
+}
+
+func (v *TxExt) Check() error {
+	if v.Bytes.Len() == 0 {
+		return nil
+	}
+	if v.Bytes.Len() > MAX_EXT_SIZE {
+		return errors.New("ext data too big")
+	}
+	if v.Hash.Equal(Hash256From(v.Bytes)) {
+		return nil
+	}
+	return errors.New("data hash error")
+}
+
+//有数据用hash参与签名
+func (v *TxExt) ForVerify(w IWriter) error {
+	if v.Bytes.Len() == 0 {
+		return nil
+	}
+	if err := v.Hash.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *TxExt) ForID(w IWriter) error {
+	if v.Bytes.Len() == 0 {
+		return nil
+	}
+	if err := v.Hash.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *TxExt) Encode(w IWriter) error {
+	if err := v.Bytes.Encode(w); err != nil {
+		return err
+	}
+	if v.Bytes.Len() == 0 {
+		return nil
+	}
+	if err := v.Hash.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *TxExt) Decode(r IReader) error {
+	if err := v.Bytes.Decode(r); err != nil {
+		return err
+	}
+	if v.Bytes.Len() == 0 {
+		return nil
+	}
+	if err := v.Hash.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
 //交易
 type TX struct {
 	Ver  VarUInt    //版本
 	Ins  []*TxIn    //输入
 	Outs []*TxOut   //输出
-	ExtH HASH256    //扩展数据hash，参与id和签名计算
-	ExtB VarBytes   //扩展数据，不参与签名和id计算
+	Ext  TxExt      //扩展数据
 	idhc HashCacher //hash缓存
 	outs HashCacher //签名hash缓存
 	pres HashCacher //签名hash缓存
@@ -800,8 +807,16 @@ func (tx *TX) Sign(bi *BlockIndex, blk *BlockInfo, idxs ...int) error {
 
 //设置扩展数据
 func (tx *TX) SetExt(b []byte) {
-	tx.ExtH = Hash256From(b)
-	tx.ExtB = b
+	if len(b) > MAX_EXT_SIZE {
+		panic(errors.New("ext > max_ext_size"))
+	}
+	if len(b) == 0 {
+		return
+	}
+	tx.Ext = TxExt{
+		Bytes: b,
+		Hash:  Hash256From(b),
+	}
 }
 
 //交易id计算
@@ -829,7 +844,7 @@ func (tx *TX) ID() HASH256 {
 			panic(err)
 		}
 	}
-	if err := tx.ExtH.Encode(buf); err != nil {
+	if err := tx.Ext.ForID(buf); err != nil {
 		panic(err)
 	}
 	return tx.idhc.Hash(buf.Bytes())
@@ -871,11 +886,8 @@ func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 
 //检测除coinbase交易外的交易金额
 func (v *TX) Check(bi *BlockIndex, blk *BlockInfo, idx int) error {
-	if v.ExtB.Len() > MAX_EXT_SIZE {
-		return errors.New("ext data too big")
-	}
-	if v.ExtB.Len() > 0 && !v.ExtH.Equal(Hash256From(v.ExtB)) {
-		return errors.New("ext data hash error")
+	if err := v.Ext.Check(); err != nil {
+		return err
 	}
 	if len(v.Ins) == 0 {
 		return errors.New("tx ins too slow")
@@ -946,10 +958,7 @@ func (v *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
-	if err := v.ExtH.Encode(w); err != nil {
-		return err
-	}
-	if err := v.ExtB.Encode(w); err != nil {
+	if err := v.Ext.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -985,10 +994,7 @@ func (v *TX) Decode(r IReader) error {
 		}
 		v.Outs[i] = out
 	}
-	if err := v.ExtH.Decode(r); err != nil {
-		return err
-	}
-	if err := v.ExtB.Decode(r); err != nil {
+	if err := v.Ext.Decode(r); err != nil {
 		return err
 	}
 	return nil

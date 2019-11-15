@@ -125,7 +125,7 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.tx.ExtH.Encode(buf); err != nil {
+	if err := sr.tx.Ext.ForVerify(buf); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
