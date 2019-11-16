@@ -155,8 +155,7 @@ func (v *MsgPong) Decode(r IReader) error {
 }
 
 const (
-	SERVICE_SIG_TAG  = 1 << 0 //标签签名服务
-	SERVICE_SIG_DATA = 1 << 1 //数据存储
+	SERVICE_NODE = 1 << 0
 )
 
 //版本消息包

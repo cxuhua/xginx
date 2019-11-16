@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"bytes"
 	"container/list"
 	"errors"
 	"sync"
@@ -32,6 +33,57 @@ func (p *TxPool) Del(id HASH256) *TX {
 		return tx
 	}
 	return nil
+}
+
+//移除多个交易
+func (p *TxPool) DelTxs(txs []*TX) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	//检测错误
+	for _, tx := range txs {
+		_, err := tx.ID()
+		if err != nil {
+			return err
+		}
+	}
+	//开始移除
+	for _, tx := range txs {
+		id, err := tx.ID()
+		if err != nil {
+			continue
+		}
+		ele, has := p.tmap[id]
+		if !has {
+			continue
+		}
+		p.tlis.Remove(ele)
+		delete(p.tmap, id)
+	}
+	return nil
+}
+
+//取出交易，大小不能超过限制
+func (p *TxPool) GetTxs() ([]*TX, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	txs := []*TX{}
+	size := 0
+	buf := &bytes.Buffer{}
+	//获取用来打包区块的交易
+	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
+		buf.Reset()
+		tx := cur.Value.(*TX)
+		err := tx.Encode(buf)
+		if err != nil {
+			return nil, err
+		}
+		size += buf.Len()
+		if size > MAX_BLOCK_SIZE {
+			break
+		}
+		txs = append(txs, tx)
+	}
+	return txs, nil
 }
 
 //一笔钱是否已经在池中某个交易消费

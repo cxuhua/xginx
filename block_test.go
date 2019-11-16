@@ -76,6 +76,10 @@ func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	return nil
 }
 
+func (lis *tlis) GetWallet() IWallet {
+	return nil
+}
+
 //完成区块
 func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {

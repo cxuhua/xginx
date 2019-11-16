@@ -391,7 +391,14 @@ func LoadPublicKey(s string) (*PublicKey, error) {
 	return new(PublicKey).Load(s)
 }
 
-func EncodeAddress(pkh HASH160) (string, error) {
+//账号地址
+type Address string
+
+func (a Address) GetPkh() (HASH160, error) {
+	return DecodeAddress(a)
+}
+
+func EncodeAddress(pkh HASH160) (Address, error) {
 	ver := byte(0)
 	b := []byte{ver, byte(len(pkh))}
 	b = append(b, pkh[:]...)
@@ -399,12 +406,12 @@ func EncodeAddress(pkh HASH160) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return addr, nil
+	return Address(addr), nil
 }
 
-func DecodeAddress(addr string) (HASH160, error) {
+func DecodeAddress(addr Address) (HASH160, error) {
 	hv := HASH160{}
-	hrp, b, err := SegWitAddressDecode(addr)
+	hrp, b, err := SegWitAddressDecode(string(addr))
 	if hrp != conf.AddrPrefix {
 		return hv, errors.New("address prefix error")
 	}

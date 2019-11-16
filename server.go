@@ -191,7 +191,7 @@ func NewNodeID(c *Config) HASH160 {
 
 func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s := &TcpServer{}
-	s.addr = c.GetListenAddr().ToTcpAddr()
+	s.addr = c.GetTcpListenAddr().ToTcpAddr()
 	lis, err := net.ListenTCP(s.addr.Network(), s.addr)
 	if err != nil {
 		return nil, err
@@ -200,6 +200,6 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[HASH160]*Client{}
 	s.addrs = NewNetAddrMap()
-	s.service = SERVICE_SIG_DATA | SERVICE_SIG_TAG
+	s.service = SERVICE_NODE
 	return s, nil
 }

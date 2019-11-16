@@ -30,6 +30,10 @@ func (lis *listener) OnClose(bi *BlockIndex) {
 	lis.wallet.Close()
 }
 
+func (lis *listener) GetWallet() IWallet {
+	return lis.wallet
+}
+
 func (lis *listener) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 
 }

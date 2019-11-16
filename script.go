@@ -66,7 +66,7 @@ func (s Script) IsLocked() bool {
 }
 
 //从锁定脚本获取输出地址
-func (s Script) GetAddress() (string, error) {
+func (s Script) GetAddress() (Address, error) {
 	if pkh, err := s.GetPkh(); err != nil {
 		return "", err
 	} else if addr, err := EncodeAddress(pkh); err != nil {

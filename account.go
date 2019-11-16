@@ -165,7 +165,7 @@ func (ap Account) GetPkh() (HASH160, error) {
 }
 
 //获取账号地址
-func (ap Account) GetAddress() (string, error) {
+func (ap Account) GetAddress() (Address, error) {
 	if pkh, err := ap.GetPkh(); err != nil {
 		return "", err
 	} else if addr, err := EncodeAddress(pkh); err != nil {

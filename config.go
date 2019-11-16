@@ -33,6 +33,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	Seeds        []string     `json:"seeds"`         //dns seed服务器
 	WalletDir    string       `json:"wallet_dir"`    //钱包地址
 	DataDir      string       `json:"data_dir"`      //数据路径
 	AddrPrefix   string       `json:"addr_prefix"`   //地址前缀
@@ -49,6 +50,8 @@ type Config struct {
 	TcplIp       string       `json:"tcp_lip"`       //服务ip
 	TcprIp       string       `json:"tcp_rip"`       //节点远程连接ip
 	Debug        bool         `json:"debug"`         //是否在测试模式
+	RpcPort      int          `json:"rpc_port"`      //rpc服务端口
+	RpclIp       string       `json:"rpc_lip"`       //rpc服务器地址
 	mu           sync.RWMutex `json:"-"`             //
 	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
 	minerpk      *PublicKey   `json:"-"`             //矿工公钥
@@ -61,7 +64,14 @@ func (c *Config) GetMinerPubKey() *PublicKey {
 	return c.minerpk
 }
 
-func (c *Config) GetListenAddr() NetAddr {
+func (c *Config) GetRpcListenAddr() NetAddr {
+	return NetAddr{
+		ip:   net.ParseIP(c.RpclIp),
+		port: uint16(c.RpcPort),
+	}
+}
+
+func (c *Config) GetTcpListenAddr() NetAddr {
 	return NetAddr{
 		ip:   net.ParseIP(c.TcplIp),
 		port: uint16(c.TcpPort),

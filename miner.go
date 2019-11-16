@@ -19,6 +19,10 @@ type IMiner interface {
 	Wait()
 	//创建新区块
 	NewBlock(ver uint32)
+	//获取订阅发布接口
+	GetPubSub() *PubSub
+	//设置矿共账号
+	SetMiner(acc *Account)
 }
 
 var (
@@ -26,21 +30,41 @@ var (
 )
 
 type minerEngine struct {
-	wg     sync.WaitGroup
-	ctx    context.Context
-	cancel context.CancelFunc
-	mbc    chan uint32
-	gening ONE
+	wg     sync.WaitGroup     //
+	ctx    context.Context    //
+	cancel context.CancelFunc //
+	acc    *Account
+	mbc    chan uint32 //
+	gening ONE         //
+	pubsub *PubSub
+	mu     sync.RWMutex
 }
 
 func newMinerEngine() IMiner {
 	return &minerEngine{
-		mbc: make(chan uint32, 1),
+		pubsub: NewPubSub(5),
+		mbc:    make(chan uint32, 1),
 	}
+}
+
+func (m *minerEngine) GetPubSub() *PubSub {
+	return m.pubsub
+}
+
+func (m *minerEngine) SetMiner(acc *Account) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.acc = acc
 }
 
 //创建新块任务
 func (m *minerEngine) NewBlock(ver uint32) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.acc == nil {
+		log.Println("miner account not set,new block error")
+		return
+	}
 	m.mbc <- ver
 }
 
@@ -109,11 +133,14 @@ func (m *minerEngine) dispatch() {
 	log.Println("miner dispatch worker start")
 	m.wg.Add(1)
 	defer m.wg.Done()
+	defer func() {
+		m.pubsub.Shutdown()
+	}()
 	wtimer := time.NewTimer(time.Second * 60)
 	for {
 		select {
 		case <-wtimer.C:
-			m.NewBlock(1)
+			//m.NewBlock(1)
 			wtimer.Reset(time.Second * 60)
 		case <-m.ctx.Done():
 			return

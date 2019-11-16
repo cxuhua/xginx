@@ -36,7 +36,7 @@ func TestMsgExt(t *testing.T) {
 func TestMsgVersion(t *testing.T) {
 	msg := &MsgVersion{}
 	msg.Ver = conf.Ver
-	msg.Service = SERVICE_SIG_TAG | SERVICE_SIG_DATA
+	msg.Service = SERVICE_NODE
 	msg.Addr = conf.GetNetAddr()
 	buf := &bytes.Buffer{}
 	err := msg.Encode(buf)

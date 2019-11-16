@@ -19,7 +19,7 @@ type ISigner interface {
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取输出地址
-	GetOutAddress() (string, error)
+	GetOutAddress() (Address, error)
 	//使用私钥签名指定msg数据，返回签名数据
 	SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error)
 }
@@ -173,7 +173,7 @@ func (sr *stdsigner) GetSigHash() ([]byte, error) {
 }
 
 //获取输出地址
-func (sr *stdsigner) GetOutAddress() (string, error) {
+func (sr *stdsigner) GetOutAddress() (Address, error) {
 	return sr.out.Script.GetAddress()
 }
 

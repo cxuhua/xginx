@@ -196,6 +196,26 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
+//添加多个交易
+//有重复消费输出将会失败
+func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
+	otxs := blk.Txs
+	for _, tx := range txs {
+		if err := tx.Check(bi, true); err != nil {
+			return err
+		}
+		blk.Txs = append(blk.Txs, tx)
+	}
+	//不允许重复消费同一个输出
+	if err := blk.CheckMulCostTxOut(bi); err != nil {
+		blk.Txs = otxs
+		return err
+	}
+	return nil
+}
+
+//添加单个交易
+//有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	otxs := blk.Txs
 	//检测交易是否可进行
@@ -211,6 +231,7 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	return nil
 }
 
+//获取区块id
 func (blk *BlockInfo) ID() (HASH256, error) {
 	return blk.Header.ID()
 }

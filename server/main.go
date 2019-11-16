@@ -24,6 +24,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	//启动 rpc服务
+	if Rpc != nil {
+		Rpc.Start(ctx)
+	}
 	//是否启动tcp节点服务器
 	if Server != nil {
 		Server.Start(ctx)
@@ -41,6 +45,10 @@ func main() {
 	sig := <-csig
 	cancel()
 	log.Println("recv sig :", sig, ",system exited")
+	if Rpc != nil {
+		Rpc.Stop()
+		Rpc.Wait()
+	}
 	if Server != nil {
 		Server.Stop()
 		Server.Wait()

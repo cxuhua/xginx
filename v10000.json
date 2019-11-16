@@ -3,6 +3,8 @@
   "wallet_dir": "/Users/xuhua/wallet",
   "flags": "bcxh",
   "version":10000,
+  "rpc_port": 9330,
+  "rpc_lip": "127.0.0.1",
   "tcp_port": 9333,
   "tcp_lip": "0.0.0.0",
   "tcp_rip": "192.168.31.198",
@@ -14,5 +16,6 @@
   "addr_prefix": "st",
   "oid_prefix": "obj",
   "debug": true,
+  "seeds":["seed.xginx.com"],
   "genesis_block": "00000000449f2fead61987580c0b72bb07b779b7fb3111d34bebb30ea486b549"
 }

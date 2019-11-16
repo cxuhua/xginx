@@ -125,21 +125,21 @@ func NewAESCipher(key []byte) (cipher.Block, error) {
 //钱包处理
 type IWallet interface {
 	//解密一段时间，时间到达后账号失效
-	Decryption(addr string, pw string, time time.Duration) error
+	Decryption(addr Address, pw string, time time.Duration) error
 	//加密账号
-	Encryption(addr string, pw string) error
+	Encryption(addr Address, pw string) error
 	//根据地址获取账号
-	GetAccount(addr string) (*Account, error)
+	GetAccount(addr Address) (*Account, error)
 	//关闭钱包
 	Close()
 	//新建账号
-	NewAccount(num uint8, less uint8, arb bool) (string, error)
+	NewAccount(num uint8, less uint8, arb bool) (Address, error)
 	//导入账号 pw != ""添加密码
 	ImportAccount(pri string, pw string) error
 	//获取所有账号
-	ListAccount() []string
+	ListAccount() []Address
 	//删除账号
-	RemoveAccount(addr string) error
+	RemoveAccount(addr Address) error
 }
 
 type LevelDBWallet struct {
@@ -149,27 +149,27 @@ type LevelDBWallet struct {
 }
 
 //列出地址
-func (db *LevelDBWallet) ListAccount() []string {
-	ds := []string{}
+func (db *LevelDBWallet) ListAccount() []Address {
+	ds := []Address{}
 	iter := db.dptr.Iterator(NewPrefix(AddrPrefix))
 	defer iter.Close()
 	for iter.Next() {
 		key := iter.Key()
-		ds = append(ds, string(key[1:]))
+		ds = append(ds, Address(key[1:]))
 	}
 	return ds
 }
 
-func (db *LevelDBWallet) RemoveAccount(addr string) error {
+func (db *LevelDBWallet) RemoveAccount(addr Address) error {
 	err := db.dptr.Del(AddrPrefix, []byte(addr))
 	if err != nil {
 		return err
 	}
-	db.cache.Delete(addr)
+	db.cache.Delete(string(addr))
 	return nil
 }
 
-func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (string, error) {
+func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (Address, error) {
 	acc, err := NewAccount(num, less, arb)
 	if err != nil {
 		return "", err
@@ -188,7 +188,7 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (string, er
 	if err != nil {
 		return "", err
 	}
-	db.cache.Set(addr, acc, time.Hour*3)
+	db.cache.Set(string(addr), acc, time.Hour*3)
 	return addr, nil
 }
 
@@ -225,7 +225,7 @@ func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
 }
 
 //解密一段时间，时间到达后私钥失效
-func (db *LevelDBWallet) Decryption(addr string, pw string, st time.Duration) error {
+func (db *LevelDBWallet) Decryption(addr Address, pw string, st time.Duration) error {
 	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
 	if err != nil {
 		return err
@@ -246,12 +246,12 @@ func (db *LevelDBWallet) Decryption(addr string, pw string, st time.Duration) er
 	if err != nil {
 		return err
 	}
-	db.cache.Set(addr, acc, st)
+	db.cache.Set(string(addr), acc, st)
 	return nil
 }
 
 //加密地址私钥
-func (db *LevelDBWallet) Encryption(addr string, pw string) error {
+func (db *LevelDBWallet) Encryption(addr Address, pw string) error {
 	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
 	if err != nil {
 		return err
@@ -274,14 +274,14 @@ func (db *LevelDBWallet) Encryption(addr string, pw string) error {
 	if err != nil {
 		return err
 	}
-	db.cache.Delete(addr)
+	db.cache.Delete(string(addr))
 	return nil
 }
 
 //根据钱包地址获取私钥
-func (db *LevelDBWallet) GetAccount(addr string) (*Account, error) {
+func (db *LevelDBWallet) GetAccount(addr Address) (*Account, error) {
 	//从缓存获取
-	if cpv, has := db.cache.Get(addr); has {
+	if cpv, has := db.cache.Get(string(addr)); has {
 		return cpv.(*Account), nil
 	}
 	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
@@ -295,7 +295,7 @@ func (db *LevelDBWallet) GetAccount(addr string) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.cache.Set(addr, acc, time.Hour*3)
+	db.cache.Set(string(addr), acc, time.Hour*3)
 	return acc, nil
 }
 

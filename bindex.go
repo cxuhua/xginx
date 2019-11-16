@@ -80,6 +80,8 @@ type IListener interface {
 	OnClose(bi *BlockIndex)
 	//当一个块连接到链之前
 	OnLinkBlock(bi *BlockIndex, blk *BlockInfo)
+	//获取钱包
+	GetWallet() IWallet
 }
 
 //区块发布交易参数
@@ -464,21 +466,21 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 
 //转账交易
 //从acc账号转向addr地址 金额:amt，交易费:fee
-func (bi *BlockIndex) Transfer(src string, addr string, amt Amount, fee Amount) (*TX, error) {
+func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount) (*TX, error) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	if !fee.IsRange() || amt == 0 || !amt.IsRange() {
 		return nil, errors.New("amount zero or fee error")
 	}
-	spkh, err := DecodeAddress(src)
+	spkh, err := src.GetPkh()
+	if err != nil {
+		return nil, err
+	}
+	dpkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
 	acc, err := bi.lptr.GetAccount(bi, spkh)
-	if err != nil {
-		return nil, err
-	}
-	dpkh, err := DecodeAddress(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -777,12 +779,12 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 	return bv
 }
 
-func (bi *BlockIndex) ListCoins(addr string) (Coins, error) {
-	id, err := DecodeAddress(addr)
+func (bi *BlockIndex) ListCoins(addr Address) (Coins, error) {
+	pkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	return bi.ListCoinsWithID(id)
+	return bi.ListCoinsWithID(pkh)
 }
 
 //获取某个id的所有积分
@@ -871,6 +873,16 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 		bi.lptr.OnLinkBlock(bi, blk)
 	} else {
 		err = bi.UnlinkBack()
+	}
+	if err != nil {
+		return err
+	}
+	//删除交易池中存在这个区块中的交易
+	for _, tx := range blk.Txs {
+		id, err := tx.ID()
+		if err == nil {
+			bi.tp.Del(id)
+		}
 	}
 	return err
 }
