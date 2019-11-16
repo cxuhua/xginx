@@ -16,28 +16,38 @@ type ISigner interface {
 	Verify() error
 	//签名生成解锁脚本
 	Sign(acc *Account) error
-	//获取签名数据
-	GetSigBytes() ([]byte, error)
+	//获取签名hash
+	GetSigHash() ([]byte, error)
+	//获取输出地址
+	GetOutAddress() (string, error)
+	//使用私钥签名指定msg数据，返回签名数据
+	SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error)
 }
 
 //标准签名器
 type stdsigner struct {
-	bi  *BlockIndex //链索引
-	tx  *TX         //当前交易
-	out *TxOut      //输入引用的输出
-	in  *TxIn       //当前签名验证的输入
-	idx int         //输入索引号
+	tx  *TX    //当前交易
+	out *TxOut //输入引用的输出
+	in  *TxIn  //当前签名验证的输入
 }
 
 //新建标准签名
-func newStdSigner(bi *BlockIndex, tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
+func NewSigner(tx *TX, out *TxOut, in *TxIn) ISigner {
 	return &stdsigner{
-		bi:  bi,
 		tx:  tx,
 		out: out,
 		in:  in,
-		idx: idx,
 	}
+}
+
+func (sr *stdsigner) SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error) {
+	sb := SigBytes{}
+	sv, err := pri.Sign(msg)
+	if err != nil {
+		return sb, err
+	}
+	sb.Set(sv)
+	return sb, nil
 }
 
 //签名校验
@@ -66,11 +76,10 @@ func (sr *stdsigner) Verify() error {
 	if num < less {
 		return errors.New("pub num error,num must >= less")
 	}
-	sigb, err := sr.GetSigBytes()
+	sigh, err := sr.GetSigHash()
 	if err != nil {
 		return err
 	}
-	sigh := Hash256(sigb)
 	for i, k := 0, 0; i < len(wits.Sig) && k < len(wits.Pks); {
 		sig, err := NewSigValue(wits.Sig[i][:])
 		if err != nil {
@@ -134,7 +143,7 @@ func (sp *stdsigner) PrevoutHash() HASH256 {
 
 //获取输入签名数据
 //out 当前输入对应的上一个输出,idx 当前输入的索引位置
-func (sr *stdsigner) GetSigBytes() ([]byte, error) {
+func (sr *stdsigner) GetSigHash() ([]byte, error) {
 	buf := &bytes.Buffer{}
 	if err := sr.tx.Ver.Encode(buf); err != nil {
 		return nil, err
@@ -160,10 +169,17 @@ func (sr *stdsigner) GetSigBytes() ([]byte, error) {
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.tx.Ext.ForVerify(buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return Hash256(buf.Bytes()), nil
+}
+
+//获取输出地址
+func (sr *stdsigner) GetOutAddress() (string, error) {
+	return sr.out.Script.GetAddress()
+}
+
+//获取输出hash
+func (sr *stdsigner) GetOutHash() (HASH160, error) {
+	return sr.out.Script.GetPkh()
 }
 
 //签名生成解锁脚本
@@ -174,16 +190,15 @@ func (sr *stdsigner) Sign(acc *Account) error {
 	wits := acc.NewWitnessScript()
 	if hash, err := wits.Hash(); err != nil {
 		return err
-	} else if pkh, err := sr.out.Script.GetPkh(); err != nil {
+	} else if pkh, err := sr.GetOutHash(); err != nil {
 		return err
 	} else if !hash.Equal(pkh) {
 		return errors.New("hash equal errort")
 	}
-	sigb, err := sr.GetSigBytes()
+	sigh, err := sr.GetSigHash()
 	if err != nil {
 		return err
 	}
-	sigh := Hash256(sigb)
 	//向acc请求签名
 	for i := 0; i < len(acc.pubs); i++ {
 		sigs, err := acc.Sign(i, sigh)

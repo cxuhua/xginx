@@ -97,7 +97,7 @@ func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 //获取签名私钥
-func (lis *tlis) GetAccount(bi *BlockIndex, out *TxOut) (*Account, error) {
+func (lis *tlis) GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error) {
 	//addr, err := out.Script.GetAddress()
 	//if err != nil {
 	//	return nil, err
@@ -133,7 +133,7 @@ func TestBlockChain(t *testing.T) {
 		panic(err)
 	}
 
-	testnum := uint32(5)
+	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		err := bi.LinkTo(cb)
@@ -154,6 +154,10 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	src, err := TestAccount.GetAddress()
+	if err != nil {
+		panic(err)
+	}
 	bi := NewBlockIndex(&tlis{})
 	err = bi.LoadAll(func(pv uint) {
 		log.Printf("load block chian %d%%\n", pv)
@@ -165,10 +169,14 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	tx, err := bi.Transfer(TestAccount, addr, 3*COIN, 1*COIN)
+	tx, err := bi.Transfer(src, addr, 3*COIN, 1*COIN)
 	if err != nil {
 		panic(err)
 	}
+	//tx, err = bi.Transfer(TestAccount, addr, 3*COIN, 1*COIN)
+	//if err != nil {
+	//	panic(err)
+	//}
 	err = blk.AddTx(bi, tx)
 	if err != nil {
 		panic(err)

@@ -26,6 +26,11 @@ type TBEle struct {
 	idx    *BlockIndex
 }
 
+func (ele TBEle) String() string {
+	id, _ := ele.ID()
+	return id.String()
+}
+
 //从磁盘加载块头
 func (ele *TBEle) LoadMeta(id HASH256) error {
 	if ele.flags&TBELoadedMeta != 0 {
@@ -39,7 +44,9 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	if err := ele.TBMeta.Decode(buf); err != nil {
 		return err
 	}
-	if !id.Equal(ele.TBMeta.ID()) {
+	if eleid, err := ele.TBMeta.ID(); err != nil {
+		return err
+	} else if !id.Equal(eleid) {
 		return errors.New("hash error")
 	}
 	ele.flags |= TBELoadedMeta
@@ -68,7 +75,7 @@ type IListener interface {
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
 	//获取签名账户
-	GetAccount(bi *BlockIndex, out *TxOut) (*Account, error)
+	GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
 	//当一个块连接到链之前
@@ -117,6 +124,8 @@ func InitChain(lis IListener) *BlockIndex {
 
 //区块链索引
 type BlockIndex struct {
+	//交易池
+	tp *TxPool
 	//链监听器
 	lptr IListener
 	//
@@ -130,8 +139,8 @@ type BlockIndex struct {
 	//按id缓存
 	imap map[HASH256]*list.Element
 	//lru缓存
-	lru *Cache
-	//存储
+	lru *IndexCacher
+	//存储和索引
 	db IBlkStore
 }
 
@@ -181,9 +190,11 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	if last := bi.Last(); last == nil {
 		blk.Header.Bits = GetMinPowBits()
 		nexth = 0
+	} else if lid, err := last.ID(); err != nil {
+		return nil, err
 	} else {
 		nexth = last.Height + 1
-		blk.Header.Prev = last.ID()
+		blk.Header.Prev = lid
 		blk.Header.Bits = bi.CalcBits(nexth)
 	}
 	SetRandInt(&blk.Header.Nonce)
@@ -235,10 +246,34 @@ func (bi *BlockIndex) Current() *TBEle {
 	return bi.cur.Value.(*TBEle)
 }
 
-//加载区块
-func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
+//获取区块的确认数
+func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
+	cele, has := bi.imap[id]
+	if !has {
+		return 0
+	}
+	cmeta := cele.Value.(*TBEle)
+	lele := bi.lis.Back()
+	if lele == nil {
+		return 0
+	}
+	lmeta := lele.Value.(*TBEle)
+	return int(lmeta.Height-cmeta.Height) + 1
+}
+
+//获取交易确认数(所属区块的确认数)
+func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
+	txv, err := bi.LoadTxValue(id)
+	if err != nil {
+		return 0
+	}
+	return bi.GetBlockConfirm(txv.BlkId)
+}
+
+//加载区块
+func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
 		ele, has := bi.imap[id]
 		if !has {
@@ -332,7 +367,11 @@ func (bi *BlockIndex) UnlinkBack() error {
 	}
 	tv := le.Value.(*TBEle)
 	delete(bi.hmap, tv.Height)
-	delete(bi.imap, tv.ID())
+	id, err := tv.ID()
+	if err != nil {
+		return err
+	}
+	delete(bi.imap, id)
 	bi.lis.Remove(le)
 	return nil
 }
@@ -340,7 +379,11 @@ func (bi *BlockIndex) UnlinkBack() error {
 func (bi *BlockIndex) pushback(e *TBEle) (*TBEle, error) {
 	ele := bi.lis.PushBack(e)
 	bi.hmap[e.Height] = ele
-	bi.imap[e.ID()] = ele
+	if id, err := e.ID(); err != nil {
+		return nil, err
+	} else {
+		bi.imap[id] = ele
+	}
 	return e, nil
 }
 
@@ -358,7 +401,11 @@ func (bi *BlockIndex) GetTBEle(h uint32) *TBEle {
 func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
 	ele := bi.lis.PushFront(e)
 	bi.hmap[e.Height] = ele
-	bi.imap[e.ID()] = ele
+	if id, err := e.ID(); err != nil {
+		return nil, err
+	} else {
+		bi.imap[id] = ele
+	}
 	return e, nil
 }
 
@@ -398,83 +445,84 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	//验证最后6个块
 	for i := 0; bi.Prev() && i < 6; i++ {
 		ele := bi.Current()
-		bp, err := bi.LoadBlock(ele.ID())
+		eleid, err := ele.ID()
 		if err != nil {
-			return fmt.Errorf("verify block %v error %w", ele.ID(), err)
+			return err
+		}
+		bp, err := bi.LoadBlock(eleid)
+		if err != nil {
+			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
 		err = bp.Check(bi, true)
 		if err != nil {
-			return fmt.Errorf("verify block %v error %w", ele.ID(), err)
+			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
 	}
 	log.Println("load finished block count = ", bi.Len())
 	return nil
 }
 
-//获取对应的数据
-func (ekv ExtKeyValue) GetBytes(bi *BlockIndex) ([]byte, error) {
-	blk, err := bi.LoadBlock(ekv.BlkId)
-	if err != nil {
-		return nil, err
-	}
-	if ekv.TxIdx < 0 || ekv.TxIdx.ToInt() >= len(blk.Txs) {
-		return nil, errors.New("data not found")
-	}
-	tx := blk.Txs[ekv.TxIdx]
-	if !tx.HasExt() {
-		return nil, errors.New("not ext data")
-	}
-	return tx.Ext.Bytes, nil
-}
-
 //转账交易
-//从acc账号转向addr地址
-//在区块中操作
-func (bi *BlockIndex) Transfer(acc *Account, addr string, av Amount, fee Amount) (*TX, error) {
-	addr, err := acc.GetAddress()
+//从acc账号转向addr地址 金额:amt，交易费:fee
+func (bi *BlockIndex) Transfer(src string, addr string, amt Amount, fee Amount) (*TX, error) {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	if !fee.IsRange() || amt == 0 || !amt.IsRange() {
+		return nil, errors.New("amount zero or fee error")
+	}
+	spkh, err := DecodeAddress(src)
 	if err != nil {
 		return nil, err
 	}
-	ds, err := bi.ListCoins(addr)
+	acc, err := bi.lptr.GetAccount(bi, spkh)
 	if err != nil {
 		return nil, err
 	}
-	bv := ds.Balance()
-	if (av + fee) > bv {
+	dpkh, err := DecodeAddress(addr)
+	if err != nil {
+		return nil, err
+	}
+	ds, err := bi.ListCoinsWithID(spkh)
+	if err != nil {
+		return nil, err
+	}
+	balance := ds.Balance()
+	if (amt + fee) > balance {
 		return nil, errors.New("Insufficient balance")
-	}
-	pkh, err := DecodeAddress(addr)
-	if err != nil {
-		return nil, err
 	}
 	tx := &TX{}
 	tx.Ver = 1
 	sum := Amount(0)
 	tx.Outs = []*TxOut{}
-	//创建目标输出
-	out := &TxOut{}
-	out.Value = av
-	if script, err := NewLockedScript(pkh); err != nil {
-		return nil, err
-	} else {
-		out.Script = script
-	}
-	tx.Outs = append(tx.Outs, out)
 	//获取需要的输入
 	tx.Ins = []*TxIn{}
 	for _, cv := range ds {
+		//看是否在之前就已经消费
+		ctv, err := bi.tp.FindCoin(cv)
+		if err == nil {
+			return nil, fmt.Errorf("coin cost at txpool id= %v", ctv)
+		}
 		in, err := cv.NewTxIn(acc)
 		if err != nil {
 			return nil, err
 		}
 		tx.Ins = append(tx.Ins, in)
 		sum += cv.Value
-		if sum >= av+fee {
+		if sum >= amt+fee {
 			break
 		}
 	}
-	//找零钱
-	if rv := sum - fee - av; rv > 0 {
+	//创建目标输出
+	out := &TxOut{}
+	out.Value = amt
+	if script, err := NewLockedScript(dpkh); err != nil {
+		return nil, err
+	} else {
+		out.Script = script
+	}
+	tx.Outs = append(tx.Outs, out)
+	//找零钱给自己
+	if rv := sum - fee - amt; rv > 0 {
 		mine := &TxOut{}
 		script, err := acc.NewLockedScript()
 		if err != nil {
@@ -484,20 +532,14 @@ func (bi *BlockIndex) Transfer(acc *Account, addr string, av Amount, fee Amount)
 		mine.Value = rv
 		tx.Outs = append(tx.Outs, mine)
 	}
-	err = tx.Sign(bi)
-	if err != nil {
-		return nil, fmt.Errorf("sign tx error %w", err)
+	if err := tx.Sign(bi); err != nil {
+		return nil, err
+	}
+	//放入交易池
+	if err := bi.tp.PushBack(tx); err != nil {
+		return nil, err
 	}
 	return tx, nil
-}
-
-func (bi *BlockIndex) GetExt(extid HASH160) (ExtKeyValue, error) {
-	ekv := ExtKeyValue{}
-	bb, err := bi.db.Index().Get(EXT_PREFIX, extid[:])
-	if err != nil {
-		return ekv, err
-	}
-	return ekv, ekv.From(bb)
 }
 
 func (bi *BlockIndex) LoadTBEle(id HASH256) (*TBEle, error) {
@@ -555,17 +597,19 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 func (bi *BlockIndex) IsLinkBack(meta *TBMeta) (uint32, HASH256, bool) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
-	hash := HASH256{}
 	last := bi.lis.Back()
 	if last == nil {
-		return 0, hash, true
+		return 0, ZERO, true
 	}
 	lv := last.Value.(*TBEle)
-	if !meta.Prev.Equal(lv.ID()) {
-		return 0, hash, false
+	id, err := lv.ID()
+	if err != nil {
+		return 0, id, false
 	}
-	hash = lv.ID()
-	return lv.Height, hash, true
+	if !meta.Prev.Equal(id) {
+		return 0, id, false
+	}
+	return lv.Height, id, true
 }
 
 //加入一个队列尾并设置高度
@@ -577,7 +621,11 @@ func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
 		return bi.pushback(ele)
 	}
 	lv := last.Value.(*TBEle)
-	if !ele.Prev.Equal(lv.ID()) {
+	id, err := lv.ID()
+	if err != nil {
+		return nil, err
+	}
+	if !ele.Prev.Equal(id) {
 		return nil, errors.New("ele prev hash error")
 	}
 	if lv.Height+1 != ele.Height {
@@ -652,7 +700,11 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 			bi.lru.Delete(id)
 		}
 	}
-	bi.lru.Delete(b.ID())
+	if id, err := b.ID(); err != nil {
+		log.Println("id error", err)
+	} else {
+		bi.lru.Delete(id)
+	}
 }
 
 //断开最后一个
@@ -661,7 +713,11 @@ func (bi *BlockIndex) UnlinkLast() error {
 	if last == nil {
 		return errors.New("last block miss")
 	}
-	b, err := bi.LoadBlock(last.ID())
+	id, err := last.ID()
+	if err != nil {
+		return err
+	}
+	b, err := bi.LoadBlock(id)
 	if err != nil {
 		return err
 	}
@@ -680,8 +736,15 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if bp.Meta == nil {
 		return errors.New("block meta miss")
 	}
-	id := bp.ID()
-	if !bi.Last().ID().Equal(id) {
+	id, err := bp.ID()
+	if err != nil {
+		return err
+	}
+	lid, err := bi.Last().ID()
+	if err != nil {
+		return err
+	}
+	if !lid.Equal(id) {
 		return errors.New("only unlink last block")
 	}
 	rb, err := bi.db.Rev().Read(bp.Meta.Rev)
@@ -832,12 +895,13 @@ func (bi *BlockIndex) Close() {
 
 func NewBlockIndex(lptr IListener) *BlockIndex {
 	bi := &BlockIndex{
+		tp:   NewTxPool(),
 		lptr: lptr,
 		lis:  list.New(),
 		hmap: map[uint32]*list.Element{},
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
-		lru:  NewCache(64 * opt.MiB),
+		lru:  NewIndexCacher(64 * opt.MiB),
 	}
 	return bi
 }

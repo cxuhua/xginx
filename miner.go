@@ -96,12 +96,12 @@ func (m *minerEngine) genBlock(ver uint32) {
 		log.Println("get block not finish")
 		return
 	}
-	log.Println("gen block ok id = ", blk.ID())
+	log.Println("gen block ok id = ", blk)
 	if err := bi.LinkTo(blk); err != nil {
 		log.Println("new block linkto chain error ", err)
 		return
 	}
-	log.Println("new block linkto chain success id=", blk.ID())
+	log.Println("new block linkto chain success id=", blk)
 }
 
 //定时分配工作

@@ -65,7 +65,7 @@ func (b *mBucket) freeze() []*LRUNode {
 	return b.node
 }
 
-func (b *mBucket) get(r *Cache, h *mNode, hash uint32, key HASH256, noset bool) (done, added bool, n *LRUNode) {
+func (b *mBucket) get(r *IndexCacher, h *mNode, hash uint32, key HASH256, noset bool) (done, added bool, n *LRUNode) {
 	b.mu.Lock()
 	if b.frozen {
 		b.mu.Unlock()
@@ -119,7 +119,7 @@ func (b *mBucket) get(r *Cache, h *mNode, hash uint32, key HASH256, noset bool) 
 	return true, true, n
 }
 
-func (b *mBucket) delete(r *Cache, h *mNode, hash uint32, key HASH256) (done, deleted bool) {
+func (b *mBucket) delete(r *IndexCacher, h *mNode, hash uint32, key HASH256) (done, deleted bool) {
 	b.mu.Lock()
 	if b.frozen {
 		b.mu.Unlock()
@@ -245,7 +245,7 @@ func (n *mNode) initBuckets() {
 }
 
 // Cache is a 'cache map'.
-type Cache struct {
+type IndexCacher struct {
 	mu     sync.RWMutex
 	mHead  unsafe.Pointer // *mNode
 	nodes  int32
@@ -256,7 +256,7 @@ type Cache struct {
 
 // NewCache creates a new 'cache map'. The cacher is optional and
 // may be nil.
-func NewCache(capacity int) *Cache {
+func NewIndexCacher(capacity int) *IndexCacher {
 	h := &mNode{
 		buckets:         make([]unsafe.Pointer, mInitialSize),
 		mask:            mInitialSize - 1,
@@ -266,14 +266,14 @@ func NewCache(capacity int) *Cache {
 	for i := range h.buckets {
 		h.buckets[i] = unsafe.Pointer(&mBucket{})
 	}
-	r := &Cache{
+	r := &IndexCacher{
 		mHead:  unsafe.Pointer(h),
 		cacher: NewLRU(capacity),
 	}
 	return r
 }
 
-func (r *Cache) getBucket(hash uint32) (*mNode, *mBucket) {
+func (r *IndexCacher) getBucket(hash uint32) (*mNode, *mBucket) {
 	h := (*mNode)(atomic.LoadPointer(&r.mHead))
 	i := hash & h.mask
 	b := (*mBucket)(atomic.LoadPointer(&h.buckets[i]))
@@ -283,7 +283,7 @@ func (r *Cache) getBucket(hash uint32) (*mNode, *mBucket) {
 	return h, b
 }
 
-func (r *Cache) delete(n *LRUNode) bool {
+func (r *IndexCacher) delete(n *LRUNode) bool {
 	for {
 		h, b := r.getBucket(n.hash)
 		done, deleted := b.delete(r, h, n.hash, n.key)
@@ -294,17 +294,17 @@ func (r *Cache) delete(n *LRUNode) bool {
 }
 
 // Nodes returns number of 'cache node' in the map.
-func (r *Cache) Nodes() int {
+func (r *IndexCacher) Nodes() int {
 	return int(atomic.LoadInt32(&r.nodes))
 }
 
 // Size returns sums of 'cache node' size in the map.
-func (r *Cache) Size() int {
+func (r *IndexCacher) Size() int {
 	return int(atomic.LoadInt32(&r.size))
 }
 
 // Capacity returns cache capacity.
-func (r *Cache) Capacity() int {
+func (r *IndexCacher) Capacity() int {
 	if r.cacher == nil {
 		return 0
 	}
@@ -312,7 +312,7 @@ func (r *Cache) Capacity() int {
 }
 
 // SetCapacity sets cache capacity.
-func (r *Cache) SetCapacity(capacity int) {
+func (r *IndexCacher) SetCapacity(capacity int) {
 	if r.cacher != nil {
 		r.cacher.SetCapacity(capacity)
 	}
@@ -324,7 +324,7 @@ func (r *Cache) SetCapacity(capacity int) {
 //
 // The returned 'cache handle' should be released after use by calling Release
 // method.
-func (r *Cache) Get(key HASH256, setFunc func() (size int, value Value)) *Handle {
+func (r *IndexCacher) Get(key HASH256, setFunc func() (size int, value Value)) *Handle {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
@@ -373,7 +373,7 @@ func (r *Cache) Get(key HASH256, setFunc func() (size int, value Value)) *Handle
 // doesn't exist or once the 'cache node' is released.
 //
 // Delete return true is such 'cache node' exist.
-func (r *Cache) Delete(key HASH256) bool {
+func (r *IndexCacher) Delete(key HASH256) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
@@ -402,7 +402,7 @@ func (r *Cache) Delete(key HASH256) bool {
 // simply call Cacher.Evict.
 //
 // Evict return true is such 'cache node' exist.
-func (r *Cache) Evict(key HASH256) bool {
+func (r *IndexCacher) Evict(key HASH256) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
@@ -430,7 +430,7 @@ func (r *Cache) Evict(key HASH256) bool {
 }
 
 // EvictAll evicts all 'cache node'. This will simply call Cacher.EvictAll.
-func (r *Cache) EvictAll() {
+func (r *IndexCacher) EvictAll() {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
@@ -443,7 +443,7 @@ func (r *Cache) EvictAll() {
 }
 
 // Close closes the 'cache map' and forcefully releases all 'cache node'.
-func (r *Cache) Close() error {
+func (r *IndexCacher) Close() error {
 	r.mu.Lock()
 	if !r.closed {
 		r.closed = true
@@ -474,7 +474,7 @@ func (r *Cache) Close() error {
 
 // CloseWeak closes the 'cache map' and evict all 'cache node' from cacher, but
 // unlike Close it doesn't forcefully releases 'cache node'.
-func (r *Cache) CloseWeak() error {
+func (r *IndexCacher) CloseWeak() error {
 	r.mu.Lock()
 	if !r.closed {
 		r.closed = true
@@ -492,7 +492,7 @@ func (r *Cache) CloseWeak() error {
 
 // Node is a 'cache node'.
 type LRUNode struct {
-	r         *Cache
+	r         *IndexCacher
 	hash      uint32
 	key       HASH256
 	mu        sync.Mutex

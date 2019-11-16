@@ -312,24 +312,28 @@ func (ss WitnessScript) Hash() (HASH160, error) {
 	return HashPks(ss.Num, ss.Less, ss.Arb, ss.Pks)
 }
 
-//hash公钥。地址也将又这个方法生成
+//hash公钥。地址也将由这个方法生成
 func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	if int(num) != len(pks) {
 		panic(errors.New("pub num error"))
 	}
 	id := HASH160{}
 	buf := &bytes.Buffer{}
-	if err := binary.Write(buf, Endian, num); err != nil {
+	err := binary.Write(buf, Endian, num)
+	if err != nil {
 		return id, err
 	}
-	if err := binary.Write(buf, Endian, less); err != nil {
+	err = binary.Write(buf, Endian, less)
+	if err != nil {
 		return id, err
 	}
-	if err := binary.Write(buf, Endian, arb); err != nil {
+	err = binary.Write(buf, Endian, arb)
+	if err != nil {
 		return id, err
 	}
 	for _, pk := range pks {
-		if _, err := buf.Write(pk[:]); err != nil {
+		_, err := buf.Write(pk[:])
+		if err != nil {
 			return id, err
 		}
 	}

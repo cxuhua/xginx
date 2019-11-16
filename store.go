@@ -98,48 +98,7 @@ var (
 	BLOCK_PREFIX = []byte{1} //块头信息前缀 ->blkmeta
 	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
 	COIN_PREFIX  = []byte{3} //积分相关存储 pkh_txid_idx -> amount
-	EXT_PREFIX   = []byte{4} //扩展数据索引 extid -> blkid+txidx+extlen
 )
-
-type ExtKeyValue struct {
-	BlkId  HASH256 //区块id
-	TxIdx  VarUInt //交易索引
-	ExtLen VarUInt //数据长度
-}
-
-func (ekv *ExtKeyValue) From(bb []byte) error {
-	buf := bytes.NewReader(bb)
-	err := ekv.BlkId.Decode(buf)
-	if err != nil {
-		return err
-	}
-	err = ekv.TxIdx.Decode(buf)
-	if err != nil {
-		return err
-	}
-	err = ekv.ExtLen.Decode(buf)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ekv ExtKeyValue) GetValue() ([]byte, error) {
-	buf := &bytes.Buffer{}
-	err := ekv.BlkId.Encode(buf)
-	if err != nil {
-		return nil, err
-	}
-	err = ekv.TxIdx.Encode(buf)
-	if err != nil {
-		return nil, err
-	}
-	err = ekv.ExtLen.Encode(buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
 
 //金额记录
 type Coins []*CoinKeyValue

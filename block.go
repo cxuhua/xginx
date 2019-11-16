@@ -110,19 +110,25 @@ func (v BlockHeader) Bytes() HeaderBytes {
 }
 
 func (v BlockHeader) IsGenesis() bool {
-	return v.Prev.IsZero() && conf.genesisId.Equal(v.ID())
+	if id, err := v.ID(); err != nil {
+		log.Println("block header id error", err)
+		return false
+	} else {
+		return v.Prev.IsZero() && conf.genesisId.Equal(id)
+	}
 }
 
-func (v *BlockHeader) ID() HASH256 {
+func (v *BlockHeader) ID() (HASH256, error) {
 	if h, has := v.hasher.IsSet(); has {
-		return h
+		return h, nil
 	}
+	id := HASH256{}
 	buf := &bytes.Buffer{}
 	err := v.Encode(buf)
 	if err != nil {
-		panic(err)
+		return id, err
 	}
-	return v.hasher.Hash(buf.Bytes())
+	return v.hasher.Hash(buf.Bytes()), nil
 }
 
 //一个记录单元必须同一个用户连续的链数据
@@ -136,6 +142,11 @@ type BlockInfo struct {
 	Meta   *TBEle      //指向链数据节点
 	utsher HashCacher  //uts 缓存
 	merher HashCacher  //mer hash 缓存
+}
+
+func (blk BlockInfo) String() string {
+	id, _ := blk.ID()
+	return id.String()
 }
 
 //创建Cosinbase 脚本
@@ -200,7 +211,7 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	return nil
 }
 
-func (blk *BlockInfo) ID() HASH256 {
+func (blk *BlockInfo) ID() (HASH256, error) {
 	return blk.Header.ID()
 }
 
@@ -214,7 +225,10 @@ func (blk *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 		BlockHeader: blk.Header,
 		Txs:         VarUInt(len(blk.Txs)),
 	}
-	id := meta.ID()
+	id, err := meta.ID()
+	if err != nil {
+		return id, nil, nil, err
+	}
 	buf := &bytes.Buffer{}
 	if err := blk.Encode(buf); err != nil {
 		return id, nil, nil, err
@@ -236,11 +250,11 @@ func (blk *BlockInfo) CoinbaseFee() (Amount, error) {
 //获取总的交易费
 func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 	fee := Amount(0)
-	for idx, tx := range blk.Txs {
+	for _, tx := range blk.Txs {
 		if tx.IsCoinBase() {
 			continue
 		}
-		f, err := tx.GetFee(bi, blk, idx)
+		f, err := tx.GetFee(bi)
 		if err != nil {
 			return fee, err
 		}
@@ -302,7 +316,7 @@ func (blk *BlockInfo) CalcPowHash(cnt uint32, bi *BlockIndex) error {
 			hb.SetNonce(i)
 		} else {
 			blk.Header = hb.Header()
-			log.Printf("new block success ID=%v Bits=%x Height=%x\n", blk.ID(), blk.Meta.Bits, blk.Meta.Height)
+			log.Printf("new block success ID=%v Bits=%x Height=%x\n", blk, blk.Meta.Bits, blk.Meta.Height)
 			return nil
 		}
 		if cnt > 0 && i%(cnt/10) == 0 {
@@ -351,7 +365,9 @@ func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
 //检查区块数据
 func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 	//检测工作难度
-	if cpow && !CheckProofOfWork(blk.ID(), blk.Header.Bits) {
+	if bid, err := blk.ID(); err != nil {
+		return err
+	} else if cpow && !CheckProofOfWork(bid, blk.Header.Bits) {
 		return errors.New("block bits error")
 	}
 	//检查merkle树
@@ -462,7 +478,7 @@ func (v *BlockInfo) Decode(r IReader) error {
 type TxIn struct {
 	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
-	Script   Script
+	Script   Script  //签名后填充脚本
 }
 
 //获取对应的输出
@@ -542,11 +558,6 @@ type TxOut struct {
 	Script Script //锁定脚本
 }
 
-//获取签名器
-func (v *TxOut) GetSigner(bi *BlockIndex, tx *TX, in *TxIn, idx int) ISigner {
-	return newStdSigner(bi, tx, v, in, idx)
-}
-
 //输出是否可以被in消费在blk区块中
 func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
 	tk := CoinKeyValue{}
@@ -589,105 +600,14 @@ func (v *TxOut) Decode(r IReader) error {
 	return nil
 }
 
-type TxExt struct {
-	Bytes VarBytes //扩展数据，不参与签名和id计算
-	Hash  HASH256  //扩展数据hash，有数据时参与id和签名计算
-}
-
-func (v *TxExt) Check() error {
-	if v.Bytes.Len() == 0 {
-		return nil
-	}
-	if v.Bytes.Len() > MAX_EXT_SIZE {
-		return errors.New("ext data too big")
-	}
-	if v.Hash.Equal(Hash256From(v.Bytes)) {
-		return nil
-	}
-	return errors.New("data hash error")
-}
-
-//有数据用hash参与签名
-func (v *TxExt) ForVerify(w IWriter) error {
-	if v.Bytes.Len() == 0 {
-		return nil
-	}
-	if err := v.Hash.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *TxExt) ForID(w IWriter) error {
-	if v.Bytes.Len() == 0 {
-		return nil
-	}
-	if err := v.Hash.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *TxExt) Encode(w IWriter) error {
-	if err := v.Bytes.Encode(w); err != nil {
-		return err
-	}
-	if v.Bytes.Len() == 0 {
-		return nil
-	}
-	if err := v.Hash.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *TxExt) Decode(r IReader) error {
-	if err := v.Bytes.Decode(r); err != nil {
-		return err
-	}
-	if v.Bytes.Len() == 0 {
-		return nil
-	}
-	if err := v.Hash.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
-
 //交易
 type TX struct {
 	Ver  VarUInt    //版本
 	Ins  []*TxIn    //输入
 	Outs []*TxOut   //输出
-	Ext  TxExt      //扩展数据
 	idhc HashCacher //hash缓存
 	outs HashCacher //签名hash缓存
 	pres HashCacher //签名hash缓存
-}
-
-func (tx *TX) HasExt() bool {
-	return tx.Ext.Bytes.Len() > 0
-}
-
-//扩展数据id
-//hash160(exthash+txid) -> blockid+txindx
-func (tx *TX) ExtID() (HASH160, bool) {
-	id := HASH160{}
-	if !tx.HasExt() {
-		return id, false
-	}
-	buf := &bytes.Buffer{}
-	err := tx.Ext.Hash.Encode(buf)
-	if err != nil {
-		return id, false
-	}
-	if tid, err := tx.ID(); err != nil {
-		return id, false
-	} else if err = tid.Encode(buf); err != nil {
-		return id, false
-	}
-	id = Hash160From(buf.Bytes())
-	return id, true
 }
 
 //重置缓存
@@ -695,6 +615,11 @@ func (tx *TX) ResetAll() {
 	tx.idhc.Reset()
 	tx.outs.Reset()
 	tx.pres.Reset()
+}
+
+func (tx TX) String() string {
+	id, _ := tx.ID()
+	return id.String()
 }
 
 //第一个必须是base交易
@@ -712,8 +637,12 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		return err
 	}
 	vval := TxValue{
-		BlkId:  blk.ID(),
 		TxsIdx: VarUInt(idx),
+	}
+	if bid, err := blk.ID(); err != nil {
+		return err
+	} else {
+		vval.BlkId = bid
 	}
 	vbys, err := vval.Bytes()
 	if err != nil {
@@ -768,25 +697,12 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		key := tk.GetKey()
 		bt.Put(key, tk.GetValue())
 	}
-	//是否写入扩展数据
-	if extId, has := tx.ExtID(); has {
-		ev := ExtKeyValue{
-			BlkId:  blk.ID(),
-			TxIdx:  VarUInt(idx),
-			ExtLen: VarUInt(tx.Ext.Bytes.Len()),
-		}
-		eb, err := ev.GetValue()
-		if err != nil {
-			return err
-		}
-		bt.Put(EXT_PREFIX, extId[:], eb)
-	}
 	return nil
 }
 
 //验证交易输入数据
 func (tx *TX) Verify(bi *BlockIndex) error {
-	for iidx, in := range tx.Ins {
+	for idx, in := range tx.Ins {
 		//不验证base的签名
 		if in.IsCoinBase() {
 			continue
@@ -795,12 +711,32 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		err = out.GetSigner(bi, tx, in, iidx).Verify()
+		err = NewSigner(tx, out, in).Verify()
 		if err != nil {
-			return fmt.Errorf("Verify in %d error %w", iidx, err)
+			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
 	}
 	return nil
+}
+
+//获取某个输入的签名器
+func (tx *TX) GetSigner(bi *BlockIndex, idx int) (ISigner, error) {
+	if idx < 0 || idx >= len(tx.Ins) {
+		return nil, errors.New("tx index out bound")
+	}
+	in := tx.Ins[idx]
+	if in.IsCoinBase() {
+		return nil, errors.New("conbase no signer")
+	}
+	out, err := in.LoadTxOut(bi)
+	if err != nil {
+		return nil, err
+	}
+	//检查是否已经被消费
+	if out.IsSpent(in, bi) {
+		return nil, errors.New("out is spent")
+	}
+	return NewSigner(tx, out, in), nil
 }
 
 //签名交易数据
@@ -810,7 +746,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 	if lptr == nil {
 		return errors.New("block index listener null,can't sign")
 	}
-	for iidx, in := range tx.Ins {
+	for idx, in := range tx.Ins {
 		if in.IsCoinBase() {
 			continue
 		}
@@ -821,30 +757,20 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 		if out.IsSpent(in, bi) {
 			return errors.New("out is spent")
 		}
-		acc, err := lptr.GetAccount(bi, out)
+		pkh, err := out.Script.GetPkh()
 		if err != nil {
 			return err
 		}
-		err = out.GetSigner(bi, tx, in, iidx).Sign(acc)
+		acc, err := lptr.GetAccount(bi, pkh)
 		if err != nil {
-			return fmt.Errorf("sign in %d error %w", iidx, err)
+			return err
+		}
+		err = NewSigner(tx, out, in).Sign(acc)
+		if err != nil {
+			return fmt.Errorf("sign in %d error %w", idx, err)
 		}
 	}
 	return nil
-}
-
-//设置扩展数据
-func (tx *TX) SetExt(bb []byte) {
-	if len(bb) > MAX_EXT_SIZE {
-		panic(errors.New("ext > max_ext_size"))
-	}
-	if len(bb) == 0 {
-		return
-	}
-	tx.Ext = TxExt{
-		Bytes: bb,
-		Hash:  Hash256From(bb),
-	}
 }
 
 //交易id计算
@@ -877,10 +803,6 @@ func (tx *TX) ID() (HASH256, error) {
 			return id, err
 		}
 	}
-	err = tx.Ext.ForID(buf)
-	if err != nil {
-		return id, err
-	}
 	return tx.idhc.Hash(buf.Bytes()), nil
 }
 
@@ -900,7 +822,7 @@ func (v *TX) CoinbaseFee() (Amount, error) {
 }
 
 //获取此交易交易费
-func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
+func (v *TX) GetFee(bi *BlockIndex) (Amount, error) {
 	if v.IsCoinBase() {
 		return 0, errors.New("coinbase not trans fee")
 	}
@@ -921,15 +843,12 @@ func (v *TX) GetFee(bi *BlockIndex, blk *BlockInfo, idx int) (Amount, error) {
 //检测除coinbase交易外的交易金额
 //csp是否检测输出金额是否已经被使用
 func (v *TX) Check(bi *BlockIndex, csp bool) error {
-	if err := v.Ext.Check(); err != nil {
-		return err
-	}
-	if len(v.Ins) == 0 {
-		return errors.New("tx ins too slow")
-	}
 	//这里不检测coinbase交易
 	if v.IsCoinBase() {
 		return nil
+	}
+	if len(v.Ins) == 0 {
+		return errors.New("tx ins too slow")
 	}
 	//总的输入金额
 	itv := Amount(0)
@@ -993,9 +912,6 @@ func (v *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
-	if err := v.Ext.Encode(w); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1028,9 +944,6 @@ func (v *TX) Decode(r IReader) error {
 			return err
 		}
 		v.Outs[i] = out
-	}
-	if err := v.Ext.Decode(r); err != nil {
-		return err
 	}
 	return nil
 }
