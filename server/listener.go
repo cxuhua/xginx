@@ -86,7 +86,7 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	return blk.CheckTxs(bi)
 }
 
-//获取签名私钥
+//获取签名账号
 func (lis *listener) GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error) {
 	return MinerAccount, nil
 }

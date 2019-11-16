@@ -887,6 +887,12 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 	return err
 }
 
+func (bi *BlockIndex) GetTxPool() *TxPool {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	return bi.tp
+}
+
 //关闭链数据
 func (bi *BlockIndex) Close() {
 	if bi.hmap == nil {

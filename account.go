@@ -36,6 +36,11 @@ func LoadAccount(s string) (*Account, error) {
 	return a, err
 }
 
+//是否包含私钥
+func (ap Account) HasPrivate() bool {
+	return len(ap.pris) >= int(ap.less)
+}
+
 //根据公钥索引获取私钥
 func (ap Account) GetPrivateKey(pi int) *PrivateKey {
 	pkh := ap.pubs[pi].Hash()

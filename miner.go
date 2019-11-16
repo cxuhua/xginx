@@ -2,11 +2,18 @@ package xginx
 
 import (
 	"context"
+	"errors"
 	"log"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
+)
+
+const (
+	//新交易订阅主体
+	NewTxTopic = "NewTx"
 )
 
 //矿工接口
@@ -21,8 +28,8 @@ type IMiner interface {
 	NewBlock(ver uint32)
 	//获取订阅发布接口
 	GetPubSub() *PubSub
-	//设置矿共账号
-	SetMiner(acc *Account)
+	//设置矿工账号
+	SetMiner(acc *Account) error
 }
 
 var (
@@ -51,10 +58,14 @@ func (m *minerEngine) GetPubSub() *PubSub {
 	return m.pubsub
 }
 
-func (m *minerEngine) SetMiner(acc *Account) {
+func (m *minerEngine) SetMiner(acc *Account) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !acc.HasPrivate() {
+		return errors.New("miner account must has privatekey")
+	}
 	m.acc = acc
+	return nil
 }
 
 //创建新块任务
@@ -148,12 +159,33 @@ func (m *minerEngine) dispatch() {
 	}
 }
 
-func (m *minerEngine) loop(i int) {
+func (m *minerEngine) onRecvTx(tx *TX) {
+	chain := GetChain()
+	err := tx.Check(chain, true)
+	if err != nil {
+		log.Println("tx check error", err, "drop tx")
+		return
+	}
+	tp := chain.GetTxPool()
+	err = tp.PushBack(tx)
+	if err != nil {
+		log.Println("tx push to pool error", err, "drop tx")
+		return
+	}
+	log.Println("current txpool len=", tp.Len())
+}
+
+func (m *minerEngine) loop(i int, txch chan interface{}) {
 	log.Println("miner worker", i, "start")
 	m.wg.Add(1)
 	defer m.wg.Done()
 	for {
 		select {
+		case cv := <-txch:
+			tx, ok := cv.(*TX)
+			if ok {
+				m.onRecvTx(tx)
+			}
 		case ver := <-m.mbc:
 			m.genBlock(ver)
 		case <-m.ctx.Done():
@@ -164,9 +196,12 @@ func (m *minerEngine) loop(i int) {
 
 //开始工作
 func (m *minerEngine) Start(ctx context.Context) {
+	cpu := runtime.NumCPU()
 	m.ctx, m.cancel = context.WithCancel(ctx)
-	for i := 0; i < 4; i++ {
-		go m.loop(i)
+	//订阅交易
+	txch := m.pubsub.Sub(NewTxTopic) //*TX
+	for i := 0; i < cpu; i++ {
+		go m.loop(i, txch)
 	}
 	go m.dispatch()
 }
