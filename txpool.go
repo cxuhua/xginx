@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"container/list"
 	"errors"
 	"sync"
@@ -68,7 +67,7 @@ func (p *TxPool) GetTxs() ([]*TX, error) {
 	defer p.mu.RUnlock()
 	txs := []*TX{}
 	size := 0
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	//获取用来打包区块的交易
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()

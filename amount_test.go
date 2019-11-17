@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"testing"
 )
 
@@ -22,7 +21,7 @@ func TestAmountPut(t *testing.T) {
 }
 
 func TestAmountDecodeEncode(t *testing.T) {
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	a := MAX_MONEY
 	err := a.Encode(buf)
 	if err != nil {

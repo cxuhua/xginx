@@ -1,13 +1,12 @@
 package xginx
 
 import (
-	"bytes"
 	"fmt"
 )
 
 func (v NetPackage) ToMsgIO() (MsgIO, error) {
 	var m MsgIO = nil
-	buf := bytes.NewReader(v.Bytes)
+	buf := NewReader(v.Bytes)
 	switch v.Type {
 	case NT_VERSION:
 		m = &MsgVersion{}
@@ -19,6 +18,14 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgGetAddrs{}
 	case NT_ADDRS:
 		m = &MsgAddrs{}
+	case NT_INV:
+		m = &InvMsg{}
+	case NT_TX:
+		m = &TxMsg{}
+	case NT_BLOCK:
+		m = &BlockMsg{}
+	case NT_GET_INV:
+		m = &GetInvMsg{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
@@ -37,6 +44,9 @@ func (m MsgGetAddrs) Type() uint8 {
 	return NT_GET_ADDRS
 }
 
+//
+
+//
 type MsgAddrs struct {
 	Addrs []NetAddr
 }
@@ -59,11 +69,12 @@ func (m MsgAddrs) Encode(w IWriter) error {
 }
 
 //最多放2000个
-func (m *MsgAddrs) Add(a NetAddr) {
+func (m *MsgAddrs) Add(a NetAddr) bool {
 	if len(m.Addrs) > 2000 {
-		return
+		return true
 	}
 	m.Addrs = append(m.Addrs, a)
+	return false
 }
 
 func (m *MsgAddrs) Decode(r IReader) error {

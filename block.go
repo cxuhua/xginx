@@ -1,8 +1,6 @@
 package xginx
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
@@ -57,7 +55,7 @@ func (v *TxValue) Decode(r IReader) error {
 }
 
 func (v TxValue) Bytes() ([]byte, error) {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := v.Encode(buf)
 	return buf.Bytes(), err
 }
@@ -80,7 +78,7 @@ func (b *HeaderBytes) Hash() HASH256 {
 }
 
 func (b *HeaderBytes) Header() BlockHeader {
-	buf := bytes.NewReader(*b)
+	buf := NewReader(*b)
 	hptr := BlockHeader{}
 	err := hptr.Decode(buf)
 	if err != nil {
@@ -101,7 +99,7 @@ type BlockHeader struct {
 }
 
 func (v BlockHeader) Bytes() HeaderBytes {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := v.Encode(buf)
 	if err != nil {
 		panic(err)
@@ -123,7 +121,7 @@ func (v *BlockHeader) ID() (HASH256, error) {
 		return h, nil
 	}
 	id := HASH256{}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := v.Encode(buf)
 	if err != nil {
 		return id, err
@@ -250,7 +248,7 @@ func (blk *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
 	if err != nil {
 		return id, nil, nil, err
 	}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := blk.Encode(buf); err != nil {
 		return id, nil, nil, err
 	}
@@ -275,7 +273,7 @@ func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 		if tx.IsCoinBase() {
 			continue
 		}
-		f, err := tx.GetFee(bi)
+		f, err := tx.GetTransFee(bi)
 		if err != nil {
 			return fee, err
 		}
@@ -407,7 +405,7 @@ func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 		return err
 	}
 	//检查区块大小
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := blk.Encode(buf); err != nil {
 		return err
 	}
@@ -418,7 +416,7 @@ func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 }
 
 func (v *BlockHeader) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, v.Ver); err != nil {
+	if err := w.TWrite(v.Ver); err != nil {
 		return err
 	}
 	if err := v.Prev.Encode(w); err != nil {
@@ -427,13 +425,13 @@ func (v *BlockHeader) Encode(w IWriter) error {
 	if err := v.Merkle.Encode(w); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Time); err != nil {
+	if err := w.TWrite(v.Time); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Bits); err != nil {
+	if err := w.TWrite(v.Bits); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Nonce); err != nil {
+	if err := w.TWrite(v.Nonce); err != nil {
 		return err
 	}
 	return nil
@@ -455,7 +453,7 @@ func (v *BlockInfo) Encode(w IWriter) error {
 }
 
 func (v *BlockHeader) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &v.Ver); err != nil {
+	if err := r.TRead(&v.Ver); err != nil {
 		return err
 	}
 	if err := v.Prev.Decode(r); err != nil {
@@ -464,13 +462,13 @@ func (v *BlockHeader) Decode(r IReader) error {
 	if err := v.Merkle.Decode(r); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Time); err != nil {
+	if err := r.TRead(&v.Time); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Bits); err != nil {
+	if err := r.TRead(&v.Bits); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Nonce); err != nil {
+	if err := r.TRead(&v.Nonce); err != nil {
 		return err
 	}
 	return nil
@@ -800,7 +798,7 @@ func (tx *TX) ID() (HASH256, error) {
 		return hash, nil
 	}
 	id := HASH256{}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := tx.Ver.Encode(buf); err != nil {
 		return id, err
 	}
@@ -843,7 +841,7 @@ func (v *TX) CoinbaseFee() (Amount, error) {
 }
 
 //获取此交易交易费
-func (v *TX) GetFee(bi *BlockIndex) (Amount, error) {
+func (v *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 	if v.IsCoinBase() {
 		return 0, errors.New("coinbase not trans fee")
 	}

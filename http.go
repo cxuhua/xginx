@@ -3,7 +3,6 @@ package xginx
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 
@@ -48,7 +47,7 @@ func (h *xhttp) Start(ctx context.Context) {
 		Handler: m,
 	}
 	go func() {
-		log.Println("start http server", addr)
+		LogInfo("start http server", addr)
 		_ = h.shttp.ListenAndServe()
 	}()
 }
@@ -61,6 +60,6 @@ func (h *xhttp) Stop() {
 func (h *xhttp) Wait() {
 	select {
 	case <-h.ctx.Done():
-		log.Println("stop http done")
+		LogInfo("stop http done")
 	}
 }

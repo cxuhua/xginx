@@ -33,6 +33,8 @@ type Client struct {
 	lis    IClient
 	mVer   *MsgVersion //对方版本信息
 	ping   int
+	ptimer *time.Timer
+	vtimer *time.Timer
 }
 
 //
@@ -70,14 +72,29 @@ func (c *Client) processMsgOut(m MsgIO) {
 }
 
 func (c *Client) processMsg(m MsgIO) error {
-	if m.Type() == NT_PONG {
+	typ := m.Type()
+	switch typ {
+	case NT_BLOCK:
+		msg := m.(*BlockMsg)
+		GetPubSub().Pub(&msg.Blk, NewBlockTopic)
+	case NT_TX:
+		msg := m.(*TxMsg)
+		GetPubSub().Pub(&msg.Tx, NewTxTopic)
+	case NT_ADDRS:
+		msg := m.(*MsgAddrs)
+		log.Println(msg)
+	case NT_GET_ADDRS:
+		msg := c.ss.addrs.NewMsgAddrs(c)
+		c.SendMsg(msg)
+	case NT_PONG:
 		msg := m.(*MsgPong)
 		c.ping = msg.Ping()
-	} else if m.Type() == NT_PING {
+	case NT_PING:
 		msg := m.(*MsgPing)
 		c.SendMsg(msg.NewPong())
-	} else if m.Type() == NT_VERSION {
-		osg := NewMsgVersion()
+	case NT_VERSION:
+		//创建版本数据包
+		osg := GetBlockIndex().NewMsgVersion()
 		msg := m.(*MsgVersion)
 		//保存连接地址和版本信息
 		c.ss.addrs.Set(msg.Addr)
@@ -87,15 +104,17 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.Close()
 			return errors.New("has connection,closed")
 		}
-		//返回服务器版本信息
+		//如果是连入的，返回服务器版本信息
 		if c.IsIn() {
 			osg.Service = c.ss.Service()
 			c.SendMsg(osg)
 		}
-	} else if c.IsIn() {
-		c.processMsgIn(m)
-	} else if c.IsOut() {
-		c.processMsgOut(m)
+	default:
+		if c.IsIn() {
+			c.processMsgIn(m)
+		} else if c.IsOut() {
+			c.processMsgOut(m)
+		}
 	}
 	if c.lis != nil {
 		c.lis.OnRecvMsg(m)
@@ -124,6 +143,9 @@ func (c *Client) stop() {
 
 //连接到指定地址
 func (c *Client) Open(addr NetAddr) error {
+	if c.ss.addrs.Has(addr) {
+		return fmt.Errorf("has connection to addr %v", addr)
+	}
 	return c.connect(addr)
 }
 
@@ -135,11 +157,9 @@ func (c *Client) connect(addr NetAddr) error {
 	c.typ = ClientOut
 	c.addr = addr
 	c.NetStream = &NetStream{Conn: conn}
-	if c.lis != nil {
-		c.lis.OnOpen()
-	}
 	//发送第一个包
-	c.SendMsg(NewMsgVersion())
+	bi := GetBlockIndex()
+	c.SendMsg(bi.NewMsgVersion())
 	return nil
 }
 
@@ -149,8 +169,13 @@ func (c *Client) Loop() {
 
 func (c *Client) loop() {
 	defer c.stop()
+
 	c.ss.wg.Add(1)
 	defer c.ss.wg.Done()
+
+	if c.lis != nil {
+		c.lis.OnOpen()
+	}
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
@@ -166,8 +191,6 @@ func (c *Client) loop() {
 			c.rc <- m
 		}
 	}()
-	ptimer := time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
-	vtimer := time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	for {
 		select {
 		case wp := <-c.wc:
@@ -180,17 +203,17 @@ func (c *Client) loop() {
 			if err != nil {
 				log.Println("process msg", rp.Type(), "error", err)
 			}
-		case <-vtimer.C:
+		case <-c.vtimer.C:
 			if c.mVer == nil {
 				c.Close()
 				log.Println("msgversion timeout,closed")
 			}
-		case <-ptimer.C:
+		case <-c.ptimer.C:
 			if c.mVer == nil {
 				break
 			}
 			c.SendMsg(NewMsgPing())
-			ptimer.Reset(time.Second * time.Duration(Rand(40, 60)))
+			c.ptimer.Reset(time.Second * time.Duration(Rand(40, 60)))
 		case <-c.ctx.Done():
 			return
 		}

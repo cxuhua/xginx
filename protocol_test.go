@@ -1,44 +1,15 @@
 package xginx
 
 import (
-	"bytes"
-	"io"
-	"log"
 	"testing"
 )
-
-type ATest struct {
-}
-
-func (a ATest) Type() uint8 {
-	return 100
-}
-
-func (a ATest) Encode(w io.Writer) error {
-	return nil
-}
-
-func (a *ATest) Decode(w io.Reader) error {
-	return nil
-}
-
-type BC ATest
-
-func (a BC) Type() uint8 {
-	return 101
-}
-
-func TestMsgExt(t *testing.T) {
-	b := &BC{}
-	log.Println(b.Type())
-}
 
 func TestMsgVersion(t *testing.T) {
 	msg := &MsgVersion{}
 	msg.Ver = conf.Ver
 	msg.Service = SERVICE_NODE
 	msg.Addr = conf.GetNetAddr()
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	err := msg.Encode(buf)
 	if err != nil {
 		panic(err)
@@ -90,7 +61,7 @@ func TestMsgVersion(t *testing.T) {
 }
 
 func TestVarBytes(t *testing.T) {
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	b := []byte{1, 2, 3, 4, 5, 6, 7, 8}
 	v1 := VarBytes(b)
 	err := v1.Encode(buf)
@@ -108,7 +79,7 @@ func TestVarBytes(t *testing.T) {
 }
 
 func TestNetPackage(t *testing.T) {
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 
 	p1 := NetPackage{Bytes: []byte{1, 2, 3, 4, 5, 6, 7, 8}}
 

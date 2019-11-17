@@ -8,6 +8,7 @@
   "tcp_port": 9333,
   "tcp_lip": "0.0.0.0",
   "tcp_rip": "192.168.31.198",
+  "max_conn": 50,
   "halving": 210000,
   "pow_limit": "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,

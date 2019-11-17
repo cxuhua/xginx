@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,12 +11,15 @@ import (
 
 func main() {
 
+	pubsub := GetPubSub()
+	defer pubsub.Shutdown()
+
 	conf := InitConfig("v10000.json")
 	defer conf.Close()
 
 	lis := newListener(conf.WalletDir)
 
-	bi := InitChain(lis)
+	bi := InitBlockIndex(lis)
 	defer bi.Close()
 
 	csig := make(chan os.Signal)
@@ -40,7 +42,7 @@ func main() {
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()
-	log.Println("recv sig :", sig, ",system exited")
+	LogInfo("recv sig :", sig, ",system exited")
 	if Server != nil {
 		Server.Stop()
 		Server.Wait()

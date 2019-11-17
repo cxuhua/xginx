@@ -1,27 +1,9 @@
 package xginx
 
 import (
-	"encoding/hex"
 	"log"
-	"strings"
 	"testing"
 )
-
-func TestHash160(t *testing.T) {
-	data, _ := hex.DecodeString("304402204781e067e018cdb6c808b674f98268ab9aed401471027defab366215d526f0fd0220447090471d4530ab73c7139baf8f24b5493fef008d3d5e0377f09949bf4a2500010364a61074b6a2d7f800a0bdcedc5f2cf7380e67dcce7836861d3318e18ab3eddf")
-
-	for i, _ := range data {
-		xx := Hash160(data[i:])
-		xs := hex.EncodeToString(xx)
-		if strings.HasPrefix(xs, "3688") {
-			pks := data[i:]
-			log.Println(xs, hex.EncodeToString(pks))
-			log.Println(hex.EncodeToString(Hash160(pks)))
-		}
-	}
-	data, _ = hex.DecodeString("00143688b12af2a11648c91366bb1e8ccea97aa51fed")
-	log.Println(hex.EncodeToString(Hash160(data)))
-}
 
 func TestPksToUINT256(t *testing.T) {
 	pri, err := NewPrivateKey()

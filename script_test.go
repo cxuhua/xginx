@@ -7,7 +7,7 @@ import (
 
 func TestScriptSer(t *testing.T) {
 	s := Script([]byte{1, 2, 3, 4, 5})
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	err := s.Encode(buf)
 	if err != nil {
 		t.Errorf("encode error")

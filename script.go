@@ -1,8 +1,6 @@
 package xginx
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"time"
 )
@@ -28,7 +26,7 @@ func (s Script) Type() uint8 {
 func getwitnesssize() int {
 	x := WitnessScript{}
 	x.Type = SCRIPT_WITNESS_TYPE
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	_ = x.Encode(buf)
 	return buf.Len()
 }
@@ -40,7 +38,7 @@ func getcoinbaseminsize() int {
 func getlockedsize() int {
 	x := LockedScript{}
 	x.Type = SCRIPT_LOCKED_TYPE
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	_ = x.Encode(buf)
 	return buf.Len()
 }
@@ -123,7 +121,7 @@ func (s Script) ToLocked() (LockedScript, error) {
 	if !s.IsLocked() {
 		return rs, errors.New("script type error")
 	}
-	buf := bytes.NewReader(s)
+	buf := NewReader(s)
 	err := rs.Decode(buf)
 	if err != nil {
 		return rs, err
@@ -136,7 +134,7 @@ func (s Script) ToWitness() (WitnessScript, error) {
 	if !s.IsWitness() {
 		return wit, errors.New("witness error")
 	}
-	buf := bytes.NewReader(s)
+	buf := NewReader(s)
 	err := wit.Decode(buf)
 	if err != nil {
 		return wit, err
@@ -172,7 +170,7 @@ type LockedScript struct {
 }
 
 func (ss LockedScript) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
+	if err := w.TWrite(ss.Type); err != nil {
 		return err
 	}
 	if err := ss.Pkh.Encode(w); err != nil {
@@ -182,7 +180,7 @@ func (ss LockedScript) Encode(w IWriter) error {
 }
 
 func (ss *LockedScript) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &ss.Type); err != nil {
+	if err := r.TRead(&ss.Type); err != nil {
 		return err
 	}
 	if err := ss.Pkh.Decode(r); err != nil {
@@ -195,7 +193,7 @@ func NewLockedScript(pkh HASH160) (Script, error) {
 	std := &LockedScript{}
 	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = pkh
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := std.Encode(buf)
 	if err != nil {
 		return nil, err
@@ -220,16 +218,16 @@ func (ss WitnessScript) IsEnableArb() bool {
 
 //id计算
 func (ss WitnessScript) ForID(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
+	if err := w.TWrite(ss.Type); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Num); err != nil {
+	if err := w.TWrite(ss.Num); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Less); err != nil {
+	if err := w.TWrite(ss.Less); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Arb); err != nil {
+	if err := w.TWrite(ss.Arb); err != nil {
 		return err
 	}
 	return nil
@@ -237,19 +235,19 @@ func (ss WitnessScript) ForID(w IWriter) error {
 
 //编码
 func (ss WitnessScript) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, ss.Type); err != nil {
+	if err := w.TWrite(ss.Type); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Num); err != nil {
+	if err := w.TWrite(ss.Num); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Less); err != nil {
+	if err := w.TWrite(ss.Less); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, ss.Arb); err != nil {
+	if err := w.TWrite(ss.Arb); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, uint8(len(ss.Pks))); err != nil {
+	if err := w.TWrite(uint8(len(ss.Pks))); err != nil {
 		return err
 	}
 	for _, pk := range ss.Pks {
@@ -257,7 +255,7 @@ func (ss WitnessScript) Encode(w IWriter) error {
 			return err
 		}
 	}
-	if err := binary.Write(w, Endian, uint8(len(ss.Sig))); err != nil {
+	if err := w.TWrite(uint8(len(ss.Sig))); err != nil {
 		return err
 	}
 	for _, sig := range ss.Sig {
@@ -269,20 +267,20 @@ func (ss WitnessScript) Encode(w IWriter) error {
 }
 
 func (ss *WitnessScript) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &ss.Type); err != nil {
+	if err := r.TRead(&ss.Type); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &ss.Num); err != nil {
+	if err := r.TRead(&ss.Num); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &ss.Less); err != nil {
+	if err := r.TRead(&ss.Less); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &ss.Arb); err != nil {
+	if err := r.TRead(&ss.Arb); err != nil {
 		return err
 	}
 	pnum := uint8(0)
-	if err := binary.Read(r, Endian, &pnum); err != nil {
+	if err := r.TRead(&pnum); err != nil {
 		return err
 	}
 	ss.Pks = make([]PKBytes, pnum)
@@ -294,7 +292,7 @@ func (ss *WitnessScript) Decode(r IReader) error {
 		ss.Pks[i] = pk
 	}
 	snum := uint8(0)
-	if err := binary.Read(r, Endian, &snum); err != nil {
+	if err := r.TRead(&snum); err != nil {
 		return err
 	}
 	ss.Sig = make([]SigBytes, snum)
@@ -318,31 +316,31 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 		panic(errors.New("pub num error"))
 	}
 	id := HASH160{}
-	buf := &bytes.Buffer{}
-	err := binary.Write(buf, Endian, num)
+	w := NewWriter()
+	err := w.TWrite(num)
 	if err != nil {
 		return id, err
 	}
-	err = binary.Write(buf, Endian, less)
+	err = w.TWrite(less)
 	if err != nil {
 		return id, err
 	}
-	err = binary.Write(buf, Endian, arb)
+	err = w.TWrite(arb)
 	if err != nil {
 		return id, err
 	}
 	for _, pk := range pks {
-		_, err := buf.Write(pk[:])
+		_, err := w.Write(pk[:])
 		if err != nil {
 			return id, err
 		}
 	}
-	copy(id[:], Hash160(buf.Bytes()))
+	copy(id[:], Hash160(w.Bytes()))
 	return id, nil
 }
 
 func (ss WitnessScript) ToScript() (Script, error) {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := ss.Encode(buf)
 	if err != nil {
 		return nil, err
@@ -355,17 +353,21 @@ func (ss WitnessScript) Check() error {
 	if ss.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("type errpor")
 	}
-	if ss.Num == 0 || ss.Num > 16 || ss.Less == 0 || ss.Less > 16 || ss.Less > ss.Num {
-		return errors.New("num less error")
+	if ss.Num == 0 || ss.Num > ACCOUNT_KEY_MAX_SIZE {
+		return errors.New("num error")
+	}
+	if ss.Less == 0 || ss.Less > ACCOUNT_KEY_MAX_SIZE || ss.Less > ss.Num {
+		return errors.New("less error")
 	}
 	//启用arb的情况下，less不能和num相等
 	if ss.IsEnableArb() && ss.Num == ss.Less {
 		return errors.New("arb set error")
 	}
-	//必须是最后一个
+	//仲裁签名必须是最后一个
 	if ss.IsEnableArb() && ss.Arb != ss.Num-1 {
 		return errors.New("arb set error")
 	}
+	//公钥数量必须正确
 	if len(ss.Pks) != int(ss.Num) {
 		return errors.New("pks num error")
 	}

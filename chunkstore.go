@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -17,13 +16,13 @@ import (
 )
 
 //文件数据状态
-type FileState struct {
+type ChunkState struct {
 	Id  VarUInt //数据所在文件id
 	Off VarUInt //数据所在位置
 	Len VarUInt //数据长度
 }
 
-func (f *FileState) Decode(r IReader) error {
+func (f *ChunkState) Decode(r IReader) error {
 	if err := f.Id.Decode(r); err != nil {
 		return err
 	}
@@ -36,7 +35,7 @@ func (f *FileState) Decode(r IReader) error {
 	return nil
 }
 
-func (f FileState) Encode(w IWriter) error {
+func (f ChunkState) Encode(w IWriter) error {
 	if err := f.Id.Encode(w); err != nil {
 		return err
 	}
@@ -50,11 +49,11 @@ func (f FileState) Encode(w IWriter) error {
 }
 
 type TBMeta struct {
-	BlockHeader           //区块头
-	Uts         VarUInt   //Units数量
-	Txs         VarUInt   //tx数量
-	Blk         FileState //数据状态
-	Rev         FileState //日志回退
+	BlockHeader            //区块头
+	Uts         VarUInt    //Units数量
+	Txs         VarUInt    //tx数量
+	Blk         ChunkState //数据状态
+	Rev         ChunkState //日志回退
 	hasher      HashCacher
 }
 
@@ -62,7 +61,7 @@ func (h *TBMeta) Hash() HASH256 {
 	if h, set := h.hasher.IsSet(); set {
 		return h
 	}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := h.Encode(buf); err != nil {
 		panic(err)
 	}
@@ -70,7 +69,7 @@ func (h *TBMeta) Hash() HASH256 {
 }
 
 func (h TBMeta) Bytes() ([]byte, error) {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	err := h.Encode(buf)
 	return buf.Bytes(), err
 }
@@ -190,10 +189,10 @@ var (
 
 func sfileHeaderBytes() []byte {
 	flags := []byte(conf.Flags)
-	buf := &bytes.Buffer{}
-	_ = binary.Write(buf, Endian, flags[:4])
-	_ = binary.Write(buf, Endian, conf.Ver)
-	return buf.Bytes()
+	w := NewWriter()
+	_ = w.TWrite(flags[:4])
+	_ = w.TWrite(conf.Ver)
+	return w.Bytes()
 }
 
 type sfile struct {
@@ -276,12 +275,12 @@ func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
 		_ = sf.Close()
 		return nil, err
 	}
-	buf := bytes.NewReader(hbytes)
-	if err := binary.Read(buf, Endian, &sf.flags); err != nil {
+	r := NewReader(hbytes)
+	if err := r.TRead(&sf.flags); err != nil {
 		_ = sf.Close()
 		return nil, err
 	}
-	if err := binary.Read(buf, Endian, &sf.ver); err != nil {
+	if err := r.TRead(&sf.ver); err != nil {
 		_ = sf.Close()
 		return nil, err
 	}
@@ -323,7 +322,7 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 	return sf, nil
 }
 
-func (s *sstore) Read(st FileState) ([]byte, error) {
+func (s *sstore) Read(st ChunkState) ([]byte, error) {
 	if st.Len > MAX_BLOCK_SIZE {
 		return nil, errors.New("data too big")
 	}
@@ -344,8 +343,8 @@ func (s *sstore) read(id uint32, off uint32, b []byte) error {
 	return f.read(off, b)
 }
 
-func (s *sstore) Write(b []byte) (FileState, error) {
-	fs := FileState{
+func (s *sstore) Write(b []byte) (ChunkState, error) {
+	fs := ChunkState{
 		Id:  VarUInt(s.Id()),
 		Off: VarUInt(0),
 		Len: VarUInt(len(b)),

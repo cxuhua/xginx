@@ -14,11 +14,22 @@ import (
 
 //协议包标识
 const (
-	NT_VERSION   = uint8(1)
-	NT_PING      = uint8(2)
-	NT_PONG      = uint8(3)
+	NT_VERSION = uint8(1)
+	//ping/pong
+	NT_PING = uint8(2)
+	NT_PONG = uint8(3)
+	//获取节点连接的其他地址
 	NT_GET_ADDRS = uint8(4)
 	NT_ADDRS     = uint8(5)
+	//inv 交易或者区块通报
+	//当有新的交易或者区块生成通报给周边的节点
+	NT_INV = uint8(6)
+	//获取交易或者区块
+	NT_GET_INV = uint8(7)
+	//获取交易的返回
+	NT_TX = uint8(8)
+	//获取区块的返回
+	NT_BLOCK = uint8(9)
 )
 
 //协议消息
@@ -75,6 +86,10 @@ func (c NetAddr) ToTcpAddr() *net.TCPAddr {
 	}
 }
 
+func (v NetAddr) Equal(d NetAddr) bool {
+	return v.ip.Equal(d.ip) && v.port == d.port
+}
+
 func (v NetAddr) String() string {
 	return v.Addr()
 }
@@ -92,7 +107,7 @@ func (v NetAddr) Encode(w IWriter) error {
 	if _, err := w.Write(b); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.port); err != nil {
+	if err := w.TWrite(v.port); err != nil {
 		return err
 	}
 	return nil
@@ -104,7 +119,7 @@ func (v *NetAddr) Decode(r IReader) error {
 		return err
 	}
 	v.ip = ip6
-	if err := binary.Read(r, Endian, &v.port); err != nil {
+	if err := r.TRead(&v.port); err != nil {
 		return err
 	}
 	return nil
@@ -123,11 +138,11 @@ func (v MsgPing) NewPong() *MsgPong {
 }
 
 func (v MsgPing) Encode(w IWriter) error {
-	return binary.Write(w, Endian, v.Time)
+	return w.TWrite(v.Time)
 }
 
 func (v *MsgPing) Decode(r IReader) error {
-	return binary.Read(r, Endian, &v.Time)
+	return r.TRead(&v.Time)
 }
 
 func NewMsgPing() *MsgPing {
@@ -147,11 +162,11 @@ func (v MsgPong) Ping() int {
 }
 
 func (v MsgPong) Encode(w IWriter) error {
-	return binary.Write(w, Endian, v.Time)
+	return w.TWrite(v.Time)
 }
 
 func (v *MsgPong) Decode(r IReader) error {
-	return binary.Read(r, Endian, &v.Time)
+	return r.TRead(&v.Time)
 }
 
 const (
@@ -164,14 +179,17 @@ type MsgVersion struct {
 	Ver     uint32  //版本
 	NodeID  HASH160 //节点id
 	Service uint32  //服务
-	Addr    NetAddr //节点地址
+	Addr    NetAddr //节点外网地址
+	Height  uint32  //节点区块高度
 }
 
-func NewMsgVersion() *MsgVersion {
+//在链上生成一个版本数据包
+func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m := &MsgVersion{}
 	m.NodeID = conf.NodeID
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
+	m.Height = bi.LastHeight()
 	return m
 }
 
@@ -180,32 +198,38 @@ func (v MsgVersion) Type() uint8 {
 }
 
 func (v MsgVersion) Encode(w IWriter) error {
-	if err := binary.Write(w, Endian, v.Ver); err != nil {
+	if err := w.TWrite(v.Ver); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.NodeID); err != nil {
+	if err := w.TWrite(v.NodeID); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Service); err != nil {
+	if err := w.TWrite(v.Service); err != nil {
 		return err
 	}
 	if err := v.Addr.Encode(w); err != nil {
+		return err
+	}
+	if err := w.TWrite(v.Height); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (v *MsgVersion) Decode(r IReader) error {
-	if err := binary.Read(r, Endian, &v.Ver); err != nil {
+	if err := r.TRead(&v.Ver); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.NodeID); err != nil {
+	if err := r.TRead(&v.NodeID); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Service); err != nil {
+	if err := r.TRead(&v.Service); err != nil {
 		return err
 	}
 	if err := v.Addr.Decode(r); err != nil {
+		return err
+	}
+	if err := r.TRead(&v.Height); err != nil {
 		return err
 	}
 	return nil
@@ -213,6 +237,26 @@ func (v *MsgVersion) Decode(r IReader) error {
 
 type NetStream struct {
 	net.Conn
+}
+
+func (c *NetStream) Bytes() []byte {
+	panic(errors.New("netstream not support"))
+}
+
+func (c *NetStream) Reset() {
+	panic(errors.New("netstream not support"))
+}
+
+func (c *NetStream) Len() int {
+	panic(errors.New("netstream not support"))
+}
+
+func (c *NetStream) TRead(data interface{}) error {
+	return binary.Read(c, Endian, data)
+}
+
+func (c *NetStream) TWrite(data interface{}) error {
+	return binary.Write(c, Endian, data)
 }
 
 func (c *NetStream) ReadMsg() (MsgIO, error) {
@@ -225,7 +269,7 @@ func (c *NetStream) ReadMsg() (MsgIO, error) {
 }
 
 func (c *NetStream) WriteMsg(m MsgIO) error {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := m.Encode(buf); err != nil {
 		return err
 	}
@@ -267,7 +311,7 @@ func (v NetPackage) Encode(w IWriter) error {
 	if err := w.WriteByte(v.Type); err != nil {
 		return err
 	}
-	if err := binary.Write(w, Endian, v.Ver); err != nil {
+	if err := w.TWrite(v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
@@ -293,10 +337,10 @@ func (v *NetPackage) Decode(r IReader) error {
 	if _, err := r.Read(v.Flags[:]); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Type); err != nil {
+	if err := r.TRead(&v.Type); err != nil {
 		return err
 	}
-	if err := binary.Read(r, Endian, &v.Ver); err != nil {
+	if err := r.TRead(&v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Decode(r); err != nil {
@@ -311,17 +355,83 @@ func (v *NetPackage) Decode(r IReader) error {
 	return nil
 }
 
+type reader struct {
+	*bytes.Reader
+}
+
+func (r *reader) TRead(data interface{}) error {
+	return binary.Read(r.Reader, Endian, data)
+}
+
+type writer struct {
+	*bytes.Buffer
+}
+
+//
+func (w *writer) TWrite(data interface{}) error {
+	return binary.Write(w.Buffer, Endian, data)
+}
+
+func (w *writer) Len() int {
+	return w.Buffer.Len()
+}
+
+func (w *writer) Bytes() []byte {
+	return w.Buffer.Bytes()
+}
+
+func (w *writer) Reset() {
+	w.Buffer.Reset()
+}
+
+//
+func NewReader(b []byte) IReader {
+	return &reader{
+		Reader: bytes.NewReader(b),
+	}
+}
+
+func NewWriter() IWriter {
+	return &writer{
+		Buffer: &bytes.Buffer{},
+	}
+}
+
+//
+type readwriter struct {
+	*bytes.Buffer
+}
+
+func (w *readwriter) TWrite(data interface{}) error {
+	return binary.Write(w.Buffer, Endian, data)
+}
+
+func (r *readwriter) TRead(data interface{}) error {
+	return binary.Read(r.Buffer, Endian, data)
+}
+
+func NewReadWriter() IReadWriter {
+	return &readwriter{
+		Buffer: &bytes.Buffer{},
+	}
+}
+
 type IReader interface {
 	io.Reader
 	io.ByteReader
+	TRead(data interface{}) error
 }
 
 type IWriter interface {
 	io.Writer
 	io.ByteWriter
+	TWrite(data interface{}) error
+	Len() int
+	Bytes() []byte
+	Reset()
 }
 
-type Stream interface {
+type IReadWriter interface {
 	IReader
 	IWriter
 }
@@ -355,7 +465,8 @@ func (v *VarUInt) SetInt(uv int) {
 }
 
 func (v VarUInt) Encode(w IWriter) error {
-	return binary.Write(w, Endian, v.Bytes())
+	_, err := w.Write(v.Bytes())
+	return err
 }
 
 func (v *VarUInt) From(b []byte) int {
@@ -379,7 +490,8 @@ func (v VarInt) ToInt() int {
 func (v VarInt) Encode(w IWriter) error {
 	lb := make([]byte, binary.MaxVarintLen64)
 	l := binary.PutVarint(lb, int64(v))
-	return binary.Write(w, Endian, lb[:l])
+	_, err := w.Write(lb[:l])
+	return err
 }
 
 func (v *VarInt) Decode(r IReader) error {
@@ -402,13 +514,13 @@ func (v VarBytes) Encode(w IWriter) error {
 	l := len(v)
 	lb := make([]byte, binary.MaxVarintLen32)
 	l = binary.PutUvarint(lb, uint64(l))
-	if err := binary.Write(w, Endian, lb[:l]); err != nil {
+	if err := w.TWrite(lb[:l]); err != nil {
 		return err
 	}
 	if len(v) == 0 {
 		return nil
 	}
-	if err := binary.Write(w, Endian, v); err != nil {
+	if _, err := w.Write(v); err != nil {
 		return err
 	}
 	return nil

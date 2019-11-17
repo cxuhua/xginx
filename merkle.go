@@ -1,8 +1,6 @@
 package xginx
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 
 	"github.com/willf/bitset"
@@ -224,23 +222,23 @@ func init() {
 func NewBitSet(d []byte) *bitset.BitSet {
 	bl := uint(len(d) * 8)
 	bits := bitset.New(bl)
-	buf := &bytes.Buffer{}
-	_ = binary.Write(buf, Endian, uint64(bl))
+	w := NewReadWriter()
+	_ = w.TWrite(uint64(bl))
 	nl := ((len(d) + 7) / 8) * 8
 	nb := make([]byte, nl)
 	copy(nb, d)
-	_ = binary.Write(buf, Endian, nb)
-	_, _ = bits.ReadFrom(buf)
+	_ = w.TWrite(nb)
+	_, _ = bits.ReadFrom(w)
 	return bits
 }
 
 func FromBitSet(bs *bitset.BitSet) []byte {
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	_, _ = bs.WriteTo(buf)
 	bl := uint64(0)
-	_ = binary.Read(buf, Endian, &bl)
+	_ = buf.TRead(&bl)
 	bl = (bl + 7) / 8
 	bb := make([]byte, bl)
-	_ = binary.Read(buf, Endian, bb)
+	_ = buf.TRead(bb)
 	return bb
 }

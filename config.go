@@ -33,6 +33,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	MaxConn      int          `json:"max_conn"`      //最大激活的连接，包括连入和连出的
 	Seeds        []string     `json:"seeds"`         //dns seed服务器
 	WalletDir    string       `json:"wallet_dir"`    //钱包地址
 	DataDir      string       `json:"data_dir"`      //数据路径
@@ -54,14 +55,9 @@ type Config struct {
 	RpclIp       string       `json:"rpc_lip"`       //rpc服务器地址
 	mu           sync.RWMutex `json:"-"`             //
 	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
-	minerpk      *PublicKey   `json:"-"`             //矿工公钥
 	logFile      *os.File     `json:"-"`             //日志文件
 	genesisId    HASH256      `json:"-"`             //第一个区块id
 	LimitHash    UINT256      `json:"-"`             //最小工作难度
-}
-
-func (c *Config) GetMinerPubKey() *PublicKey {
-	return c.minerpk
 }
 
 func (c *Config) GetRpcListenAddr() NetAddr {

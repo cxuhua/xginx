@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"container/list"
 	"errors"
 	"fmt"
@@ -40,7 +39,7 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	if err != nil {
 		return err
 	}
-	buf := bytes.NewReader(hb)
+	buf := NewReader(hb)
 	if err := ele.TBMeta.Decode(buf); err != nil {
 		return err
 	}
@@ -98,29 +97,48 @@ type TxEvent struct {
 }
 
 var (
-	midx *BlockIndex = nil
+	midx  *BlockIndex = nil
+	monce sync.Once
+	pubv  = NewPubSub(10)
+	ponce sync.Once
 )
 
-//获取主链
-func GetChain() *BlockIndex {
+//获取全局发布订阅
+func GetPubSub() *PubSub {
+	ponce.Do(func() {
+		LogInfo("global pusbsub init cap=10")
+		pubv = NewPubSub(10)
+	})
+	return pubv
+}
+
+//获取全局主链
+func GetBlockIndex() *BlockIndex {
 	if midx == nil {
-		panic(errors.New("main chain not init"))
+		panic(errors.New("block index not init"))
 	}
 	return midx
 }
 
 //初始化主链
-func InitChain(lis IListener) *BlockIndex {
+func InitBlockIndex(lis IListener) *BlockIndex {
 	if conf == nil {
 		panic(errors.New("config not init"))
 	}
-	midx = NewBlockIndex(lis)
-	err := midx.LoadAll(func(pv uint) {
-		log.Printf("load block chian progress = %d%%\n", pv)
+	monce.Do(func() {
+		bi := NewBlockIndex(lis)
+		err := bi.LoadAll(func(pv uint) {
+			LogInfof("load block chian progress = %d%%", pv)
+		})
+		if err == EmptyBlockChain {
+			LogError(err)
+		} else if err == ArriveFirstBlock {
+			LogError(err)
+		} else if err != nil {
+			panic(err)
+		}
+		midx = bi
 	})
-	if err != nil {
-		panic(err)
-	}
 	return midx
 }
 
@@ -218,6 +236,14 @@ func (bi *BlockIndex) First() *TBEle {
 		return nil
 	}
 	return le.Value.(*TBEle)
+}
+
+func (bi *BlockIndex) LastHeight() uint32 {
+	last := bi.Last()
+	if last == nil {
+		return 0
+	}
+	return last.Height
 }
 
 //最高块
@@ -414,7 +440,7 @@ func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
 //加载所有链meta
 //f进度回调 0-100
 func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
-	log.Println("start load main chain block header")
+	LogInfo("start load main chain block header")
 	hh := InvalidHeight
 	vv := uint(0)
 	//加载所有区块头
@@ -460,7 +486,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
 	}
-	log.Println("load finished block count = ", bi.Len())
+	LogInfo("load finished block count = ", bi.Len())
 	return nil
 }
 
@@ -647,7 +673,7 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 		if err != nil {
 			return 0, nil
 		}
-		buf := &bytes.Buffer{}
+		buf := NewWriter()
 		if err := tx.Encode(buf); err != nil {
 			return 0, nil
 		}
@@ -665,7 +691,7 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = vv.Decode(bytes.NewReader(vb))
+	err = vv.Decode(NewReader(vb))
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +706,7 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	buf := bytes.NewReader(hb)
+	buf := NewReader(hb)
 	if err := meta.Decode(buf); err != nil {
 		return nil, err
 	}
@@ -688,7 +714,7 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = block.Decode(bytes.NewReader(bb))
+	err = block.Decode(NewReader(bb))
 	return meta, err
 }
 

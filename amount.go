@@ -61,7 +61,7 @@ func (a Amount) Encode(w IWriter) error {
 	lb := make([]byte, binary.MaxVarintLen64)
 	l := binary.PutUvarint(lb, cv)
 	wb := lb[:l]
-	return binary.Write(w, Endian, wb)
+	return w.TWrite(wb)
 }
 
 func (a Amount) IsRange() bool {

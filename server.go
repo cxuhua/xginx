@@ -1,11 +1,9 @@
 package xginx
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -47,18 +45,31 @@ type NetAddrMap struct {
 	mu    sync.Mutex
 }
 
+func (m *NetAddrMap) Has(addr NetAddr) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, has := m.addrs[addr.String()]
+	return has
+}
+
 func (m *NetAddrMap) Set(addr NetAddr) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.addrs[addr.String()] = addr
 }
 
-func (m *NetAddrMap) NewMsgAddrs() *MsgAddrs {
+func (m *NetAddrMap) NewMsgAddrs(c *Client) *MsgAddrs {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	msg := &MsgAddrs{}
 	for _, v := range m.addrs {
-		msg.Add(v)
+		//不包括自己
+		if v.Equal(c.mVer.Addr) {
+			continue
+		}
+		if msg.Add(v) {
+			break
+		}
 	}
 	return msg
 }
@@ -140,6 +151,8 @@ func (s *TcpServer) NewClient() *Client {
 	c.ctx, c.cancel = context.WithCancel(s.ctx)
 	c.wc = make(chan MsgIO, 32)
 	c.rc = make(chan MsgIO, 32)
+	c.ptimer = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
+	c.vtimer = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	return c
 }
 
@@ -148,7 +161,7 @@ func (s *TcpServer) Service() uint32 {
 }
 
 func (s *TcpServer) run() {
-	log.Println(s.addr.Network(), "server startup", s.addr)
+	LogInfo(s.addr.Network(), "server startup", s.addr)
 	defer func() {
 		if err := recover(); err != nil {
 			s.err = err
@@ -172,7 +185,7 @@ func (s *TcpServer) run() {
 			continue
 		}
 		c.typ = ClientIn
-		log.Println("new connection", conn.RemoteAddr())
+		LogInfo("new connection", conn.RemoteAddr())
 		c.Loop()
 	}
 }
@@ -181,11 +194,11 @@ func (s *TcpServer) run() {
 func NewNodeID(c *Config) HASH160 {
 	id := HASH160{}
 	_ = binary.Read(rand.Reader, Endian, id[:])
-	buf := &bytes.Buffer{}
-	buf.Write(id[:])
-	buf.Write([]byte(c.TcprIp))
-	_ = binary.Write(buf, Endian, time.Now().UnixNano())
-	copy(id[:], Hash160(buf.Bytes()))
+	w := NewWriter()
+	_, _ = w.Write(id[:])
+	_, _ = w.Write([]byte(c.TcprIp))
+	_ = w.TWrite(time.Now().UnixNano())
+	copy(id[:], Hash160(w.Bytes()))
 	return id
 }
 

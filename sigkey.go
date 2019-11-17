@@ -120,7 +120,7 @@ func (pk *PrivateKey) Decode(data []byte) error {
 
 func (pk *PrivateKey) Encode() []byte {
 	pb := pk.D.Bytes()
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	buf.Write(PREFIX_SECRET_KEY)
 	buf.Write(pb)
 	buf.WriteByte(1)

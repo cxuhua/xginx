@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"testing"
 )
 
@@ -11,12 +10,22 @@ func TestMsgAddrs(t *testing.T) {
 		t.Errorf("get typ error")
 	}
 
+	a1 := NetAddrForm("1.2.1.1:1")
+	a2 := NetAddrForm("1.2.1.1:2")
+	if a1.Equal(a2) {
+		t.Errorf("equal error")
+	}
+	a3 := NetAddrForm("1.2.1.1:1")
+	if !a1.Equal(a3) {
+		t.Errorf("equal error")
+	}
+
 	m := &MsgAddrs{}
 	m.Add(NetAddrForm("1.2.1.1:1"))
 	m.Add(NetAddrForm("1.2.1.1:2"))
 	m.Add(NetAddrForm("1.2.1.1:3"))
 	m.Add(NetAddrForm("1.2.1.1:4"))
-	buf := &bytes.Buffer{}
+	buf := NewReadWriter()
 	err := m.Encode(buf)
 	if err != nil {
 		panic(err)
@@ -36,7 +45,7 @@ func TestMsgAddrs(t *testing.T) {
 		t.Errorf("type 2 error")
 	}
 	for i := 0; i < len(m2.Addrs); i++ {
-		if m2.Addrs[i].String() != m.Addrs[i].String() {
+		if !m2.Addrs[i].Equal(m.Addrs[i]) {
 			t.Errorf("data error")
 		}
 	}

@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"os"
 )
@@ -14,8 +13,8 @@ var (
 
 //数据块存储
 type IChunkStore interface {
-	Read(st FileState) ([]byte, error)
-	Write(b []byte) (FileState, error)
+	Read(st ChunkState) ([]byte, error)
+	Write(b []byte) (ChunkState, error)
 	Close()
 	Init() error
 	Sync(id ...uint32)
@@ -121,7 +120,7 @@ type CoinKeyValue struct {
 }
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
-	buf := bytes.NewReader(k)
+	buf := NewReader(k)
 	pf := []byte{0}
 	if _, err := buf.Read(pf); err != nil {
 		return err
@@ -159,7 +158,7 @@ func (tk CoinKeyValue) GetValue() []byte {
 }
 
 func (tk CoinKeyValue) GetKey() []byte {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	_, _ = buf.Write(COIN_PREFIX)
 	_ = tk.CPkh.Encode(buf)
 	_ = tk.TxId.Encode(buf)
@@ -188,18 +187,18 @@ func (v BestValue) IsValid() bool {
 }
 
 func (v BestValue) Bytes() []byte {
-	buf := &bytes.Buffer{}
-	buf.Write(v.Id[:])
-	_ = binary.Write(buf, Endian, v.Height)
-	return buf.Bytes()
+	w := NewWriter()
+	_, _ = w.Write(v.Id[:])
+	_ = w.TWrite(v.Height)
+	return w.Bytes()
 }
 
 func (v *BestValue) From(b []byte) error {
-	buf := bytes.NewReader(b)
-	if _, err := buf.Read(v.Id[:]); err != nil {
+	r := NewReader(b)
+	if _, err := r.Read(v.Id[:]); err != nil {
 		return err
 	}
-	if err := binary.Read(buf, Endian, &v.Height); err != nil {
+	if err := r.TRead(&v.Height); err != nil {
 		return err
 	}
 	return nil

@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"errors"
 )
 
@@ -113,7 +112,7 @@ func (sp *stdsigner) OutputsHash() HASH256 {
 	if hash, set := sp.tx.outs.IsSet(); set {
 		return hash
 	}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	for _, v := range sp.tx.Outs {
 		err := v.Encode(buf)
 		if err != nil {
@@ -127,7 +126,7 @@ func (sp *stdsigner) PrevoutHash() HASH256 {
 	if hash, set := sp.tx.pres.IsSet(); set {
 		return hash
 	}
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	for _, v := range sp.tx.Ins {
 		err := v.OutHash.Encode(buf)
 		if err != nil {
@@ -144,7 +143,7 @@ func (sp *stdsigner) PrevoutHash() HASH256 {
 //获取输入签名数据
 //out 当前输入对应的上一个输出,idx 当前输入的索引位置
 func (sr *stdsigner) GetSigHash() ([]byte, error) {
-	buf := &bytes.Buffer{}
+	buf := NewWriter()
 	if err := sr.tx.Ver.Encode(buf); err != nil {
 		return nil, err
 	}

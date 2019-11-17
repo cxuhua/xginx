@@ -123,20 +123,15 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	return blk
 }
 
-func TestBlockChain(t *testing.T) {
-	bi := NewBlockIndex(&tlis{})
-	defer bi.Close()
-	err := bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err == EmptyBlockChain {
-		log.Println(err)
-	} else if err == ArriveFirstBlock {
-		log.Println(err)
-	} else if err != nil {
-		panic(err)
-	}
+func init() {
+	//测试配置文件
+	conf = LoadConfig("v10000.json")
+	//初始化测试用的
+	InitBlockIndex(&tlis{})
+}
 
+func TestBlockChain(t *testing.T) {
+	bi := GetBlockIndex()
 	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
@@ -149,8 +144,6 @@ func TestBlockChain(t *testing.T) {
 			log.Println(i, "block")
 		}
 	}
-
-	bi.db.Sync()
 }
 
 func TestTransfire(t *testing.T) {
@@ -162,13 +155,7 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	bi := NewBlockIndex(&tlis{})
-	err = bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err != nil {
-		panic(err)
-	}
+	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
@@ -203,14 +190,8 @@ func TestTransfire(t *testing.T) {
 }
 
 func TestUnlinkBlock(t *testing.T) {
-	bi := NewBlockIndex(&tlis{})
-	err := bi.LoadAll(func(pv uint) {
-		log.Printf("load block chian %d%%\n", pv)
-	})
-	if err != nil {
-		panic(err)
-	}
-	err = bi.UnlinkLast()
+	bi := GetBlockIndex()
+	err := bi.UnlinkLast()
 	if err != nil {
 		panic(err)
 	}
