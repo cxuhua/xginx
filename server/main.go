@@ -10,12 +10,11 @@ import (
 )
 
 func main() {
+	conf := InitConfig("v10000.json")
+	defer conf.Close()
 
 	pubsub := GetPubSub()
 	defer pubsub.Shutdown()
-
-	conf := InitConfig("v10000.json")
-	defer conf.Close()
 
 	lis := newListener(conf.WalletDir)
 

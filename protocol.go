@@ -79,6 +79,15 @@ func (n *NetAddr) From(s string) error {
 	return nil
 }
 
+//是否是有效的可链接的地址
+func (c NetAddr) IsGlobalUnicast() bool {
+	return c.ip.IsUnspecified()
+}
+
+func (c NetAddr) Network() string {
+	return c.ToTcpAddr().Network()
+}
+
 func (c NetAddr) ToTcpAddr() *net.TCPAddr {
 	return &net.TCPAddr{
 		IP:   c.ip,
@@ -177,7 +186,6 @@ const (
 type MsgVersion struct {
 	MsgIO
 	Ver     uint32  //版本
-	NodeID  HASH160 //节点id
 	Service uint32  //服务
 	Addr    NetAddr //节点外网地址
 	Height  uint32  //节点区块高度
@@ -186,7 +194,6 @@ type MsgVersion struct {
 //在链上生成一个版本数据包
 func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m := &MsgVersion{}
-	m.NodeID = conf.NodeID
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
 	m.Height = bi.LastHeight()
@@ -199,9 +206,6 @@ func (v MsgVersion) Type() uint8 {
 
 func (v MsgVersion) Encode(w IWriter) error {
 	if err := w.TWrite(v.Ver); err != nil {
-		return err
-	}
-	if err := w.TWrite(v.NodeID); err != nil {
 		return err
 	}
 	if err := w.TWrite(v.Service); err != nil {
@@ -220,9 +224,6 @@ func (v *MsgVersion) Decode(r IReader) error {
 	if err := r.TRead(&v.Ver); err != nil {
 		return err
 	}
-	if err := r.TRead(&v.NodeID); err != nil {
-		return err
-	}
 	if err := r.TRead(&v.Service); err != nil {
 		return err
 	}
@@ -235,8 +236,19 @@ func (v *MsgVersion) Decode(r IReader) error {
 	return nil
 }
 
+type INetStream interface {
+	ReadMsg() (MsgIO, error)
+	WriteMsg(m MsgIO) error
+	IReadWriter
+	io.Closer
+}
+
 type NetStream struct {
 	net.Conn
+}
+
+func NewNetStream(conn net.Conn) *NetStream {
+	return &NetStream{Conn: conn}
 }
 
 func (c *NetStream) Bytes() []byte {

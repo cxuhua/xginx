@@ -54,7 +54,6 @@ type Config struct {
 	RpcPort      int          `json:"rpc_port"`      //rpc服务端口
 	RpclIp       string       `json:"rpc_lip"`       //rpc服务器地址
 	mu           sync.RWMutex `json:"-"`             //
-	NodeID       HASH160      `json:"-"`             //启动时临时生成 MinerPKey 生成
 	logFile      *os.File     `json:"-"`             //日志文件
 	genesisId    HASH256      `json:"-"`             //第一个区块id
 	LimitHash    UINT256      `json:"-"`             //最小工作难度
@@ -115,7 +114,6 @@ func (c *Config) Init() error {
 	//设置第一个区块id
 	c.genesisId = NewHASH256(c.GenesisBlock)
 	c.LimitHash = NewUINT256(c.PowLimit)
-	c.NodeID = NewNodeID(c)
 	return nil
 }
 

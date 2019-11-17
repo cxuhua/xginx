@@ -70,6 +70,9 @@ func (m MsgAddrs) Encode(w IWriter) error {
 
 //最多放2000个
 func (m *MsgAddrs) Add(a NetAddr) bool {
+	if !a.IsGlobalUnicast() {
+		return false
+	}
 	if len(m.Addrs) > 2000 {
 		return true
 	}

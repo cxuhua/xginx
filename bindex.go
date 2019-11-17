@@ -926,7 +926,7 @@ func (bi *BlockIndex) Close() {
 	}
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
-	log.Println("block index closing")
+	LogInfo("block index closing")
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
@@ -934,7 +934,7 @@ func (bi *BlockIndex) Close() {
 	bi.imap = nil
 	bi.lru.EvictAll()
 	_ = bi.lru.Close()
-	log.Println("block index closed")
+	LogInfo("block index closed")
 }
 
 func NewBlockIndex(lptr IListener) *BlockIndex {

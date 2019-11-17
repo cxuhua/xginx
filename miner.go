@@ -3,7 +3,6 @@ package xginx
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync"
 	"time"
 
@@ -238,11 +237,10 @@ func (m *minerEngine) loop(i int, wch chan interface{}) {
 
 //开始工作
 func (m *minerEngine) Start(ctx context.Context) {
-	cpu := runtime.NumCPU()
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅交易和区块
 	wch := GetPubSub().Sub(NewTxTopic, NewBlockTopic)
-	for i := 0; i < cpu; i++ {
+	for i := 0; i < 4; i++ {
 		go m.loop(i, wch)
 	}
 	optch := GetPubSub().Sub(NewMinerActTopic)

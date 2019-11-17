@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	//收到地址消息订阅
+	NetMsgAddrsTopic = "NetMsgAddrs"
+)
+
 type IServer interface {
 	Start(ctx context.Context)
 	Stop()
@@ -40,53 +45,6 @@ func (s *server) Start(ctx context.Context) {
 	s.ser.Run()
 }
 
-type NetAddrMap struct {
-	addrs map[string]NetAddr
-	mu    sync.Mutex
-}
-
-func (m *NetAddrMap) Has(addr NetAddr) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	_, has := m.addrs[addr.String()]
-	return has
-}
-
-func (m *NetAddrMap) Set(addr NetAddr) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.addrs[addr.String()] = addr
-}
-
-func (m *NetAddrMap) NewMsgAddrs(c *Client) *MsgAddrs {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	msg := &MsgAddrs{}
-	for _, v := range m.addrs {
-		//不包括自己
-		if v.Equal(c.mVer.Addr) {
-			continue
-		}
-		if msg.Add(v) {
-			break
-		}
-	}
-	return msg
-}
-
-func (m *NetAddrMap) Del(addr NetAddr) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.addrs, addr.String())
-}
-
-func NewNetAddrMap() *NetAddrMap {
-	return &NetAddrMap{
-		addrs: map[string]NetAddr{},
-		mu:    sync.Mutex{},
-	}
-}
-
 type TcpServer struct {
 	service uint32
 	lis     net.Listener
@@ -96,8 +54,23 @@ type TcpServer struct {
 	mu      sync.RWMutex
 	err     interface{}
 	wg      sync.WaitGroup
-	clients map[HASH160]*Client //连接的所有client
-	addrs   *NetAddrMap         //连接我的ip地址和我连接出去的
+	clients map[string]*Client //连接的所有client
+}
+
+func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msg := &MsgAddrs{}
+	for _, v := range s.clients {
+		//不包括自己
+		if v.addr.Equal(c.addr) {
+			continue
+		}
+		if msg.Add(v.addr) {
+			break
+		}
+	}
+	return msg
 }
 
 //如果c不空不会广播给c
@@ -112,26 +85,39 @@ func (s *TcpServer) BroadMsg(c *Client, m MsgIO) {
 	}
 }
 
-func (s *TcpServer) HasClient(id HASH160, c *Client) bool {
+func (s *TcpServer) HasAddr(addr NetAddr) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.clients {
+		if v.addr.Equal(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *TcpServer) HasClient(addr NetAddr, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.clients[id]
+	key := addr.String()
+	_, ok := s.clients[key]
 	if !ok {
-		s.clients[id] = c
+		c.addr = addr
+		s.clients[key] = c
 	}
 	return ok
 }
 
-func (s *TcpServer) DelClient(id HASH160, c *Client) {
+func (s *TcpServer) DelClient(addr NetAddr, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.clients, id)
+	delete(s.clients, addr.String())
 }
 
-func (s *TcpServer) AddClient(id HASH160, c *Client) {
+func (s *TcpServer) AddClient(addr NetAddr, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.clients[id] = c
+	s.clients[addr.String()] = c
 }
 
 func (s *TcpServer) Stop() {
@@ -149,15 +135,44 @@ func (s *TcpServer) Wait() {
 func (s *TcpServer) NewClient() *Client {
 	c := &Client{ss: s}
 	c.ctx, c.cancel = context.WithCancel(s.ctx)
-	c.wc = make(chan MsgIO, 32)
-	c.rc = make(chan MsgIO, 32)
+	c.wc = make(chan MsgIO, 4)
+	c.rc = make(chan MsgIO, 4)
 	c.ptimer = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
 	c.vtimer = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	return c
 }
 
+func (s *TcpServer) ConnNum() int {
+	s.mu.RLock()
+	defer s.mu.Unlock()
+	return len(s.clients)
+}
+
 func (s *TcpServer) Service() uint32 {
 	return s.service
+}
+
+//收到地址列表，如果没有达到最大链接开始链接
+func (s *TcpServer) recvMsgAddrs(msg *MsgAddrs) {
+	if cl := s.ConnNum(); cl >= conf.MaxConn {
+		LogInfof("max conn=%d ,pause connect client", cl)
+		return
+	}
+	for _, addr := range msg.Addrs {
+		if !addr.IsGlobalUnicast() {
+			continue
+		}
+		if s.HasAddr(addr) {
+			continue
+		}
+		c := s.NewClient()
+		err := c.Open(addr)
+		if err != nil {
+			LogError("connect", addr, "error", err)
+			continue
+		}
+		c.Loop()
+	}
 }
 
 func (s *TcpServer) run() {
@@ -169,8 +184,20 @@ func (s *TcpServer) run() {
 		}
 	}()
 	go func() {
-		<-s.ctx.Done()
-		_ = s.lis.Close()
+		//订阅收到地址列表
+		ch := GetPubSub().Sub(NetMsgAddrsTopic)
+		for {
+			select {
+			case <-s.ctx.Done():
+				_ = s.lis.Close()
+				return
+			case cv := <-ch:
+				if msg, ok := cv.(*MsgAddrs); ok {
+					s.recvMsgAddrs(msg)
+				}
+
+			}
+		}
 	}()
 	for {
 		conn, err := s.lis.Accept()
@@ -178,7 +205,7 @@ func (s *TcpServer) run() {
 			panic(err)
 		}
 		c := s.NewClient()
-		c.NetStream = &NetStream{Conn: conn}
+		c.NetStream = NewNetStream(conn)
 		err = c.addr.From(conn.RemoteAddr().String())
 		if err != nil {
 			_ = conn.Close()
@@ -211,8 +238,7 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	}
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	s.clients = map[HASH160]*Client{}
-	s.addrs = NewNetAddrMap()
+	s.clients = map[string]*Client{}
 	s.service = SERVICE_NODE
 	return s, nil
 }
