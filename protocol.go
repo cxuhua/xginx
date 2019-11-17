@@ -30,6 +30,10 @@ const (
 	NT_TX = uint8(8)
 	//获取区块的返回
 	NT_BLOCK = uint8(9)
+	//获取区块头
+	NT_GET_HEADERS = uint8(10)
+	//返回区块头，最多200个
+	NT_HEADERS = uint8(11)
 )
 
 //协议消息
@@ -39,18 +43,18 @@ type MsgIO interface {
 	Decode(r IReader) error
 }
 
-type EmptyMsg struct {
+type MsgEmpty struct {
 }
 
-func (e EmptyMsg) Type() uint8 {
+func (e MsgEmpty) Type() uint8 {
 	return 0
 }
 
-func (e EmptyMsg) Encode(w IWriter) error {
+func (e MsgEmpty) Encode(w IWriter) error {
 	return nil
 }
 
-func (e EmptyMsg) Decode(r IReader) error {
+func (e MsgEmpty) Decode(r IReader) error {
 	return nil
 }
 

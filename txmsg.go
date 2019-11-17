@@ -35,22 +35,22 @@ func (m *Inventory) Decode(r IReader) error {
 
 //
 
-type GetInvMsg struct {
+type MsgGetInv struct {
 	Invs []Inventory
 }
 
-func (m GetInvMsg) Type() uint8 {
+func (m MsgGetInv) Type() uint8 {
 	return NT_GET_INV
 }
 
-func (m *GetInvMsg) AddInv(typ uint8, id HASH256) {
+func (m *MsgGetInv) AddInv(typ uint8, id HASH256) {
 	m.Invs = append(m.Invs, Inventory{
 		Typ: typ,
 		ID:  id,
 	})
 }
 
-func (m GetInvMsg) Encode(w IWriter) error {
+func (m MsgGetInv) Encode(w IWriter) error {
 	if err := VarInt(len(m.Invs)).Encode(w); err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (m GetInvMsg) Encode(w IWriter) error {
 	return nil
 }
 
-func (m *GetInvMsg) Decode(r IReader) error {
+func (m *MsgGetInv) Decode(r IReader) error {
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
@@ -81,22 +81,22 @@ func (m *GetInvMsg) Decode(r IReader) error {
 
 //
 
-type InvMsg struct {
+type MsgInv struct {
 	Invs []Inventory
 }
 
-func (m InvMsg) Type() uint8 {
+func (m MsgInv) Type() uint8 {
 	return NT_INV
 }
 
-func (m *InvMsg) AddInv(typ uint8, id HASH256) {
+func (m *MsgInv) AddInv(typ uint8, id HASH256) {
 	m.Invs = append(m.Invs, Inventory{
 		Typ: typ,
 		ID:  id,
 	})
 }
 
-func (m InvMsg) Encode(w IWriter) error {
+func (m MsgInv) Encode(w IWriter) error {
 	if err := VarInt(len(m.Invs)).Encode(w); err != nil {
 		return err
 	}
@@ -108,7 +108,7 @@ func (m InvMsg) Encode(w IWriter) error {
 	return nil
 }
 
-func (m *InvMsg) Decode(r IReader) error {
+func (m *MsgInv) Decode(r IReader) error {
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
@@ -127,35 +127,41 @@ func (m *InvMsg) Decode(r IReader) error {
 
 //NT_BLOCK
 
-type BlockMsg struct {
-	Blk BlockInfo
+type MsgBlock struct {
+	Blk *BlockInfo
 }
 
-func (m BlockMsg) Type() uint8 {
+func NewMsgBlock(blk *BlockInfo) *MsgBlock {
+	return &MsgBlock{Blk: blk}
+}
+
+func (m MsgBlock) Type() uint8 {
 	return NT_BLOCK
 }
 
-func (m BlockMsg) Encode(w IWriter) error {
+func (m MsgBlock) Encode(w IWriter) error {
 	return m.Blk.Encode(w)
 }
 
-func (m *BlockMsg) Decode(r IReader) error {
+func (m *MsgBlock) Decode(r IReader) error {
+	m.Blk = &BlockInfo{}
 	return m.Blk.Decode(r)
 }
 
 // NT_TX
-type TxMsg struct {
-	Tx TX
+type MsgTx struct {
+	Tx *TX
 }
 
-func (m TxMsg) Type() uint8 {
+func (m MsgTx) Type() uint8 {
 	return NT_TX
 }
 
-func (m TxMsg) Encode(w IWriter) error {
+func (m MsgTx) Encode(w IWriter) error {
 	return m.Tx.Encode(w)
 }
 
-func (m *TxMsg) Decode(r IReader) error {
+func (m *MsgTx) Decode(r IReader) error {
+	m.Tx = &TX{}
 	return m.Tx.Decode(r)
 }

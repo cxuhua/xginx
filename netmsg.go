@@ -19,13 +19,13 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 	case NT_ADDRS:
 		m = &MsgAddrs{}
 	case NT_INV:
-		m = &InvMsg{}
+		m = &MsgInv{}
 	case NT_TX:
-		m = &TxMsg{}
+		m = &MsgTx{}
 	case NT_BLOCK:
-		m = &BlockMsg{}
+		m = &MsgBlock{}
 	case NT_GET_INV:
-		m = &GetInvMsg{}
+		m = &MsgGetInv{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
@@ -37,7 +37,7 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 }
 
 type MsgGetAddrs struct {
-	EmptyMsg
+	MsgEmpty
 }
 
 func (m MsgGetAddrs) Type() uint8 {

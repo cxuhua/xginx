@@ -61,11 +61,11 @@ func (c *Client) processMsg(m MsgIO) error {
 	typ := m.Type()
 	switch typ {
 	case NT_BLOCK:
-		msg := m.(*BlockMsg)
-		GetPubSub().Pub(&msg.Blk, NewBlockTopic)
+		msg := m.(*MsgBlock)
+		GetPubSub().Pub(msg.Blk, NewBlockTopic)
 	case NT_TX:
-		msg := m.(*TxMsg)
-		GetPubSub().Pub(&msg.Tx, NewTxTopic)
+		msg := m.(*MsgTx)
+		GetPubSub().Pub(msg.Tx, NewTxTopic)
 	case NT_ADDRS:
 		msg := m.(*MsgAddrs)
 		GetPubSub().Pub(msg, NetMsgAddrsTopic)
@@ -103,6 +103,8 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.processMsgOut(m)
 		}
 	}
+	//发布消息
+	GetPubSub().Pub(m, NetMsgTopic)
 	return nil
 }
 

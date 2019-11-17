@@ -10,6 +10,8 @@ import (
 )
 
 const (
+	//收到所有消息
+	NetMsgTopic = "NetMsg"
 	//收到地址消息订阅
 	NetMsgAddrsTopic = "NetMsgAddrs"
 )
