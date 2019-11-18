@@ -4,7 +4,6 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -752,17 +751,13 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 
 //清除区块相关的缓存
 func (bi *BlockIndex) cleancache(b *BlockInfo) {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
 	for _, tv := range b.Txs {
 		id, err := tv.ID()
 		if err == nil {
 			bi.lru.Delete(id)
 		}
 	}
-	if id, err := b.ID(); err != nil {
-		log.Println("id error", err)
-	} else {
+	if id, err := b.ID(); err == nil {
 		bi.lru.Delete(id)
 	}
 }

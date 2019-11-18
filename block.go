@@ -243,26 +243,6 @@ func (blk *BlockInfo) IsGenesis() bool {
 	return blk.Header.IsGenesis()
 }
 
-//HASH256 meta,bytes
-func (blk *BlockInfo) ToTBMeta() (HASH256, *TBMeta, []byte, error) {
-	meta := &TBMeta{
-		BlockHeader: blk.Header,
-		Txs:         VarUInt(len(blk.Txs)),
-	}
-	id, err := meta.ID()
-	if err != nil {
-		return id, nil, nil, err
-	}
-	buf := NewWriter()
-	if err := blk.Encode(buf); err != nil {
-		return id, nil, nil, err
-	}
-	if buf.Len() > MAX_BLOCK_SIZE {
-		return id, nil, nil, errors.New("block too big > MAX_BLOCK_SIZE")
-	}
-	return id, meta, buf.Bytes(), nil
-}
-
 //获取coinse out fee sum
 func (blk *BlockInfo) CoinbaseFee() (Amount, error) {
 	if len(blk.Txs) == 0 {
