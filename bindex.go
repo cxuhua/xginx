@@ -990,7 +990,6 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	bt.Del(BLOCK_PREFIX, cid[:])
 	bt.Put(BLOCK_PREFIX, cid[:], hbs)
 	//写入索引数据
 	err = bi.db.Index().Write(bt)
