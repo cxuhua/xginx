@@ -54,7 +54,6 @@ func (f ChunkState) Encode(w IWriter) error {
 
 type TBMeta struct {
 	BlockHeader            //区块头
-	Uts         VarUInt    //Units数量
 	Txs         VarUInt    //tx数量
 	Blk         ChunkState //数据状态
 	Rev         ChunkState //日志回退
@@ -97,9 +96,6 @@ func (h TBMeta) Encode(w IWriter) error {
 	if err := h.BlockHeader.Encode(w); err != nil {
 		return err
 	}
-	if err := h.Uts.Encode(w); err != nil {
-		return err
-	}
 	if err := h.Txs.Encode(w); err != nil {
 		return err
 	}
@@ -114,9 +110,6 @@ func (h TBMeta) Encode(w IWriter) error {
 
 func (h *TBMeta) Decode(r IReader) error {
 	if err := h.BlockHeader.Decode(r); err != nil {
-		return err
-	}
-	if err := h.Uts.Decode(r); err != nil {
 		return err
 	}
 	if err := h.Txs.Decode(r); err != nil {

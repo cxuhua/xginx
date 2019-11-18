@@ -165,8 +165,6 @@ type IListener interface {
 	GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
-	//当一个块连接到链之前
-	OnLinkBlock(bi *BlockIndex, blk *BlockInfo)
 	//获取钱包
 	GetWallet() IWallet
 }
@@ -263,7 +261,7 @@ func (bi *BlockIndex) NewIter() *BIndexIter {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	iter := &BIndexIter{bi: bi}
-	iter.cur = bi.lis.Front()
+	iter.ele = bi.lis.Back()
 	return iter
 }
 
@@ -439,15 +437,15 @@ func (bi *BlockIndex) UnlinkBack() error {
 	return nil
 }
 
-func (bi *BlockIndex) pushback(e *TBEle) (*TBEle, error) {
+func (bi *BlockIndex) pushback(e *TBEle) error {
 	ele := bi.lis.PushBack(e)
 	bi.hmap[e.Height] = ele
 	if id, err := e.ID(); err != nil {
-		return nil, err
+		return err
 	} else {
 		bi.imap[id] = ele
 	}
-	return e, nil
+	return nil
 }
 
 //根据高度获取块
@@ -507,11 +505,15 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	LogInfo("verify last 6 block start")
 	for iter, i := bi.NewIter(), 0; iter.Prev() && i < 6; i++ {
 		ele := iter.Curr()
-		eleid, err := ele.ID()
+		//没数据不验证
+		if !ele.HasBlk() {
+			break
+		}
+		eid, err := ele.ID()
 		if err != nil {
 			return err
 		}
-		bp, err := bi.LoadBlock(eleid)
+		bp, err := bi.LoadBlock(eid)
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
@@ -619,7 +621,7 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 	ih := uint32(0)
 	if fe != nil {
 		id = fe.Value.(*TBEle).Prev
-	} else if bv := bi.GetBestValue(); !bv.IsValid() {
+	} else if bv := bi.GetLastValue(); !bv.IsValid() {
 		return nil, EmptyBlockChain
 	} else {
 		id = bv.Id
@@ -668,7 +670,7 @@ func (bi *BlockIndex) IsLinkBack(meta *TBMeta) (uint32, HASH256, bool) {
 }
 
 //加入一个队列尾并设置高度
-func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
+func (bi *BlockIndex) LinkBack(ele *TBEle) error {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	last := bi.lis.Back()
@@ -678,13 +680,13 @@ func (bi *BlockIndex) LinkBack(ele *TBEle) (*TBEle, error) {
 	lv := last.Value.(*TBEle)
 	id, err := lv.ID()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if !ele.Prev.Equal(id) {
-		return nil, errors.New("ele prev hash error")
+		return errors.New("ele prev hash error")
 	}
 	if lv.Height+1 != ele.Height {
-		return nil, errors.New("ele height error")
+		return errors.New("ele height error")
 	}
 	return bi.pushback(ele)
 }
@@ -765,6 +767,43 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 	}
 }
 
+//设置最后的头信息
+func (bi *BlockIndex) setLastHeader(bt *Batch) error {
+	bt.Del(LastHeaderKey)
+	if iter := bi.NewIter(); iter.Prev() && iter.Prev() {
+		ele := iter.Curr()
+		pid, err := ele.ID()
+		if err != nil {
+			return err
+		}
+		bv := BestValue{
+			Id:     pid,
+			Height: ele.Height,
+		}
+		bt.Put(LastHeaderKey, bv.Bytes())
+	}
+	return nil
+}
+
+//只有头断开头
+func (bi *BlockIndex) UnlinkLastEle(ele *TBEle) error {
+	id, err := ele.ID()
+	if err != nil {
+		return err
+	}
+	bt := bi.db.Index().NewBatch()
+	bt.Del(BLOCK_PREFIX, id[:])
+	err = bi.setLastHeader(bt)
+	if err != nil {
+		return err
+	}
+	err = bi.db.Index().Write(bt)
+	if err != nil {
+		return err
+	}
+	return bi.UnlinkBack()
+}
+
 //断开最后一个
 func (bi *BlockIndex) UnlinkLast() error {
 	last := bi.Last()
@@ -775,6 +814,10 @@ func (bi *BlockIndex) UnlinkLast() error {
 	if err != nil {
 		return err
 	}
+	//如果没有数据直接断开
+	if !last.Blk.HasData() {
+		return bi.UnlinkLastEle(last)
+	}
 	b, err := bi.LoadBlock(id)
 	if err != nil {
 		return err
@@ -784,48 +827,6 @@ func (bi *BlockIndex) UnlinkLast() error {
 		bi.cleancache(b)
 	}
 	return err
-}
-
-//断开最后一个头，只处理区块头
-func (bi *BlockIndex) UnlinkHeader() error {
-	if bi.Len() == 0 {
-		return nil
-	}
-	last := bi.Last()
-	if last == nil {
-		return nil
-	}
-	if last.HasBlk() || last.HasRev() {
-		return errors.New("has blk rev data,can't unlink header")
-	}
-	lid, err := last.ID()
-	if err != nil {
-		return err
-	}
-	iter := bi.NewIter()
-	//获取前一个
-	var prev *TBEle = nil
-	if iter.Last() && iter.Prev() && iter.Prev() {
-		prev = iter.Curr()
-	}
-	//断开最后一个
-	if err := bi.UnlinkBack(); err != nil {
-		return err
-	}
-	if prev == nil {
-		return nil
-	}
-	cid, err := prev.ID()
-	if err != nil {
-		return err
-	}
-	bt := bi.db.Index().NewBatch()
-	//设置前一个
-	bv := BestValue{Id: cid, Height: prev.Height}
-	bt.Put(BestBlockKey, bv.Bytes())
-	//删除最后一个
-	bt.Del(BLOCK_PREFIX, lid[:])
-	return bi.db.Index().Write(bt)
 }
 
 //断开最后一个，必须是最后一个才能断开
@@ -855,6 +856,10 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
+	err = bi.setLastHeader(bt)
+	if err != nil {
+		return err
+	}
 	//删除区块头
 	bt.Del(BLOCK_PREFIX, id[:])
 	if err := bi.db.Index().Write(bt); err != nil {
@@ -862,6 +867,19 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	}
 	//断开链接
 	return bi.UnlinkBack()
+}
+
+//获取最高块信息
+func (bi *BlockIndex) GetLastValue() BestValue {
+	bv := BestValue{}
+	b, err := bi.db.Index().Get(LastHeaderKey)
+	if err != nil {
+		return InvalidBest
+	}
+	if err := bv.From(b); err != nil {
+		return InvalidBest
+	}
+	return bv
 }
 
 //获取最高块信息
@@ -902,118 +920,59 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 	return kvs, nil
 }
 
-//连接区块头
-func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
-	meta := &TBMeta{
-		BlockHeader: header,
-	}
-	nexth := InvalidHeight
-	//是否能连接到主链后
-	phv, pid, isok := bi.IsLinkBack(meta)
-	if !isok {
-		return fmt.Errorf("can't link to main chain hash=%v", meta)
-	}
-	cid, err := meta.ID()
-	if err != nil {
-		return err
-	}
-	//区块状态写入
-	bt := bi.db.Index().NewBatch()
-	//第一个
-	if pid.IsZero() {
-		nexth = phv
-	} else {
-		nexth = phv + 1
-	}
-	bv := BestValue{Id: cid, Height: nexth}
-	bt.Put(BestBlockKey, bv.Bytes())
-	//保存区块头数据
-	hbs, err := meta.Bytes()
-	if err != nil {
-		return err
-	}
-	bt.Put(BLOCK_PREFIX, cid[:], hbs)
-	//检测日志文件
-	if bt.Len() > MAX_LOG_SIZE {
-		return errors.New("opts state logs too big > MAX_LOG_SIZE")
-	}
-	//连接区块无区块数据
-	ele := NewTBEle(meta, nexth, bi)
-	ele, err = bi.LinkBack(ele)
-	if err != nil {
-		return err
-	}
-	//写入索引数据
-	err = bi.db.Index().Write(bt)
-	if err != nil {
-		err = bi.UnlinkBack()
-	}
-	return err
-}
-
-//检测连继并设置meta
-func (bi *BlockIndex) CheckLink(blk *BlockInfo) ([]byte, error) {
-	cid, meta, bb, err := blk.ToTBMeta()
-	if err != nil {
-		return nil, err
-	}
-	nexth := InvalidHeight
-	//是否能连接到主链后
-	phv, pid, isok := bi.IsLinkBack(meta)
-	if !isok {
-		return nil, fmt.Errorf("can't link to chain last, hash=%v", cid)
-	}
-	if pid.IsZero() {
-		nexth = phv
-	} else {
-		nexth = phv + 1
-	}
-	ele := NewTBEle(meta, nexth, bi)
-	ele.flags |= TBELoadedBlock
-	blk.Meta = ele
-	return bb, nil
-}
-
-//更新最后区块id和高度
-func (bi *BlockIndex) putLastBest(bt *Batch) error {
-	last := bi.Last()
-	if last == nil {
-		return nil
-	}
-	id, err := last.ID()
-	if err != nil {
-		return err
-	}
-	bv := BestValue{Id: id, Height: last.Height}
-	bt.Put(BestBlockKey, bv.Bytes())
-	return nil
-}
-
-//链接一个区块
-func (bi *BlockIndex) LinkBlock(blk *BlockInfo) error {
-	//检测是否可链入
-	bb, err := bi.CheckLink(blk)
-	if err != nil {
-		return err
-	}
-	//检测区块
-	if err := blk.Check(bi, true); err != nil {
-		return err
-	}
+//更新区块数据(需要区块头先链接好
+func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	cid, err := blk.ID()
+	if err != nil {
+		return err
+	}
+	buf := NewWriter()
+	if err := blk.Encode(buf); err != nil {
+		return err
+	}
+	if buf.Len() > MAX_BLOCK_SIZE {
+		return errors.New("block size too big")
+	}
+	//获取区块头
+	bi.mu.RLock()
+	eptr, has := bi.imap[cid]
+	bi.mu.RUnlock()
+	if !has {
+		return errors.New("block header ele miss")
+	}
+	ele := eptr.Value.(*TBEle)
+	eid, err := ele.ID()
+	if err != nil {
+		return err
+	}
+	if !cid.Equal(eid) {
+		return errors.New("blk id != header id")
+	}
+	blk.Meta = ele
+	//设置交易数量
+	blk.Meta.Txs = VarUInt(len(blk.Txs))
+	//必须更新bestvalue之后的一个
+	bv := bi.GetBestValue()
+	if bv.IsValid() && !blk.Meta.Prev.Equal(bv.Id) {
+		return errors.New("prev hash id errpr")
+	} else if !bv.IsValid() {
+		blk.Meta.Height = 0
+	}
+	//检测区块数据
+	err = blk.Check(bi, true)
 	if err != nil {
 		return err
 	}
 	//区块状态写入
 	bt := bi.db.Index().NewBatch()
 	rt := bt.NewRev()
-	bv := BestValue{Id: cid, Height: blk.Meta.Height}
-	bt.Put(BestBlockKey, bv.Bytes())
-	//放置最后id作为回退日志
-	if err = bi.putLastBest(rt); err != nil {
-		return err
+	//如果最后区块数据有效写入回退数据
+	if bv.IsValid() {
+		rt.Put(BestBlockKey, bv.Bytes())
 	}
-	//写入索引信息
+	//设置新的点
+	cv := BestValue{Id: cid, Height: blk.Meta.Height}
+	bt.Put(BestBlockKey, cv.Bytes())
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -1027,7 +986,7 @@ func (bi *BlockIndex) LinkBlock(blk *BlockInfo) error {
 		return err
 	}
 	//保存区块数据
-	blk.Meta.Blk, err = bi.db.Blk().Write(bb)
+	blk.Meta.Blk, err = bi.db.Blk().Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -1036,19 +995,10 @@ func (bi *BlockIndex) LinkBlock(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
+	bt.Del(BLOCK_PREFIX, cid[:])
 	bt.Put(BLOCK_PREFIX, cid[:], hbs)
-	//连接区块
-	_, err = bi.LinkBack(blk.Meta)
-	if err != nil {
-		return err
-	}
 	//写入索引数据
 	err = bi.db.Index().Write(bt)
-	if err == nil {
-		bi.lptr.OnLinkBlock(bi, blk)
-	} else {
-		err = bi.UnlinkBack()
-	}
 	if err != nil {
 		return err
 	}
@@ -1059,8 +1009,49 @@ func (bi *BlockIndex) LinkBlock(blk *BlockInfo) error {
 			bi.tp.Del(id)
 		}
 	}
-	GetPubSub().Pub(blk, NetLinkBlockTopic)
+	GetPubSub().Pub(blk, UpdateBlockTopic)
 	return nil
+}
+
+//连接区块头
+func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
+	meta := &TBMeta{
+		BlockHeader: header,
+	}
+	cid, err := meta.ID()
+	if err != nil {
+		return err
+	}
+	nexth := InvalidHeight
+	//是否能连接到主链后
+	phv, pid, isok := bi.IsLinkBack(meta)
+	if !isok {
+		return fmt.Errorf("can't link to chain last, hash=%v", cid)
+	}
+	if pid.IsZero() {
+		nexth = phv
+	} else {
+		nexth = phv + 1
+	}
+	bt := bi.db.Index().NewBatch()
+	//保存区块头数据
+	hbs, err := meta.Bytes()
+	if err != nil {
+		return err
+	}
+	//保存区块头
+	bt.Put(BLOCK_PREFIX, cid[:], hbs)
+	//保存最后一个头
+	bh := BestValue{Height: nexth, Id: cid}
+	bt.Put(LastHeaderKey, bh.Bytes())
+	//保存数据
+	err = bi.db.Index().Write(bt)
+	if err != nil {
+		return err
+	}
+	//连接区块无区块数据
+	ele := NewTBEle(meta, nexth, bi)
+	return bi.LinkBack(ele)
 }
 
 func (bi *BlockIndex) GetTxPool() *TxPool {

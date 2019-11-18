@@ -252,25 +252,13 @@ func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
 	return nil
 }
 
-const (
-	//当收到的区块接收处理完毕 返回一个error
-	RecvBlockFinishTopic = "RecvBlockFinish"
-)
-
 func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo) error {
-	ps := GetPubSub()
-	var serr error = nil
-	//处理完毕发布通知
-	defer ps.Pub(serr, RecvBlockFinishTopic)
-
 	bi := GetBlockIndex()
-	if err := bi.LinkBlock(blk); err != nil {
-		serr = err
+	if err := bi.UpdateBlk(blk); err != nil {
+		return err
 	}
-	if serr == nil {
-		LogInfo("link block to chain success blk =", blk, "height =", blk.Meta.Height)
-	}
-	return serr
+	LogInfo("link block to chain success blk =", blk, "height =", blk.Meta.Height)
+	return nil
 }
 
 func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
@@ -279,30 +267,15 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 		return errors.New("recv msg headers running")
 	}
 	defer s.lb.Reset()
-	LogInfo("get header", len(msg.Headers), "start download block")
-	ps := GetPubSub()
+	//链接头
 	bi := GetBlockIndex()
-	ch := ps.Sub(RecvBlockFinishTopic)
-	defer ps.Unsub(ch)
 	for i := 0; i < len(msg.Headers); {
 		hv := msg.Headers[i]
-		dm := &MsgGetInv{}
-		id, err := hv.ID()
+		err := bi.LinkHeader(hv)
 		if err != nil {
 			return err
 		}
-		dm.AddInv(InvTypeBlock, id)
-		c.SendMsg(dm)
-		select {
-		case serr := <-ch:
-			err, ok := serr.(error)
-			if ok && err != nil {
-				return err
-			}
-			i++
-		case <-time.After(time.Second * 10):
-			LogError("download block", id, "timeout,try download")
-		}
+		LogInfo("link block header id =", hv)
 	}
 	//请求下一批,不包含最后一个
 	rmsg, err := bi.ReqMsgHeaders()

@@ -17,7 +17,7 @@ const (
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
 	//链上新连接了区块
-	NetLinkBlockTopic = "NetLinkBlock"
+	UpdateBlockTopic = "UpdateBlock"
 )
 
 const (
@@ -126,7 +126,11 @@ func (m *minerEngine) genBlock(ver uint32) {
 		return
 	}
 	LogInfo("gen block ok id = ", blk)
-	if err := bi.LinkBlock(blk); err != nil {
+	if err := bi.LinkHeader(blk.Header); err != nil {
+		LogError("new block linkto chain error ", err)
+		return
+	}
+	if err := bi.UpdateBlk(blk); err != nil {
 		LogError("new block linkto chain error ", err)
 		return
 	}
@@ -204,7 +208,7 @@ func (m *minerEngine) onRecvTx(tx *TX) {
 
 func (m *minerEngine) onRecvBlock(blk *BlockInfo) {
 	bi := GetBlockIndex()
-	if err := bi.LinkBlock(blk); err != nil {
+	if err := bi.UpdateBlk(blk); err != nil {
 		LogError("link block error", err, "drop block", blk)
 		return
 	}
