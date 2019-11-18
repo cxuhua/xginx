@@ -34,6 +34,8 @@ const (
 	NT_GET_HEADERS = uint8(10)
 	//返回区块头，最多200个
 	NT_HEADERS = uint8(11)
+	//返回一个错误信息
+	NT_ERROR = uint8(12)
 )
 
 //协议消息
@@ -54,7 +56,50 @@ func (e MsgEmpty) Encode(w IWriter) error {
 	return nil
 }
 
-func (e MsgEmpty) Decode(r IReader) error {
+func (e *MsgEmpty) Decode(r IReader) error {
+	return nil
+}
+
+const (
+	ErrCodeRecvBlock = 100001
+	ErrCodeRecvTx    = 100002
+)
+
+type MsgError struct {
+	Code  int32
+	Error string
+}
+
+func NewMsgError(code int, err error) *MsgError {
+	return &MsgError{
+		Code:  int32(code),
+		Error: err.Error(),
+	}
+}
+
+func (e MsgError) Type() uint8 {
+	return NT_ERROR
+}
+
+func (e MsgError) Encode(w IWriter) error {
+	if err := w.TWrite(e.Code); err != nil {
+		return err
+	}
+	if err := VarBytes([]byte(e.Error)).Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *MsgError) Decode(r IReader) error {
+	if err := r.TRead(&e.Code); err != nil {
+		return err
+	}
+	vb := VarBytes{}
+	if err := vb.Decode(r); err != nil {
+		return err
+	}
+	e.Error = string(vb)
 	return nil
 }
 
@@ -85,7 +130,7 @@ func (n *NetAddr) From(s string) error {
 
 //是否是有效的可链接的地址
 func (c NetAddr) IsGlobalUnicast() bool {
-	return c.ip.IsUnspecified()
+	return c.ip.IsGlobalUnicast()
 }
 
 func (c NetAddr) Network() string {
@@ -201,6 +246,7 @@ func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
 	m.Height = bi.LastHeight()
+	m.Service = SERVICE_NODE
 	return m
 }
 

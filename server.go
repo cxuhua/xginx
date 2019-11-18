@@ -2,8 +2,8 @@ package xginx
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
+	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -14,12 +14,54 @@ const (
 	NetMsgTopic = "NetMsg"
 	//收到地址消息订阅
 	NetMsgAddrsTopic = "NetMsgAddrs"
+	//收到区块头
+	NetMsgHeadersTopic = "NetMsgHeaders"
+	//收到区块
+	NetMsgTxTopic = "NetMsgTx"
+	//收到交易
+	NetMsgBlockTopic = "NetMsgBlock"
 )
+
+type AddrNode struct {
+	addr      NetAddr
+	addTime   time.Time //加入时间
+	openTime  time.Time //打开时间
+	closeTime time.Time //关闭时间
+	lastTime  time.Time //最后链接时间
+}
+
+type AddrMap struct {
+	mu    sync.RWMutex
+	addrs map[string]*AddrNode
+}
+
+func (m *AddrMap) Get(a NetAddr) *AddrNode {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.addrs[a.String()]
+}
+
+func (m *AddrMap) Set(a NetAddr) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	node := &AddrNode{
+		addr:    a,
+		addTime: time.Now(),
+	}
+	m.addrs[a.String()] = node
+}
+
+func NewAddrMap() *AddrMap {
+	return &AddrMap{
+		addrs: map[string]*AddrNode{},
+	}
+}
 
 type IServer interface {
 	Start(ctx context.Context)
 	Stop()
 	Wait()
+	NewClient() *Client
 }
 
 var (
@@ -32,6 +74,10 @@ type server struct {
 
 func (s *server) Wait() {
 	s.ser.Wait()
+}
+
+func (s *server) NewClient() *Client {
+	return s.ser.NewClient()
 }
 
 func (s *server) Stop() {
@@ -57,14 +103,24 @@ type TcpServer struct {
 	err     interface{}
 	wg      sync.WaitGroup
 	clients map[string]*Client //连接的所有client
+	addrs   *AddrMap
+	lb      ONE //是否正在连接区块
+}
+
+//地址是否打开
+func (s *TcpServer) IsOpen(a NetAddr) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, has := s.clients[a.String()]
+	return has
 }
 
 func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.addrs.mu.RLock()
+	s.addrs.mu.RUnlock()
 	msg := &MsgAddrs{}
-	for _, v := range s.clients {
-		//不包括自己
+	for _, v := range s.addrs.addrs {
+		//不包括它自己
 		if v.addr.Equal(c.addr) {
 			continue
 		}
@@ -146,7 +202,7 @@ func (s *TcpServer) NewClient() *Client {
 
 func (s *TcpServer) ConnNum() int {
 	s.mu.RLock()
-	defer s.mu.Unlock()
+	defer s.mu.RUnlock()
 	return len(s.clients)
 }
 
@@ -154,11 +210,21 @@ func (s *TcpServer) Service() uint32 {
 	return s.service
 }
 
+//开始连接一个地址
+func (s *TcpServer) openAddr(addr NetAddr) error {
+	c := s.NewClient()
+	err := c.Open(addr)
+	if err != nil {
+		return err
+	}
+	c.Loop()
+	return nil
+}
+
 //收到地址列表，如果没有达到最大链接开始链接
-func (s *TcpServer) recvMsgAddrs(msg *MsgAddrs) {
+func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 	if cl := s.ConnNum(); cl >= conf.MaxConn {
-		LogInfof("max conn=%d ,pause connect client", cl)
-		return
+		return fmt.Errorf("max conn=%d ,pause connect client", cl)
 	}
 	for _, addr := range msg.Addrs {
 		if !addr.IsGlobalUnicast() {
@@ -167,44 +233,146 @@ func (s *TcpServer) recvMsgAddrs(msg *MsgAddrs) {
 		if s.HasAddr(addr) {
 			continue
 		}
-		c := s.NewClient()
-		err := c.Open(addr)
+		err := s.openAddr(addr)
 		if err != nil {
-			LogError("connect", addr, "error", err)
-			continue
+			return fmt.Errorf("connect %v error %w", addr, err)
 		}
-		c.Loop()
+	}
+	return nil
+}
+
+func (s *TcpServer) recoverError() {
+	//if err := recover(); err != nil {
+	//	s.err = err
+	//	s.cancel()
+	//}
+}
+
+func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
+	return nil
+}
+
+const (
+	//当收到的区块接收处理完毕 返回一个error
+	RecvBlockFinishTopic = "RecvBlockFinish"
+)
+
+func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo) error {
+	ps := GetPubSub()
+	var serr error = nil
+	//处理完毕发布通知
+	defer ps.Pub(serr, RecvBlockFinishTopic)
+
+	bi := GetBlockIndex()
+	if err := bi.LinkBlock(blk); err != nil {
+		serr = err
+	}
+	if serr == nil {
+		LogInfo("link block to chain success blk =", blk, "height =", blk.Meta.Height)
+	}
+	return serr
+}
+
+func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
+	//防止多此执行
+	if !s.lb.Running() {
+		return errors.New("recv msg headers running")
+	}
+	defer s.lb.Reset()
+	LogInfo("get header", len(msg.Headers), "start download block")
+	ps := GetPubSub()
+	bi := GetBlockIndex()
+	ch := ps.Sub(RecvBlockFinishTopic)
+	defer ps.Unsub(ch)
+	for i := 0; i < len(msg.Headers); {
+		hv := msg.Headers[i]
+		dm := &MsgGetInv{}
+		id, err := hv.ID()
+		if err != nil {
+			return err
+		}
+		dm.AddInv(InvTypeBlock, id)
+		c.SendMsg(dm)
+		select {
+		case serr := <-ch:
+			err, ok := serr.(error)
+			if ok && err != nil {
+				return err
+			}
+			i++
+		case <-time.After(time.Second * 10):
+			LogError("download block", id, "timeout,try download")
+		}
+	}
+	//请求下一批,不包含最后一个
+	rmsg, err := bi.ReqMsgHeaders()
+	if err != nil {
+		return err
+	}
+	c.SendMsg(rmsg)
+	return nil
+}
+
+func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer) {
+	LogInfo("server dispatch startup", idx)
+	defer s.recoverError()
+	for {
+		select {
+		case <-s.ctx.Done():
+			err := s.lis.Close()
+			if err != nil {
+				LogError("server listen close", err)
+			}
+			return
+		case cv := <-ch:
+			if m, ok := cv.(*ClientMsg); !ok {
+				continue
+			} else if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
+				err := s.recvMsgAddrs(m.c, msg)
+				if err != nil {
+					LogError(err)
+				}
+			} else if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
+				err := s.recvMsgHeaders(m.c, msg)
+				if err != nil {
+					LogError(err)
+				}
+			} else if msg, ok := m.m.(*MsgBlock); ok {
+				err := s.recvMsgBlock(m.c, msg.Blk)
+				if err != nil {
+					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
+				}
+			} else if msg, ok := m.m.(*MsgTx); ok {
+				err := s.recvMsgTx(m.c, msg.Tx)
+				if err != nil {
+					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
+				}
+			}
+		case <-pt.C:
+			//测试连接
+			err := s.openAddr(NetAddrForm("192.168.31.178:9333"))
+			if err != nil {
+				LogError(err)
+			}
+			pt.Reset(time.Second * 3)
+		}
 	}
 }
 
 func (s *TcpServer) run() {
 	LogInfo(s.addr.Network(), "server startup", s.addr)
-	defer func() {
-		if err := recover(); err != nil {
-			s.err = err
-			s.cancel()
-		}
-	}()
-	go func() {
-		//订阅收到地址列表
-		ch := GetPubSub().Sub(NetMsgAddrsTopic)
-		for {
-			select {
-			case <-s.ctx.Done():
-				_ = s.lis.Close()
-				return
-			case cv := <-ch:
-				if msg, ok := cv.(*MsgAddrs); ok {
-					s.recvMsgAddrs(msg)
-				}
-
-			}
-		}
-	}()
+	defer s.recoverError()
+	ch := GetPubSub().Sub(NetMsgTopic)
+	pt := time.NewTimer(time.Second)
+	for i := 0; i < 4; i++ {
+		go s.dispatch(i, ch, pt)
+	}
 	for {
 		conn, err := s.lis.Accept()
 		if err != nil {
-			panic(err)
+			LogError(err)
+			s.cancel()
+			return
 		}
 		c := s.NewClient()
 		c.NetStream = NewNetStream(conn)
@@ -214,21 +382,10 @@ func (s *TcpServer) run() {
 			continue
 		}
 		c.typ = ClientIn
+		c.isopen = true
 		LogInfo("new connection", conn.RemoteAddr())
 		c.Loop()
 	}
-}
-
-//生成一个临时id全网唯一
-func NewNodeID(c *Config) HASH160 {
-	id := HASH160{}
-	_ = binary.Read(rand.Reader, Endian, id[:])
-	w := NewWriter()
-	_, _ = w.Write(id[:])
-	_, _ = w.Write([]byte(c.TcprIp))
-	_ = w.TWrite(time.Now().UnixNano())
-	copy(id[:], Hash160(w.Bytes()))
-	return id
 }
 
 func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
@@ -242,5 +399,6 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[string]*Client{}
 	s.service = SERVICE_NODE
+	s.addrs = NewAddrMap()
 	return s, nil
 }

@@ -13,6 +13,18 @@ const (
 	ClientOut = 2
 )
 
+type ClientMsg struct {
+	c *Client
+	m MsgIO
+}
+
+func NewClientMsg(c *Client, m MsgIO) *ClientMsg {
+	return &ClientMsg{
+		c: c,
+		m: m,
+	}
+}
+
 type Client struct {
 	*NetStream
 	typ     int
@@ -60,12 +72,30 @@ func (c *Client) processMsgOut(m MsgIO) {
 func (c *Client) processMsg(m MsgIO) error {
 	typ := m.Type()
 	switch typ {
+	case NT_ERROR:
+		msg := m.(*MsgError)
+		LogError("recv msg error code =", msg.Code, "error =", msg.Error, c.addr)
+	case NT_HEADERS:
+		msg := m.(*MsgHeaders)
+		GetPubSub().Pub(msg, NetMsgHeadersTopic)
+	case NT_GET_HEADERS:
+		msg := m.(*MsgGetHeaders)
+		nmv, err := GetBlockIndex().GetMsgHeaders(msg)
+		if err == nil {
+			c.SendMsg(nmv)
+		}
+	case NT_GET_INV:
+		msg := m.(*MsgGetInv)
+		if len(msg.Invs) == 0 {
+			break
+		}
+		GetBlockIndex().GetMsgGetInv(msg, c)
 	case NT_BLOCK:
 		msg := m.(*MsgBlock)
-		GetPubSub().Pub(msg.Blk, NewBlockTopic)
+		GetPubSub().Pub(msg.Blk, NetMsgBlockTopic)
 	case NT_TX:
 		msg := m.(*MsgTx)
-		GetPubSub().Pub(msg.Tx, NewTxTopic)
+		GetPubSub().Pub(msg.Tx, NetMsgTxTopic)
 	case NT_ADDRS:
 		msg := m.(*MsgAddrs)
 		GetPubSub().Pub(msg, NetMsgAddrsTopic)
@@ -80,6 +110,10 @@ func (c *Client) processMsg(m MsgIO) error {
 		c.SendMsg(msg.NewPong())
 	case NT_VERSION:
 		msg := m.(*MsgVersion)
+		//保存到地址列表
+		if msg.Addr.IsGlobalUnicast() {
+			c.ss.addrs.Set(msg.Addr)
+		}
 		//防止两节点重复连接，并且防止自己连接自己
 		if c.ss.HasClient(msg.Addr, c) {
 			c.Close()
@@ -95,7 +129,11 @@ func (c *Client) processMsg(m MsgIO) error {
 		c.Ver = msg.Ver
 		c.Height = msg.Height
 		c.Service = msg.Service
-		c.isopen = true
+		//发送比对方高的区块头
+		nmv, err := GetBlockIndex().GetMsgHeadersUseHeight(msg.Height)
+		if err == nil {
+			c.SendMsg(nmv)
+		}
 	default:
 		if c.IsIn() {
 			c.processMsgIn(m)
@@ -104,7 +142,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 	}
 	//发布消息
-	GetPubSub().Pub(m, NetMsgTopic)
+	GetPubSub().Pub(NewClientMsg(c, m), NetMsgTopic)
 	return nil
 }
 
@@ -112,6 +150,11 @@ func (c *Client) stop() {
 	c.cancel()
 	if err := recover(); err != nil {
 		c.err = err
+	}
+	c.isopen = false
+	//更新关闭时间
+	if ap := c.ss.addrs.Get(c.addr); ap != nil {
+		ap.closeTime = time.Now()
 	}
 	if c.ss != nil {
 		c.ss.DelClient(c.addr, c)
@@ -126,6 +169,9 @@ func (c *Client) stop() {
 
 //连接到指定地址
 func (c *Client) Open(addr NetAddr) error {
+	if addr.Equal(conf.GetNetAddr()) {
+		return errors.New("self connect self,ignore")
+	}
 	if c.ss.HasAddr(addr) {
 		return errors.New("addr has client connected,ignore!")
 	}
@@ -136,10 +182,19 @@ func (c *Client) connect(addr NetAddr) error {
 	if !addr.IsGlobalUnicast() {
 		return errors.New("addr not is global unicast,can't connect")
 	}
+	//更新最后链接时间
+	if ap := c.ss.addrs.Get(addr); ap != nil {
+		ap.lastTime = time.Now()
+	}
 	conn, err := net.DialTimeout(addr.Network(), addr.Addr(), time.Second*30)
 	if err != nil {
 		return err
 	}
+	//更新链接时间
+	if ap := c.ss.addrs.Get(addr); ap != nil {
+		ap.openTime = time.Now()
+	}
+	c.isopen = true
 	LogInfo("connect to", addr, "success")
 	c.typ = ClientOut
 	c.addr = addr

@@ -132,10 +132,10 @@ func init() {
 
 func TestBlockChain(t *testing.T) {
 	bi := GetBlockIndex()
-	testnum := uint32(1)
+	testnum := uint32(50)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
-		err := bi.LinkTo(cb)
+		err := bi.LinkBlock(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
@@ -144,6 +144,15 @@ func TestBlockChain(t *testing.T) {
 			log.Println(i, "block")
 		}
 	}
+}
+
+func TestBlockIndexIter(t *testing.T) {
+	bi := GetBlockIndex()
+	gm := &MsgGetHeaders{
+		Start: NewHASH256("0000619eebec5ee351f6393b63833086fe68ba2ace1d5e163498e11ee5d0bf0e"),
+		Limit: HASH256{},
+	}
+	bi.GetMsgHeaders(gm)
 }
 
 func TestTransfire(t *testing.T) {
@@ -178,7 +187,7 @@ func TestTransfire(t *testing.T) {
 	if err := blk.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
-	err = bi.LinkTo(blk)
+	err = bi.LinkBlock(blk)
 	if err != nil {
 		panic(err)
 	}

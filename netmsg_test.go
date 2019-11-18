@@ -1,8 +1,15 @@
 package xginx
 
 import (
+	"log"
+	"net"
 	"testing"
 )
+
+func TestLookUp(t *testing.T) {
+	ip, err := net.LookupIP("seed.xginx.com")
+	log.Println(ip, err)
+}
 
 func TestMsgAddrs(t *testing.T) {
 	gm := &MsgGetAddrs{}

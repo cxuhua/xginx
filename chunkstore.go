@@ -22,6 +22,10 @@ type ChunkState struct {
 	Len VarUInt //数据长度
 }
 
+func (f ChunkState) HasData() bool {
+	return f.Id >= 0 && f.Off >= 0 && f.Len > 0
+}
+
 func (f *ChunkState) Decode(r IReader) error {
 	if err := f.Id.Decode(r); err != nil {
 		return err
@@ -55,6 +59,21 @@ type TBMeta struct {
 	Blk         ChunkState //数据状态
 	Rev         ChunkState //日志回退
 	hasher      HashCacher
+}
+
+// 是否有区块数据
+func (h TBMeta) HasBlk() bool {
+	return h.Blk.HasData()
+}
+
+// 是否有回退数据
+func (h TBMeta) HasRev() bool {
+	return h.Rev.HasData()
+}
+
+func (h TBMeta) String() string {
+	id, _ := h.BlockHeader.ID()
+	return id.String()
 }
 
 func (h *TBMeta) Hash() HASH256 {

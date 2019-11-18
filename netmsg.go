@@ -26,6 +26,12 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgBlock{}
 	case NT_GET_INV:
 		m = &MsgGetInv{}
+	case NT_GET_HEADERS:
+		m = &MsgGetHeaders{}
+	case NT_HEADERS:
+		m = &MsgHeaders{}
+	case NT_ERROR:
+		m = &MsgError{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)

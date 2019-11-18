@@ -98,6 +98,11 @@ type BlockHeader struct {
 	hasher HashCacher
 }
 
+func (v BlockHeader) String() string {
+	id, _ := v.ID()
+	return id.String()
+}
+
 func (v BlockHeader) Bytes() HeaderBytes {
 	buf := NewWriter()
 	err := v.Encode(buf)
@@ -335,11 +340,11 @@ func (blk *BlockInfo) CalcPowHash(cnt uint32, bi *BlockIndex) error {
 			hb.SetNonce(i)
 		} else {
 			blk.Header = hb.Header()
-			log.Printf("new block success ID=%v Bits=%x Height=%x\n", blk, blk.Meta.Bits, blk.Meta.Height)
+			LogInfof("new block success ID=%v Bits=%x Height=%x", blk, blk.Meta.Bits, blk.Meta.Height)
 			return nil
 		}
 		if cnt > 0 && i%(cnt/10) == 0 {
-			log.Printf("genblock bits=%x ID=%v Nonce=%x Height=%d\n", blk.Meta.Bits, id, i, blk.Meta.Height)
+			LogInfof("genblock bits=%x ID=%v Nonce=%x Height=%d", blk.Meta.Bits, id, i, blk.Meta.Height)
 		}
 	}
 	return errors.New("calc bits failed")

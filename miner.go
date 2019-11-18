@@ -16,6 +16,8 @@ const (
 	NewBlockTopic = "NewBlock"
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
+	//链上新连接了区块
+	NetLinkBlockTopic = "NetLinkBlock"
 )
 
 const (
@@ -124,7 +126,7 @@ func (m *minerEngine) genBlock(ver uint32) {
 		return
 	}
 	LogInfo("gen block ok id = ", blk)
-	if err := bi.LinkTo(blk); err != nil {
+	if err := bi.LinkBlock(blk); err != nil {
 		LogError("new block linkto chain error ", err)
 		return
 	}
@@ -202,11 +204,7 @@ func (m *minerEngine) onRecvTx(tx *TX) {
 
 func (m *minerEngine) onRecvBlock(blk *BlockInfo) {
 	bi := GetBlockIndex()
-	if err := blk.Check(bi, true); err != nil {
-		LogError("check block error", err, "drop block", blk)
-		return
-	}
-	if err := bi.LinkTo(blk); err != nil {
+	if err := bi.LinkBlock(blk); err != nil {
 		LogError("link block error", err, "drop block", blk)
 		return
 	}
@@ -219,13 +217,13 @@ func (m *minerEngine) loop(i int, wch chan interface{}) {
 	defer m.wg.Done()
 	for {
 		select {
-		case wv := <-wch:
-			if tx, ok := wv.(*TX); ok {
+		case ptr := <-wch:
+			if tx, ok := ptr.(*TX); ok {
 				m.onRecvTx(tx)
-			} else if blk, ok := wv.(*BlockInfo); ok {
+			} else if blk, ok := ptr.(*BlockInfo); ok {
 				m.onRecvBlock(blk)
 			} else {
-				LogError("recv unknow msg", wv)
+				LogError("recv unknow msg", ptr)
 			}
 		case ver := <-m.mbc:
 			m.genBlock(ver)
@@ -243,6 +241,7 @@ func (m *minerEngine) Start(ctx context.Context) {
 	for i := 0; i < 4; i++ {
 		go m.loop(i, wch)
 	}
+	//订阅矿工操作
 	optch := GetPubSub().Sub(NewMinerActTopic)
 	go m.dispatch(optch)
 }

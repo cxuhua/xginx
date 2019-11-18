@@ -17,6 +17,15 @@ const (
 	InvalidHeight  = ^uint32(0) //无效的块高度
 )
 
+var (
+	//到达第一个
+	ArriveFirstBlock = errors.New("arrive first block")
+	//空链
+	EmptyBlockChain = errors.New("this is empty chain")
+	//Block数据未下载
+	BlockDataEmpty = errors.New("block data empty,not download")
+)
+
 //索引头
 type TBEle struct {
 	flags uint8
@@ -66,6 +75,85 @@ func NewTBEle(meta *TBMeta, height uint32, idx *BlockIndex) *TBEle {
 		Height: height,
 		idx:    idx,
 	}
+}
+
+//区块链迭代器
+type BIndexIter struct {
+	bi  *BlockIndex
+	cur *list.Element
+	ele *list.Element
+}
+
+func (it *BIndexIter) SeekHeight(h uint32) bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	ele, has := it.bi.hmap[h]
+	if has {
+		it.ele = ele
+	}
+	return has && it.ele != nil
+}
+
+//获取当前
+func (it *BIndexIter) Curr() *TBEle {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	if it.cur == nil {
+		panic(errors.New("first use next prev seek"))
+	}
+	return it.cur.Value.(*TBEle)
+}
+
+func (it *BIndexIter) SeekID(id HASH256) bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	ele, has := it.bi.imap[id]
+	if has {
+		it.ele = ele
+	}
+	return has && it.ele != nil
+}
+
+func (it *BIndexIter) Prev() bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	if it.ele != nil {
+		it.cur = it.ele
+		it.ele = nil
+	} else if it.cur != nil {
+		it.cur = it.cur.Prev()
+	} else {
+		it.cur = it.bi.lis.Back()
+	}
+	return it.cur != nil
+}
+
+func (it *BIndexIter) Next() bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	if it.ele != nil {
+		it.cur = it.ele
+		it.ele = nil
+	} else if it.cur != nil {
+		it.cur = it.cur.Next()
+	} else {
+		it.cur = it.bi.lis.Front()
+	}
+	return it.cur != nil
+}
+
+func (it *BIndexIter) First() bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	it.ele = it.bi.lis.Front()
+	return it.ele != nil
+}
+
+func (it *BIndexIter) Last() bool {
+	it.bi.mu.RLock()
+	defer it.bi.mu.RUnlock()
+	it.ele = it.bi.lis.Back()
+	return it.ele != nil
 }
 
 type IListener interface {
@@ -128,7 +216,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 	monce.Do(func() {
 		bi := NewBlockIndex(lis)
 		err := bi.LoadAll(func(pv uint) {
-			LogInfof("load block chian progress = %d%%", pv)
+			LogInfof("load block main chian progress = %d%%", pv)
 		})
 		if err == EmptyBlockChain {
 			LogError(err)
@@ -169,6 +257,14 @@ func (bi *BlockIndex) GetListener() IListener {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	return bi.lptr
+}
+
+func (bi *BlockIndex) NewIter() *BIndexIter {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	iter := &BIndexIter{bi: bi}
+	iter.cur = bi.lis.Front()
+	return iter
 }
 
 func (bi *BlockIndex) GetHEle(h uint32) *TBEle {
@@ -241,7 +337,7 @@ func (bi *BlockIndex) First() *TBEle {
 func (bi *BlockIndex) LastHeight() uint32 {
 	last := bi.Last()
 	if last == nil {
-		return 0
+		return InvalidHeight
 	}
 	return last.Height
 }
@@ -262,16 +358,6 @@ func (bi *BlockIndex) Len() int {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	return bi.lis.Len()
-}
-
-//当前 当 Prev Next ToBack ToFront 成功时可调用
-func (bi *BlockIndex) Current() *TBEle {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
-	if bi.cur == nil {
-		panic(errors.New("cur nil"))
-	}
-	return bi.cur.Value.(*TBEle)
 }
 
 //获取区块的确认数
@@ -302,6 +388,7 @@ func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
 
 //加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
+	var rerr error = nil
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
 		ele, has := bi.imap[id]
 		if !has {
@@ -311,6 +398,11 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 		bptr := &BlockInfo{}
 		lmeta, err := bi.LoadTo(id, bptr)
 		if err != nil {
+			rerr = err
+			return 0, nil
+		}
+		if !lmeta.Blk.HasData() {
+			rerr = BlockDataEmpty
 			return 0, nil
 		}
 		if !lmeta.Hash().Equal(smeta.Hash()) {
@@ -319,70 +411,13 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 		bptr.Meta = smeta
 		return smeta.Blk.Len.ToInt(), bptr
 	})
+	if rerr != nil {
+		return nil, rerr
+	}
 	if hptr == nil {
 		return nil, errors.New("load block failed")
 	}
 	return hptr.Value().(*BlockInfo), nil
-}
-
-//重置光标到某个位置
-func (bi *BlockIndex) SeekTo(v ...interface{}) bool {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
-	if len(v) == 0 {
-		bi.cur = nil
-		return false
-	}
-	switch v[0].(type) {
-	case uint32:
-		h := v[0].(uint32)
-		bi.cur = bi.hmap[h]
-	case int:
-		h := uint32(v[0].(int))
-		bi.cur = bi.hmap[h]
-	case uint:
-		h := uint32(v[0].(uint))
-		bi.cur = bi.hmap[h]
-	case HASH256:
-		id := v[0].(HASH256)
-		bi.cur = bi.imap[id]
-	default:
-		id := NewHASH256(v[0])
-		bi.cur = bi.imap[id]
-	}
-	return bi.cur != nil
-}
-
-//上一个
-func (bi *BlockIndex) Prev() bool {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
-	if bi.cur == bi.lis.Front() {
-		return false
-	}
-	if bi.cur == nil {
-		bi.cur = bi.lis.Back()
-		return bi.cur != nil
-	} else {
-		bi.cur = bi.cur.Prev()
-		return bi.cur != nil
-	}
-}
-
-//下一个
-func (bi *BlockIndex) Next() bool {
-	bi.mu.Lock()
-	defer bi.mu.Unlock()
-	if bi.cur == bi.lis.Back() {
-		return false
-	}
-	if bi.cur == nil {
-		bi.cur = bi.lis.Front()
-		return bi.cur != nil
-	} else {
-		bi.cur = bi.cur.Next()
-		return bi.cur != nil
-	}
 }
 
 //断开最后一个
@@ -468,11 +503,10 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		}
 		vv = cv
 	}
-	//重置光标
-	bi.SeekTo()
 	//验证最后6个块
-	for i := 0; bi.Prev() && i < 6; i++ {
-		ele := bi.Current()
+	LogInfo("verify last 6 block start")
+	for iter, i := bi.NewIter(), 0; iter.Prev() && i < 6; i++ {
+		ele := iter.Curr()
 		eleid, err := ele.ID()
 		if err != nil {
 			return err
@@ -575,13 +609,6 @@ func (bi *BlockIndex) LoadTBEle(id HASH256) (*TBEle, error) {
 	err := ele.LoadMeta(id)
 	return ele, err
 }
-
-var (
-	//到达第一个
-	ArriveFirstBlock = errors.New("arrive first block")
-	//空链
-	EmptyBlockChain = errors.New("this is empty chain")
-)
 
 //向前加载一个区块数据头
 func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
@@ -710,6 +737,9 @@ func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	if err := meta.Decode(buf); err != nil {
 		return nil, err
 	}
+	if !meta.HasBlk() {
+		return nil, BlockDataEmpty
+	}
 	bb, err := bi.db.Blk().Read(meta.Blk)
 	if err != nil {
 		return nil, err
@@ -754,6 +784,48 @@ func (bi *BlockIndex) UnlinkLast() error {
 		bi.cleancache(b)
 	}
 	return err
+}
+
+//断开最后一个头，只处理区块头
+func (bi *BlockIndex) UnlinkHeader() error {
+	if bi.Len() == 0 {
+		return nil
+	}
+	last := bi.Last()
+	if last == nil {
+		return nil
+	}
+	if last.HasBlk() || last.HasRev() {
+		return errors.New("has blk rev data,can't unlink header")
+	}
+	lid, err := last.ID()
+	if err != nil {
+		return err
+	}
+	iter := bi.NewIter()
+	//获取前一个
+	var prev *TBEle = nil
+	if iter.Last() && iter.Prev() && iter.Prev() {
+		prev = iter.Curr()
+	}
+	//断开最后一个
+	if err := bi.UnlinkBack(); err != nil {
+		return err
+	}
+	if prev == nil {
+		return nil
+	}
+	cid, err := prev.ID()
+	if err != nil {
+		return err
+	}
+	bt := bi.db.Index().NewBatch()
+	//设置前一个
+	bv := BestValue{Id: cid, Height: prev.Height}
+	bt.Put(BestBlockKey, bv.Bytes())
+	//删除最后一个
+	bt.Del(BLOCK_PREFIX, lid[:])
+	return bi.db.Index().Write(bt)
 }
 
 //断开最后一个，必须是最后一个才能断开
@@ -830,39 +902,118 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 	return kvs, nil
 }
 
-//链接一个区块
-func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
-	//检测区块
-	if err := blk.Check(bi, true); err != nil {
-		return err
-	}
-	cid, meta, bb, err := blk.ToTBMeta()
-	if err != nil {
-		return err
+//连接区块头
+func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
+	meta := &TBMeta{
+		BlockHeader: header,
 	}
 	nexth := InvalidHeight
 	//是否能连接到主链后
 	phv, pid, isok := bi.IsLinkBack(meta)
 	if !isok {
-		return fmt.Errorf("can't link to main chain hash=%v", cid)
+		return fmt.Errorf("can't link to main chain hash=%v", meta)
+	}
+	cid, err := meta.ID()
+	if err != nil {
+		return err
 	}
 	//区块状态写入
 	bt := bi.db.Index().NewBatch()
-	//设置事物回退
-	rt := bt.NewRev()
 	//第一个
 	if pid.IsZero() {
 		nexth = phv
-		bv := BestValue{Id: cid, Height: nexth}
-		bt.Put(BestBlockKey, bv.Bytes())
 	} else {
 		nexth = phv + 1
-		bv := BestValue{Id: cid, Height: nexth}
-		bt.Put(BestBlockKey, bv.Bytes())
-		//写回退
-		cv := BestValue{Id: pid, Height: phv}
-		rt.Put(BestBlockKey, cv.Bytes())
 	}
+	bv := BestValue{Id: cid, Height: nexth}
+	bt.Put(BestBlockKey, bv.Bytes())
+	//保存区块头数据
+	hbs, err := meta.Bytes()
+	if err != nil {
+		return err
+	}
+	bt.Put(BLOCK_PREFIX, cid[:], hbs)
+	//检测日志文件
+	if bt.Len() > MAX_LOG_SIZE {
+		return errors.New("opts state logs too big > MAX_LOG_SIZE")
+	}
+	//连接区块无区块数据
+	ele := NewTBEle(meta, nexth, bi)
+	ele, err = bi.LinkBack(ele)
+	if err != nil {
+		return err
+	}
+	//写入索引数据
+	err = bi.db.Index().Write(bt)
+	if err != nil {
+		err = bi.UnlinkBack()
+	}
+	return err
+}
+
+//检测连继并设置meta
+func (bi *BlockIndex) CheckLink(blk *BlockInfo) ([]byte, error) {
+	cid, meta, bb, err := blk.ToTBMeta()
+	if err != nil {
+		return nil, err
+	}
+	nexth := InvalidHeight
+	//是否能连接到主链后
+	phv, pid, isok := bi.IsLinkBack(meta)
+	if !isok {
+		return nil, fmt.Errorf("can't link to chain last, hash=%v", cid)
+	}
+	if pid.IsZero() {
+		nexth = phv
+	} else {
+		nexth = phv + 1
+	}
+	ele := NewTBEle(meta, nexth, bi)
+	ele.flags |= TBELoadedBlock
+	blk.Meta = ele
+	return bb, nil
+}
+
+//更新最后区块id和高度
+func (bi *BlockIndex) putLastBest(bt *Batch) error {
+	last := bi.Last()
+	if last == nil {
+		return nil
+	}
+	id, err := last.ID()
+	if err != nil {
+		return err
+	}
+	bv := BestValue{Id: id, Height: last.Height}
+	bt.Put(BestBlockKey, bv.Bytes())
+	return nil
+}
+
+//链接一个区块
+func (bi *BlockIndex) LinkBlock(blk *BlockInfo) error {
+	//检测是否可链入
+	bb, err := bi.CheckLink(blk)
+	if err != nil {
+		return err
+	}
+	//检测区块
+	if err := blk.Check(bi, true); err != nil {
+		return err
+	}
+	cid, err := blk.ID()
+	if err != nil {
+		return err
+	}
+	//区块状态写入
+	bt := bi.db.Index().NewBatch()
+	rt := bt.NewRev()
+	bv := BestValue{Id: cid, Height: blk.Meta.Height}
+	bt.Put(BestBlockKey, bv.Bytes())
+	//放置最后id作为回退日志
+	if err = bi.putLastBest(rt); err != nil {
+		return err
+	}
+	//写入索引信息
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -871,28 +1022,26 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 		return errors.New("opts state logs too big > MAX_LOG_SIZE")
 	}
 	//保存回退日志
-	meta.Rev, err = bi.db.Rev().Write(rt.Dump())
+	blk.Meta.Rev, err = bi.db.Rev().Write(rt.Dump())
 	if err != nil {
 		return err
 	}
 	//保存区块数据
-	meta.Blk, err = bi.db.Blk().Write(bb)
+	blk.Meta.Blk, err = bi.db.Blk().Write(bb)
 	if err != nil {
 		return err
 	}
 	//保存区块头数据
-	hbs, err := meta.Bytes()
+	hbs, err := blk.Meta.Bytes()
 	if err != nil {
 		return err
 	}
 	bt.Put(BLOCK_PREFIX, cid[:], hbs)
 	//连接区块
-	ele := NewTBEle(meta, nexth, bi)
-	ele, err = bi.LinkBack(ele)
+	_, err = bi.LinkBack(blk.Meta)
 	if err != nil {
 		return err
 	}
-	blk.Meta = ele
 	//写入索引数据
 	err = bi.db.Index().Write(bt)
 	if err == nil {
@@ -910,7 +1059,8 @@ func (bi *BlockIndex) LinkTo(blk *BlockInfo) error {
 			bi.tp.Del(id)
 		}
 	}
-	return err
+	GetPubSub().Pub(blk, NetLinkBlockTopic)
+	return nil
 }
 
 func (bi *BlockIndex) GetTxPool() *TxPool {
