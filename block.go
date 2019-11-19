@@ -162,6 +162,27 @@ func (blk *BlockInfo) CoinbaseReward() Amount {
 	return GetCoinbaseReward(blk.Meta.Height)
 }
 
+//检测coinbase高度
+func (v *BlockInfo) CheckCoinbase() error {
+	if v.Meta == nil {
+		return errors.New("not set block meta,can't check coinbase")
+	}
+	if len(v.Txs) < 1 {
+		return errors.New("txs count == 0,coinbase miss")
+	}
+	if len(v.Txs[0].Ins) != 1 {
+		return errors.New("ins count == 0,coinbase miss")
+	}
+	script := v.Txs[0].Ins[0].Script
+	if !script.IsCoinBase() {
+		return errors.New("ins script type error,coinbase miss")
+	}
+	if script.Height() != v.Meta.Height {
+		return errors.New("coinbase height != meta height")
+	}
+	return nil
+}
+
 func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	for i, tx := range v.Txs {
 		err := tx.Write(bi, v, i, bt)

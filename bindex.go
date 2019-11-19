@@ -1024,6 +1024,9 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 		bt.Put(BestBlockKey, BestValueBytes(cid, blk.Meta.Height))
 		rt.Put(BestBlockKey, bv.Bytes())
 	}
+	if err := blk.CheckCoinbase(); err != nil {
+		return err
+	}
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -1070,6 +1073,9 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
 	cid, err := meta.ID()
 	if err != nil {
 		return err
+	}
+	if !CheckProofOfWork(cid, meta.Bits) {
+		return errors.New("block header bits check error")
 	}
 	nexth := InvalidHeight
 	//是否能连接到主链后

@@ -160,8 +160,7 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	MinerAccount, _ := LoadAccount("BNE8o2x2MEVvqvr2tBocqcLRkKTw9oAbLquruDBkH87t9nBuNg84znbBonLJyEZAATrvXZm3MSiK2giFSZgszovHf8VhkjjjXyXpByFSBn2A958aYRQ8vVwZBULYtjmZn9qD3BJ8CkgcSHBn1rxCCHGUMyWFjWvuQSdhPhfVTi4B6nQsVbgQXiY2UN5q5m5aC8tFumWswX4qnZ9BvUHzprotLWpGDoCbmBiVVYKgigXoGy7kfok18ecTVR4XXSdh4UoAbcWhWSrpEdnLa4AxUm8NW5LqnUyvKpxqymTAJmAdB9iZqxG5jpn2hpcjnfx7pRGHp13SvMM461YCWbpf1rJUpWeg8P89x2uXaq9XRsdoBz9yTu3Rj1rRaLgVfREd7QTjtEnkJq1K8LEe4N74wRb7jxvnqQsGq89YrqH8mXaL7Tn5qarxUAnovQskNByb7F7R8dzUeKs1iZg1oVfhsenuCpPj2igCpspQn6oFTKtR45KF5KSMdLKKx7qn4Jx")
-	src, err := MinerAccount.GetAddress()
+	src, err := TestAccount.GetAddress()
 	if err != nil {
 		panic(err)
 	}
