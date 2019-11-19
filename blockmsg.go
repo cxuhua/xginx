@@ -76,23 +76,32 @@ func (bi *BlockIndex) GetMsgHeadersUseHeight(h uint32) (*MsgHeaders, error) {
 }
 
 //请求最后消息头
-func (bi *BlockIndex) ReqMsgHeaders() (*MsgGetHeaders, error) {
-	last := bi.Last()
-	id, err := last.ID()
-	if err != nil {
-		return nil, err
-	}
+func (bi *BlockIndex) ReqMsgHeaders() *MsgGetHeaders {
 	msg := &MsgGetHeaders{}
-	msg.Start = id
-	msg.Skip = 1 //跳过一个，不包含id
-	return msg, nil
+	last := bi.Last()
+	if last == nil {
+		msg.Start = ZERO //从头开始获取
+		msg.Skip = 0
+	} else if id, err := last.ID(); err != nil {
+		LogError("last id error", err)
+	} else {
+		msg.Start = id
+		msg.Skip = 1 //跳过一个，不包含id
+	}
+	return msg
 }
 
 //获取链上的区块头返回
 func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) (*MsgHeaders, error) {
 	iter := bi.NewIter()
-	if !iter.SeekID(msg.Start) {
-		return nil, errors.New("not found start id")
+	if msg.Start.Equal(ZERO) {
+		if !iter.First() {
+			return nil, errors.New("not found first")
+		}
+	} else {
+		if !iter.SeekID(msg.Start) {
+			return nil, errors.New("not found start id")
+		}
 	}
 	skip := msg.Skip
 	for skip > 0 && iter.Next() {

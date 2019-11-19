@@ -83,14 +83,28 @@ type BIndexIter struct {
 	ele *list.Element
 }
 
-func (it *BIndexIter) SeekHeight(h uint32) bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
-	ele, has := it.bi.hmap[h]
-	if has {
-		it.ele = ele
+func (it *BIndexIter) SeekHeight(h uint32, skip ...int) bool {
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
+	it.ele = it.bi.hmap[h]
+	return it.skipEle(skip...)
+}
+
+//当前区块高度
+func (it *BIndexIter) Height() uint32 {
+	ele := it.Curr()
+	return ele.Height
+}
+
+//当前区块id
+func (it *BIndexIter) ID() HASH256 {
+	ele := it.Curr()
+	id, err := ele.ID()
+	if err != nil {
+		LogError("get block index iter id error", err)
+		return ZERO
 	}
-	return has && it.ele != nil
+	return id
 }
 
 //获取当前
@@ -103,19 +117,38 @@ func (it *BIndexIter) Curr() *TBEle {
 	return it.cur.Value.(*TBEle)
 }
 
-func (it *BIndexIter) SeekID(id HASH256) bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
-	ele, has := it.bi.imap[id]
-	if has {
-		it.ele = ele
+//skip >0  向前跳过
+//skip <0 向后跳过
+func (it *BIndexIter) skipEle(skip ...int) bool {
+	if it.ele == nil || len(skip) == 0 || skip[0] == 0 {
+		return it.ele != nil
 	}
-	return has && it.ele != nil
+	skipv, rev := skip[0], false
+	if skipv < 0 {
+		skipv = -skipv
+		rev = true
+	}
+	for skipv > 0 && it.ele != nil {
+		if rev {
+			it.ele = it.ele.Prev()
+		} else {
+			it.ele = it.ele.Next()
+		}
+		skipv--
+	}
+	return it.ele != nil
+}
+
+func (it *BIndexIter) SeekID(id HASH256, skip ...int) bool {
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
+	it.ele = it.bi.imap[id]
+	return it.skipEle(skip...)
 }
 
 func (it *BIndexIter) Prev() bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
 	if it.ele != nil {
 		it.cur = it.ele
 		it.ele = nil
@@ -128,8 +161,8 @@ func (it *BIndexIter) Prev() bool {
 }
 
 func (it *BIndexIter) Next() bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
 	if it.ele != nil {
 		it.cur = it.ele
 		it.ele = nil
@@ -141,18 +174,18 @@ func (it *BIndexIter) Next() bool {
 	return it.cur != nil
 }
 
-func (it *BIndexIter) First() bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
+func (it *BIndexIter) First(skip ...int) bool {
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
 	it.ele = it.bi.lis.Front()
-	return it.ele != nil
+	return it.skipEle(skip...)
 }
 
-func (it *BIndexIter) Last() bool {
-	it.bi.mu.RLock()
-	defer it.bi.mu.RUnlock()
+func (it *BIndexIter) Last(skip ...int) bool {
+	it.bi.mu.Lock()
+	defer it.bi.mu.Unlock()
 	it.ele = it.bi.lis.Back()
-	return it.ele != nil
+	return it.skipEle(skip...)
 }
 
 type IListener interface {
@@ -249,6 +282,10 @@ type BlockIndex struct {
 	db IBlkStore
 }
 
+func (bi *BlockIndex) CacheSize() int {
+	return bi.lru.Size()
+}
+
 //获取当前监听器
 func (bi *BlockIndex) GetListener() IListener {
 	bi.mu.RLock()
@@ -264,7 +301,7 @@ func (bi *BlockIndex) NewIter() *BIndexIter {
 	return iter
 }
 
-func (bi *BlockIndex) GetHEle(h uint32) *TBEle {
+func (bi *BlockIndex) gethele(h uint32) *TBEle {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	ele, has := bi.hmap[h]
@@ -285,7 +322,7 @@ func (bi *BlockIndex) CalcBits(height uint32) uint32 {
 	}
 	ct := last.Time
 	ph := height - conf.PowSpan
-	ele := bi.GetHEle(ph)
+	ele := bi.gethele(ph)
 	if ele == nil {
 		panic(errors.New("prev height height miss"))
 	}
@@ -418,7 +455,7 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 }
 
 //断开最后一个
-func (bi *BlockIndex) UnlinkBack() error {
+func (bi *BlockIndex) unlinkback() error {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	le := bi.lis.Back()
@@ -447,25 +484,18 @@ func (bi *BlockIndex) pushback(e *TBEle) error {
 	return nil
 }
 
-//根据高度获取块
-func (bi *BlockIndex) GetTBEle(h uint32) *TBEle {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
-	v, ok := bi.hmap[h]
-	if !ok {
-		return nil
-	}
-	return v.Value.(*TBEle)
-}
-
 func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
+	id, err := e.ID()
+	if err != nil {
+		return nil, err
+	}
+	fh := bi.lis.Front()
+	if fh != nil && !fh.Value.(*TBEle).Prev.Equal(id) {
+		return nil, errors.New("push error id to front")
+	}
 	ele := bi.lis.PushFront(e)
 	bi.hmap[e.Height] = ele
-	if id, err := e.ID(); err != nil {
-		return nil, err
-	} else {
-		bi.imap[id] = ele
-	}
+	bi.imap[id] = ele
 	return e, nil
 }
 
@@ -482,6 +512,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 			break
 		}
 		if err == EmptyBlockChain {
+			LogInfo("load finished, empty block chain")
 			break
 		}
 		if err != nil {
@@ -499,6 +530,9 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 			fn(cv)
 		}
 		vv = cv
+	}
+	if bi.Len() == 0 {
+		return nil
 	}
 	//验证最后6个块
 	LogInfo("verify last 6 block start")
@@ -520,8 +554,29 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
+		LogInfo("verify block success id =", iter.ID(), i)
 	}
-	LogInfo("load finished block count = ", bi.Len())
+	bv := bi.GetBestValue()
+	LogInfo("load finished block count = ", bi.Len(), ",last height =", bi.LastHeight(), ",best height =", bv.Height)
+	return nil
+}
+
+//1234
+//0000ddda3ad16057f6258f56e1ab66554df6559ec31829dc26ba389eb287ba9b
+
+//回退到指定id
+func (bi *BlockIndex) UnlinkTo(id HASH256) error {
+	ele, err := bi.getEle(id)
+	if err != nil {
+		return err
+	}
+	end := bi.LastHeight()
+	for count := end - ele.Height; count > 0; count-- {
+		err := bi.UnlinkLast()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -605,7 +660,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	return tx, nil
 }
 
-func (bi *BlockIndex) LoadTBEle(id HASH256) (*TBEle, error) {
+func (bi *BlockIndex) loadtbele(id HASH256) (*TBEle, error) {
 	ele := &TBEle{idx: bi}
 	err := ele.LoadMeta(id)
 	return ele, err
@@ -626,7 +681,7 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		id = bv.Id
 		ih = bv.Height
 	}
-	ele, err := bi.LoadTBEle(id)
+	ele, err := bi.loadtbele(id)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +705,7 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 }
 
 //检测是否可以链入尾部,并返回当前高度和当前id
-func (bi *BlockIndex) IsLinkBack(meta *TBMeta) (uint32, HASH256, bool) {
+func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	last := bi.lis.Back()
@@ -669,7 +724,7 @@ func (bi *BlockIndex) IsLinkBack(meta *TBMeta) (uint32, HASH256, bool) {
 }
 
 //加入一个队列尾并设置高度
-func (bi *BlockIndex) LinkBack(ele *TBEle) error {
+func (bi *BlockIndex) linkback(ele *TBEle) error {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	last := bi.lis.Back()
@@ -764,18 +819,16 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 
 //设置最后的头信息
 func (bi *BlockIndex) setLastHeader(bt *Batch) error {
-	bt.Del(LastHeaderKey)
 	if iter := bi.NewIter(); iter.Prev() && iter.Prev() {
 		ele := iter.Curr()
 		pid, err := ele.ID()
 		if err != nil {
 			return err
 		}
-		bv := BestValue{
-			Id:     pid,
-			Height: ele.Height,
-		}
+		bv := BestValue{Id: pid, Height: ele.Height}
 		bt.Put(LastHeaderKey, bv.Bytes())
+	} else {
+		bt.Del(LastHeaderKey)
 	}
 	return nil
 }
@@ -796,7 +849,7 @@ func (bi *BlockIndex) UnlinkLastEle(ele *TBEle) error {
 	if err != nil {
 		return err
 	}
-	return bi.UnlinkBack()
+	return bi.unlinkback()
 }
 
 //断开最后一个
@@ -821,6 +874,7 @@ func (bi *BlockIndex) UnlinkLast() error {
 	if err == nil {
 		bi.cleancache(b)
 	}
+	LogInfo("unlink block", id, "success")
 	return err
 }
 
@@ -861,7 +915,7 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 		return err
 	}
 	//断开链接
-	return bi.UnlinkBack()
+	return bi.unlinkback()
 }
 
 //获取最高块信息
@@ -915,6 +969,16 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 	return kvs, nil
 }
 
+func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	eptr, has := bi.imap[id]
+	if !has {
+		return nil, errors.New("not found")
+	}
+	return eptr.Value.(*TBEle), nil
+}
+
 //更新区块数据(需要区块头先链接好
 func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	cid, err := blk.ID()
@@ -929,13 +993,10 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 		return errors.New("block size too big")
 	}
 	//获取区块头
-	bi.mu.RLock()
-	eptr, has := bi.imap[cid]
-	bi.mu.RUnlock()
-	if !has {
-		return errors.New("block header ele miss")
+	ele, err := bi.getEle(cid)
+	if err != nil {
+		return err
 	}
-	ele := eptr.Value.(*TBEle)
 	eid, err := ele.ID()
 	if err != nil {
 		return err
@@ -946,13 +1007,6 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	blk.Meta = ele
 	//设置交易数量
 	blk.Meta.Txs = VarUInt(len(blk.Txs))
-	//必须更新bestvalue之后的一个
-	bv := bi.GetBestValue()
-	if bv.IsValid() && !blk.Meta.Prev.Equal(bv.Id) {
-		return errors.New("prev hash id errpr")
-	} else if !bv.IsValid() {
-		blk.Meta.Height = 0
-	}
 	//检测区块数据
 	err = blk.Check(bi, true)
 	if err != nil {
@@ -961,13 +1015,15 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	//区块状态写入
 	bt := bi.db.Index().NewBatch()
 	rt := bt.NewRev()
-	//如果最后区块数据有效写入回退数据
-	if bv.IsValid() {
+	if bv := bi.GetBestValue(); !bv.IsValid() {
+		blk.Meta.Height = 0
+		bt.Put(BestBlockKey, BestValueBytes(cid, 0))
+	} else if !blk.Meta.Prev.Equal(bv.Id) {
+		return errors.New("prev hash id error,can't update blk")
+	} else {
+		bt.Put(BestBlockKey, BestValueBytes(cid, blk.Meta.Height))
 		rt.Put(BestBlockKey, bv.Bytes())
 	}
-	//设置新的点
-	cv := BestValue{Id: cid, Height: blk.Meta.Height}
-	bt.Put(BestBlockKey, cv.Bytes())
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -1003,7 +1059,6 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 			bi.tp.Del(id)
 		}
 	}
-	GetPubSub().Pub(blk, UpdateBlockTopic)
 	return nil
 }
 
@@ -1018,7 +1073,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
 	}
 	nexth := InvalidHeight
 	//是否能连接到主链后
-	phv, pid, isok := bi.IsLinkBack(meta)
+	phv, pid, isok := bi.islinkback(meta)
 	if !isok {
 		return fmt.Errorf("can't link to chain last, hash=%v", cid)
 	}
@@ -1044,8 +1099,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
 		return err
 	}
 	//连接区块无区块数据
-	ele := NewTBEle(meta, nexth, bi)
-	return bi.LinkBack(ele)
+	return bi.linkback(NewTBEle(meta, nexth, bi))
 }
 
 func (bi *BlockIndex) GetTxPool() *TxPool {

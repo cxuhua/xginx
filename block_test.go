@@ -132,7 +132,7 @@ func init() {
 
 func TestBlockChain(t *testing.T) {
 	bi := GetBlockIndex()
-	testnum := uint32(3)
+	testnum := uint32(30)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		err := bi.LinkHeader(cb.Header)
@@ -152,11 +152,7 @@ func TestBlockChain(t *testing.T) {
 
 func TestBlockIndexIter(t *testing.T) {
 	bi := GetBlockIndex()
-	gm := &MsgGetHeaders{
-		Start: NewHASH256("0000619eebec5ee351f6393b63833086fe68ba2ace1d5e163498e11ee5d0bf0e"),
-		Limit: HASH256{},
-	}
-	bi.GetMsgHeaders(gm)
+	bi.UnlinkTo(NewHASH256("0000ddda3ad16057f6258f56e1ab66554df6559ec31829dc26ba389eb287ba9b"))
 }
 
 func TestTransfire(t *testing.T) {
@@ -164,7 +160,8 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	src, err := TestAccount.GetAddress()
+	MinerAccount, _ := LoadAccount("BNE8o2x2MEVvqvr2tBocqcLRkKTw9oAbLquruDBkH87t9nBuNg84znbBonLJyEZAATrvXZm3MSiK2giFSZgszovHf8VhkjjjXyXpByFSBn2A958aYRQ8vVwZBULYtjmZn9qD3BJ8CkgcSHBn1rxCCHGUMyWFjWvuQSdhPhfVTi4B6nQsVbgQXiY2UN5q5m5aC8tFumWswX4qnZ9BvUHzprotLWpGDoCbmBiVVYKgigXoGy7kfok18ecTVR4XXSdh4UoAbcWhWSrpEdnLa4AxUm8NW5LqnUyvKpxqymTAJmAdB9iZqxG5jpn2hpcjnfx7pRGHp13SvMM461YCWbpf1rJUpWeg8P89x2uXaq9XRsdoBz9yTu3Rj1rRaLgVfREd7QTjtEnkJq1K8LEe4N74wRb7jxvnqQsGq89YrqH8mXaL7Tn5qarxUAnovQskNByb7F7R8dzUeKs1iZg1oVfhsenuCpPj2igCpspQn6oFTKtR45KF5KSMdLKKx7qn4Jx")
+	src, err := MinerAccount.GetAddress()
 	if err != nil {
 		panic(err)
 	}

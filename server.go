@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -62,6 +61,7 @@ type IServer interface {
 	Stop()
 	Wait()
 	NewClient() *Client
+	BroadMsg(c *Client, m MsgIO)
 }
 
 var (
@@ -70,6 +70,10 @@ var (
 
 type server struct {
 	ser *TcpServer
+}
+
+func (s *server) BroadMsg(c *Client, m MsgIO) {
+	s.ser.BroadMsg(c, m)
 }
 
 func (s *server) Wait() {
@@ -104,7 +108,7 @@ type TcpServer struct {
 	wg      sync.WaitGroup
 	clients map[string]*Client //连接的所有client
 	addrs   *AddrMap
-	lb      ONE //是否正在连接区块
+	single  sync.Mutex
 }
 
 //地址是否打开
@@ -214,11 +218,10 @@ func (s *TcpServer) Service() uint32 {
 func (s *TcpServer) openAddr(addr NetAddr) error {
 	c := s.NewClient()
 	err := c.Open(addr)
-	if err != nil {
-		return err
+	if err == nil {
+		c.Loop()
 	}
-	c.Loop()
-	return nil
+	return err
 }
 
 //收到地址列表，如果没有达到最大链接开始链接
@@ -249,44 +252,106 @@ func (s *TcpServer) recoverError() {
 }
 
 func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
-	return nil
-}
-
-func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo) error {
 	bi := GetBlockIndex()
-	if err := bi.UpdateBlk(blk); err != nil {
+	if err := tx.Check(bi, true); err != nil {
 		return err
 	}
-	LogInfo("link block to chain success blk =", blk, "height =", blk.Meta.Height)
+	//放入交易池
+	return bi.tp.PushBack(tx)
+}
+
+//获取一个连接的主节点区块高度>=h
+func (s *TcpServer) FindClient(h uint32) *Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, c := range s.clients {
+		if c.Service&SERVICE_NODE == 0 {
+			continue
+		}
+		if c.Height < h {
+			continue
+		}
+		return c
+	}
 	return nil
 }
 
-func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
-	//防止多此执行
-	if !s.lb.Running() {
-		return errors.New("recv msg headers running")
+//收到块数据
+func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) error {
+	s.single.Lock()
+	defer s.single.Unlock()
+	bi := GetBlockIndex()
+	ps := GetPubSub()
+	bblk := false
+	//尝试连接区块头
+	if err := bi.LinkHeader(blk.Header); err == nil {
+		LogInfo("link block header id =", blk.Header)
+		bblk = true
 	}
-	defer s.lb.Reset()
+	//尝试更新区块数据
+	if err := bi.UpdateBlk(blk); err == nil {
+		LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
+		dt.Reset(time.Microsecond * 10)
+	} else {
+		LogError("update blk error", err)
+		bblk = false
+	}
+	//如果是新块,广播区块
+	if bblk {
+		ps.Pub(blk, NewBlockLinkTopic)
+		s.BroadMsg(c, NewMsgBlock(blk))
+	}
+	return nil
+}
+
+//下载块数据
+func (s *TcpServer) reqMsgGetBlock() {
+	s.single.Lock()
+	defer s.single.Unlock()
+	bi := GetBlockIndex()
+	bv := bi.GetBestValue()
+	iter := bi.NewIter()
+	if bv.IsValid() {
+		if !iter.SeekID(bv.Id, 1) {
+			return
+		}
+	} else {
+		if !iter.First() {
+			return
+		}
+	}
+	if !iter.Next() {
+		return
+	}
+	c := s.FindClient(iter.Height())
+	if c == nil {
+		return
+	}
+	msg := &MsgGetInv{}
+	msg.AddInv(InvTypeBlock, iter.ID())
+	c.SendMsg(msg)
+}
+
+//下载区块头
+func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
+	s.single.Lock()
+	defer s.single.Unlock()
 	//链接头
 	bi := GetBlockIndex()
-	for i := 0; i < len(msg.Headers); {
-		hv := msg.Headers[i]
+	for _, hv := range msg.Headers {
 		err := bi.LinkHeader(hv)
 		if err != nil {
-			return err
+			return fmt.Errorf("recv msgheader link header error %w", err)
 		}
-		LogInfo("link block header id =", hv)
+		LogInfo("link block header id =", hv, "height =", bi.LastHeight())
 	}
 	//请求下一批,不包含最后一个
-	rmsg, err := bi.ReqMsgHeaders()
-	if err != nil {
-		return err
-	}
+	rmsg := bi.ReqMsgHeaders()
 	c.SendMsg(rmsg)
 	return nil
 }
 
-func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer) {
+func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *time.Timer) {
 	LogInfo("server dispatch startup", idx)
 	defer s.recoverError()
 	for {
@@ -298,35 +363,52 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer) {
 			}
 			return
 		case cv := <-ch:
-			if m, ok := cv.(*ClientMsg); !ok {
-				continue
-			} else if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
+			m, ok := cv.(*ClientMsg)
+			if !ok {
+				break
+			}
+			if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
 				err := s.recvMsgAddrs(m.c, msg)
 				if err != nil {
 					LogError(err)
 				}
-			} else if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
+				break
+			}
+			if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
 				err := s.recvMsgHeaders(m.c, msg)
 				if err != nil {
 					LogError(err)
 				}
-			} else if msg, ok := m.m.(*MsgBlock); ok {
-				err := s.recvMsgBlock(m.c, msg.Blk)
+				break
+			}
+			if msg, ok := m.m.(*MsgBlock); ok {
+				err := s.recvMsgBlock(m.c, msg.Blk, dt)
 				if err != nil {
-					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
+					LogError(err)
+					//m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
-			} else if msg, ok := m.m.(*MsgTx); ok {
+				break
+			}
+			if msg, ok := m.m.(*MsgTx); ok {
 				err := s.recvMsgTx(m.c, msg.Tx)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
 				}
+				break
 			}
+		case <-dt.C:
+			s.reqMsgGetBlock()
+			dt.Reset(time.Second)
 		case <-pt.C:
 			//测试连接
-			err := s.openAddr(NetAddrForm("192.168.31.178:9333"))
-			if err != nil {
-				LogError(err)
-			}
+			//if s.ConnNum() == 1 {
+			//	pt.Reset(time.Second * 3)
+			//	break
+			//}
+			//err := s.openAddr(NetAddrForm("192.168.31.178:9333"))
+			//if err != nil {
+			//	LogError(err)
+			//}
 			pt.Reset(time.Second * 3)
 		}
 	}
@@ -337,8 +419,9 @@ func (s *TcpServer) run() {
 	defer s.recoverError()
 	ch := GetPubSub().Sub(NetMsgTopic)
 	pt := time.NewTimer(time.Second)
+	dt := time.NewTimer(time.Second)
 	for i := 0; i < 4; i++ {
-		go s.dispatch(i, ch, pt)
+		go s.dispatch(i, ch, pt, dt)
 	}
 	for {
 		conn, err := s.lis.Accept()

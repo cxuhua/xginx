@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	. "github.com/cxuhua/xginx"
 )
@@ -37,6 +38,9 @@ func main() {
 	if Http != nil {
 		Http.Start(ctx)
 	}
+	//
+	time.Sleep(time.Second)
+	GetPubSub().Pub(uint32(1), NewGenBlockTopic)
 	//
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig

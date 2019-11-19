@@ -44,7 +44,7 @@ func getlockedsize() int {
 }
 
 var (
-	lockedsize     = getlockedsize()
+	lockedminsize  = getlockedsize()
 	conbaseminsize = getcoinbaseminsize()
 )
 
@@ -55,12 +55,12 @@ func (s Script) IsCoinBase() bool {
 
 //in script
 func (s Script) IsWitness() bool {
-	return s.Len() > 3 && s.Len() < ACCOUNT_KEY_MAX_SIZE*128 && s[0] == SCRIPT_WITNESS_TYPE
+	return s.Len() >= 4 && s.Len() < ACCOUNT_KEY_MAX_SIZE*128 && s[0] == SCRIPT_WITNESS_TYPE
 }
 
 //out script
 func (s Script) IsLocked() bool {
-	return s.Len() == lockedsize && s[0] == SCRIPT_LOCKED_TYPE
+	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MAX_EXT_SIZE) && s[0] == SCRIPT_LOCKED_TYPE
 }
 
 //从锁定脚本获取输出地址
@@ -167,6 +167,7 @@ func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
 type LockedScript struct {
 	Type uint8
 	Pkh  HASH160
+	Ext  VarBytes
 }
 
 func (ss LockedScript) Encode(w IWriter) error {
@@ -174,6 +175,9 @@ func (ss LockedScript) Encode(w IWriter) error {
 		return err
 	}
 	if err := ss.Pkh.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.Ext.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -186,13 +190,22 @@ func (ss *LockedScript) Decode(r IReader) error {
 	if err := ss.Pkh.Decode(r); err != nil {
 		return err
 	}
+	if err := ss.Ext.Decode(r); err != nil {
+		return err
+	}
 	return nil
 }
 
-func NewLockedScript(pkh HASH160) (Script, error) {
+func NewLockedScript(pkh HASH160, vbs ...[]byte) (Script, error) {
 	std := &LockedScript{}
 	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = pkh
+	for _, vb := range vbs {
+		std.Ext = append(std.Ext, vb...)
+	}
+	if std.Ext.Len() > MAX_EXT_SIZE {
+		return nil, errors.New("ext size > MAX_EXT_SIZE")
+	}
 	buf := NewWriter()
 	err := std.Encode(buf)
 	if err != nil {

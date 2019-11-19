@@ -69,7 +69,29 @@ func (c *Client) processMsgOut(m MsgIO) {
 
 }
 
+//收到对方版本信息
+func (c *Client) recvMsgVersion(msg *MsgVersion) {
+	bi := GetBlockIndex()
+	lh := bi.LastHeight()
+	if msg.Height != InvalidHeight && lh == InvalidHeight {
+		rmsg := bi.ReqMsgHeaders()
+		c.SendMsg(rmsg)
+	} else if lh > msg.Height {
+		rmsg, err := bi.GetMsgHeadersUseHeight(msg.Height)
+		if err == nil {
+			c.SendMsg(rmsg)
+		} else {
+			LogError("recv MsgVersion error", err)
+		}
+	} else if msg.Height > lh {
+		rmsg := bi.ReqMsgHeaders()
+		c.SendMsg(rmsg)
+	}
+}
+
 func (c *Client) processMsg(m MsgIO) error {
+	ps := GetPubSub()
+	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
 	case NT_ERROR:
@@ -77,10 +99,10 @@ func (c *Client) processMsg(m MsgIO) error {
 		LogError("recv msg error code =", msg.Code, "error =", msg.Error, c.addr)
 	case NT_HEADERS:
 		msg := m.(*MsgHeaders)
-		GetPubSub().Pub(msg, NetMsgHeadersTopic)
+		ps.Pub(msg, NetMsgHeadersTopic)
 	case NT_GET_HEADERS:
 		msg := m.(*MsgGetHeaders)
-		nmv, err := GetBlockIndex().GetMsgHeaders(msg)
+		nmv, err := bi.GetMsgHeaders(msg)
 		if err == nil {
 			c.SendMsg(nmv)
 		}
@@ -89,25 +111,27 @@ func (c *Client) processMsg(m MsgIO) error {
 		if len(msg.Invs) == 0 {
 			break
 		}
-		GetBlockIndex().GetMsgGetInv(msg, c)
+		bi.GetMsgGetInv(msg, c)
 	case NT_BLOCK:
 		msg := m.(*MsgBlock)
-		GetPubSub().Pub(msg.Blk, NetMsgBlockTopic)
+		ps.Pub(msg.Blk, NetMsgBlockTopic)
 	case NT_TX:
 		msg := m.(*MsgTx)
-		GetPubSub().Pub(msg.Tx, NetMsgTxTopic)
+		ps.Pub(msg.Tx, NetMsgTxTopic)
 	case NT_ADDRS:
 		msg := m.(*MsgAddrs)
-		GetPubSub().Pub(msg, NetMsgAddrsTopic)
+		ps.Pub(msg, NetMsgAddrsTopic)
 	case NT_GET_ADDRS:
 		msg := c.ss.NewMsgAddrs(c)
 		c.SendMsg(msg)
 	case NT_PONG:
 		msg := m.(*MsgPong)
+		c.Height = msg.Height
 		c.ping = msg.Ping()
 	case NT_PING:
 		msg := m.(*MsgPing)
-		c.SendMsg(msg.NewPong())
+		c.Height = msg.Height
+		c.SendMsg(msg.NewPong(bi.LastHeight()))
 	case NT_VERSION:
 		msg := m.(*MsgVersion)
 		//保存到地址列表
@@ -119,20 +143,19 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.Close()
 			return errors.New("has connection,closed")
 		}
-		//如果是连入的，返回节点版本信息
-		if c.IsIn() {
-			msg := GetBlockIndex().NewMsgVersion()
-			msg.Service = c.ss.Service()
-			c.SendMsg(msg)
-		}
 		//保存节点信息
 		c.Ver = msg.Ver
 		c.Height = msg.Height
 		c.Service = msg.Service
-		//发送比对方高的区块头
-		nmv, err := GetBlockIndex().GetMsgHeadersUseHeight(msg.Height)
-		if err == nil {
-			c.SendMsg(nmv)
+		//如果是连入的，返回节点版本信息
+		if c.IsIn() {
+			msg := bi.NewMsgVersion()
+			msg.Service = c.ss.Service()
+			c.SendMsg(msg)
+		}
+		//连出的判断区块高度
+		if c.IsOut() {
+			c.recvMsgVersion(msg)
 		}
 	default:
 		if c.IsIn() {
@@ -142,7 +165,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 	}
 	//发布消息
-	GetPubSub().Pub(NewClientMsg(c, m), NetMsgTopic)
+	ps.Pub(NewClientMsg(c, m), NetMsgTopic)
 	return nil
 }
 
@@ -251,7 +274,9 @@ func (c *Client) loop() {
 			if !c.isopen {
 				break
 			}
-			c.SendMsg(NewMsgPing())
+			bi := GetBlockIndex()
+			msg := NewMsgPing(bi.LastHeight())
+			c.SendMsg(msg)
 			c.ptimer.Reset(time.Second * time.Duration(Rand(40, 60)))
 		case <-c.ctx.Done():
 			return

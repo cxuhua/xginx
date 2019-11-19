@@ -184,31 +184,49 @@ func (v *NetAddr) Decode(r IReader) error {
 }
 
 type MsgPing struct {
-	Time int64
+	Time   int64
+	Height uint32 //发送我的最新高度
 }
 
 func (v MsgPing) Type() uint8 {
 	return NT_PING
 }
 
-func (v MsgPing) NewPong() *MsgPong {
-	return &MsgPong{Time: v.Time}
+func (v MsgPing) NewPong(h uint32) *MsgPong {
+	msg := &MsgPong{Time: v.Time}
+	msg.Height = h
+	return msg
 }
 
 func (v MsgPing) Encode(w IWriter) error {
-	return w.TWrite(v.Time)
+	if err := w.TWrite(v.Time); err != nil {
+		return err
+	}
+	if err := w.TWrite(v.Height); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (v *MsgPing) Decode(r IReader) error {
-	return r.TRead(&v.Time)
+	if err := r.TRead(&v.Time); err != nil {
+		return err
+	}
+	if err := r.TRead(&v.Height); err != nil {
+		return err
+	}
+	return nil
 }
 
-func NewMsgPing() *MsgPing {
-	return &MsgPing{Time: time.Now().UnixNano()}
+func NewMsgPing(h uint32) *MsgPing {
+	msg := &MsgPing{Time: time.Now().UnixNano()}
+	msg.Height = h
+	return msg
 }
 
 type MsgPong struct {
-	Time int64
+	Time   int64
+	Height uint32 //获取对方的高度
 }
 
 func (v MsgPong) Type() uint8 {
@@ -220,11 +238,23 @@ func (v MsgPong) Ping() int {
 }
 
 func (v MsgPong) Encode(w IWriter) error {
-	return w.TWrite(v.Time)
+	if err := w.TWrite(v.Time); err != nil {
+		return err
+	}
+	if err := w.TWrite(v.Height); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (v *MsgPong) Decode(r IReader) error {
-	return r.TRead(&v.Time)
+	if err := r.TRead(&v.Time); err != nil {
+		return err
+	}
+	if err := r.TRead(&v.Height); err != nil {
+		return err
+	}
+	return nil
 }
 
 const (
@@ -340,7 +370,6 @@ func (c *NetStream) WriteMsg(m MsgIO) error {
 	pd := &NetPackage{
 		Flags: flags,
 		Type:  m.Type(),
-		Ver:   conf.Ver,
 		Bytes: buf.Bytes(),
 	}
 	return pd.Encode(c)
@@ -361,9 +390,8 @@ func (c *NetStream) WriteByte(b byte) error {
 type NetPackage struct {
 	Flags [4]byte  //标识
 	Type  uint8    //包类型
-	Ver   uint32   //版本
 	Bytes VarBytes //数据长度
-	Sum   [4]byte  //校验和HASH256 前4字节
+	Sum   [4]byte  //sha256 前4字节
 }
 
 func (v NetPackage) Encode(w IWriter) error {
@@ -371,9 +399,6 @@ func (v NetPackage) Encode(w IWriter) error {
 		return err
 	}
 	if err := w.WriteByte(v.Type); err != nil {
-		return err
-	}
-	if err := w.TWrite(v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
@@ -389,7 +414,6 @@ func (v *NetPackage) Hash() []byte {
 	hasher := sha2562.New()
 	hasher.Write(v.Flags[:])
 	hasher.Write([]byte{v.Type})
-	_ = binary.Write(hasher, Endian, v.Ver)
 	hasher.Write(v.Bytes)
 	sum := hasher.Sum(nil)
 	return sum[:4]
@@ -400,9 +424,6 @@ func (v *NetPackage) Decode(r IReader) error {
 		return err
 	}
 	if err := r.TRead(&v.Type); err != nil {
-		return err
-	}
-	if err := r.TRead(&v.Ver); err != nil {
 		return err
 	}
 	if err := v.Bytes.Decode(r); err != nil {
@@ -596,7 +617,7 @@ func (v *VarBytes) Decode(r IReader) error {
 	if l == 0 {
 		return nil
 	}
-	if l > 1024*1024*4 {
+	if l > 1024*1024*5 {
 		return errors.New("bytes length too long")
 	}
 	*v = make([]byte, l)

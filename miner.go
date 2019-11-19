@@ -10,14 +10,12 @@ import (
 )
 
 const (
-	//新交易订阅主体 *TX
-	NewTxTopic = "NewTx"
-	//新区块订阅 *Block
-	NewBlockTopic = "NewBlock"
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
 	//链上新连接了区块
-	UpdateBlockTopic = "UpdateBlock"
+	NewBlockLinkTopic = "NewBlockLink"
+	//开始创建区块
+	NewGenBlockTopic = "NewGenBlock"
 )
 
 const (
@@ -52,15 +50,11 @@ type minerEngine struct {
 	ctx    context.Context    //
 	cancel context.CancelFunc //
 	acc    *Account
-	mbc    chan uint32 //
-	gening ONE         //
 	mu     sync.RWMutex
 }
 
 func newMinerEngine() IMiner {
-	return &minerEngine{
-		mbc: make(chan uint32, 1),
-	}
+	return &minerEngine{}
 }
 
 func (m *minerEngine) SetMiner(acc *Account) error {
@@ -74,32 +68,34 @@ func (m *minerEngine) SetMiner(acc *Account) error {
 }
 
 //创建一个区块
-func (m *minerEngine) genBlock(ver uint32) {
-	if !m.gening.Running() {
-		return
-	}
-	defer m.gening.Reset()
+func (m *minerEngine) genBlock(ver uint32) error {
+	ps := GetPubSub()
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
-		LogError("new block error ", err)
-		return
+		return err
 	}
+	//添加交易
+	//
 	if err := blk.Finish(bi); err != nil {
-		LogError("finish block error ", err)
-		return
+		return err
 	}
 	err = blk.Check(bi, false)
 	if err != nil {
-		LogError("check block error ", err)
-		return
+		return err
 	}
-	genok := false
 	hb := blk.Header.Bytes()
 	times := uint32(opt.MiB * 10)
+	//当一个新块更新到库中时，终止当前的的区块进度
+	linkblk := ps.SubOnce(NewBlockLinkTopic)
+	defer ps.Unsub(linkblk)
 	for i, j := UR32(), uint32(0); ; i++ {
-		if err := m.ctx.Err(); err != nil {
-			LogError("gen block ctx err igonre", err)
+		select {
+		case <-m.ctx.Done():
+			return m.ctx.Err()
+		case <-linkblk:
+			return errors.New("recv new block ,ignore curr block")
+		default:
 			break
 		}
 		id := hb.Hash()
@@ -108,11 +104,10 @@ func (m *minerEngine) genBlock(ver uint32) {
 			hb.SetNonce(i)
 		} else {
 			blk.Header = hb.Header()
-			genok = true
 			break
 		}
 		if j%times == 0 {
-			LogInfo("genblock %d times, bits=%x id=%v nonce=%x height=%d\n", times, blk.Meta.Bits, id, i, blk.Meta.Height)
+			LogInfof("genblock %d times, bits=%x id=%v nonce=%x height=%d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
 			i = UR32()
 			j = 0
 		}
@@ -121,24 +116,25 @@ func (m *minerEngine) genBlock(ver uint32) {
 			i = UR32()
 		}
 	}
-	if !genok {
-		LogError("get block not finish")
-		return
-	}
 	LogInfo("gen block ok id = ", blk)
-	if err := bi.LinkHeader(blk.Header); err != nil {
-		LogError("new block linkto chain error ", err)
-		return
+	err = bi.LinkHeader(blk.Header)
+	if err != nil {
+		return err
 	}
-	if err := bi.UpdateBlk(blk); err != nil {
-		LogError("new block linkto chain error ", err)
-		return
+	err = bi.UpdateBlk(blk)
+	if err != nil {
+		err = bi.UnlinkLast()
 	}
-	LogInfo("new block linkto chain success id=", blk)
+	if err != nil {
+		return err
+	}
+	Server.BroadMsg(nil, NewMsgBlock(blk))
+	return nil
 }
 
 //处理操作
 func (m *minerEngine) processOpt(opt MinerAct) {
+	ps := GetPubSub()
 	switch opt.Opt {
 	case OptGetBlock:
 		ver, ok := opt.Arg.(uint32)
@@ -148,7 +144,7 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 		}
 		m.mu.RLock()
 		if m.acc != nil {
-			m.mbc <- ver
+			ps.Pub(ver, NewGenBlockTopic)
 		} else {
 			LogError("miner account not set,new block error")
 		}
@@ -172,7 +168,6 @@ func (m *minerEngine) dispatch(ch chan interface{}) {
 	LogInfo("miner dispatch worker start")
 	m.wg.Add(1)
 	defer m.wg.Done()
-	wtimer := time.NewTimer(time.Second * 60)
 	for {
 		select {
 		case op := <-ch:
@@ -181,38 +176,10 @@ func (m *minerEngine) dispatch(ch chan interface{}) {
 			} else {
 				LogError("dispatch recv error opt", op)
 			}
-		case <-wtimer.C:
-			//m.NewBlock(1)
-			wtimer.Reset(time.Second * 60)
 		case <-m.ctx.Done():
 			return
 		}
 	}
-}
-
-func (m *minerEngine) onRecvTx(tx *TX) {
-	bi := GetBlockIndex()
-	err := tx.Check(bi, true)
-	if err != nil {
-		LogError("tx check error", err, "drop tx")
-		return
-	}
-	tp := bi.GetTxPool()
-	err = tp.PushBack(tx)
-	if err != nil {
-		LogError("tx push to pool error", err, "drop tx")
-		return
-	}
-	LogInfo("current txpool len=", tp.Len())
-}
-
-func (m *minerEngine) onRecvBlock(blk *BlockInfo) {
-	bi := GetBlockIndex()
-	if err := bi.UpdateBlk(blk); err != nil {
-		LogError("link block error", err, "drop block", blk)
-		return
-	}
-	LogInfo("new block link to chain", blk)
 }
 
 func (m *minerEngine) loop(i int, wch chan interface{}) {
@@ -222,15 +189,15 @@ func (m *minerEngine) loop(i int, wch chan interface{}) {
 	for {
 		select {
 		case ptr := <-wch:
-			if tx, ok := ptr.(*TX); ok {
-				m.onRecvTx(tx)
-			} else if blk, ok := ptr.(*BlockInfo); ok {
-				m.onRecvBlock(blk)
-			} else {
-				LogError("recv unknow msg", ptr)
+			switch ptr.(type) {
+			case uint32:
+				ver := ptr.(uint32)
+				LogInfo("recv NewGenBlock Topic,start gen block,ver =", ver)
+				err := m.genBlock(ver)
+				if err != nil {
+					LogError("gen block error", err)
+				}
 			}
-		case ver := <-m.mbc:
-			m.genBlock(ver)
 		case <-m.ctx.Done():
 			return
 		}
@@ -239,14 +206,15 @@ func (m *minerEngine) loop(i int, wch chan interface{}) {
 
 //开始工作
 func (m *minerEngine) Start(ctx context.Context) {
+	ps := GetPubSub()
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅交易和区块
-	wch := GetPubSub().Sub(NewTxTopic, NewBlockTopic)
+	wch := ps.Sub(NewGenBlockTopic)
 	for i := 0; i < 4; i++ {
 		go m.loop(i, wch)
 	}
 	//订阅矿工操作
-	optch := GetPubSub().Sub(NewMinerActTopic)
+	optch := ps.Sub(NewMinerActTopic)
 	go m.dispatch(optch)
 }
 

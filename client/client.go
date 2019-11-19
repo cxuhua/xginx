@@ -5,9 +5,18 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	. "github.com/cxuhua/xginx"
 )
+
+func connect() {
+	c := Server.NewClient()
+	err := c.Open(NetAddrForm("192.168.31.178:9333"))
+	if err == nil {
+		c.Loop()
+	}
+}
 
 func main() {
 	conf := InitConfig("v10000.json")
@@ -21,6 +30,8 @@ func main() {
 	bi := InitBlockIndex(lis)
 	defer bi.Close()
 
+	//bi.UnlinkLast()
+
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -28,6 +39,8 @@ func main() {
 	//是否启动tcp节点服务器
 	if Server != nil {
 		Server.Start(ctx)
+		time.Sleep(time.Second)
+		connect()
 	}
 	//是否启动矿工
 	if Miner != nil {

@@ -183,6 +183,14 @@ func NewInvalidBest() BestValue {
 	}
 }
 
+func BestValueBytes(id HASH256, h uint32) []byte {
+	v := &BestValue{
+		Id:     id,
+		Height: h,
+	}
+	return v.Bytes()
+}
+
 func (v BestValue) IsValid() bool {
 	return v.Height != InvalidHeight
 }
