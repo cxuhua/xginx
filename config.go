@@ -48,8 +48,7 @@ type Config struct {
 	Flags        string       `json:"flags"`         //协议头标记
 	Ver          uint32       `json:"version"`       //节点版本
 	TcpPort      int          `json:"tcp_port"`      //服务端口和ip
-	TcplIp       string       `json:"tcp_lip"`       //服务ip
-	TcprIp       string       `json:"tcp_rip"`       //节点远程连接ip
+	TcpIp        string       `json:"tcp_ip"`        //节点远程连接ip
 	Debug        bool         `json:"debug"`         //是否在测试模式
 	RpcPort      int          `json:"rpc_port"`      //rpc服务端口
 	RpclIp       string       `json:"rpc_lip"`       //rpc服务器地址
@@ -68,14 +67,14 @@ func (c *Config) GetRpcListenAddr() NetAddr {
 
 func (c *Config) GetTcpListenAddr() NetAddr {
 	return NetAddr{
-		ip:   net.ParseIP(c.TcplIp),
+		ip:   net.ParseIP("0.0.0.0"),
 		port: uint16(c.TcpPort),
 	}
 }
 
 func (c *Config) GetNetAddr() NetAddr {
 	return NetAddr{
-		ip:   net.ParseIP(c.TcprIp),
+		ip:   net.ParseIP(c.TcpIp),
 		port: uint16(c.TcpPort),
 	}
 }

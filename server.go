@@ -398,7 +398,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			}
 		case <-dt.C:
 			s.reqMsgGetBlock()
-			dt.Reset(time.Second)
+			dt.Reset(time.Second * 10)
 		case <-pt.C:
 			//测试连接
 			//if s.ConnNum() == 1 {
