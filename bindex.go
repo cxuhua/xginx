@@ -413,7 +413,7 @@ func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 
 //获取交易确认数(所属区块的确认数)
 func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
-	txv, err := bi.LoadTxValue(id)
+	txv, err := bi.loadTxValue(id)
 	if err != nil {
 		return 0
 	}
@@ -430,7 +430,7 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 		}
 		smeta := ele.Value.(*TBEle)
 		bptr := &BlockInfo{}
-		lmeta, err := bi.LoadTo(id, bptr)
+		lmeta, err := bi.loadTo(id, bptr)
 		if err != nil {
 			rerr = err
 			return 0, nil
@@ -507,7 +507,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	vv := uint(0)
 	//加载所有区块头
 	for i := 0; ; i++ {
-		ele, err := bi.LoadPrev()
+		ele, err := bi.loadPrev()
 		if err == ArriveFirstBlock {
 			break
 		}
@@ -561,17 +561,13 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	return nil
 }
 
-//1234
-//0000ddda3ad16057f6258f56e1ab66554df6559ec31829dc26ba389eb287ba9b
-
 //回退到指定id
 func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 	ele, err := bi.getEle(id)
 	if err != nil {
 		return err
 	}
-	end := bi.LastHeight()
-	for count := end - ele.Height; count > 0; count-- {
+	for count := bi.LastHeight() - ele.Height; count > 0; count-- {
 		err := bi.UnlinkLast()
 		if err != nil {
 			return err
@@ -583,8 +579,6 @@ func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 //转账交易
 //从acc账号转向addr地址 金额:amt，交易费:fee
 func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount) (*TX, error) {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
 	if !fee.IsRange() || amt == 0 || !amt.IsRange() {
 		return nil, errors.New("amount zero or fee error")
 	}
@@ -667,7 +661,7 @@ func (bi *BlockIndex) loadtbele(id HASH256) (*TBEle, error) {
 }
 
 //向前加载一个区块数据头
-func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
+func (bi *BlockIndex) loadPrev() (*TBEle, error) {
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	fe := bi.lis.Front()
@@ -748,7 +742,7 @@ func (bi *BlockIndex) linkback(ele *TBEle) error {
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	//从缓存和区块获取
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
-		txv, err := bi.LoadTxValue(id)
+		txv, err := bi.loadTxValue(id)
 		if err != nil {
 			return 0, nil
 		}
@@ -768,7 +762,7 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	return hptr.Value().(*TX), nil
 }
 
-func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
+func (bi *BlockIndex) loadTxValue(id HASH256) (*TxValue, error) {
 	vv := &TxValue{}
 	vb, err := bi.db.Index().Get(TXS_PREFIX, id[:])
 	if err != nil {
@@ -782,7 +776,7 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 }
 
 //加载块数据
-func (bi *BlockIndex) LoadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
+func (bi *BlockIndex) loadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
 	meta := &TBMeta{}
 	hb, err := bi.db.Index().Get(bk)
@@ -834,7 +828,7 @@ func (bi *BlockIndex) setLastHeader(bt *Batch) error {
 }
 
 //只有头断开头
-func (bi *BlockIndex) UnlinkLastEle(ele *TBEle) error {
+func (bi *BlockIndex) unlinkLastEle(ele *TBEle) error {
 	id, err := ele.ID()
 	if err != nil {
 		return err
@@ -862,24 +856,24 @@ func (bi *BlockIndex) UnlinkLast() error {
 	if err != nil {
 		return err
 	}
-	//如果没有数据直接断开
+	//如果没有下载区块数据直接断开区块头
 	if !last.Blk.HasData() {
-		return bi.UnlinkLastEle(last)
+		return bi.unlinkLastEle(last)
 	}
-	b, err := bi.LoadBlock(id)
+	blk, err := bi.LoadBlock(id)
 	if err != nil {
 		return err
 	}
-	err = bi.Unlink(b)
+	err = bi.unlink(blk)
 	if err == nil {
-		bi.cleancache(b)
+		bi.cleancache(blk)
 	}
 	LogInfo("unlink block", id, "success")
 	return err
 }
 
-//断开最后一个，必须是最后一个才能断开
-func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
+//断开一个区块
+func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	if bi.Len() == 0 {
 		return nil
 	}
@@ -890,13 +884,16 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return err
 	}
+	//len !=0 肯定存在last
 	lid, err := bi.Last().ID()
 	if err != nil {
 		return err
 	}
+	//是否是最后一个
 	if !lid.Equal(id) {
 		return errors.New("only unlink last block")
 	}
+	//读取回退数据
 	rb, err := bi.db.Rev().Read(bp.Meta.Rev)
 	if err != nil {
 		return fmt.Errorf("read block rev data error %w", err)
@@ -905,10 +902,12 @@ func (bi *BlockIndex) Unlink(bp *BlockInfo) error {
 	if err != nil {
 		return fmt.Errorf("load rev batch error %w", err)
 	}
+	//回退头
 	err = bi.setLastHeader(bt)
 	if err != nil {
 		return err
 	}
+	//回退后会由回退数据设置bestvalue
 	//删除区块头
 	bt.Del(BLOCK_PREFIX, id[:])
 	if err := bi.db.Index().Write(bt); err != nil {
@@ -954,6 +953,8 @@ func (bi *BlockIndex) ListCoins(addr Address) (Coins, error) {
 
 //获取某个id的所有积分
 func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
 	prefix := getDBKey(COIN_PREFIX, id[:])
 	kvs := Coins{}
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
@@ -1012,9 +1013,9 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	//区块状态写入
 	bt := bi.db.Index().NewBatch()
 	rt := bt.NewRev()
+	//是否能更新到best之后
 	if bv := bi.GetBestValue(); !bv.IsValid() {
 		blk.Meta.Height = 0
 		bt.Put(BestBlockKey, BestValueBytes(cid, 0))

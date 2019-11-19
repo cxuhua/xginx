@@ -81,11 +81,11 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 	return w
 }
 
-func (ap Account) NewLockedScript() (Script, error) {
+func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
 	if pkh, err := ap.GetPkh(); err != nil {
 		return nil, err
 	} else {
-		return NewLockedScript(pkh)
+		return NewLockedScript(pkh, vbs...)
 	}
 }
 
