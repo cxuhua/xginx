@@ -40,7 +40,7 @@ func main() {
 	}
 	//
 	time.Sleep(time.Second)
-	GetPubSub().Pub(uint32(1), NewGenBlockTopic)
+	pubsub.Pub(MinerAct{Opt: OptGenBlock, Arg: uint32(1)}, NewMinerActTopic)
 	//
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig

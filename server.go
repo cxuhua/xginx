@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -293,8 +294,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) erro
 		LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
 		dt.Reset(time.Microsecond * 10)
 	} else {
-		LogError("update blk error", err)
-		bblk = false
+		LogError(err)
 	}
 	//如果是新块,广播区块
 	if bblk {
@@ -305,30 +305,30 @@ func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) erro
 }
 
 //下载块数据
-func (s *TcpServer) reqMsgGetBlock() {
+func (s *TcpServer) reqMsgGetBlock() error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
-	bv := bi.GetBestValue()
-	iter := bi.NewIter()
-	if bv.IsValid() {
-		if !iter.SeekID(bv.Id, 1) {
-			return
-		}
+	if ele, err := bi.GetNextSync(); err != nil {
+		return err
+	} else if c := s.FindClient(ele.Height); c == nil {
+		return errors.New("find client error")
+	} else if id, err := ele.ID(); err != nil {
+		return err
 	} else {
-		if !iter.First() {
-			return
-		}
+		msg := &MsgGetInv{}
+		msg.AddInv(InvTypeBlock, id)
+		c.SendMsg(msg)
+		return nil
 	}
-	if !iter.Next() {
-		return
-	}
-	c := s.FindClient(iter.Height())
-	if c == nil {
-		return
-	}
-	msg := &MsgGetInv{}
-	msg.AddInv(InvTypeBlock, iter.ID())
+}
+
+//检测是否产生分叉并需要合并
+func (s *TcpServer) reqMoreHeaders(c *Client, hv BlockHeader) {
+	//请求远程更早的区块头,朝前再请求10个
+	msg := &MsgGetHeaders{}
+	msg.Limit = -10 //向前获取10个
+	msg.Start = hv.MustID()
 	c.SendMsg(msg)
 }
 
@@ -336,14 +336,43 @@ func (s *TcpServer) reqMsgGetBlock() {
 func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
+	//检查连续性
+	if err := msg.Check(); err != nil {
+		return err
+	}
 	//链接头
 	bi := GetBlockIndex()
-	for _, hv := range msg.Headers {
-		err := bi.LinkHeader(hv)
+	lid := ZERO
+	for i := 0; i < len(msg.Headers); {
+		hv := msg.Headers[i]
+		id, err := hv.ID()
 		if err != nil {
-			return fmt.Errorf("recv msgheader link header error %w", err)
+			return err
+		}
+		if err := hv.Check(); err != nil {
+			return err
+		}
+		//存在链中忽略
+		if bi.HasBlock(id) {
+			i++
+			lid = id
+			continue
+		}
+		err = bi.LinkHeader(hv)
+		//无法连接并存在最后一个,回退到最后存在的那个继续连接
+		if err != nil && !lid.Equal(ZERO) {
+			err = bi.UnlinkTo(lid)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			s.reqMoreHeaders(c, hv)
+			break
 		}
 		LogInfo("link block header id =", hv, "height =", bi.LastHeight())
+		i++
 	}
 	//请求下一批,不包含最后一个
 	rmsg := bi.ReqMsgHeaders()
@@ -397,7 +426,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 				break
 			}
 		case <-dt.C:
-			s.reqMsgGetBlock()
+			_ = s.reqMsgGetBlock()
 			dt.Reset(time.Second * 10)
 		case <-pt.C:
 			//测试连接
@@ -432,11 +461,6 @@ func (s *TcpServer) run() {
 		}
 		c := s.NewClient()
 		c.NetStream = NewNetStream(conn)
-		err = c.addr.From(conn.RemoteAddr().String())
-		if err != nil {
-			_ = conn.Close()
-			continue
-		}
 		c.typ = ClientIn
 		c.isopen = true
 		LogInfo("new connection", conn.RemoteAddr())

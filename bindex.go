@@ -30,7 +30,7 @@ type TBEle struct {
 	flags uint8
 	TBMeta
 	Height uint32
-	idx    *BlockIndex
+	bi     *BlockIndex
 }
 
 func (ele TBEle) String() string {
@@ -43,7 +43,7 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	if ele.flags&TBELoadedMeta != 0 {
 		return nil
 	}
-	hb, err := ele.idx.db.Index().Get(BLOCK_PREFIX, id[:])
+	hb, err := ele.bi.db.Index().Get(BLOCK_PREFIX, id[:])
 	if err != nil {
 		return err
 	}
@@ -60,19 +60,19 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	return nil
 }
 
-func EmptyTBEle(h uint32, i *BlockIndex) *TBEle {
+func EmptyTBEle(h uint32, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		Height: h,
-		idx:    i,
+		bi:     bi,
 	}
 }
 
-func NewTBEle(meta *TBMeta, height uint32, idx *BlockIndex) *TBEle {
+func NewTBEle(meta *TBMeta, height uint32, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		flags:  TBELoadedMeta,
 		TBMeta: *meta,
 		Height: height,
-		idx:    idx,
+		bi:     bi,
 	}
 }
 
@@ -86,6 +86,7 @@ type BIndexIter struct {
 func (it *BIndexIter) SeekHeight(h uint32, skip ...int) bool {
 	it.bi.mu.Lock()
 	defer it.bi.mu.Unlock()
+	it.cur = nil
 	it.ele = it.bi.hmap[h]
 	return it.skipEle(skip...)
 }
@@ -111,6 +112,9 @@ func (it *BIndexIter) ID() HASH256 {
 func (it *BIndexIter) Curr() *TBEle {
 	it.bi.mu.RLock()
 	defer it.bi.mu.RUnlock()
+	if it.ele != nil {
+		return it.ele.Value.(*TBEle)
+	}
 	if it.cur == nil {
 		panic(errors.New("first use next prev seek"))
 	}
@@ -142,6 +146,7 @@ func (it *BIndexIter) skipEle(skip ...int) bool {
 func (it *BIndexIter) SeekID(id HASH256, skip ...int) bool {
 	it.bi.mu.Lock()
 	defer it.bi.mu.Unlock()
+	it.cur = nil
 	it.ele = it.bi.imap[id]
 	return it.skipEle(skip...)
 }
@@ -177,6 +182,7 @@ func (it *BIndexIter) Next() bool {
 func (it *BIndexIter) First(skip ...int) bool {
 	it.bi.mu.Lock()
 	defer it.bi.mu.Unlock()
+	it.cur = nil
 	it.ele = it.bi.lis.Front()
 	return it.skipEle(skip...)
 }
@@ -184,6 +190,7 @@ func (it *BIndexIter) First(skip ...int) bool {
 func (it *BIndexIter) Last(skip ...int) bool {
 	it.bi.mu.Lock()
 	defer it.bi.mu.Unlock()
+	it.cur = nil
 	it.ele = it.bi.lis.Back()
 	return it.skipEle(skip...)
 }
@@ -262,24 +269,14 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 
 //区块链索引
 type BlockIndex struct {
-	//交易池
-	tp *TxPool
-	//链监听器
-	lptr IListener
-	//
-	mu sync.RWMutex
-	//区块头列表
-	lis *list.List
-	//当前光标
-	cur *list.Element
-	//按高度缓存
-	hmap map[uint32]*list.Element
-	//按id缓存
-	imap map[HASH256]*list.Element
-	//lru缓存
-	lru *IndexCacher
-	//存储和索引
-	db IBlkStore
+	tp   *TxPool                   //交易池
+	lptr IListener                 //链监听器
+	mu   sync.RWMutex              //
+	lis  *list.List                //区块头列表
+	hmap map[uint32]*list.Element  //按高度缓存
+	imap map[HASH256]*list.Element //按id缓存
+	lru  *IndexCacher              //lru缓存
+	db   IBlkStore                 //存储和索引
 }
 
 func (bi *BlockIndex) CacheSize() int {
@@ -348,9 +345,9 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 		blk.Header.Bits = bi.CalcBits(nexth)
 	}
 	SetRandInt(&blk.Header.Nonce)
-	meta := EmptyTBEle(nexth, bi)
-	meta.TBMeta.BlockHeader = blk.Header
-	blk.Meta = meta
+	ele := EmptyTBEle(nexth, bi)
+	ele.TBMeta.BlockHeader = blk.Header
+	blk.Meta = ele
 	if err := bi.lptr.OnNewBlock(bi, blk); err != nil {
 		return nil, err
 	}
@@ -534,9 +531,13 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	if bi.Len() == 0 {
 		return nil
 	}
+	lnum := 50
+	if lnum > bi.Len() {
+		lnum = bi.Len()
+	}
 	//验证最后6个块
-	LogInfo("verify last 6 block start")
-	for iter, i := bi.NewIter(), 0; iter.Prev() && i < 6; i++ {
+	LogInfof("verify last %d block start", lnum)
+	for iter, i := bi.NewIter(), 0; iter.Prev() && i < lnum; i++ {
 		ele := iter.Curr()
 		//没数据不验证
 		if !ele.HasBlk() {
@@ -554,7 +555,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
-		LogInfo("verify block success id =", iter.ID(), i)
+		LogInfof("verify block success id = %v height = %d #%d", iter.ID(), iter.Height(), lnum-i)
 	}
 	bv := bi.GetBestValue()
 	LogInfo("load finished block count = ", bi.Len(), ",last height =", bi.LastHeight(), ",best height =", bv.Height)
@@ -654,8 +655,9 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	return tx, nil
 }
 
+//获取区块头
 func (bi *BlockIndex) loadtbele(id HASH256) (*TBEle, error) {
-	ele := &TBEle{idx: bi}
+	ele := &TBEle{bi: bi}
 	err := ele.LoadMeta(id)
 	return ele, err
 }
@@ -776,7 +778,7 @@ func (bi *BlockIndex) loadTxValue(id HASH256) (*TxValue, error) {
 }
 
 //加载块数据
-func (bi *BlockIndex) loadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
+func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
 	meta := &TBMeta{}
 	hb, err := bi.db.Index().Get(bk)
@@ -794,7 +796,7 @@ func (bi *BlockIndex) loadTo(id HASH256, block *BlockInfo) (*TBMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = block.Decode(NewReader(bb))
+	err = blk.Decode(NewReader(bb))
 	return meta, err
 }
 
@@ -930,6 +932,24 @@ func (bi *BlockIndex) GetLastValue() BestValue {
 	return bv
 }
 
+//获取下个需要同步的区块
+func (bi *BlockIndex) GetNextSync() (*TBEle, error) {
+	bv := bi.GetBestValue()
+	if !bv.IsValid() {
+		return bi.First(), nil
+	}
+	bi.mu.RLock()
+	ele := bi.imap[bv.Id]
+	if ele != nil {
+		ele = ele.Next()
+	}
+	bi.mu.RUnlock()
+	if ele == nil {
+		return nil, errors.New("not found")
+	}
+	return ele.Value.(*TBEle), nil
+}
+
 //获取最高块信息
 func (bi *BlockIndex) GetBestValue() BestValue {
 	bv := BestValue{}
@@ -968,6 +988,14 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 		kvs = append(kvs, tk)
 	}
 	return kvs, nil
+}
+
+//是否存在
+func (bi *BlockIndex) HasBlock(id HASH256) bool {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	_, has := bi.imap[id]
+	return has
 }
 
 func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {

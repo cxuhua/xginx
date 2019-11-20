@@ -14,13 +14,11 @@ const (
 	NewMinerActTopic = "NewMinerAct"
 	//链上新连接了区块
 	NewBlockLinkTopic = "NewBlockLink"
-	//开始创建区块
-	NewGenBlockTopic = "NewGenBlock"
 )
 
 const (
 	//开始挖矿操作 args(uint32) = block ver
-	OptGetBlock = iota
+	OptGenBlock = iota
 	//设置矿工奖励账号 arg=*Account
 	OptSetMiner
 )
@@ -68,7 +66,7 @@ func (m *minerEngine) SetMiner(acc *Account) error {
 }
 
 //创建一个区块
-func (m *minerEngine) genBlock(ver uint32) error {
+func (m *minerEngine) genNewBlock(ver uint32) error {
 	ps := GetPubSub()
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(ver)
@@ -107,7 +105,7 @@ func (m *minerEngine) genBlock(ver uint32) error {
 			break
 		}
 		if j%times == 0 {
-			LogInfof("genblock %d times, bits=%x id=%v nonce=%x height=%d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
+			LogInfof("gen new block %d times, bits=%x id=%v nonce=%x height=%d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
 			i = UR32()
 			j = 0
 		}
@@ -116,13 +114,14 @@ func (m *minerEngine) genBlock(ver uint32) error {
 			i = UR32()
 		}
 	}
-	LogInfo("gen block ok id = ", blk)
+	LogInfo("gen new block ok id = ", blk)
 	err = bi.LinkHeader(blk.Header)
 	if err != nil {
 		return err
 	}
 	err = bi.UpdateBlk(blk)
 	if err != nil {
+		//更新失败回退
 		err = bi.UnlinkLast()
 	}
 	if err != nil {
@@ -134,21 +133,24 @@ func (m *minerEngine) genBlock(ver uint32) error {
 
 //处理操作
 func (m *minerEngine) processOpt(opt MinerAct) {
-	ps := GetPubSub()
 	switch opt.Opt {
-	case OptGetBlock:
+	case OptGenBlock:
 		ver, ok := opt.Arg.(uint32)
 		if !ok {
 			LogError("OptGetBlock args type error", opt.Arg)
 			break
 		}
 		m.mu.RLock()
-		if m.acc != nil {
-			ps.Pub(ver, NewGenBlockTopic)
-		} else {
-			LogError("miner account not set,new block error")
-		}
+		accok := m.acc != nil
 		m.mu.RUnlock()
+		if accok {
+			err := m.genNewBlock(ver)
+			if err != nil {
+				LogError("gen new block error", err)
+			}
+		} else {
+			LogError("miner account not set,gen new block error")
+		}
 	case OptSetMiner:
 		acc, ok := opt.Arg.(*Account)
 		if !ok {
@@ -163,9 +165,8 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 	}
 }
 
-//定时分配工作
-func (m *minerEngine) dispatch(ch chan interface{}) {
-	LogInfo("miner dispatch worker start")
+func (m *minerEngine) loop(i int, ch chan interface{}) {
+	LogInfo("miner worker", i, "start")
 	m.wg.Add(1)
 	defer m.wg.Done()
 	for {
@@ -182,40 +183,15 @@ func (m *minerEngine) dispatch(ch chan interface{}) {
 	}
 }
 
-func (m *minerEngine) loop(i int, wch chan interface{}) {
-	LogInfo("miner worker", i, "start")
-	m.wg.Add(1)
-	defer m.wg.Done()
-	for {
-		select {
-		case ptr := <-wch:
-			switch ptr.(type) {
-			case uint32:
-				ver := ptr.(uint32)
-				LogInfo("recv NewGenBlock Topic,start gen block,ver =", ver)
-				err := m.genBlock(ver)
-				if err != nil {
-					LogError("gen block error", err)
-				}
-			}
-		case <-m.ctx.Done():
-			return
-		}
-	}
-}
-
 //开始工作
 func (m *minerEngine) Start(ctx context.Context) {
 	ps := GetPubSub()
 	m.ctx, m.cancel = context.WithCancel(ctx)
-	//订阅交易和区块
-	wch := ps.Sub(NewGenBlockTopic)
-	for i := 0; i < 4; i++ {
-		go m.loop(i, wch)
-	}
 	//订阅矿工操作
-	optch := ps.Sub(NewMinerActTopic)
-	go m.dispatch(optch)
+	ch := ps.Sub(NewMinerActTopic)
+	for i := 0; i < 2; i++ {
+		go m.loop(i, ch)
+	}
 }
 
 //停止

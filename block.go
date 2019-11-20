@@ -98,6 +98,17 @@ type BlockHeader struct {
 	hasher HashCacher
 }
 
+func (v BlockHeader) Check() error {
+	id, err := v.ID()
+	if err != nil {
+		return err
+	}
+	if !CheckProofOfWork(id, v.Bits) {
+		return errors.New("block header bits check error")
+	}
+	return nil
+}
+
 func (v BlockHeader) String() string {
 	id, _ := v.ID()
 	return id.String()
@@ -119,6 +130,14 @@ func (v BlockHeader) IsGenesis() bool {
 	} else {
 		return v.Prev.IsZero() && conf.genesisId.Equal(id)
 	}
+}
+
+func (v *BlockHeader) MustID() HASH256 {
+	id, err := v.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 func (v *BlockHeader) ID() (HASH256, error) {

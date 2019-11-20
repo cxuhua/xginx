@@ -16,17 +16,17 @@ import (
 )
 
 //文件数据状态
-type ChunkState struct {
+type BlkChunk struct {
 	Id  VarUInt //数据所在文件id
 	Off VarUInt //数据所在位置
 	Len VarUInt //数据长度
 }
 
-func (f ChunkState) HasData() bool {
+func (f BlkChunk) HasData() bool {
 	return f.Id >= 0 && f.Off >= 0 && f.Len > 0
 }
 
-func (f *ChunkState) Decode(r IReader) error {
+func (f *BlkChunk) Decode(r IReader) error {
 	if err := f.Id.Decode(r); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (f *ChunkState) Decode(r IReader) error {
 	return nil
 }
 
-func (f ChunkState) Encode(w IWriter) error {
+func (f BlkChunk) Encode(w IWriter) error {
 	if err := f.Id.Encode(w); err != nil {
 		return err
 	}
@@ -53,10 +53,10 @@ func (f ChunkState) Encode(w IWriter) error {
 }
 
 type TBMeta struct {
-	BlockHeader            //区块头
-	Txs         VarUInt    //tx数量
-	Blk         ChunkState //数据状态
-	Rev         ChunkState //日志回退
+	BlockHeader          //区块头
+	Txs         VarUInt  //tx数量
+	Blk         BlkChunk //数据状态
+	Rev         BlkChunk //日志回退
 	hasher      HashCacher
 }
 
@@ -334,7 +334,7 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 	return sf, nil
 }
 
-func (s *sstore) Read(st ChunkState) ([]byte, error) {
+func (s *sstore) Read(st BlkChunk) ([]byte, error) {
 	if st.Len > MAX_BLOCK_SIZE {
 		return nil, errors.New("data too big")
 	}
@@ -355,8 +355,8 @@ func (s *sstore) read(id uint32, off uint32, b []byte) error {
 	return f.read(off, b)
 }
 
-func (s *sstore) Write(b []byte) (ChunkState, error) {
-	fs := ChunkState{
+func (s *sstore) Write(b []byte) (BlkChunk, error) {
+	fs := BlkChunk{
 		Id:  VarUInt(s.Id()),
 		Off: VarUInt(0),
 		Len: VarUInt(len(b)),

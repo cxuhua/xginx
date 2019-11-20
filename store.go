@@ -13,8 +13,8 @@ var (
 
 //数据块存储
 type IChunkStore interface {
-	Read(st ChunkState) ([]byte, error)
-	Write(b []byte) (ChunkState, error)
+	Read(st BlkChunk) ([]byte, error)
+	Write(b []byte) (BlkChunk, error)
 	Close()
 	Init() error
 	Sync(id ...uint32)

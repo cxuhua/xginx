@@ -11,7 +11,7 @@ const (
 type MsgGetHeaders struct {
 	Skip  VarUInt //跳过
 	Start HASH256
-	Limit HASH256
+	Limit VarInt
 }
 
 func (m MsgGetHeaders) Type() uint8 {
@@ -103,24 +103,44 @@ func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) (*MsgHeaders, error) {
 			return nil, errors.New("not found start id")
 		}
 	}
+	var ifn func() bool = nil
+	bfw := msg.Limit < 0
+	if bfw {
+		ifn = func() bool {
+			return iter.Prev()
+		}
+	} else {
+		ifn = func() bool {
+			return iter.Next()
+		}
+	}
 	skip := msg.Skip
-	for skip > 0 && iter.Next() {
+	for skip > 0 && ifn() {
 		skip--
 	}
-	hm := &MsgHeaders{}
-	for i := 0; iter.Next() && i < REQ_MAX_HEADERS_SIZE; i++ {
-		bh := iter.Curr().BlockHeader
-		hm.Add(bh)
-		id, err := bh.ID()
-		if err != nil {
-			return nil, err
-		}
-		if id.Equal(msg.Limit) {
-			break
-		}
+	limit := REQ_MAX_HEADERS_SIZE
+	if bfw {
+		msg.Limit = -msg.Limit
 	}
-	if len(hm.Headers) == 0 {
+	if msg.Limit > 0 {
+		limit = msg.Limit.ToInt()
+	}
+	hm := &MsgHeaders{}
+	hvs := []BlockHeader{}
+	for i := 0; ifn() && i < limit; i++ {
+		bh := iter.Curr().BlockHeader
+		hvs = append(hvs, bh)
+	}
+	if len(hvs) == 0 {
 		return nil, errors.New("not more block header")
+	}
+	//如果是反向获取的需要倒转数组
+	if bfw {
+		for i := len(hvs) - 1; i >= 0; i-- {
+			hm.Add(hvs[i])
+		}
+	} else {
+		hm.Headers = hvs
 	}
 	return hm, nil
 }
@@ -137,6 +157,17 @@ func (m MsgHeaders) Type() uint8 {
 
 func (m *MsgHeaders) Add(h BlockHeader) {
 	m.Headers = append(m.Headers, h)
+}
+
+//检测连续性
+func (m MsgHeaders) Check() error {
+	for i, ph := 1, m.Headers[0]; i < len(m.Headers); i++ {
+		if !m.Headers[i].Prev.Equal(ph.MustID()) {
+			return errors.New("headers not continue")
+		}
+		ph = m.Headers[i]
+	}
+	return nil
 }
 
 func (m MsgHeaders) Encode(w IWriter) error {
