@@ -432,6 +432,9 @@ func (v *NetPackage) Decode(r IReader) error {
 	if _, err := r.Read(v.Sum[:]); err != nil {
 		return err
 	}
+	if !bytes.Equal(v.Flags[:], []byte(conf.Flags)) {
+		return errors.New("flags not same")
+	}
 	if !bytes.Equal(v.Sum[:], v.Hash()) {
 		return errors.New("check sum error")
 	}
