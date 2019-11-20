@@ -209,7 +209,7 @@ func (c *Client) connect(addr NetAddr) error {
 	if ap := c.ss.addrs.Get(addr); ap != nil {
 		ap.lastTime = time.Now()
 	}
-	conn, err := net.DialTimeout(addr.Network(), addr.Addr(), time.Second*30)
+	conn, err := net.DialTimeout(addr.Network(), addr.Addr(), time.Second*10)
 	if err != nil {
 		return err
 	}

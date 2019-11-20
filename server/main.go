@@ -38,9 +38,21 @@ func main() {
 	if Http != nil {
 		Http.Start(ctx)
 	}
-	//
-	time.Sleep(time.Second)
-	pubsub.Pub(MinerAct{Opt: OptGenBlock, Arg: uint32(1)}, NewMinerActTopic)
+	//延迟回调
+	time.Sleep(time.Millisecond * 200)
+	lis.OnStartup()
+
+	//测试5秒一个
+	//go func() {
+	//	for {
+	//		ps := GetPubSub()
+	//		ps.Pub(MinerAct{
+	//			Opt: OptGenBlock,
+	//			Arg: uint32(1),
+	//		}, NewMinerActTopic)
+	//		time.Sleep(time.Second * 5)
+	//	}
+	//}()
 	//
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig

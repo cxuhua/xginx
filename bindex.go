@@ -204,8 +204,10 @@ type IListener interface {
 	GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
-	//获取钱包
+	//获取当前设置的钱包
 	GetWallet() IWallet
+	//当服务启动
+	OnStartup()
 }
 
 //区块发布交易参数
@@ -562,13 +564,28 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	return nil
 }
 
+//是否有需要下载的区块
+func (bi *BlockIndex) HasSync() bool {
+	last := bi.Last()
+	return last != nil && !last.HasBlk()
+}
+
+//获取回退代价，也就是回退多少个
+func (bi *BlockIndex) UnlinkCount(id HASH256) (uint32, error) {
+	ele, err := bi.getEle(id)
+	if err != nil {
+		return 0, errors.New("not found id")
+	}
+	return bi.LastHeight() - ele.Height, nil
+}
+
 //回退到指定id
 func (bi *BlockIndex) UnlinkTo(id HASH256) error {
-	ele, err := bi.getEle(id)
+	count, err := bi.UnlinkCount(id)
 	if err != nil {
 		return err
 	}
-	for count := bi.LastHeight() - ele.Height; count > 0; count-- {
+	for ; count > 0; count-- {
 		err := bi.UnlinkLast()
 		if err != nil {
 			return err

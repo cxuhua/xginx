@@ -159,13 +159,34 @@ func (m *MsgHeaders) Add(h BlockHeader) {
 	m.Headers = append(m.Headers, h)
 }
 
+//最后一个
+func (m MsgHeaders) LastID() HASH256 {
+	lh := m.Headers[len(m.Headers)-1]
+	id, err := lh.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
 //检测连续性
 func (m MsgHeaders) Check() error {
-	for i, ph := 1, m.Headers[0]; i < len(m.Headers); i++ {
-		if !m.Headers[i].Prev.Equal(ph.MustID()) {
+	if len(m.Headers) == 0 {
+		return nil
+	}
+	ph := m.Headers[0]
+	if err := ph.Check(); err != nil {
+		return err
+	}
+	for i := 1; i < len(m.Headers); i++ {
+		cv := m.Headers[i]
+		if err := cv.Check(); err != nil {
+			return err
+		}
+		if !cv.Prev.Equal(ph.MustID()) {
 			return errors.New("headers not continue")
 		}
-		ph = m.Headers[i]
+		ph = cv
 	}
 	return nil
 }

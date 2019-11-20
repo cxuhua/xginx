@@ -2,13 +2,10 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	. "github.com/cxuhua/xginx"
-)
-
-var (
-	MinerAccount, _ = LoadAccount("BNE8o2x2MEVvqvr2tBocqcLRkKTw9oAbLquruDBkH87t9nBuNg84znbBonLJyEZAATrvXZm3MSiK2giFSZgszovHf8VhkjjjXyXpByFSBn2A958aYRQ8vVwZBULYtjmZn9qD3BJ8CkgcSHBn1rxCCHGUMyWFjWvuQSdhPhfVTi4B6nQsVbgQXiY2UN5q5m5aC8tFumWswX4qnZ9BvUHzprotLWpGDoCbmBiVVYKgigXoGy7kfok18ecTVR4XXSdh4UoAbcWhWSrpEdnLa4AxUm8NW5LqnUyvKpxqymTAJmAdB9iZqxG5jpn2hpcjnfx7pRGHp13SvMM461YCWbpf1rJUpWeg8P89x2uXaq9XRsdoBz9yTu3Rj1rRaLgVfREd7QTjtEnkJq1K8LEe4N74wRb7jxvnqQsGq89YrqH8mXaL7Tn5qarxUAnovQskNByb7F7R8dzUeKs1iZg1oVfhsenuCpPj2igCpspQn6oFTKtR45KF5KSMdLKKx7qn4Jx")
 )
 
 //测试用监听器
@@ -16,7 +13,7 @@ type listener struct {
 	wallet IWallet
 }
 
-func newListener(wdir string) *listener {
+func newListener(wdir string) IListener {
 	w, err := NewLevelDBWallet(wdir)
 	if err != nil {
 		panic(err)
@@ -40,13 +37,17 @@ func (lis *listener) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+	//获取矿工账号
+	acc := Miner.GetMiner()
+	if acc == nil {
+		return fmt.Errorf("miner set miss")
+	}
 	//设置base out script
 	//创建coinbase tx
 	tx := &TX{}
 	tx.Ver = 1
 
 	txt := time.Now().Format("2006-01-02 15:04:05")
-
 	//base tx
 	in := &TxIn{}
 	in.Script = blk.CoinbaseScript([]byte(txt))
@@ -54,7 +55,7 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	//
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
-	if script, err := MinerAccount.NewLockedScript(); err != nil {
+	if script, err := acc.NewLockedScript(); err != nil {
 		return err
 	} else {
 		out.Script = script
@@ -63,6 +64,31 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
 	blk.Txs = []*TX{tx}
 	return nil
+}
+
+func (lis *listener) OnStartup() {
+
+	//获取并设置矿工账号
+	acc, err := lis.wallet.GetMiner()
+	if err != nil {
+		panic(err)
+	}
+	addr, err := acc.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	LogInfo("miner address = ", addr)
+	err = Miner.SetMiner(acc)
+	if err != nil {
+		panic(err)
+	}
+	//测试挖一个矿
+
+	//ps := GetPubSub()
+	//ps.Pub(MinerAct{
+	//	Opt: OptGenBlock,
+	//	Arg: uint32(1),
+	//}, NewMinerActTopic)
 }
 
 //完成区块
@@ -86,7 +112,11 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	return blk.CheckTxs(bi)
 }
 
-//获取签名账号
+//从钱包获取签名账号
 func (lis *listener) GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error) {
-	return MinerAccount, nil
+	addr, err := EncodeAddress(pkh)
+	if err != nil {
+		return nil, err
+	}
+	return lis.wallet.GetAccount(addr)
 }

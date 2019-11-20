@@ -12,7 +12,8 @@ import (
 
 func connect() {
 	c := Server.NewClient()
-	err := c.Open(NetAddrForm("192.168.31.178:9333"))
+	addr := NetAddrForm("192.168.31.178:9333")
+	err := c.Open(addr)
 	if err == nil {
 		c.Loop()
 	}
@@ -50,7 +51,9 @@ func main() {
 	if Http != nil {
 		Http.Start(ctx)
 	}
-	//
+	//延迟回调
+	time.Sleep(time.Millisecond * 200)
+	lis.OnStartup()
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()

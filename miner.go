@@ -37,6 +37,10 @@ type IMiner interface {
 	Stop()
 	//等待停止
 	Wait()
+	//设置矿工账号
+	SetMiner(acc *Account) error
+	//获取矿工账号
+	GetMiner() *Account
 }
 
 var (
@@ -49,10 +53,17 @@ type minerEngine struct {
 	cancel context.CancelFunc //
 	acc    *Account
 	mu     sync.RWMutex
+	single sync.Mutex
 }
 
 func newMinerEngine() IMiner {
 	return &minerEngine{}
+}
+
+func (m *minerEngine) GetMiner() *Account {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.acc
 }
 
 func (m *minerEngine) SetMiner(acc *Account) error {
@@ -67,6 +78,8 @@ func (m *minerEngine) SetMiner(acc *Account) error {
 
 //创建一个区块
 func (m *minerEngine) genNewBlock(ver uint32) error {
+	m.single.Lock()
+	defer m.single.Unlock()
 	ps := GetPubSub()
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(ver)
@@ -74,6 +87,16 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return err
 	}
 	//添加交易
+	txs, err := bi.tp.GetTxs()
+	if err != nil {
+		return err
+	}
+	if len(txs) > 0 {
+		err = blk.AddTxs(bi, txs)
+	}
+	if err != nil {
+		return err
+	}
 	//
 	if err := blk.Finish(bi); err != nil {
 		return err
@@ -115,18 +138,16 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		}
 	}
 	LogInfo("gen new block ok id = ", blk)
-	err = bi.LinkHeader(blk.Header)
-	if err != nil {
+	if err = bi.LinkHeader(blk.Header); err != nil {
 		return err
 	}
-	err = bi.UpdateBlk(blk)
-	if err != nil {
-		//更新失败回退
+	if err = bi.UpdateBlk(blk); err != nil {
 		err = bi.UnlinkLast()
 	}
 	if err != nil {
 		return err
 	}
+	ps.Pub(blk, NewBlockLinkTopic)
 	Server.BroadMsg(nil, NewMsgBlock(blk))
 	return nil
 }

@@ -16,9 +16,9 @@ const (
 	NetMsgAddrsTopic = "NetMsgAddrs"
 	//收到区块头
 	NetMsgHeadersTopic = "NetMsgHeaders"
-	//收到区块
-	NetMsgTxTopic = "NetMsgTx"
 	//收到交易
+	NetMsgTxTopic = "NetMsgTx"
+	//收到区块
 	NetMsgBlockTopic = "NetMsgBlock"
 )
 
@@ -122,7 +122,7 @@ func (s *TcpServer) IsOpen(a NetAddr) bool {
 
 func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	s.addrs.mu.RLock()
-	s.addrs.mu.RUnlock()
+	defer s.addrs.mu.RUnlock()
 	msg := &MsgAddrs{}
 	for _, v := range s.addrs.addrs {
 		//不包括它自己
@@ -151,12 +151,8 @@ func (s *TcpServer) BroadMsg(c *Client, m MsgIO) {
 func (s *TcpServer) HasAddr(addr NetAddr) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, v := range s.clients {
-		if v.addr.Equal(addr) {
-			return true
-		}
-	}
-	return false
+	_, has := s.clients[addr.String()]
+	return has
 }
 
 func (s *TcpServer) HasClient(addr NetAddr, c *Client) bool {
@@ -309,6 +305,9 @@ func (s *TcpServer) reqMsgGetBlock() error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
+	if bi.Len() == 0 {
+		return nil
+	}
 	if ele, err := bi.GetNextSync(); err != nil {
 		return err
 	} else if c := s.FindClient(ele.Height); c == nil {
@@ -323,27 +322,17 @@ func (s *TcpServer) reqMsgGetBlock() error {
 	}
 }
 
-//检测是否产生分叉并需要合并
-func (s *TcpServer) reqMoreHeaders(c *Client, hv BlockHeader) {
-	//请求远程更早的区块头,朝前再请求10个
-	msg := &MsgGetHeaders{}
-	msg.Limit = -10 //向前获取10个
-	msg.Start = hv.MustID()
-	c.SendMsg(msg)
-}
-
 //下载区块头
 func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
+	bi := GetBlockIndex()
 	//检查连续性
 	if err := msg.Check(); err != nil {
 		return err
 	}
 	//链接头
-	bi := GetBlockIndex()
-	lid := ZERO
-	for i := 0; i < len(msg.Headers); {
+	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
 		hv := msg.Headers[i]
 		id, err := hv.ID()
 		if err != nil {
@@ -360,15 +349,25 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 		}
 		err = bi.LinkHeader(hv)
 		//无法连接并存在最后一个,回退到最后存在的那个继续连接
-		if err != nil && !lid.Equal(ZERO) {
-			err = bi.UnlinkTo(lid)
-			if err != nil {
+		if err != nil && !lid.IsZero() {
+			//需要提供证明比我的区块长的列表,后续连接的区块数量比我回退的多
+			if ucnt, err := bi.UnlinkCount(lid); err != nil {
+				return err
+			} else if hl-i-1 <= int(ucnt) {
+				return errors.New("evidence block headers not enough")
+			}
+			//回退到指定id重新连接
+			if err = bi.UnlinkTo(lid); err != nil {
 				return err
 			}
 			continue
 		}
+		//都不存在需要向前请求更多的数据
 		if err != nil {
-			s.reqMoreHeaders(c, hv)
+			nm := &MsgGetHeaders{}
+			nm.Limit = VarInt(-(10 + hl)) //向前多获取10个
+			nm.Start = msg.LastID()
+			c.SendMsg(nm)
 			break
 		}
 		LogInfo("link block header id =", hv, "height =", bi.LastHeight())
@@ -378,6 +377,27 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	rmsg := bi.ReqMsgHeaders()
 	c.SendMsg(rmsg)
 	return nil
+}
+
+//尝试重新连接其他地址
+func (s *TcpServer) tryConnect() {
+	s.addrs.mu.RLock()
+	defer s.addrs.mu.RUnlock()
+	for _, v := range s.addrs.addrs {
+		if s.HasAddr(v.addr) {
+			continue
+		}
+		c := s.NewClient()
+		err := c.Open(v.addr)
+		if err != nil {
+			LogError("try connect error", err)
+			continue
+		}
+		c.Loop()
+		if s.ConnNum() >= conf.MaxConn {
+			break
+		}
+	}
 }
 
 func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *time.Timer) {
@@ -427,18 +447,12 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			}
 		case <-dt.C:
 			_ = s.reqMsgGetBlock()
-			dt.Reset(time.Second * 10)
+			dt.Reset(time.Second * 5)
 		case <-pt.C:
-			//测试连接
-			//if s.ConnNum() == 1 {
-			//	pt.Reset(time.Second * 3)
-			//	break
-			//}
-			//err := s.openAddr(NetAddrForm("192.168.31.178:9333"))
-			//if err != nil {
-			//	LogError(err)
-			//}
-			pt.Reset(time.Second * 3)
+			if s.ConnNum() < conf.MaxConn {
+				s.tryConnect()
+			}
+			pt.Reset(time.Second * 10)
 		}
 	}
 }

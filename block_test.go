@@ -49,6 +49,10 @@ func (lis *tlis) OnClose(bi *BlockIndex) {
 func (lis *tlis) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
 }
 
+func (lis *tlis) OnStartup() {
+
+}
+
 //当块创建完毕
 func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 
@@ -152,8 +156,8 @@ func TestBlockChain(t *testing.T) {
 
 func TestBlockIndexIter(t *testing.T) {
 	bi := GetBlockIndex()
-	b, err := bi.LoadBlock(NewHASH256("0000a46acc0c38ee4b5d265d675eb78970ec571872398f888209aa0d3279204a"))
-	log.Println(b, err)
+	ds, err := bi.ListCoins("st1qqgndaafn6lmhnp5mvqm6erh5r35t0rul6wt2t6")
+	log.Println(ds, err)
 	//bi.UnlinkTo(NewHASH256("0000ddda3ad16057f6258f56e1ab66554df6559ec31829dc26ba389eb287ba9b"))
 }
 

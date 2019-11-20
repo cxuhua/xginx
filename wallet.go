@@ -25,6 +25,10 @@ var (
 	StdPKPrefix = []byte{3}
 )
 
+const (
+	MinerAccountKey = "MinerAccount"
+)
+
 // AES加密
 func AesEncrypt(block cipher.Block, data []byte) ([]byte, error) {
 	if block == nil {
@@ -140,6 +144,10 @@ type IWallet interface {
 	ListAccount() []Address
 	//删除账号
 	RemoveAccount(addr Address) error
+	//设置矿工账号
+	SetMiner(addr Address) error
+	//获取矿工账号
+	GetMiner() (*Account, error)
 }
 
 type LevelDBWallet struct {
@@ -190,6 +198,23 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (Address, e
 	}
 	db.cache.Set(string(addr), acc, time.Hour*3)
 	return addr, nil
+}
+
+func (db *LevelDBWallet) SetMiner(addr Address) error {
+	_, err := db.GetAccount(addr)
+	if err != nil {
+		return err
+	}
+	return db.dptr.Put([]byte(MinerAccountKey), []byte(addr))
+}
+
+//获取矿工账号
+func (db *LevelDBWallet) GetMiner() (*Account, error) {
+	ab, err := db.dptr.Get([]byte(MinerAccountKey))
+	if err != nil {
+		return nil, err
+	}
+	return db.GetAccount(Address((ab)))
 }
 
 //导入私钥 pw != ""添加密码
