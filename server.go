@@ -191,6 +191,12 @@ func (s *TcpServer) Wait() {
 	s.wg.Wait()
 }
 
+func (s *TcpServer) NewClientWithConn(conn net.Conn) *Client {
+	c := s.NewClient()
+	c.NetStream = NewNetStream(conn)
+	return c
+}
+
 func (s *TcpServer) NewClient() *Client {
 	c := &Client{ss: s}
 	c.ctx, c.cancel = context.WithCancel(s.ctx)
@@ -473,8 +479,7 @@ func (s *TcpServer) run() {
 			s.cancel()
 			return
 		}
-		c := s.NewClient()
-		c.NetStream = NewNetStream(conn)
+		c := s.NewClientWithConn(conn)
 		c.typ = ClientIn
 		c.isopen = true
 		LogInfo("new connection", conn.RemoteAddr())
