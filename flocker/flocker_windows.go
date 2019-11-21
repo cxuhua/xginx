@@ -18,8 +18,9 @@ type windowsFileLock struct {
 }
 
 func (fl *windowsFileLock) Release() error {
-	_ = os.Remove(fl.path + ".lck")
-	return syscall.Close(fl.fd)
+	err := syscall.Close(fl.fd)
+	_ = os.Remove(fl.path)
+	return err
 }
 
 func (fl *windowsFileLock) Lock() error {
