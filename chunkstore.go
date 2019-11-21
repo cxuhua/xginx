@@ -224,7 +224,6 @@ func (s *sfile) close() {
 	defer s.mu.Unlock()
 	if s.locker != nil {
 		_ = s.locker.Release()
-		_ = os.Remove(s.path + ".lck")
 	}
 	if s.File != nil {
 		_ = s.File.Close()

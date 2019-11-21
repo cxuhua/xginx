@@ -17,7 +17,9 @@ type plan9FileLock struct {
 }
 
 func (fl *plan9FileLock) Release() error {
-	return fl.f.Close()
+	err := fl.f.Close()
+	_ = os.Remove(fl.path)
+	return err
 }
 
 func (fl *plan9FileLock) Lock() error {

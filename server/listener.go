@@ -67,7 +67,6 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 func (lis *listener) OnStartup() {
-
 	//获取并设置矿工账号
 	acc, err := lis.wallet.GetMiner()
 	if err != nil {

@@ -7,6 +7,7 @@
 package flocker
 
 import (
+	"os"
 	"syscall"
 )
 
@@ -17,6 +18,7 @@ type windowsFileLock struct {
 }
 
 func (fl *windowsFileLock) Release() error {
+	_ = os.Remove(fl.path + ".lck")
 	return syscall.Close(fl.fd)
 }
 

@@ -20,10 +20,10 @@ type unixFileLock struct {
 }
 
 func (fl *unixFileLock) Release() error {
-	if err := setFileLock(fl.f, false, false); err != nil {
-		return err
-	}
-	return fl.f.Close()
+	_ = setFileLock(fl.f, false, false)
+	err := fl.f.Close()
+	_ = os.Remove(fl.path)
+	return err
 }
 
 func (fl *unixFileLock) Lock() error {
