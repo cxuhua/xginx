@@ -3,6 +3,7 @@ package xginx
 import (
 	"errors"
 	"log"
+	"runtime"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/filter"
@@ -363,12 +364,14 @@ func (ss *leveldbstore) newdb() (DBImp, error) {
 
 //新建存储数据库
 func (ss *leveldbstore) newdata(ext string, maxsiz int64) IChunkStore {
-	return &sstore{
+	fs := &sstore{
 		ext:   ext,
 		files: map[uint32]*sfile{},
 		size:  maxsiz,
 		dir:   ss.dir,
 	}
+	runtime.SetFinalizer(fs, (*sstore).Close)
+	return fs
 }
 
 func (ss *leveldbstore) Init(arg ...interface{}) {

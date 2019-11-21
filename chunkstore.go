@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/cxuhua/xginx/flocker"
 )
 
 //文件数据状态
@@ -208,17 +210,34 @@ func sfileHeaderBytes() []byte {
 }
 
 type sfile struct {
-	mu sync.RWMutex
+	mu sync.Mutex
 	*os.File
-	size  int64
-	flags []byte
-	ver   uint32
+	size   int64
+	flags  []byte
+	ver    uint32
+	path   string
+	locker flocker.FLocker
+}
+
+func (s *sfile) close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locker != nil {
+		_ = s.locker.Release()
+		_ = os.Remove(s.path + ".lck")
+	}
+	if s.File != nil {
+		_ = s.File.Close()
+	}
 }
 
 //读取数据
 func (s *sfile) read(off uint32, b []byte) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(b) == 0 {
+		return errors.New("buf args nil")
+	}
 	rl := uint32(len(b))
 	pl := uint32(0)
 	for pl < rl {
@@ -239,6 +258,9 @@ func (s *sfile) read(off uint32, b []byte) error {
 func (f *sfile) write(b []byte) (uint32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(b) == 0 {
+		return 0, errors.New("b args nil")
+	}
 	fi, err := f.Stat()
 	if err != nil {
 		return 0, err
@@ -261,14 +283,23 @@ func (f *sfile) write(b []byte) (uint32, error) {
 }
 
 func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
-	f, err := os.OpenFile(s.fileIdPath(id), os.O_CREATE|os.O_APPEND|os.O_RDWR, os.ModePerm)
+	spath := s.fileIdPath(id)
+	locker := flocker.NewFLocker(spath+".lck", false)
+	if err := locker.Lock(); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(spath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0644)
 	if err != nil {
+		LogError("open file error", err)
+		_ = locker.Release()
 		return nil, err
 	}
 	sf := &sfile{
-		File:  f,
-		flags: []byte{0, 0, 0, 0},
-		size:  max,
+		path:   spath,
+		File:   f,
+		flags:  []byte{0, 0, 0, 0},
+		size:   max,
+		locker: locker,
 	}
 	return sf, nil
 }
@@ -402,6 +433,6 @@ func (s *sstore) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, v := range s.files {
-		_ = v.Close()
+		v.close()
 	}
 }
