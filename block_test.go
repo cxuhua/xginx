@@ -136,6 +136,7 @@ func init() {
 
 func TestBlockChain(t *testing.T) {
 	bi := GetBlockIndex()
+	defer bi.Close()
 	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
