@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -62,7 +64,7 @@ type IServer interface {
 	Stop()
 	Wait()
 	NewClient() *Client
-	BroadMsg(c *Client, m MsgIO)
+	BroadMsg(m MsgIO, skips ...*Client)
 }
 
 var (
@@ -73,8 +75,8 @@ type server struct {
 	ser *TcpServer
 }
 
-func (s *server) BroadMsg(c *Client, m MsgIO) {
-	s.ser.BroadMsg(c, m)
+func (s *server) BroadMsg(m MsgIO, skips ...*Client) {
+	s.ser.BroadMsg(m, skips...)
 }
 
 func (s *server) Wait() {
@@ -107,16 +109,16 @@ type TcpServer struct {
 	mu      sync.RWMutex
 	err     interface{}
 	wg      sync.WaitGroup
-	clients map[string]*Client //连接的所有client
+	clients map[uint64]*Client //连接的所有client
 	addrs   *AddrMap
 	single  sync.Mutex
 }
 
 //地址是否打开
-func (s *TcpServer) IsOpen(a NetAddr) bool {
+func (s *TcpServer) IsOpen(id uint64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, has := s.clients[a.String()]
+	_, has := s.clients[id]
 	return has
 }
 
@@ -126,7 +128,7 @@ func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	msg := &MsgAddrs{}
 	for _, v := range s.addrs.addrs {
 		//不包括它自己
-		if v.addr.Equal(c.addr) {
+		if v.addr.Equal(c.Addr) {
 			continue
 		}
 		if msg.Add(v.addr) {
@@ -137,46 +139,59 @@ func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
 }
 
 //如果c不空不会广播给c
-func (s *TcpServer) BroadMsg(c *Client, m MsgIO) {
+func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, v := range s.clients {
-		if c != nil && v.Equal(c) {
+	//检测是否在忽略列表中
+	skipf := func(v *Client) bool {
+		for _, cc := range skips {
+			if cc.Equal(v) {
+				return true
+			}
+		}
+		return false
+	}
+	//一般不会发送给接收到数据的节点
+	for _, c := range s.clients {
+		if skipf(c) {
 			continue
 		}
-		v.SendMsg(m)
+		c.SendMsg(m)
 	}
 }
 
 func (s *TcpServer) HasAddr(addr NetAddr) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, has := s.clients[addr.String()]
-	return has
+	for _, v := range s.clients {
+		if v.Addr.Equal(addr) {
+			return true
+		}
+	}
+	return false
 }
 
-func (s *TcpServer) HasClient(addr NetAddr, c *Client) bool {
+func (s *TcpServer) HasClient(id uint64, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	key := addr.String()
-	_, ok := s.clients[key]
+	_, ok := s.clients[id]
 	if !ok {
-		c.addr = addr
-		s.clients[key] = c
+		c.id = id
+		s.clients[id] = c
 	}
 	return ok
 }
 
-func (s *TcpServer) DelClient(addr NetAddr, c *Client) {
+func (s *TcpServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.clients, addr.String())
+	delete(s.clients, id)
 }
 
-func (s *TcpServer) AddClient(addr NetAddr, c *Client) {
+func (s *TcpServer) AddClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.clients[addr.String()] = c
+	s.clients[id] = c
 }
 
 func (s *TcpServer) Stop() {
@@ -204,6 +219,7 @@ func (s *TcpServer) NewClient() *Client {
 	c.rc = make(chan MsgIO, 4)
 	c.ptimer = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
 	c.vtimer = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
+	c.bloom = NewBloomFilter()
 	return c
 }
 
@@ -248,30 +264,51 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 }
 
 func (s *TcpServer) recoverError() {
-	//if err := recover(); err != nil {
-	//	s.err = err
-	//	s.cancel()
-	//}
+	if gin.Mode() == gin.DebugMode {
+		s.cancel()
+		return
+	}
+	if err := recover(); err != nil {
+		s.err = err
+		s.cancel()
+	}
 }
 
 func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
 	bi := GetBlockIndex()
+	//获取交易id
+	id, err := tx.ID()
+	if err != nil {
+		return err
+	}
+	//检测交易是否可用
 	if err := tx.Check(bi, true); err != nil {
 		return err
 	}
+	//如果交易已经在区块中忽略
+	if _, err := bi.LoadTX(id); err == nil {
+		return nil
+	}
+	txp := bi.GetTxPool()
+	//已经存在交易池中忽略
+	if txp.Has(id) {
+		return nil
+	}
+	//广播到周围节点,不包括c
+	s.BroadMsg(NewMsgTx(tx), c)
 	//放入交易池
-	return bi.tp.PushBack(tx)
+	return txp.PushBack(tx)
 }
 
 //获取一个连接的主节点区块高度>=h
-func (s *TcpServer) FindClient(h uint32) *Client {
+func (s *TcpServer) findClient(h uint32) *Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.clients {
 		if c.Service&SERVICE_NODE == 0 {
 			continue
 		}
-		if c.Height < h {
+		if c.Height.BH < h {
 			continue
 		}
 		return c
@@ -283,26 +320,16 @@ func (s *TcpServer) FindClient(h uint32) *Client {
 func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) error {
 	s.single.Lock()
 	defer s.single.Unlock()
-	bi := GetBlockIndex()
 	ps := GetPubSub()
-	bblk := false
-	//尝试连接区块头
-	if err := bi.LinkHeader(blk.Header); err == nil {
-		LogInfo("link block header id =", blk.Header)
-		bblk = true
-	}
+	bi := GetBlockIndex()
 	//尝试更新区块数据
-	if err := bi.UpdateBlk(blk); err == nil {
-		LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
-		dt.Reset(time.Microsecond * 10)
-	} else {
-		LogError(err)
+	if err := bi.UpdateBlk(blk); err != nil {
+		LogError("update block error", err)
+		return err
 	}
-	//如果是新块,广播区块
-	if bblk {
-		ps.Pub(blk, NewBlockLinkTopic)
-		s.BroadMsg(c, NewMsgBlock(blk))
-	}
+	ps.Pub(blk, NewUpdateBlockTopic)
+	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
+	dt.Reset(time.Microsecond * 10)
 	return nil
 }
 
@@ -313,10 +340,9 @@ func (s *TcpServer) reqMsgGetBlock() error {
 	bi := GetBlockIndex()
 	if bi.Len() == 0 {
 		return nil
-	}
-	if ele, err := bi.GetNextSync(); err != nil {
+	} else if ele, err := bi.GetNextSync(); err != nil {
 		return err
-	} else if c := s.FindClient(ele.Height); c == nil {
+	} else if c := s.findClient(ele.Height); c == nil {
 		return errors.New("find client error")
 	} else if id, err := ele.ID(); err != nil {
 		return err
@@ -324,20 +350,32 @@ func (s *TcpServer) reqMsgGetBlock() error {
 		msg := &MsgGetInv{}
 		msg.AddInv(InvTypeBlock, id)
 		c.SendMsg(msg)
-		return nil
 	}
+	return nil
+}
+
+//需要更多的证明
+func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt uint32) error {
+	rsg := &MsgGetHeaders{}
+	rsg.Limit = VarInt(-(10 + cnt)) //向前多获取10个
+	rsg.Start = id
+	c.SendMsg(rsg)
+	return nil
 }
 
 //下载区块头
+//无法连接并存在最后一个,回退到最后存在的那个继续连接
+//需要提供证明比我的区块长的列表,后续连接的区块数量比我回退的多
 func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
+	//更新节点区块高度
 	bi := GetBlockIndex()
+	ps := GetPubSub()
 	//检查连续性
 	if err := msg.Check(); err != nil {
 		return err
 	}
-	//链接头
 	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
 		hv := msg.Headers[i]
 		id, err := hv.ID()
@@ -347,41 +385,23 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 		if err := hv.Check(); err != nil {
 			return err
 		}
-		//存在链中忽略
 		if bi.HasBlock(id) {
 			i++
 			lid = id
-			continue
+		} else if ele, err := bi.LinkHeader(hv); err == nil {
+			ps.Pub(ele, NewLinkHeaderTopic)
+			LogInfo("link block header id =", hv, "height =", bi.LastHeight())
+			i++
+		} else if unnum, err := bi.UnlinkCount(lid); err != nil {
+			return err
+		} else if hl-i-1 <= int(unnum) {
+			return s.reqMoreHeaders(c, msg.LastID(), unnum)
+		} else if err = bi.UnlinkTo(lid); err != nil {
+			return err
 		}
-		err = bi.LinkHeader(hv)
-		//无法连接并存在最后一个,回退到最后存在的那个继续连接
-		if err != nil && !lid.IsZero() {
-			//需要提供证明比我的区块长的列表,后续连接的区块数量比我回退的多
-			if ucnt, err := bi.UnlinkCount(lid); err != nil {
-				return err
-			} else if hl-i-1 <= int(ucnt) {
-				return errors.New("evidence block headers not enough")
-			}
-			//回退到指定id重新连接
-			if err = bi.UnlinkTo(lid); err != nil {
-				return err
-			}
-			continue
-		}
-		//都不存在需要向前请求更多的数据
-		if err != nil {
-			nm := &MsgGetHeaders{}
-			nm.Limit = VarInt(-(10 + hl)) //向前多获取10个
-			nm.Start = msg.LastID()
-			c.SendMsg(nm)
-			break
-		}
-		LogInfo("link block header id =", hv, "height =", bi.LastHeight())
-		i++
 	}
-	//请求下一批,不包含最后一个
-	rmsg := bi.ReqMsgHeaders()
-	c.SendMsg(rmsg)
+	//请求下一批区块头
+	c.ReqBlockHeaders(bi, msg.Height.HH)
 	return nil
 }
 
@@ -439,8 +459,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			if msg, ok := m.m.(*MsgBlock); ok {
 				err := s.recvMsgBlock(m.c, msg.Blk, dt)
 				if err != nil {
-					LogError(err)
-					//m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
+					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
 				break
 			}
@@ -496,7 +515,7 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	}
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
-	s.clients = map[string]*Client{}
+	s.clients = map[uint64]*Client{}
 	s.service = SERVICE_NODE
 	s.addrs = NewAddrMap()
 	return s, nil

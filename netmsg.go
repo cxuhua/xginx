@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -32,6 +33,8 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgHeaders{}
 	case NT_ERROR:
 		m = &MsgError{}
+	case NT_ALERT:
+		m = &MsgAlert{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
@@ -51,6 +54,62 @@ func (m MsgGetAddrs) Type() uint8 {
 }
 
 //
+
+//消息广播
+type MsgAlert struct {
+	Msg VarBytes //消息内容
+	Sig VarBytes //消息签名可验证消息来自哪里
+}
+
+func NewMsgAlert(msg string, sig *SigValue) *MsgAlert {
+	m := &MsgAlert{}
+	m.Msg = []byte(msg)
+	if sig != nil {
+		sigs := sig.GetSigs()
+		m.Sig = sigs[:]
+	}
+	return m
+}
+
+//验证消息来源
+func (m MsgAlert) Verify(pub *PublicKey) error {
+	hv := Hash256(m.Msg)
+	if m.Sig.Len() == 0 {
+		return errors.New("miss sig")
+	}
+	sig, err := NewSigValue(m.Sig[:])
+	if err != nil {
+		return err
+	}
+	if !pub.Verify(hv, sig) {
+		return errors.New("verify sig error")
+	}
+	return nil
+}
+
+func (m MsgAlert) Type() uint8 {
+	return NT_ALERT
+}
+
+func (m MsgAlert) Encode(w IWriter) error {
+	if err := m.Msg.Encode(w); err != nil {
+		return err
+	}
+	if err := m.Sig.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *MsgAlert) Decode(r IReader) error {
+	if err := m.Msg.Decode(r); err != nil {
+		return err
+	}
+	if err := m.Sig.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
 
 //
 type MsgAddrs struct {

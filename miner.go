@@ -6,14 +6,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 const (
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
-	//链上新连接了区块
-	NewBlockLinkTopic = "NewBlockLink"
+	//链上新连接了区块 BlockHeader
+	NewLinkHeaderTopic = "NewLinkHeader"
+	//更新了一个区块数据 BlockInfo
+	NewUpdateBlockTopic = "NewUpdateBlock"
 )
 
 const (
@@ -87,7 +91,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return err
 	}
 	//添加交易
-	txs, err := bi.tp.GetTxs()
+	txs, err := bi.GetTxPool().GetTxs()
 	if err != nil {
 		return err
 	}
@@ -97,6 +101,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
+	LogInfof("gen new block add %d Tx", len(txs))
 	//
 	if err := blk.Finish(bi); err != nil {
 		return err
@@ -107,15 +112,23 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	}
 	hb := blk.Header.Bytes()
 	times := uint32(opt.MiB * 10)
-	//当一个新块更新到库中时，终止当前的的区块进度
-	linkblk := ps.SubOnce(NewBlockLinkTopic)
-	defer ps.Unsub(linkblk)
+	//当一个新块头，并且比当前区块高时取消当前进度
+	hbc := ps.Sub(NewLinkHeaderTopic)
+	defer ps.Unsub(hbc)
 	for i, j := UR32(), uint32(0); ; i++ {
 		select {
 		case <-m.ctx.Done():
 			return m.ctx.Err()
-		case <-linkblk:
-			return errors.New("recv new block ,ignore curr block")
+		case bhp := <-hbc:
+			ele, ok := bhp.(*TBEle)
+			if !ok {
+				LogError("NewBlockHeaderTopic recv error data", bhp)
+				break
+			}
+			if ele.Height < blk.Meta.Height {
+				break
+			}
+			return errors.New("recv new block header ,ignore gen block")
 		default:
 			break
 		}
@@ -138,17 +151,18 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		}
 	}
 	LogInfo("gen new block ok id = ", blk)
-	if err = bi.LinkHeader(blk.Header); err != nil {
+	if _, err := bi.LinkHeader(blk.Header); err != nil {
 		return err
 	}
 	if err = bi.UpdateBlk(blk); err != nil {
-		err = bi.UnlinkLast()
+		LogError("update blk error unlink", err)
+		return bi.UnlinkLast()
 	}
-	if err != nil {
-		return err
-	}
-	ps.Pub(blk, NewBlockLinkTopic)
-	Server.BroadMsg(nil, NewMsgBlock(blk))
+	//广播更新了区块数据
+	ps.Pub(blk, NewUpdateBlockTopic)
+	//广播区块头
+	msg := bi.NewMsgHeaders(blk.Header)
+	Server.BroadMsg(msg)
 	return nil
 }
 
@@ -161,10 +175,7 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 			LogError("OptGetBlock args type error", opt.Arg)
 			break
 		}
-		m.mu.RLock()
-		accok := m.acc != nil
-		m.mu.RUnlock()
-		if accok {
+		if acc := m.GetMiner(); acc != nil {
 			err := m.genNewBlock(ver)
 			if err != nil {
 				LogError("gen new block error", err)
@@ -178,16 +189,26 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 			LogError("OptGetBlock args type error", opt.Arg)
 			break
 		}
-		m.mu.Lock()
-		m.acc = acc
-		m.mu.Unlock()
+		if err := m.SetMiner(acc); err != nil {
+			LogError("set miner error", err)
+		}
 	default:
 		LogError("unknow opt type,no process", opt)
 	}
 }
 
+func (m *minerEngine) recoverError() {
+	if gin.Mode() == gin.DebugMode {
+		return
+	}
+	if err := recover(); err != nil {
+		LogError(err)
+	}
+}
+
 func (m *minerEngine) loop(i int, ch chan interface{}) {
 	LogInfo("miner worker", i, "start")
+	defer m.recoverError()
 	m.wg.Add(1)
 	defer m.wg.Done()
 	for {
@@ -210,7 +231,7 @@ func (m *minerEngine) Start(ctx context.Context) {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 4; i++ {
 		go m.loop(i, ch)
 	}
 }

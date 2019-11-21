@@ -1,10 +1,12 @@
 package xginx
 
-import "errors"
+import (
+	"errors"
+)
 
 const (
 	//每次请求的最大区块头数量
-	REQ_MAX_HEADERS_SIZE = 200
+	REQ_MAX_HEADERS_SIZE = 2000
 )
 
 // NT_GET_HEADERS
@@ -53,26 +55,33 @@ func (bi *BlockIndex) GetMsgBlock(id HASH256) (*MsgBlock, error) {
 	return &MsgBlock{Blk: blk}, nil
 }
 
+//创建区块头消息
+func (bi *BlockIndex) NewMsgHeaders(hs ...BlockHeader) *MsgHeaders {
+	hm := &MsgHeaders{}
+	hm.Height = bi.GetNodeHeight()
+	for _, hv := range hs {
+		hm.Add(hv)
+	}
+	return hm
+}
+
 //根据高度定位返回
-func (bi *BlockIndex) GetMsgHeadersUseHeight(h uint32) (*MsgHeaders, error) {
+func (bi *BlockIndex) GetMsgHeadersUseHeight(h uint32) *MsgHeaders {
 	iter := bi.NewIter()
+	hm := bi.NewMsgHeaders()
 	if h == InvalidHeight {
 		h = 0
 	} else {
 		h++
 	}
 	if !iter.SeekHeight(h) {
-		return nil, errors.New("not found start height")
+		return hm
 	}
-	hm := &MsgHeaders{}
 	for i := 0; iter.Next() && i < REQ_MAX_HEADERS_SIZE; i++ {
 		bh := iter.Curr().BlockHeader
 		hm.Add(bh)
 	}
-	if len(hm.Headers) == 0 {
-		return nil, errors.New("not more block header")
-	}
-	return hm, nil
+	return hm
 }
 
 //请求最后消息头
@@ -80,10 +89,10 @@ func (bi *BlockIndex) ReqMsgHeaders() *MsgGetHeaders {
 	msg := &MsgGetHeaders{}
 	last := bi.Last()
 	if last == nil {
-		msg.Start = ZERO //从头开始获取
+		msg.Start = conf.genesis //从头开始获取
 		msg.Skip = 0
 	} else if id, err := last.ID(); err != nil {
-		LogError("last id error", err)
+		panic(err)
 	} else {
 		msg.Start = id
 		msg.Skip = 1 //跳过一个，不包含id
@@ -92,16 +101,12 @@ func (bi *BlockIndex) ReqMsgHeaders() *MsgGetHeaders {
 }
 
 //获取链上的区块头返回
-func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) (*MsgHeaders, error) {
+func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) *MsgHeaders {
+	hm := bi.NewMsgHeaders()
 	iter := bi.NewIter()
-	if msg.Start.Equal(ZERO) {
-		if !iter.First() {
-			return nil, errors.New("not found first")
-		}
-	} else {
-		if !iter.SeekID(msg.Start) {
-			return nil, errors.New("not found start id")
-		}
+	if !iter.SeekID(msg.Start) {
+		LogInfof("get msg headers seek id %v failed", msg.Start)
+		return hm
 	}
 	var ifn func() bool = nil
 	bfw := msg.Limit < 0
@@ -125,14 +130,10 @@ func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) (*MsgHeaders, error) {
 	if msg.Limit > 0 {
 		limit = msg.Limit.ToInt()
 	}
-	hm := &MsgHeaders{}
 	hvs := []BlockHeader{}
 	for i := 0; ifn() && i < limit; i++ {
 		bh := iter.Curr().BlockHeader
 		hvs = append(hvs, bh)
-	}
-	if len(hvs) == 0 {
-		return nil, errors.New("not more block header")
 	}
 	//如果是反向获取的需要倒转数组
 	if bfw {
@@ -142,12 +143,13 @@ func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) (*MsgHeaders, error) {
 	} else {
 		hm.Headers = hvs
 	}
-	return hm, nil
+	return hm
 }
 
 // NT_HEADERS
 
 type MsgHeaders struct {
+	Height  BHeight //并及时通告发送方的最新高度
 	Headers []BlockHeader
 }
 
@@ -192,6 +194,9 @@ func (m MsgHeaders) Check() error {
 }
 
 func (m MsgHeaders) Encode(w IWriter) error {
+	if err := w.TWrite(m.Height); err != nil {
+		return err
+	}
 	err := VarInt(len(m.Headers)).Encode(w)
 	if err != nil {
 		return err
@@ -205,6 +210,9 @@ func (m MsgHeaders) Encode(w IWriter) error {
 }
 
 func (m *MsgHeaders) Decode(r IReader) error {
+	if err := r.TRead(&m.Height); err != nil {
+		return err
+	}
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {
 		return err

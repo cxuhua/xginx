@@ -3,7 +3,6 @@ package xginx
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -124,12 +123,11 @@ func (v BlockHeader) Bytes() HeaderBytes {
 }
 
 func (v BlockHeader) IsGenesis() bool {
-	if id, err := v.ID(); err != nil {
-		log.Println("block header id error", err)
-		return false
-	} else {
-		return v.Prev.IsZero() && conf.genesisId.Equal(id)
+	id, err := v.ID()
+	if err != nil {
+		panic(err)
 	}
+	return v.Prev.IsZero() && conf.IsGenesisId(id)
 }
 
 func (v *BlockHeader) MustID() HASH256 {

@@ -35,20 +35,22 @@ func (m *Inventory) Decode(r IReader) error {
 
 //获取参数发送相关数据
 func (bi *BlockIndex) GetMsgGetInv(msg *MsgGetInv, c *Client) {
-	for _, v := range msg.Invs {
-		if v.Typ == InvTypeTx {
-			tx, err := bi.tp.Get(v.ID)
+	for _, inv := range msg.Invs {
+		if inv.Typ == InvTypeTx {
+			tx, err := bi.txp.Get(inv.ID)
 			if err != nil {
-				tx, err = bi.LoadTX(v.ID)
+				tx, err = bi.LoadTX(inv.ID)
 			}
-			if err == nil {
-				c.SendMsg(&MsgTx{Tx: tx})
+			if err != nil {
+				continue
 			}
-		} else if v.Typ == InvTypeBlock {
-			blk, err := bi.LoadBlock(v.ID)
-			if err == nil {
-				c.SendMsg(NewMsgBlock(blk))
+			c.SendMsg(NewMsgTx(tx))
+		} else if inv.Typ == InvTypeBlock {
+			blk, err := bi.LoadBlock(inv.ID)
+			if err != nil {
+				continue
 			}
+			c.SendMsg(NewMsgBlock(blk))
 		}
 	}
 }
@@ -148,6 +150,10 @@ func (m *MsgInv) Decode(r IReader) error {
 // NT_TX
 type MsgTx struct {
 	Tx *TX
+}
+
+func NewMsgTx(tx *TX) *MsgTx {
+	return &MsgTx{Tx: tx}
 }
 
 func (m MsgTx) Type() uint8 {

@@ -139,7 +139,7 @@ func TestBlockChain(t *testing.T) {
 	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
-		err := bi.LinkHeader(cb.Header)
+		_, err := bi.LinkHeader(cb.Header)
 		if err != nil {
 			panic(err)
 		}
@@ -193,7 +193,7 @@ func TestTransfire(t *testing.T) {
 	if err := blk.CalcPowHash(1000000, bi); err != nil {
 		panic(err)
 	}
-	err = bi.LinkHeader(blk.Header)
+	_, err = bi.LinkHeader(blk.Header)
 	if err != nil {
 		panic(err)
 	}

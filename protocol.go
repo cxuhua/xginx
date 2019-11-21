@@ -36,6 +36,8 @@ const (
 	NT_HEADERS = uint8(11)
 	//返回一个错误信息
 	NT_ERROR = uint8(12)
+	//消息通知
+	NT_ALERT = uint8(13)
 )
 
 //协议消息
@@ -66,14 +68,15 @@ const (
 )
 
 type MsgError struct {
-	Code  int32
-	Error string
+	Code  int32    //错误代码
+	Error VarBytes //错误信息
+	Ext   VarBytes //扩展信息
 }
 
 func NewMsgError(code int, err error) *MsgError {
 	return &MsgError{
 		Code:  int32(code),
-		Error: err.Error(),
+		Error: []byte(err.Error()),
 	}
 }
 
@@ -85,7 +88,10 @@ func (e MsgError) Encode(w IWriter) error {
 	if err := w.TWrite(e.Code); err != nil {
 		return err
 	}
-	if err := VarBytes([]byte(e.Error)).Encode(w); err != nil {
+	if err := e.Error.Encode(w); err != nil {
+		return err
+	}
+	if err := e.Ext.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -95,11 +101,12 @@ func (e *MsgError) Decode(r IReader) error {
 	if err := r.TRead(&e.Code); err != nil {
 		return err
 	}
-	vb := VarBytes{}
-	if err := vb.Decode(r); err != nil {
+	if err := e.Error.Decode(r); err != nil {
 		return err
 	}
-	e.Error = string(vb)
+	if err := e.Ext.Decode(r); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -185,14 +192,14 @@ func (v *NetAddr) Decode(r IReader) error {
 
 type MsgPing struct {
 	Time   int64
-	Height uint32 //发送我的最新高度
+	Height BHeight //发送我的最新高度
 }
 
 func (v MsgPing) Type() uint8 {
 	return NT_PING
 }
 
-func (v MsgPing) NewPong(h uint32) *MsgPong {
+func (v MsgPing) NewPong(h BHeight) *MsgPong {
 	msg := &MsgPong{Time: v.Time}
 	msg.Height = h
 	return msg
@@ -218,7 +225,7 @@ func (v *MsgPing) Decode(r IReader) error {
 	return nil
 }
 
-func NewMsgPing(h uint32) *MsgPing {
+func NewMsgPing(h BHeight) *MsgPing {
 	msg := &MsgPing{Time: time.Now().UnixNano()}
 	msg.Height = h
 	return msg
@@ -226,7 +233,7 @@ func NewMsgPing(h uint32) *MsgPing {
 
 type MsgPong struct {
 	Time   int64
-	Height uint32 //获取对方的高度
+	Height BHeight //获取对方的高度
 }
 
 func (v MsgPong) Type() uint8 {
@@ -258,16 +265,42 @@ func (v *MsgPong) Decode(r IReader) error {
 }
 
 const (
+	//全节点
 	SERVICE_NODE = 1 << 0
 )
 
+type BHeight struct {
+	BH uint32 //数据高度
+	HH uint32 //头高度
+}
+
+func (v BHeight) Encode(w IWriter) error {
+	if err := w.TWrite(v.BH); err != nil {
+		return err
+	}
+	if err := w.TWrite(v.HH); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *BHeight) Decode(r IReader) error {
+	if err := r.TRead(&v.BH); err != nil {
+		return err
+	}
+	if err := r.TRead(&v.HH); err != nil {
+		return err
+	}
+	return nil
+}
+
 //版本消息包
 type MsgVersion struct {
-	MsgIO
 	Ver     uint32  //版本
 	Service uint32  //服务
 	Addr    NetAddr //节点外网地址
-	Height  uint32  //节点区块高度
+	Height  BHeight //节点区块高度
+	NodeID  uint64  //节点随机id
 }
 
 //在链上生成一个版本数据包
@@ -275,8 +308,9 @@ func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m := &MsgVersion{}
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
-	m.Height = bi.LastHeight()
+	m.Height = bi.GetNodeHeight()
 	m.Service = SERVICE_NODE
+	m.NodeID = conf.nodeid
 	return m
 }
 
@@ -294,7 +328,10 @@ func (v MsgVersion) Encode(w IWriter) error {
 	if err := v.Addr.Encode(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(v.Height); err != nil {
+	if err := v.Height.Encode(w); err != nil {
+		return err
+	}
+	if err := w.TWrite(v.NodeID); err != nil {
 		return err
 	}
 	return nil
@@ -310,7 +347,10 @@ func (v *MsgVersion) Decode(r IReader) error {
 	if err := v.Addr.Decode(r); err != nil {
 		return err
 	}
-	if err := r.TRead(&v.Height); err != nil {
+	if err := v.Height.Decode(r); err != nil {
+		return err
+	}
+	if err := r.TRead(&v.NodeID); err != nil {
 		return err
 	}
 	return nil
@@ -355,7 +395,7 @@ func (c *NetStream) ReadMsg() (MsgIO, error) {
 	pd := &NetPackage{}
 	err := pd.Decode(c)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("type=%d err=%w", pd.Type, err)
 	}
 	return pd.ToMsgIO()
 }
@@ -590,6 +630,10 @@ type VarBytes []byte
 
 func (v VarBytes) Len() int {
 	return len(v)
+}
+
+func (v VarBytes) String() string {
+	return string(v[:])
 }
 
 func (v VarBytes) Equal(b VarBytes) bool {

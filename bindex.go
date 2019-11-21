@@ -271,7 +271,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 
 //区块链索引
 type BlockIndex struct {
-	tp   *TxPool                   //交易池
+	txp  *TxPool                   //交易池
 	lptr IListener                 //链监听器
 	mu   sync.RWMutex              //
 	lis  *list.List                //区块头列表
@@ -346,6 +346,9 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 		blk.Header.Prev = lid
 		blk.Header.Bits = bi.CalcBits(nexth)
 	}
+	if !CheckProofOfWorkBits(blk.Header.Bits) {
+		return nil, errors.New("block bits check error")
+	}
 	SetRandInt(&blk.Header.Nonce)
 	ele := EmptyTBEle(nexth, bi)
 	ele.TBMeta.BlockHeader = blk.Header
@@ -365,6 +368,27 @@ func (bi *BlockIndex) First() *TBEle {
 		return nil
 	}
 	return le.Value.(*TBEle)
+}
+
+func (bi *BlockIndex) BestHeight() uint32 {
+	bv := bi.GetBestValue()
+	if !bv.IsValid() {
+		return InvalidHeight
+	}
+	bi.mu.RLock()
+	ele := bi.imap[bv.Id]
+	bi.mu.RUnlock()
+	if ele != nil {
+		return ele.Value.(*TBEle).Height
+	}
+	return InvalidHeight
+}
+
+func (bi *BlockIndex) GetNodeHeight() BHeight {
+	nh := BHeight{}
+	nh.BH = bi.BestHeight()
+	nh.HH = bi.LastHeight()
+	return nh
 }
 
 func (bi *BlockIndex) LastHeight() uint32 {
@@ -572,6 +596,9 @@ func (bi *BlockIndex) HasSync() bool {
 
 //获取回退代价，也就是回退多少个
 func (bi *BlockIndex) UnlinkCount(id HASH256) (uint32, error) {
+	if id.IsZero() {
+		return bi.LastHeight() + 1, nil
+	}
 	ele, err := bi.getEle(id)
 	if err != nil {
 		return 0, errors.New("not found id")
@@ -628,7 +655,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	tx.Ins = []*TxIn{}
 	for _, cv := range ds {
 		//看是否在之前就已经消费
-		ctv, err := bi.tp.FindCoin(cv)
+		ctv, err := bi.txp.FindCoin(cv)
 		if err == nil {
 			return nil, fmt.Errorf("coin cost at txpool id= %v", ctv)
 		}
@@ -666,7 +693,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 		return nil, err
 	}
 	//放入交易池
-	if err := bi.tp.PushBack(tx); err != nil {
+	if err := bi.txp.PushBack(tx); err != nil {
 		return nil, err
 	}
 	return tx, nil
@@ -1105,29 +1132,41 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	for _, tx := range blk.Txs {
 		id, err := tx.ID()
 		if err == nil {
-			bi.tp.Del(id)
+			bi.txp.Del(id)
 		}
 	}
 	return nil
 }
 
+//检测如果是第一个，必须是genesis块,正式发布会生成genesis块
+func (bi *BlockIndex) checkGenesis(header BlockHeader) error {
+	id, err := header.ID()
+	if err != nil {
+		return err
+	}
+	if bi.Len() == 0 && !id.Equal(conf.genesis) {
+		return errors.New("first not genesis id")
+	}
+	return nil
+}
+
 //连接区块头
-func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
+func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	meta := &TBMeta{
 		BlockHeader: header,
 	}
 	cid, err := meta.ID()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if !CheckProofOfWork(cid, meta.Bits) {
-		return errors.New("block header bits check error")
+		return nil, errors.New("block header bits check error")
 	}
 	nexth := InvalidHeight
 	//是否能连接到主链后
 	phv, pid, isok := bi.islinkback(meta)
 	if !isok {
-		return fmt.Errorf("can't link to chain last, hash=%v", cid)
+		return nil, fmt.Errorf("can't link to chain last, hash=%v", cid)
 	}
 	if pid.IsZero() {
 		nexth = phv
@@ -1138,7 +1177,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
 	//保存区块头数据
 	hbs, err := meta.Bytes()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	//保存区块头
 	bt.Put(BLOCK_PREFIX, cid[:], hbs)
@@ -1148,16 +1187,16 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) error {
 	//保存数据
 	err = bi.db.Index().Write(bt)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	//连接区块无区块数据
-	return bi.linkback(NewTBEle(meta, nexth, bi))
+	ele := NewTBEle(meta, nexth, bi)
+	return ele, bi.linkback(ele)
 }
 
 func (bi *BlockIndex) GetTxPool() *TxPool {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
-	return bi.tp
+	return bi.txp
 }
 
 //关闭链数据
@@ -1180,7 +1219,7 @@ func (bi *BlockIndex) Close() {
 
 func NewBlockIndex(lptr IListener) *BlockIndex {
 	bi := &BlockIndex{
-		tp:   NewTxPool(),
+		txp:  NewTxPool(),
 		lptr: lptr,
 		lis:  list.New(),
 		hmap: map[uint32]*list.Element{},

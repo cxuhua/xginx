@@ -6,6 +6,10 @@ import (
 	"sync"
 )
 
+const (
+	MAX_TX_POOL_SIZE = 4096 * 4
+)
+
 //交易池，存放签名成功，未确认的交易
 //当区块连接后需要把区块中的交易从这个池子删除
 type TxPool struct {
@@ -104,6 +108,14 @@ func (p *TxPool) FindCoin(coin *CoinKeyValue) (*TX, error) {
 	return nil, errors.New("txpool not found coin")
 }
 
+//交易池是否存在交易
+func (p *TxPool) Has(id HASH256) bool {
+	p.mu.RUnlock()
+	defer p.mu.RUnlock()
+	_, has := p.tmap[id]
+	return has
+}
+
 func (p *TxPool) Get(id HASH256) (*TX, error) {
 	p.mu.RUnlock()
 	defer p.mu.RUnlock()
@@ -124,6 +136,9 @@ func (p *TxPool) Len() int {
 func (p *TxPool) PushBack(tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
+		return errors.New("tx pool full,ignore push back")
+	}
 	id, err := tx.ID()
 	if err != nil {
 		return err

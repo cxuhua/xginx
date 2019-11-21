@@ -15,5 +15,5 @@
   "oid_prefix": "obj",
   "debug": true,
   "seeds":["seed.xginx.com"],
-  "genesis_block": "00000000449f2fead61987580c0b72bb07b779b7fb3111d34bebb30ea486b549"
+  "genesis": "00000669bf4c2a6efea5acdc6c2321d966dacc678881294ed41a5e151ee44c11"
 }
