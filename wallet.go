@@ -1,15 +1,7 @@
 package xginx
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"errors"
-	"fmt"
-	"io"
-	"time"
-
-	"github.com/patrickmn/go-cache"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/filter"
@@ -20,118 +12,19 @@ var (
 	//地址key前缀
 	AddrPrefix = []byte{1}
 	//加密的私钥
-	EncPKPrefix = []byte{2}
+	//EncPKPrefix = []byte{2}
 	//未加密
 	StdPKPrefix = []byte{3}
+	//管理员前缀
+	AdminPrefix = []byte{4}
 )
 
 const (
 	MinerAccountKey = "MinerAccount"
 )
 
-// AES加密
-func AesEncrypt(block cipher.Block, data []byte) ([]byte, error) {
-	if block == nil {
-		return nil, errors.New("block nil")
-	}
-	//随机生成iv
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, err
-	}
-	dl := len(data)
-	l := (dl/aes.BlockSize)*aes.BlockSize + aes.BlockSize
-	if dl%aes.BlockSize == 0 {
-		l = dl
-	}
-	//add iv length
-	dd := make([]byte, l+aes.BlockSize)
-	n := l - dl
-	//copy iv to dd
-	copy(dd[0:], iv)
-	//copy data to dd
-	copy(dd[aes.BlockSize:], data)
-	//fill end bytes
-	for i := 0; i < n; i++ {
-		dd[dl+i+aes.BlockSize] = byte(n)
-	}
-	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(dd[aes.BlockSize:], dd[aes.BlockSize:])
-	return dd, nil
-}
-
-//检测最后几个字节是否是加密
-func bytesEquInt(data []byte, n byte) bool {
-	l := len(data)
-	if l == 0 {
-		return false
-	}
-	for i := 0; i < l; i++ {
-		if data[i] != n {
-			return false
-		}
-	}
-	return true
-}
-
-// AES解密
-func AesDecrypt(block cipher.Block, data []byte) ([]byte, error) {
-	if block == nil {
-		return nil, errors.New("block nil")
-	}
-	bytes := len(data)
-	if bytes < 32 || bytes%aes.BlockSize != 0 {
-		return nil, errors.New("decrypt data length error")
-	}
-	//16 bytes iv
-	iv := data[:aes.BlockSize]
-	dd := data[aes.BlockSize:]
-	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(dd, dd)
-	l := len(dd)
-	if n := dd[l-1]; n <= aes.BlockSize {
-		x := l - int(n)
-		if bytesEquInt(dd[x:], n) {
-			dd = dd[:x]
-		}
-	}
-	return dd, nil
-}
-
-//整理key为 16 24 or 32
-func TrimAESKey(key []byte) ([]byte, error) {
-	size := len(key) / 8
-	if size <= 2 {
-		size = 2
-	}
-	if size > 4 {
-		size = 4
-	}
-	iLen := size * 8
-	ikey := make([]byte, iLen)
-	if len(key) > iLen {
-		copy(ikey[0:], key[:iLen])
-	} else {
-		copy(ikey[0:], key)
-	}
-	return ikey, nil
-}
-
-//创建加密算法
-func NewAESCipher(key []byte) (cipher.Block, error) {
-	ikey, err := TrimAESKey(key)
-	if err != nil {
-		return nil, err
-	}
-	return aes.NewCipher(ikey)
-}
-
 //钱包处理
 type IWallet interface {
-	//解密一段时间，时间到达后账号失效
-	Decryption(addr Address, pw string, time time.Duration) error
-	//加密账号
-	Encryption(addr Address, pw string) error
 	//根据地址获取账号
 	GetAccount(addr Address) (*Account, error)
 	//关闭钱包
@@ -139,25 +32,48 @@ type IWallet interface {
 	//新建账号
 	NewAccount(num uint8, less uint8, arb bool) (Address, error)
 	//导入账号 pw != ""添加密码
-	ImportAccount(pri string, pw string) error
+	ImportAccount(str string) error
 	//获取所有账号
-	ListAccount() []Address
+	ListAccount() ([]Address, error)
 	//删除账号
 	RemoveAccount(addr Address) error
 	//设置矿工账号
 	SetMiner(addr Address) error
 	//获取矿工账号
 	GetMiner() (*Account, error)
+	//初始化管理密码
+	SetAdminInfo(user string, pass string, flags uint32) error
+	//获取管理员密码hash
+	GetAdminInfo(user string) ([]byte, uint32, error)
 }
 
 type LevelDBWallet struct {
-	dir   string
-	dptr  DBImp
-	cache *cache.Cache
+	dir  string
+	dptr DBImp
+}
+
+//初始化管理员密码只能设置一次
+func (db *LevelDBWallet) SetAdminInfo(user string, pass string, flags uint32) error {
+	b4 := []byte{0, 0, 0, 0}
+	Endian.PutUint32(b4, flags)
+	hv := Hash256([]byte(pass))
+	hv = append(hv, b4...)
+	return db.dptr.Put(AdminPrefix, []byte(user), hv)
+}
+
+///获取管理员密码
+func (db *LevelDBWallet) GetAdminInfo(user string) ([]byte, uint32, error) {
+	b, err := db.dptr.Get(AdminPrefix, []byte(user))
+	if err != nil {
+		return nil, 0, err
+	}
+	hv := b[:32]
+	fv := Endian.Uint32(b[32:])
+	return hv, fv, nil
 }
 
 //列出地址
-func (db *LevelDBWallet) ListAccount() []Address {
+func (db *LevelDBWallet) ListAccount() ([]Address, error) {
 	ds := []Address{}
 	iter := db.dptr.Iterator(NewPrefix(AddrPrefix))
 	defer iter.Close()
@@ -165,16 +81,11 @@ func (db *LevelDBWallet) ListAccount() []Address {
 		key := iter.Key()
 		ds = append(ds, Address(key[1:]))
 	}
-	return ds
+	return ds, nil
 }
 
 func (db *LevelDBWallet) RemoveAccount(addr Address) error {
-	err := db.dptr.Del(AddrPrefix, []byte(addr))
-	if err != nil {
-		return err
-	}
-	db.cache.Delete(string(addr))
-	return nil
+	return db.dptr.Del(AddrPrefix, []byte(addr))
 }
 
 func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (Address, error) {
@@ -196,7 +107,6 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (Address, e
 	if err != nil {
 		return "", err
 	}
-	db.cache.Set(string(addr), acc, time.Hour*3)
 	return addr, nil
 }
 
@@ -218,8 +128,8 @@ func (db *LevelDBWallet) GetMiner() (*Account, error) {
 }
 
 //导入私钥 pw != ""添加密码
-func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
-	acc, err := LoadAccount(ss)
+func (db *LevelDBWallet) ImportAccount(str string) error {
+	acc, err := LoadAccount(str)
 	if err != nil {
 		return err
 	}
@@ -231,84 +141,13 @@ func (db *LevelDBWallet) ImportAccount(ss string, pw string) error {
 	if err != nil {
 		return err
 	}
-	if pw == "" {
-		vbs := append([]byte{}, StdPKPrefix...)
-		vbs = append(vbs, []byte(dump)...)
-		return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
-	}
-	block, err := NewAESCipher([]byte(pw))
-	if err != nil {
-		return err
-	}
-	data, err := AesEncrypt(block, []byte(dump))
-	if err != nil {
-		return fmt.Errorf("password error %w", err)
-	}
-	vbs := append([]byte{}, EncPKPrefix...)
-	vbs = append(vbs, data...)
+	vbs := append([]byte{}, StdPKPrefix...)
+	vbs = append(vbs, []byte(dump)...)
 	return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
-}
-
-//解密一段时间，时间到达后私钥失效
-func (db *LevelDBWallet) Decryption(addr Address, pw string, st time.Duration) error {
-	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
-	if err != nil {
-		return err
-	}
-	//未被加密
-	if vbs[0] == StdPKPrefix[0] {
-		return errors.New("address not crypt")
-	}
-	block, err := NewAESCipher([]byte(pw))
-	if err != nil {
-		return err
-	}
-	data, err := AesDecrypt(block, vbs[1:])
-	if err != nil {
-		return fmt.Errorf("password error %w", err)
-	}
-	acc, err := LoadAccount(string(data))
-	if err != nil {
-		return err
-	}
-	db.cache.Set(string(addr), acc, st)
-	return nil
-}
-
-//加密地址私钥
-func (db *LevelDBWallet) Encryption(addr Address, pw string) error {
-	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
-	if err != nil {
-		return err
-	}
-	//存在已经被加密
-	if vbs[0] == EncPKPrefix[0] {
-		return nil
-	}
-	block, err := NewAESCipher([]byte(pw))
-	if err != nil {
-		return err
-	}
-	data, err := AesEncrypt(block, vbs[1:])
-	if err != nil {
-		return err
-	}
-	vbs = append([]byte{}, EncPKPrefix...)
-	vbs = append(vbs, data...)
-	err = db.dptr.Put(AddrPrefix, []byte(addr), vbs)
-	if err != nil {
-		return err
-	}
-	db.cache.Delete(string(addr))
-	return nil
 }
 
 //根据钱包地址获取私钥
 func (db *LevelDBWallet) GetAccount(addr Address) (*Account, error) {
-	//从缓存获取
-	if cpv, has := db.cache.Get(string(addr)); has {
-		return cpv.(*Account), nil
-	}
 	vbs, err := db.dptr.Get(AddrPrefix, []byte(addr))
 	if err != nil {
 		return nil, err
@@ -320,13 +159,11 @@ func (db *LevelDBWallet) GetAccount(addr Address) (*Account, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.cache.Set(string(addr), acc, time.Hour*3)
 	return acc, nil
 }
 
 //关闭钱包
 func (db *LevelDBWallet) Close() {
-	db.cache.Flush()
 	db.dptr.Close()
 }
 
@@ -339,7 +176,6 @@ func NewLevelDBWallet(dir string) (IWallet, error) {
 	if err != nil {
 		return nil, err
 	}
-	ss.cache = cache.New(time.Second*30, time.Minute*30)
 	ss.dptr = NewDB(sdb)
 	return ss, nil
 }

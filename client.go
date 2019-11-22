@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +28,10 @@ func NewClientMsg(c *Client, m MsgIO) *ClientMsg {
 	}
 }
 
+const (
+	VMAP_KEY_FILTER = "BloomFilter"
+)
+
 type Client struct {
 	*NetStream
 	typ     int
@@ -41,11 +46,67 @@ type Client struct {
 	ping    int
 	ptimer  *time.Timer
 	vtimer  *time.Timer
-	isopen  bool    //收到msgversion算打开成功
-	Ver     uint32  //版本
-	Service uint32  //服务
-	Height  BHeight //节点区块高度
-	bloom   *BloomFilter
+	isopen  bool      //收到msgversion算打开成功
+	Ver     uint32    //版本
+	Service uint32    //服务
+	Height  BHeight   //节点区块高度
+	vmap    *sync.Map //线程安全的属性存储器
+}
+
+//添加过滤数据
+func (c *Client) FilterAdd(key []byte) error {
+	blm, has := c.GetFilter()
+	if !has {
+		return errors.New("VMAP_KEY_FILTER type miss")
+	}
+	blm.Add(key)
+	return nil
+}
+
+//设置过滤器
+func (c *Client) LoadFilter(funcs int, tweak uint32, filter []byte) error {
+	blm, err := NewBloomFilter(funcs, tweak, filter)
+	if err != nil {
+		return err
+	}
+	ptr, _ := c.vmap.LoadOrStore(VMAP_KEY_FILTER, blm)
+	if ptr == nil {
+		return errors.New("VMAP_KEY_FILTER store or load error")
+	}
+	blm, ok := ptr.(*BloomFilter)
+	if !ok {
+		return errors.New("VMAP_KEY_FILTER type error")
+	}
+	return nil
+}
+
+//清除过滤器
+func (c *Client) FilterClear() {
+	c.vmap.Delete(VMAP_KEY_FILTER)
+}
+
+//获取连接上的过滤器
+//不存在返回nil,false
+func (c *Client) GetFilter() (*BloomFilter, bool) {
+	ptr, has := c.vmap.Load(VMAP_KEY_FILTER)
+	if !has {
+		return nil, false
+	}
+	blm, ok := ptr.(*BloomFilter)
+	if !ok {
+		panic(errors.New("VMAP_KEY_FILTER type error"))
+	}
+	return blm, true
+}
+
+//检测过滤器
+func (c *Client) FilterHas(key []byte) bool {
+	if blm, isset := c.GetFilter(); isset {
+		return blm.Has(key)
+	} else {
+		//没设置过滤器都认为不过滤
+		return true
+	}
 }
 
 //
@@ -111,9 +172,22 @@ func (c *Client) processMsg(m MsgIO) error {
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
+	case NT_FILTER_LOAD:
+		msg := m.(*MsgFilterLoad)
+		err := c.LoadFilter(int(msg.Funcs), msg.Tweak, msg.Filter)
+		if err != nil {
+			c.SendMsg(NewMsgError(ErrCodeFilterLoad, err))
+		}
+	case NT_FILTER_ADD:
+		msg := m.(*MsgFilterAdd)
+		err := c.FilterAdd(msg.Key)
+		if err != nil {
+			c.SendMsg(NewMsgError(ErrCodeFilterMiss, err))
+		}
+	case NT_FILTER_CLEAR:
+		c.FilterClear()
 	case NT_ALERT:
 		msg := m.(*MsgAlert)
-		//继续广播出去
 		c.ss.BroadMsg(msg, c)
 		LogInfo("recv alert message:", msg.Msg.String())
 	case NT_ERROR:
@@ -165,15 +239,14 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.Close()
 			return errors.New("has connection,closed")
 		}
+		//保存节点信息
 		c.Addr = msg.Addr
 		c.Height = msg.Height
-		//保存节点信息
 		c.Ver = msg.Ver
 		c.Service = msg.Service
 		//如果是连入的，返回节点版本信息
 		if c.IsIn() {
 			rsg := bi.NewMsgVersion()
-			rsg.Service = c.ss.Service()
 			c.SendMsg(rsg)
 		}
 		//连出的判断区块高度
@@ -253,7 +326,7 @@ func (c *Client) connect(addr NetAddr) error {
 	c.typ = ClientOut
 	c.Addr = addr
 	c.NetStream = NewNetStream(conn)
-	//发送第一个包
+	//主动发送第一个包
 	bi := GetBlockIndex()
 	c.SendMsg(bi.NewMsgVersion())
 	return nil
@@ -265,17 +338,11 @@ func (c *Client) Loop() {
 
 func (c *Client) loop() {
 	defer c.stop()
-
 	c.ss.wg.Add(1)
 	defer c.ss.wg.Done()
-
+	//读取数据包
 	go func() {
-		defer func() {
-			if err := recover(); err != nil {
-				c.err = err
-				c.cancel()
-			}
-		}()
+		defer c.recoverError()
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {

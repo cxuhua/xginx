@@ -38,6 +38,11 @@ const (
 	NT_ERROR = uint8(12)
 	//消息通知
 	NT_ALERT = uint8(13)
+	//过滤器 加载 添加 清除
+	NT_FILTER_LOAD  = uint8(14)
+	NT_FILTER_ADD   = uint8(15)
+	NT_FILTER_CLEAR = uint8(16)
+	//
 )
 
 //协议消息
@@ -63,8 +68,10 @@ func (e *MsgEmpty) Decode(r IReader) error {
 }
 
 const (
-	ErrCodeRecvBlock = 100001
-	ErrCodeRecvTx    = 100002
+	ErrCodeRecvBlock  = 100001
+	ErrCodeRecvTx     = 100002
+	ErrCodeFilterMiss = 100003
+	ErrCodeFilterLoad = 100004
 )
 
 type MsgError struct {

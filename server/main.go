@@ -28,15 +28,15 @@ func main() {
 
 	//是否启动tcp节点服务器
 	if Server != nil {
-		Server.Start(ctx)
+		Server.Start(ctx, lis)
 	}
 	//是否启动矿工
 	if Miner != nil {
-		Miner.Start(ctx)
+		Miner.Start(ctx, lis)
 	}
 	//启动http服务
 	if Http != nil {
-		Http.Start(ctx)
+		Http.Start(ctx, lis)
 	}
 	//延迟回调
 	time.Sleep(time.Millisecond * 200)

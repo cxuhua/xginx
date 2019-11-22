@@ -90,7 +90,11 @@ func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
 }
 
 func (ap Account) String() string {
-	return fmt.Sprintf("%d-%d", ap.less, ap.num)
+	if ap.IsEnableArb() {
+		return fmt.Sprintf("%d-%d+arb", ap.less, ap.num)
+	} else {
+		return fmt.Sprintf("%d-%d", ap.less, ap.num)
+	}
 }
 
 //加载账号信息

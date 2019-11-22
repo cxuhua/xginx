@@ -101,7 +101,7 @@ func (m *MsgGetInv) Decode(r IReader) error {
 	return nil
 }
 
-//
+//交易消息
 
 type MsgInv struct {
 	Invs []Inventory

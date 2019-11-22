@@ -5,6 +5,8 @@ import (
 	"log"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 var (
@@ -43,6 +45,9 @@ type tlis struct {
 }
 
 func (lis *tlis) OnClose(bi *BlockIndex) {
+
+}
+func (lis *tlis) OnInitHttp(m *gin.Engine) {
 
 }
 
@@ -127,17 +132,12 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	return blk
 }
 
-func init() {
-	//测试配置文件
-	conf = LoadConfig("v10000.json")
-	//初始化测试用的
-	InitBlockIndex(&tlis{})
-}
-
 func TestBlockChain(t *testing.T) {
+	conf = LoadConfig("v10000.json")
+	InitBlockIndex(&tlis{})
 	bi := GetBlockIndex()
 	defer bi.Close()
-	testnum := uint32(1)
+	testnum := uint32(10)
 	for i := uint32(0); i < testnum; i++ {
 		cb := NewTestBlock(bi)
 		_, err := bi.LinkHeader(cb.Header)
@@ -155,14 +155,9 @@ func TestBlockChain(t *testing.T) {
 	}
 }
 
-func TestBlockIndexIter(t *testing.T) {
-	bi := GetBlockIndex()
-	ds, err := bi.ListCoins("st1qqgndaafn6lmhnp5mvqm6erh5r35t0rul6wt2t6")
-	log.Println(ds, err)
-	//bi.UnlinkTo(NewHASH256("0000ddda3ad16057f6258f56e1ab66554df6559ec31829dc26ba389eb287ba9b"))
-}
-
 func TestTransfire(t *testing.T) {
+	conf = LoadConfig("v10000.json")
+	InitBlockIndex(&tlis{})
 	addr, err := DstAccount.GetAddress()
 	if err != nil {
 		panic(err)
@@ -210,6 +205,8 @@ func TestTransfire(t *testing.T) {
 }
 
 func TestUnlinkBlock(t *testing.T) {
+	conf = LoadConfig("v10000.json")
+	InitBlockIndex(&tlis{})
 	bi := GetBlockIndex()
 	err := bi.UnlinkLast()
 	if err != nil {

@@ -1,17 +1,18 @@
 package xginx
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestBloomFilter(t *testing.T) {
-	b := NewBloomFilter()
+	b := NewBloomFilterWithNumber(500, 10, 0.6, 0x11)
 	b.Add([]byte{1})
 	b.Add([]byte{4})
 	b.Add([]byte{5})
-	b.Add([]byte{10, 11, 32})
 	if b.Has([]byte{10, 11, 32}) {
 		t.Errorf("build before")
 	}
-	b.Build()
+	b.Add([]byte{10, 11, 32})
 	if !b.Has([]byte{10, 11, 32}) {
 		t.Errorf("build after miss")
 	}
@@ -19,10 +20,10 @@ func TestBloomFilter(t *testing.T) {
 		t.Errorf("build after miss")
 	}
 
-	d := b.Dump()
+	d := b.GetFilter()
 
-	c := NewBloomFilter()
-	c.Load(d)
+	c := NewBloomFilterWithNumber(500, 10, 0.6, 0x11)
+	c.SetFilter(d)
 	if !c.Has([]byte{10, 11, 32}) {
 		t.Errorf("new load bloom miss")
 	}

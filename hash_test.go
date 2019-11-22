@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestMurmurHash(t *testing.T) {
+	type DS struct {
+		H uint32
+		S uint32
+		D string
+	}
+	ds := []DS{}
+	ds = append(ds, DS{0x00000000, 0x00000000, ""})
+	ds = append(ds, DS{0x00000000, 0x00000000, ""})
+	ds = append(ds, DS{0x6a396f08, 0xFBA4C795, ""})
+	ds = append(ds, DS{0x81f16f39, 0xffffffff, ""})
+	ds = append(ds, DS{0x514e28b7, 0x00000000, "00"})
+	ds = append(ds, DS{0xea3f0b17, 0xFBA4C795, "00"})
+	ds = append(ds, DS{0xfd6cf10d, 0x00000000, "ff"})
+	ds = append(ds, DS{0x16c6b7ab, 0x00000000, "0011"})
+	ds = append(ds, DS{0x8eb51c3d, 0x00000000, "001122"})
+	ds = append(ds, DS{0xb4471bf8, 0x00000000, "00112233"})
+	ds = append(ds, DS{0xe2301fa8, 0x00000000, "0011223344"})
+	ds = append(ds, DS{0xfc2e4a15, 0x00000000, "001122334455"})
+	ds = append(ds, DS{0xb074502c, 0x00000000, "00112233445566"})
+	ds = append(ds, DS{0x8034d2a0, 0x00000000, "0011223344556677"})
+	ds = append(ds, DS{0xb4698def, 0x00000000, "001122334455667788"})
+
+	for i, d := range ds {
+		h := MurmurHash(d.S, HexToBytes(d.D))
+		if h != d.H {
+			t.Errorf("test %d error h=%x d=%x %s", i, h, d.H, d.D)
+		}
+	}
+}
+
 func TestPksToUINT256(t *testing.T) {
 	pri, err := NewPrivateKey()
 	if err != nil {

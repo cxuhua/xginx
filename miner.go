@@ -36,7 +36,7 @@ type MinerAct struct {
 //矿工接口
 type IMiner interface {
 	//开始工作
-	Start(ctx context.Context)
+	Start(ctx context.Context, lis IListener)
 	//停止
 	Stop()
 	//等待停止
@@ -226,7 +226,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}) {
 }
 
 //开始工作
-func (m *minerEngine) Start(ctx context.Context) {
+func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	ps := GetPubSub()
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅矿工操作

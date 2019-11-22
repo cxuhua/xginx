@@ -11,7 +11,52 @@ import (
 
 const (
 	UINT256Width = 256 / 32
+	c1           = uint32(0xcc9e2d51)
+	c2           = uint32(0x1b873593)
 )
+
+func rotl(x uint32, r int8) uint32 {
+	return (x << r) | (x >> (32 - r))
+}
+
+func MurmurHash(seed uint32, b []byte) uint32 {
+	h1 := seed
+	nb := len(b) / 4
+	r := bytes.NewReader(b)
+	b4 := []byte{0, 0, 0, 0}
+	for i := 0; i < nb; i++ {
+		_, _ = r.Read(b4)
+		k1 := Endian.Uint32(b4)
+		k1 *= c1
+		k1 = rotl(k1, 15)
+		k1 *= c2
+		h1 ^= k1
+		h1 = rotl(h1, 13)
+		h1 = h1*5 + 0xe6546b64
+	}
+	rl, _ := r.Read(b4)
+	k1 := uint32(0)
+	if rl >= 3 {
+		k1 ^= uint32(b4[2]) << 16
+	}
+	if rl >= 2 {
+		k1 ^= uint32(b4[1]) << 8
+	}
+	if rl >= 1 {
+		k1 ^= uint32(b4[0])
+		k1 *= c1
+		k1 = rotl(k1, 15)
+		k1 *= c2
+		h1 ^= k1
+	}
+	h1 ^= uint32(len(b))
+	h1 ^= h1 >> 16
+	h1 *= 0x85ebca6b
+	h1 ^= h1 >> 13
+	h1 *= 0xc2b2ae35
+	h1 ^= h1 >> 16
+	return h1
+}
 
 type HashCacher struct {
 	hash HASH256

@@ -51,20 +51,11 @@ type Config struct {
 	TcpPort    int          `json:"tcp_port"`    //服务端口和ip
 	TcpIp      string       `json:"tcp_ip"`      //节点远程连接ip
 	Debug      bool         `json:"debug"`       //是否在测试模式
-	RpcPort    int          `json:"rpc_port"`    //rpc服务端口
-	RpclIp     string       `json:"rpc_lip"`     //rpc服务器地址
 	mu         sync.RWMutex `json:"-"`           //
 	logFile    *os.File     `json:"-"`           //日志文件
 	genesis    HASH256      `json:"-"`           //第一个区块id
 	LimitHash  UINT256      `json:"-"`           //最小工作难度
 	nodeid     uint64       `json:"-"`           //节点随机id
-}
-
-func (c *Config) GetRpcListenAddr() NetAddr {
-	return NetAddr{
-		ip:   net.ParseIP(c.RpclIp),
-		port: uint16(c.RpcPort),
-	}
 }
 
 func (c *Config) GetTcpListenAddr() NetAddr {
@@ -100,7 +91,7 @@ func (c *Config) Init() error {
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {
-		file, err := os.OpenFile(c.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
+		file, err := os.OpenFile(c.LogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			panic(err)
 		}

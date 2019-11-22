@@ -35,6 +35,12 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgError{}
 	case NT_ALERT:
 		m = &MsgAlert{}
+	case NT_FILTER_CLEAR:
+		m = &MsgFilterClear{}
+	case NT_FILTER_ADD:
+		m = &MsgFilterAdd{}
+	case NT_FILTER_LOAD:
+		m = &MsgFilterLoad{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)

@@ -12,8 +12,7 @@
   "pow_span": 2016,
   "http_port": 9334,
   "addr_prefix": "st",
-  "oid_prefix": "obj",
   "debug": true,
   "seeds":["seed.xginx.com"],
-  "genesis": "00000669bf4c2a6efea5acdc6c2321d966dacc678881294ed41a5e151ee44c11"
+  "genesis": "000012b6aaf951811db89d3041b35f41a1491f8264d862ff2dc650a5b340dc7c"
 }

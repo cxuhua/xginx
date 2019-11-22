@@ -3,6 +3,7 @@ package xginx
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 const (
@@ -34,6 +35,12 @@ func (a *Amount) Decode(r IReader) error {
 		return errors.New("amount range error")
 	}
 	return nil
+}
+
+func (a Amount) String() string {
+	n := a / COIN
+	x := a % COIN
+	return fmt.Sprintf("%d.%d", n, x)
 }
 
 func (a Amount) Bytes() []byte {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	. "github.com/cxuhua/xginx"
 )
 
@@ -21,6 +23,10 @@ func newListener(wdir string) IListener {
 	return &listener{
 		wallet: w,
 	}
+}
+
+func (lis *listener) OnInitHttp(m *gin.Engine) {
+
 }
 
 func (lis *listener) OnClose(bi *BlockIndex) {
@@ -67,6 +73,7 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 func (lis *listener) OnStartup() {
+	//lis.wallet.SetAdminInfo("admin", "123456", 0)
 	//获取并设置矿工账号
 	acc, err := lis.wallet.GetMiner()
 	if err != nil {

@@ -60,7 +60,7 @@ func NewAddrMap() *AddrMap {
 }
 
 type IServer interface {
-	Start(ctx context.Context)
+	Start(ctx context.Context, lis IListener)
 	Stop()
 	Wait()
 	NewClient() *Client
@@ -91,7 +91,7 @@ func (s *server) Stop() {
 	s.ser.Stop()
 }
 
-func (s *server) Start(ctx context.Context) {
+func (s *server) Start(ctx context.Context, lis IListener) {
 	ser, err := NewTcpServer(ctx, conf)
 	if err != nil {
 		panic(err)
@@ -101,7 +101,6 @@ func (s *server) Start(ctx context.Context) {
 }
 
 type TcpServer struct {
-	service uint32
 	lis     net.Listener
 	addr    *net.TCPAddr
 	ctx     context.Context
@@ -219,7 +218,7 @@ func (s *TcpServer) NewClient() *Client {
 	c.rc = make(chan MsgIO, 4)
 	c.ptimer = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
 	c.vtimer = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
-	c.bloom = NewBloomFilter()
+	c.vmap = &sync.Map{}
 	return c
 }
 
@@ -227,10 +226,6 @@ func (s *TcpServer) ConnNum() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.clients)
-}
-
-func (s *TcpServer) Service() uint32 {
-	return s.service
 }
 
 //开始连接一个地址
@@ -300,8 +295,21 @@ func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
 	return txp.PushBack(tx)
 }
 
-//获取一个连接的主节点区块高度>=h
-func (s *TcpServer) findClient(h uint32) *Client {
+//获取一个可以获取此区块头数据的连接
+func (s *TcpServer) findHeaderClient(h uint32) *Client {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, c := range s.clients {
+		if c.Height.HH < h {
+			continue
+		}
+		return c
+	}
+	return nil
+}
+
+//获取一个可以获取此区块数据的连接
+func (s *TcpServer) findBlockClient(h uint32) *Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.clients {
@@ -342,7 +350,7 @@ func (s *TcpServer) reqMsgGetBlock() error {
 		return nil
 	} else if ele, err := bi.GetNextSync(); err != nil {
 		return err
-	} else if c := s.findClient(ele.Height); c == nil {
+	} else if c := s.findBlockClient(ele.Height); c == nil {
 		return errors.New("find client error")
 	} else if id, err := ele.ID(); err != nil {
 		return err
@@ -401,7 +409,9 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 		}
 	}
 	//请求下一批区块头
-	c.ReqBlockHeaders(bi, msg.Height.HH)
+	if cc := s.findHeaderClient(msg.Height.HH); cc != nil {
+		cc.ReqBlockHeaders(bi, msg.Height.HH)
+	}
 	return nil
 }
 
@@ -516,7 +526,6 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.lis = lis
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[uint64]*Client{}
-	s.service = SERVICE_NODE
 	s.addrs = NewAddrMap()
 	return s, nil
 }
