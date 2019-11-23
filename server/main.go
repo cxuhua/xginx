@@ -12,17 +12,43 @@ import (
 )
 
 var (
-	conffile = flag.String("conf", "v10000.json", "config file name")
+	cfile  = flag.String("conf", "v10000.json", "config file name")
+	isinit = flag.Bool("init", false, "init admin info")
 )
+
+func initdb(conf *Config) {
+	wallet, err := NewLevelDBWallet(conf.WalletDir)
+	if err != nil {
+		panic(err)
+	}
+	err = wallet.SetAdminInfo("admin", "xh0714", 0)
+	if err != nil {
+		panic(err)
+	}
+	LogInfo("inited admin info")
+	addr, err := wallet.NewAccount(3, 2, false)
+	if err != nil {
+		panic(err)
+	}
+	err = wallet.SetMiner(addr)
+	if err != nil {
+		panic(err)
+	}
+	LogInfo("inited miner account", addr)
+	wallet.Close()
+}
 
 func main() {
 	flag.Parse()
-	if *conffile == "" {
+	if *cfile == "" {
 		panic("config file miss")
 	}
-	conf := InitConfig(*conffile)
+	conf := InitConfig(*cfile)
 	defer conf.Close()
-
+	if *isinit {
+		initdb(conf)
+		return
+	}
 	pubsub := GetPubSub()
 	defer pubsub.Shutdown()
 

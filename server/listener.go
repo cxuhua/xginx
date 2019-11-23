@@ -73,28 +73,19 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 }
 
 func (lis *listener) OnStartup() {
-	lis.wallet.SetAdminInfo("admin", "xh0714XH?", 0)
-	//获取并设置矿工账号
-	//acc, err := lis.wallet.GetMiner()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//addr, err := acc.GetAddress()
-	//if err != nil {
-	//	panic(err)
-	//}
-	//LogInfo("miner address = ", addr)
-	//err = Miner.SetMiner(acc)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//测试挖一个矿
-
-	//ps := GetPubSub()
-	//ps.Pub(MinerAct{
-	//	Opt: OptGenBlock,
-	//	Arg: uint32(1),
-	//}, NewMinerActTopic)
+	acc, err := lis.wallet.GetMiner()
+	if err != nil {
+		panic(err)
+	}
+	addr, err := acc.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	LogInfo("miner address = ", addr)
+	err = Miner.SetMiner(acc)
+	if err != nil {
+		panic(err)
+	}
 }
 
 //完成区块
