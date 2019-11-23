@@ -80,6 +80,7 @@ type IServer interface {
 	BroadMsg(m MsgIO, skips ...*Client)
 	DoOpt(opt int)
 	Clients() []*Client
+	Addrs() []*AddrNode
 }
 
 var (
@@ -92,6 +93,16 @@ type server struct {
 
 func (s *server) DoOpt(opt int) {
 	s.ser.dopt <- opt
+}
+
+func (s *server) Addrs() []*AddrNode {
+	s.ser.addrs.mu.RLock()
+	s.ser.addrs.mu.RUnlock()
+	ds := []*AddrNode{}
+	for _, v := range s.ser.addrs.addrs {
+		ds = append(ds, v)
+	}
+	return ds
 }
 
 func (s *server) Clients() []*Client {

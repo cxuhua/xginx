@@ -23,7 +23,7 @@ func initdb(conf *Config) {
 	if err != nil {
 		panic(err)
 	}
-	err = wallet.SetAdminInfo(*user, *pass, 0)
+	err = wallet.InitAdminInfo(*user, *pass, 0)
 	if err != nil {
 		panic(err)
 	}

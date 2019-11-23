@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"bytes"
 	"errors"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -42,9 +43,11 @@ type IWallet interface {
 	//获取矿工账号
 	GetMiner() (*Account, error)
 	//初始化管理密码
-	SetAdminInfo(user string, pass string, flags uint32) error
+	InitAdminInfo(user string, pass string, flags uint32) error
 	//获取管理员密码hash
 	GetAdminInfo(user string) ([]byte, uint32, error)
+	//设置用户密码和标记
+	SetAdminInfo(user string, oldpass string, newpass string, flags uint32) error
 }
 
 type LevelDBWallet struct {
@@ -53,7 +56,24 @@ type LevelDBWallet struct {
 }
 
 //初始化管理员密码只能设置一次
-func (db *LevelDBWallet) SetAdminInfo(user string, pass string, flags uint32) error {
+func (db *LevelDBWallet) SetAdminInfo(user string, oldpass string, newpass string, flags uint32) error {
+	if user == "" || oldpass == "" || newpass == "" {
+		return errors.New("user or oldpass or newpass error")
+	}
+	if opv, _, err := db.GetAdminInfo(user); err != nil {
+		return errors.New(user + " user not exists")
+	} else if !bytes.Equal(opv, Hash256([]byte(oldpass))) {
+		return errors.New("old pass error")
+	}
+	b4 := []byte{0, 0, 0, 0}
+	Endian.PutUint32(b4, flags)
+	hv := Hash256([]byte(newpass))
+	hv = append(hv, b4...)
+	return db.dptr.Put(AdminPrefix, []byte(user), hv)
+}
+
+//初始化管理员密码只能设置一次
+func (db *LevelDBWallet) InitAdminInfo(user string, pass string, flags uint32) error {
 	if user == "" || pass == "" {
 		return errors.New("user or pass error")
 	}

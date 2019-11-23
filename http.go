@@ -154,10 +154,14 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.POST("/new/block", newBlockApi)
 	//转账
 	mgr.POST("/transfer", transferFee)
+	//更换管理员密码
+	mgr.POST("/update/pass", updateUserPass)
 	//数据浏览接口
 	v1 := m.Group("v1")
 	//获取链接列表
 	v1.GET("/list/conn", listClients)
+	//获取地址列表
+	v1.GET("/list/addr", listAddrs)
 	//获取状态
 	v1.GET("/state", getStatusApi)
 	//获取区块信息

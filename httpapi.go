@@ -10,6 +10,46 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//修改管理员密码
+func updateUserPass(c *gin.Context) {
+	args := struct {
+		User    string `form:"user"`    //用户名
+		OldPass string `form:"oldpass"` //旧密码
+		NewPass string `form:"newpass"` //新密码
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	db := ApiGetDB(c)
+	wallet := db.lis.GetWallet()
+	_, opv, err := wallet.GetAdminInfo(args.User)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	err = wallet.SetAdminInfo(args.User, args.OldPass, args.NewPass, opv)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 102,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	token := c.GetHeader("X-Access-Token")
+	db.xhp.cache.Delete(token)
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  "OK",
+	})
+}
+
 //获取一个地址的余额
 func listCoins(c *gin.Context) {
 	addr := c.Param("addr")
@@ -353,6 +393,26 @@ func getTxInfoApi(c *gin.Context) {
 		xv.Outs = append(xv.Outs, xvo)
 	}
 	c.JSON(http.StatusOK, xv)
+}
+
+func listAddrs(c *gin.Context) {
+	type item struct {
+		Ip   string `json:"ip"`
+		Port int    `json:"port"`
+	}
+	type result struct {
+		Code  int    `json:"code"`
+		Addrs []item `json:"addrs"`
+	}
+	ds := Server.Addrs()
+	res := result{Addrs: []item{}}
+	for _, v := range ds {
+		i := item{}
+		i.Ip = v.addr.ip.String()
+		i.Port = int(v.addr.port)
+		res.Addrs = append(res.Addrs, i)
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 func listClients(c *gin.Context) {
