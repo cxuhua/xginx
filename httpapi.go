@@ -371,7 +371,7 @@ func listClients(c *gin.Context) {
 		Code int    `json:"code"`
 		Ips  []item `json:"Ips"`
 	}
-	res := result{}
+	res := result{Ips: []item{}}
 	cs := Server.Clients()
 	for _, v := range cs {
 		i := item{}
