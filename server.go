@@ -543,6 +543,9 @@ func (s *TcpServer) loadSeedIp() {
 			if !addr.IsGlobalUnicast() {
 				continue
 			}
+			if addr.Equal(conf.GetNetAddr()) {
+				continue
+			}
 			s.addrs.Set(addr)
 			lipc++
 		}
