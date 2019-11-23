@@ -9,8 +9,6 @@
 *.so
 *.dylib
 
-v10000.json
-
 # Test binary, build with `go test -c`
 *.test
 
