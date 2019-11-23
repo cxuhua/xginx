@@ -22,6 +22,8 @@ const (
 	NetMsgTxTopic = "NetMsgTx"
 	//收到区块
 	NetMsgBlockTopic = "NetMsgBlock"
+	//创建了新的交易进入了交易池
+	NewTxTopic = "NewTx"
 )
 
 type AddrNode struct {
@@ -30,6 +32,17 @@ type AddrNode struct {
 	openTime  time.Time //打开时间
 	closeTime time.Time //关闭时间
 	lastTime  time.Time //最后链接时间
+}
+
+//是否需要连接
+func (node AddrNode) IsNeedConn() bool {
+	if !node.addr.IsGlobalUnicast() {
+		return false
+	}
+	if time.Now().Sub(node.lastTime) > time.Minute*10 {
+		return true
+	}
+	return false
 }
 
 type AddrMap struct {
@@ -65,6 +78,7 @@ type IServer interface {
 	Wait()
 	NewClient() *Client
 	BroadMsg(m MsgIO, skips ...*Client)
+	DoOpt(opt int)
 }
 
 var (
@@ -73,6 +87,10 @@ var (
 
 type server struct {
 	ser *TcpServer
+}
+
+func (s *server) DoOpt(opt int) {
+	s.ser.dopt <- opt
 }
 
 func (s *server) BroadMsg(m MsgIO, skips ...*Client) {
@@ -111,6 +129,7 @@ type TcpServer struct {
 	clients map[uint64]*Client //连接的所有client
 	addrs   *AddrMap
 	single  sync.Mutex
+	dopt    chan int //获取线程做一些操作
 }
 
 //地址是否打开
@@ -289,6 +308,7 @@ func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
 	if txp.Has(id) {
 		return nil
 	}
+	LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	//广播到周围节点,不包括c
 	s.BroadMsg(NewMsgTx(tx), c)
 	//放入交易池
@@ -423,6 +443,9 @@ func (s *TcpServer) tryConnect() {
 		if s.HasAddr(v.addr) {
 			continue
 		}
+		if !v.IsNeedConn() {
+			continue
+		}
 		c := s.NewClient()
 		err := c.Open(v.addr)
 		if err != nil {
@@ -441,6 +464,13 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 	defer s.recoverError()
 	for {
 		select {
+		case opt := <-s.dopt:
+			switch opt {
+			case 1:
+				s.loadSeedIp()
+			case 2:
+				LogInfo(opt)
+			}
 		case <-s.ctx.Done():
 			err := s.lis.Close()
 			if err != nil {
@@ -448,6 +478,11 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			}
 			return
 		case cv := <-ch:
+			if tx, ok := cv.(*TX); ok {
+				//广播交易
+				s.BroadMsg(NewMsgTx(tx))
+				break
+			}
 			m, ok := cv.(*ClientMsg)
 			if !ok {
 				break
@@ -492,15 +527,39 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 	}
 }
 
+//加载seed域名ip地址
+func (s *TcpServer) loadSeedIp() {
+	lipc := 0
+	for _, v := range conf.Seeds {
+		ips, err := net.LookupIP(v)
+		if err != nil {
+			continue
+		}
+		for _, ip := range ips {
+			addr := NetAddr{
+				ip:   ip,
+				port: uint16(conf.TcpPort), //使用默认端口
+			}
+			if !addr.IsGlobalUnicast() {
+				continue
+			}
+			s.addrs.Set(addr)
+			lipc++
+		}
+	}
+	LogInfo("load seed ip", lipc)
+}
+
 func (s *TcpServer) run() {
 	LogInfo(s.addr.Network(), "server startup", s.addr)
 	defer s.recoverError()
-	ch := GetPubSub().Sub(NetMsgTopic)
+	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
 	pt := time.NewTimer(time.Second)
 	dt := time.NewTimer(time.Second)
 	for i := 0; i < 4; i++ {
 		go s.dispatch(i, ch, pt, dt)
 	}
+	s.dopt <- 1 //load seed ip
 	for {
 		conn, err := s.lis.Accept()
 		if err != nil {
@@ -527,5 +586,6 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
+	s.dopt = make(chan int, 10)
 	return s, nil
 }

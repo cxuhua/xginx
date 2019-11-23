@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -10,8 +11,16 @@ import (
 	. "github.com/cxuhua/xginx"
 )
 
+var (
+	conffile = flag.String("conf", "v10000.json", "config file name")
+)
+
 func main() {
-	conf := InitConfig("v10000.json")
+	flag.Parse()
+	if *conffile == "" {
+		panic("config file miss")
+	}
+	conf := InitConfig(*conffile)
 	defer conf.Close()
 
 	pubsub := GetPubSub()

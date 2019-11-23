@@ -13,14 +13,15 @@ var (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
 )
 
-//方法同时只能被一个线程执行
-type ONE int32
+//防止被多个线程同时执行
 
-func (f *ONE) IsRunning() bool {
+type ONCE int32
+
+func (f *ONCE) IsRunning() bool {
 	return atomic.CompareAndSwapInt32((*int32)(f), 1, 1)
 }
 
-func (f *ONE) Running() bool {
+func (f *ONCE) Running() bool {
 	if f.IsRunning() {
 		return false
 	} else {
@@ -29,7 +30,7 @@ func (f *ONE) Running() bool {
 	}
 }
 
-func (f *ONE) Reset() {
+func (f *ONCE) Reset() {
 	atomic.AddInt32((*int32)(f), -1)
 }
 

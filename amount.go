@@ -4,11 +4,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 const (
-	COIN      = Amount(100000000)
-	MAX_MONEY = 21000000 * COIN
+	COIN      = Amount(100_000_000)
+	MAX_MONEY = 21_000_000 * COIN
 )
 
 //结算当前奖励
@@ -37,10 +38,35 @@ func (a *Amount) Decode(r IReader) error {
 	return nil
 }
 
+//解析金额
+func ParseMoney(str string) (Amount, error) {
+	f, err := strconv.ParseFloat(str, 64)
+	if err != nil {
+		return 0, err
+	}
+	a := Amount(f * float64(COIN))
+	return a, nil
+}
+
 func (a Amount) String() string {
+	abs := int64(a)
+	if abs < 0 {
+		abs = -abs
+	}
 	n := a / COIN
 	x := a % COIN
-	return fmt.Sprintf("%d.%d", n, x)
+	str := fmt.Sprintf("%d.%08d", n, x)
+	trim := 0
+	for i := len(str) - 1; str[i] == '0' && str[i-1] != '.'; i-- {
+		trim++
+	}
+	if trim > 0 {
+		str = str[:len(str)-trim]
+	}
+	if a < 0 {
+		return "-" + str
+	}
+	return str
 }
 
 func (a Amount) Bytes() []byte {

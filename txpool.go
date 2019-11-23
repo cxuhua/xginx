@@ -110,14 +110,14 @@ func (p *TxPool) FindCoin(coin *CoinKeyValue) (*TX, error) {
 
 //交易池是否存在交易
 func (p *TxPool) Has(id HASH256) bool {
-	p.mu.RUnlock()
+	p.mu.RLock()
 	defer p.mu.RUnlock()
 	_, has := p.tmap[id]
 	return has
 }
 
 func (p *TxPool) Get(id HASH256) (*TX, error) {
-	p.mu.RUnlock()
+	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if ele, has := p.tmap[id]; has {
 		return ele.Value.(*TX), nil
@@ -126,7 +126,7 @@ func (p *TxPool) Get(id HASH256) (*TX, error) {
 }
 
 func (p *TxPool) Len() int {
-	p.mu.RUnlock()
+	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.tlis.Len()
 }

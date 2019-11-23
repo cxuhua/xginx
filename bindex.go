@@ -608,7 +608,7 @@ func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 
 //转账交易
 //从acc账号转向addr地址 金额:amt，交易费:fee
-func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount) (*TX, error) {
+func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount, ext ...[]byte) (*TX, error) {
 	if !fee.IsRange() || amt == 0 || !amt.IsRange() {
 		return nil, errors.New("amount zero or fee error")
 	}
@@ -639,10 +639,10 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	//获取需要的输入
 	tx.Ins = []*TxIn{}
 	for _, cv := range ds {
-		//看是否在之前就已经消费
-		ctv, err := bi.txp.FindCoin(cv)
+		//看是否在之前就已经消费已经消费直接跳过
+		_, err := bi.txp.FindCoin(cv)
 		if err == nil {
-			return nil, fmt.Errorf("coin cost at txpool id= %v", ctv)
+			continue
 		}
 		in, err := cv.NewTxIn(acc)
 		if err != nil {
@@ -657,7 +657,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	//创建目标输出
 	out := &TxOut{}
 	out.Value = amt
-	if script, err := NewLockedScript(dpkh); err != nil {
+	if script, err := NewLockedScript(dpkh, ext...); err != nil {
 		return nil, err
 	} else {
 		out.Script = script

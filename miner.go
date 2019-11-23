@@ -57,7 +57,7 @@ type minerEngine struct {
 	cancel context.CancelFunc //
 	acc    *Account
 	mu     sync.RWMutex
-	single sync.Mutex
+	ogb    ONCE
 }
 
 func newMinerEngine() IMiner {
@@ -82,8 +82,10 @@ func (m *minerEngine) SetMiner(acc *Account) error {
 
 //创建一个区块
 func (m *minerEngine) genNewBlock(ver uint32) error {
-	m.single.Lock()
-	defer m.single.Unlock()
+	if !m.ogb.Running() {
+		return errors.New("gening block")
+	}
+	defer m.ogb.Reset()
 	ps := GetPubSub()
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(ver)

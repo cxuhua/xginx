@@ -54,7 +54,7 @@ func NewApiDB(db *apidb) gin.HandlerFunc {
 	}
 }
 
-type ApiErrResult struct {
+type ApiResult struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 }
@@ -74,7 +74,7 @@ func loginApi(c *gin.Context) {
 		Pass string `form:"pass"`
 	}{}
 	if err := c.ShouldBind(&args); err != nil {
-		c.JSON(http.StatusOK, ApiErrResult{
+		c.JSON(http.StatusOK, ApiResult{
 			Code: 100,
 			Msg:  err.Error(),
 		})
@@ -84,7 +84,7 @@ func loginApi(c *gin.Context) {
 	wallet := db.lis.GetWallet()
 	hv, flags, err := wallet.GetAdminInfo(args.User)
 	if err != nil {
-		c.JSON(http.StatusOK, ApiErrResult{
+		c.JSON(http.StatusOK, ApiResult{
 			Code: 101,
 			Msg:  err.Error(),
 		})
@@ -92,7 +92,7 @@ func loginApi(c *gin.Context) {
 	}
 	lv := Hash256([]byte(args.Pass))
 	if !bytes.Equal(lv, hv) {
-		c.JSON(http.StatusOK, ApiErrResult{
+		c.JSON(http.StatusOK, ApiResult{
 			Code: 102,
 			Msg:  "password error",
 		})
@@ -100,7 +100,7 @@ func loginApi(c *gin.Context) {
 	}
 	token, err := genToken()
 	if err != nil {
-		c.JSON(http.StatusOK, ApiErrResult{
+		c.JSON(http.StatusOK, ApiResult{
 			Code: 103,
 			Msg:  err.Error(),
 		})
@@ -108,7 +108,7 @@ func loginApi(c *gin.Context) {
 	}
 	key := hex.EncodeToString(token[:])
 	db.xhp.cache.Set(key, flags, time.Minute*30)
-	c.JSON(http.StatusOK, ApiErrResult{
+	c.JSON(http.StatusOK, ApiResult{
 		Code: 0,
 		Msg:  key,
 	})
@@ -152,6 +152,8 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.GET("/get/miner", getMinerApi)
 	//创建一个区块
 	mgr.POST("/new/block", newBlockApi)
+	//转账
+	mgr.POST("/transfer", transferFee)
 	//数据浏览接口
 	v1 := m.Group("v1")
 	v1.GET("/state", getBlockStatusApi)
@@ -159,6 +161,10 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	v1.GET("/block/:id", getBlockInfoApi)
 	//获取交易信息
 	v1.GET("/tx/:id", getTxInfoApi)
+	//获取最新区块列表
+	v1.GET("/list/block", listBestBlock)
+	//获取某地址的余额
+	v1.GET("/coins/:addr", listCoins)
 
 	lis.OnInitHttp(m)
 }

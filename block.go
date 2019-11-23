@@ -308,6 +308,15 @@ func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 	return fee, nil
 }
 
+func (blk *BlockInfo) GetIncome(bi *BlockIndex) (Amount, error) {
+	rfee := GetCoinbaseReward(blk.Meta.Height)
+	fee, err := blk.GetFee(bi)
+	if err != nil {
+		return 0, err
+	}
+	return fee + rfee, nil
+}
+
 //检查所有的交易
 func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	//必须有交易
@@ -883,7 +892,7 @@ func (v *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 }
 
 //检测除coinbase交易外的交易金额
-//csp是否检测输出金额是否已经被使用
+//csp是否检测输出金额是否已经被下消费
 func (v *TX) Check(bi *BlockIndex, csp bool) error {
 	//这里不检测coinbase交易
 	if v.IsCoinBase() {

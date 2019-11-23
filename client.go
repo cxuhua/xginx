@@ -346,7 +346,9 @@ func (c *Client) loop() {
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {
-				panic(fmt.Errorf("read msg error %w", err))
+				LogError("client read error", err)
+				c.cancel()
+				break
 			}
 			c.rc <- m
 		}
