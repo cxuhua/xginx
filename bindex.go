@@ -1120,6 +1120,7 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 			bi.txp.Del(id)
 		}
 	}
+	bi.lptr.OnUpdateBlock(bi, blk)
 	return nil
 }
 
@@ -1175,7 +1176,12 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 		return nil, err
 	}
 	ele := NewTBEle(meta, nexth, bi)
-	return ele, bi.linkback(ele)
+	ele, err = ele, bi.linkback(ele)
+	if err != nil {
+		return nil, err
+	}
+	bi.lptr.OnUpdateHeader(bi, ele)
+	return ele, nil
 }
 
 func (bi *BlockIndex) GetTxPool() *TxPool {

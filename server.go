@@ -79,6 +79,7 @@ type IServer interface {
 	NewClient() *Client
 	BroadMsg(m MsgIO, skips ...*Client)
 	DoOpt(opt int)
+	Clients() []*Client
 }
 
 var (
@@ -91,6 +92,16 @@ type server struct {
 
 func (s *server) DoOpt(opt int) {
 	s.ser.dopt <- opt
+}
+
+func (s *server) Clients() []*Client {
+	cs := []*Client{}
+	s.ser.mu.RLock()
+	defer s.ser.mu.RUnlock()
+	for _, v := range s.ser.clients {
+		cs = append(cs, v)
+	}
+	return cs
 }
 
 func (s *server) BroadMsg(m MsgIO, skips ...*Client) {
@@ -538,7 +549,7 @@ func (s *TcpServer) loadSeedIp() {
 		for _, ip := range ips {
 			addr := NetAddr{
 				ip:   ip,
-				port: uint16(conf.TcpPort), //使用默认端口
+				port: uint16(9333), //使用默认端口
 			}
 			if !addr.IsGlobalUnicast() {
 				continue
@@ -573,7 +584,7 @@ func (s *TcpServer) run() {
 		c := s.NewClientWithConn(conn)
 		c.typ = ClientIn
 		c.isopen = true
-		LogInfo("new connection", conn.RemoteAddr(), " conn num =", s.ConnNum())
+		LogInfo("new connection", conn.RemoteAddr())
 		c.Loop()
 	}
 }

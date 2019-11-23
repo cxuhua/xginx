@@ -25,6 +25,14 @@ func newListener(wdir string) IListener {
 	}
 }
 
+func (lis *listener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
+
+}
+
+func (lis *listener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
+
+}
+
 func (lis *listener) OnInitHttp(m *gin.Engine) {
 
 }
@@ -35,10 +43,6 @@ func (lis *listener) OnClose(bi *BlockIndex) {
 
 func (lis *listener) GetWallet() IWallet {
 	return lis.wallet
-}
-
-func (lis *listener) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
-
 }
 
 //当块创建完毕

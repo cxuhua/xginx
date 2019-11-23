@@ -10,15 +10,6 @@ import (
 	. "github.com/cxuhua/xginx"
 )
 
-func connect() {
-	c := Server.NewClient()
-	addr := NetAddrForm("192.168.31.178:9333")
-	err := c.Open(addr)
-	if err == nil {
-		c.Loop()
-	}
-}
-
 func main() {
 	conf := InitConfig("v10000.json")
 	defer conf.Close()
@@ -31,8 +22,6 @@ func main() {
 	bi := InitBlockIndex(lis)
 	defer bi.Close()
 
-	//bi.UnlinkLast()
-
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -40,8 +29,6 @@ func main() {
 	//是否启动tcp节点服务器
 	if Server != nil {
 		Server.Start(ctx, lis)
-		time.Sleep(time.Second)
-		connect()
 	}
 	//是否启动矿工
 	if Miner != nil {
@@ -60,10 +47,17 @@ func main() {
 	LogInfo("recv sig :", sig, ",system exited")
 	if Server != nil {
 		Server.Stop()
+		LogInfo("wait server stop")
 		Server.Wait()
 	}
 	if Miner != nil {
 		Miner.Stop()
+		LogInfo("wait miner stop")
 		Miner.Wait()
+	}
+	if Http != nil {
+		Http.Stop()
+		LogInfo("wait http stop")
+		Http.Wait()
 	}
 }

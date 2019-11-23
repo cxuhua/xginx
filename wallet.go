@@ -54,6 +54,12 @@ type LevelDBWallet struct {
 
 //初始化管理员密码只能设置一次
 func (db *LevelDBWallet) SetAdminInfo(user string, pass string, flags uint32) error {
+	if user == "" || pass == "" {
+		return errors.New("user or pass error")
+	}
+	if _, _, err := db.GetAdminInfo(user); err == nil {
+		return errors.New(user + " user exists")
+	}
 	b4 := []byte{0, 0, 0, 0}
 	Endian.PutUint32(b4, flags)
 	hv := Hash256([]byte(pass))

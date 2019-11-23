@@ -248,6 +248,9 @@ func (c *Client) processMsg(m MsgIO) error {
 		if c.IsIn() {
 			rsg := bi.NewMsgVersion()
 			c.SendMsg(rsg)
+			//返回本节点的地址列表
+			asg := c.ss.NewMsgAddrs(c)
+			c.SendMsg(asg)
 		}
 		//连出的判断区块高度
 		if c.IsOut() {

@@ -13,6 +13,8 @@ import (
 
 var (
 	cfile  = flag.String("conf", "v10000.json", "config file name")
+	user   = flag.String("user", "", "admin user")
+	pass   = flag.String("pass", "", "admin pass")
 	isinit = flag.Bool("init", false, "init admin info")
 )
 
@@ -21,7 +23,7 @@ func initdb(conf *Config) {
 	if err != nil {
 		panic(err)
 	}
-	err = wallet.SetAdminInfo("admin", "xh0714", 0)
+	err = wallet.SetAdminInfo(*user, *pass, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -95,10 +97,17 @@ func main() {
 	LogInfo("recv sig :", sig, ",system exited")
 	if Server != nil {
 		Server.Stop()
+		LogInfo("wait server stop")
 		Server.Wait()
 	}
 	if Miner != nil {
 		Miner.Stop()
+		LogInfo("wait miner stop")
 		Miner.Wait()
+	}
+	if Http != nil {
+		Http.Stop()
+		LogInfo("wait http stop")
+		Http.Wait()
 	}
 }

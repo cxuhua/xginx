@@ -51,7 +51,12 @@ func (lis *tlis) OnInitHttp(m *gin.Engine) {
 
 }
 
-func (lis *tlis) OnLinkBlock(bi *BlockIndex, blk *BlockInfo) {
+func (lis *tlis) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
+
+}
+
+func (lis *tlis) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
+
 }
 
 func (lis *tlis) OnStartup() {

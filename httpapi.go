@@ -283,30 +283,133 @@ func getBlockInfoApi(c *gin.Context) {
 }
 
 func getTxInfoApi(c *gin.Context) {
+	bi := GetBlockIndex()
+	ids := c.Param("id")
+	id := NewHASH256(ids)
+	tp, err := bi.LoadTX(id)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  ids + " not found",
+		})
+		return
+	}
+	type txin struct {
+		Addr   string `json:"addr,omitempty"`
+		Amount string `json:"amount,omitempty"`
+		Script string `json:"script,omitempty"`
+	}
+	type txout struct {
+		Addr   string `json:"addr"`
+		Amount string `json:"amount"`
+		Script string `json:"script"`
+	}
+	type tx struct {
+		Code     int     `json:"code"`
+		Id       string  `json:"id"`
+		Ins      []txin  `json:"ins"`
+		Outs     []txout `json:"outs"`
+		Coinbase bool    `json:"coinbase"`
+		Confirm  int     `json:"confirm"`
+	}
+	xv := tx{}
+	tid, err := tp.ID()
+	if err != nil {
+		panic(err)
+	}
+	xv.Id = tid.String()
+	xv.Coinbase = tp.IsCoinBase()
+	xv.Ins = []txin{}
+	xv.Outs = []txout{}
+	xv.Confirm = bi.GetTxConfirm(tid)
+	for _, iv := range tp.Ins {
+		xvi := txin{}
+		xvi.Script = hex.EncodeToString(iv.Script)
+		if iv.IsCoinBase() {
+			xv.Ins = append(xv.Ins, xvi)
+			continue
+		}
+		ov, err := iv.LoadTxOut(bi)
+		if err != nil {
+			panic(err)
+		}
+		xvi.Amount = ov.Value.String()
+		addr, err := ov.Script.GetAddress()
+		if err != nil {
+			panic(err)
+		}
+		xvi.Addr = string(addr)
+		xv.Ins = append(xv.Ins, xvi)
+	}
+	for _, ov := range tp.Outs {
+		xvo := txout{}
+		xvo.Amount = ov.Value.String()
+		addr, err := ov.Script.GetAddress()
+		if err != nil {
+			panic(err)
+		}
+		xvo.Addr = string(addr)
+		xvo.Script = hex.EncodeToString(ov.Script)
+		xv.Outs = append(xv.Outs, xvo)
+	}
+	c.JSON(http.StatusOK, xv)
+}
 
+func listClients(c *gin.Context) {
+	type item struct {
+		Ip      string `json:"ip"`
+		Port    int    `json:"port"`
+		Ver     uint32 `json:"ver"`
+		Service uint32 `json:"service"`
+		Ping    int    `json:"ping"`
+		Id      string `json:"id"`
+		Type    int    `json:"type"`
+		BH      uint32 `json:"bh"`
+		HH      uint32 `json:"hh"`
+	}
+	type result struct {
+		Code int    `json:"code"`
+		Ips  []item `json:"Ips"`
+	}
+	res := result{}
+	cs := Server.Clients()
+	for _, v := range cs {
+		i := item{}
+		i.Ip = v.Addr.ip.String()
+		i.Port = int(v.Addr.port)
+		i.Ver = v.Ver
+		i.Service = v.Service
+		i.Ping = v.ping
+		i.Id = fmt.Sprintf("%x", v.id)
+		i.Type = v.typ
+		i.BH = v.Height.BH
+		i.HH = v.Height.HH
+		res.Ips = append(res.Ips, i)
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 //获取区块状态
-func getBlockStatusApi(c *gin.Context) {
+func getStatusApi(c *gin.Context) {
 	type state struct {
-		Code   int    `json:"code"`
-		Best   string `json:"best"`  //最高块id
-		BH     uint32 `json:"bh"`    //区块高度
-		Last   string `json:"last"`  //最新块头
-		HH     uint32 `json:"hh"`    //区块头高度
-		Cache  int    `json:"cache"` //缓存大小
-		TxPool int    `json:"tps"`   //交易池子交易数量
+		Code  int    `json:"code"`
+		BI    string `json:"bi"`    //最高块id
+		BH    uint32 `json:"bh"`    //区块高度
+		LI    string `json:"li"`    //最新块头
+		HH    uint32 `json:"hh"`    //区块头高度
+		Cache int    `json:"cache"` //缓存使用大小
+		Tps   int    `json:"tps"`   //交易池子交易数量
 	}
 	s := state{}
 	bi := GetBlockIndex()
 	bv := bi.GetBestValue()
 	lv := bi.GetLastValue()
-	s.Best = bv.Id.String()
+	s.BI = bv.Id.String()
 	s.BH = bv.Height
-	s.Last = lv.Id.String()
+	s.LI = lv.Id.String()
 	s.HH = lv.Height
 	s.Cache = bi.lru.Size()
-	s.TxPool = bi.GetTxPool().Len()
+	s.Tps = bi.GetTxPool().Len()
 	c.JSON(http.StatusOK, s)
 }
 
