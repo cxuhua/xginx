@@ -570,7 +570,7 @@ func (s *TcpServer) run() {
 		c := s.NewClientWithConn(conn)
 		c.typ = ClientIn
 		c.isopen = true
-		LogInfo("new connection", conn.RemoteAddr())
+		LogInfo("new connection", conn.RemoteAddr(), " conn num =", s.ConnNum())
 		c.Loop()
 	}
 }
