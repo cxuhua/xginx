@@ -13,7 +13,7 @@ import (
 )
 
 func TestOne(t *testing.T) {
-	var f ONE
+	var f ONCE
 
 	fn := func(i int) {
 		if !f.Running() {
