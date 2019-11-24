@@ -33,7 +33,6 @@ func TestOne(t *testing.T) {
 }
 
 func TestCompressAmount(t *testing.T) {
-	log.Println(CompressUInt(1000001))
 	for i := 0; i < 1000; i++ {
 		v := uint64(0)
 		binary.Read(rand.Reader, binary.LittleEndian, &v)
