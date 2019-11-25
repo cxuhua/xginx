@@ -165,7 +165,7 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	v1 := m.Group("v1")
 	//获取链接列表
 	v1.GET("/list/conn", listClients)
-	//获取地址列表
+	//获取连接地址列表
 	v1.GET("/list/addr", listAddrs)
 	//获取状态
 	v1.GET("/state", getStatusApi)

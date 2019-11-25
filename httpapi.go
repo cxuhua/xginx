@@ -755,8 +755,9 @@ func listAddressApi(c *gin.Context) {
 		return
 	}
 	type item struct {
-		Addr string `json:"addr"`
-		Type string `json:"type"`
+		Addr   string `json:"addr"`
+		Type   string `json:"type"`
+		HasPri bool   `json:"haspri"`
 	}
 	type result struct {
 		Code  int    `json:"code"`
@@ -771,6 +772,7 @@ func listAddressApi(c *gin.Context) {
 			panic(err)
 		}
 		i.Type = acc.String()
+		i.HasPri = acc.HasPrivate()
 		res.Addrs = append(res.Addrs, i)
 	}
 	c.JSON(http.StatusOK, res)
