@@ -43,10 +43,14 @@ func (ap Account) HasPrivate() bool {
 
 //根据公钥索引获取私钥
 func (ap Account) GetPrivateKey(pi int) *PrivateKey {
+	if pi < 0 || pi >= len(ap.pubs) {
+		return nil
+	}
 	pkh := ap.pubs[pi].Hash()
 	return ap.pris[pkh]
 }
 
+//是否启用仲裁
 func (ap Account) IsEnableArb() bool {
 	return ap.arb != InvalidArb
 }

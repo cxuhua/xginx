@@ -143,10 +143,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		if j%times == 0 {
 			l++
 			j = 0
-			LogInfof("gen new block %d*%d times, bits=%08x id=%v nonce=%08x height=%06d", l, times, blk.Meta.Bits, id, i, blk.Meta.Height)
+			LogInfof("gen new block %d*%d times, bits=%08x id=%v time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Meta.Bits, id, blk.Header.Time, i, blk.Meta.Height, len(txs))
 		}
 		//重新设置时间和随机数
 		if i >= ^uint32(0) {
+			blk.Header.Time = uint32(time.Now().Unix())
 			hb.SetTime(time.Now())
 			i = UR32()
 		}

@@ -331,11 +331,12 @@ func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
 	if txp.Has(id) {
 		return nil
 	}
-	LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	//广播到周围节点,不包括c
 	s.BroadMsg(NewMsgTx(tx), c)
 	//放入交易池
-	return txp.PushBack(tx)
+	err = txp.PushBack(tx)
+	LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
+	return err
 }
 
 //获取一个可以获取此区块头数据的连接
