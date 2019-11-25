@@ -140,7 +140,7 @@ func isLoginApi(c *gin.Context) {
 func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	m.Use(NewApiDB(&apidb{lis: lis, xhp: h}))
 	//登陆钱包
-	m.POST("/login", loginApi)
+	m.POST("/mgr/login", loginApi)
 	//管理接口
 	mgr := m.Group("/mgr", isLoginApi)
 	//获取钱包地址列表
