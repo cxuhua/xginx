@@ -542,11 +542,11 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	if bi.Len() == 0 {
 		return nil
 	}
-	lnum := 50
+	//验证最后6个块
+	lnum := 6
 	if lnum > bi.Len() {
 		lnum = bi.Len()
 	}
-	//验证最后6个块
 	LogInfof("verify last %d block start", lnum)
 	for iter, i := bi.NewIter(), 0; iter.Prev() && i < lnum; i++ {
 		ele := iter.Curr()

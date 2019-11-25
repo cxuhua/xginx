@@ -110,11 +110,12 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return err
 	}
 	hb := blk.Header.Bytes()
+	//次数
 	times := uint32(opt.MiB * 10)
 	//当一个新块头，并且比当前区块高时取消当前进度
 	hbc := ps.Sub(NewLinkHeaderTopic)
 	defer ps.Unsub(hbc)
-	for i, j := UR32(), uint32(0); ; i++ {
+	for i, j, l := UR32(), uint32(0), 0; ; i++ {
 		select {
 		case <-m.ctx.Done():
 			return m.ctx.Err()
@@ -140,9 +141,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			break
 		}
 		if j%times == 0 {
-			LogInfof("gen new block %d times, bits=%08x id=%v nonce=%08x height=%06d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
+			l++
 			j = 0
+			LogInfof("gen new block %d*%d times, bits=%08x id=%v nonce=%08x height=%06d", l, times, blk.Meta.Bits, id, i, blk.Meta.Height)
 		}
+		//重新设置时间和随机数
 		if i >= ^uint32(0) {
 			hb.SetTime(time.Now())
 			i = UR32()
@@ -150,10 +153,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if _, err := bi.LinkHeader(blk.Header); err != nil {
+		LogError("link new block header error", err)
 		return err
 	}
 	if err = bi.UpdateBlk(blk); err != nil {
-		LogError("update blk error unlink", err)
+		LogError("update new block error unlink", err)
 		return bi.UnlinkLast()
 	}
 	//广播更新了区块数据

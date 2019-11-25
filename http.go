@@ -156,6 +156,11 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.POST("/transfer", transferFee)
 	//更换管理员密码
 	mgr.POST("/update/pass", updateUserPass)
+	//导入账号
+	mgr.POST("/import/account", importAccountApi)
+	//导出账号
+	mgr.POST("/export/account", exportAccountApi)
+
 	//数据浏览接口
 	v1 := m.Group("v1")
 	//获取链接列表
@@ -168,6 +173,8 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	v1.GET("/block/:id", getBlockInfoApi)
 	//获取交易信息
 	v1.GET("/tx/:id", getTxInfoApi)
+	//获取未确认的交易
+	v1.GET("/list/txp", listTxPoolApi)
 	//获取最新区块列表
 	v1.GET("/list/block", listBestBlock)
 	//获取某地址的余额

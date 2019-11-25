@@ -12,7 +12,7 @@ func TestLoadDumpAccount(t *testing.T) {
 		t.Error(err)
 		t.FailNow()
 	}
-	s, err := a.Dump()
+	s, err := a.Dump(true)
 	if err != nil {
 		t.Error(err)
 		t.FailNow()

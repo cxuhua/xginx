@@ -65,6 +65,19 @@ func (p *TxPool) DelTxs(txs []*TX) error {
 	return nil
 }
 
+//获取所有的tx
+func (p *TxPool) AllTxs() []*TX {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	txs := []*TX{}
+	//获取用来打包区块的交易
+	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
+		tx := cur.Value.(*TX)
+		txs = append(txs, tx)
+	}
+	return txs
+}
+
 //取出交易，大小不能超过限制
 func (p *TxPool) GetTxs() ([]*TX, error) {
 	p.mu.RLock()

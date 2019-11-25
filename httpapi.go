@@ -10,6 +10,71 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//导入账号
+func importAccountApi(c *gin.Context) {
+	args := struct {
+		Str string `form:"str"` //账号字符串
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	db := ApiGetDB(c)
+	wallet := db.lis.GetWallet()
+	acc, err := wallet.ImportAccount(args.Str)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	addr, err := acc.GetAddress()
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 102,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  string(addr),
+	})
+}
+
+//导出账号
+func exportAccountApi(c *gin.Context) {
+	args := struct {
+		Addr  Address `form:"addr"`  //账号地址
+		IsPri bool    `form:"ispri"` //是否包含私钥
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	db := ApiGetDB(c)
+	wallet := db.lis.GetWallet()
+	str, err := wallet.ExportAccount(args.Addr, args.IsPri)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  str,
+	})
+}
+
 //修改管理员密码
 func updateUserPass(c *gin.Context) {
 	args := struct {
@@ -322,6 +387,76 @@ func getBlockInfoApi(c *gin.Context) {
 	c.JSON(http.StatusOK, b)
 }
 
+func listTxPoolApi(c *gin.Context) {
+	bi := GetBlockIndex()
+	txp := bi.GetTxPool()
+	type txin struct {
+		Addr   string `json:"addr,omitempty"`
+		Amount string `json:"amount,omitempty"`
+		Script string `json:"script,omitempty"`
+	}
+	type txout struct {
+		Addr   string `json:"addr"`
+		Amount string `json:"amount"`
+		Script string `json:"script"`
+	}
+	type tx struct {
+		Id       string  `json:"id"`
+		Ins      []txin  `json:"ins"`
+		Outs     []txout `json:"outs"`
+		Coinbase bool    `json:"coinbase"`
+	}
+	type result struct {
+		Code int  `json:"code"`
+		Txs  []tx `json:"txs"`
+	}
+	res := result{Txs: []tx{}}
+	txs := txp.AllTxs()
+	for _, tv := range txs {
+		tid, err := tv.ID()
+		if err != nil {
+			panic(err)
+		}
+		xv := tx{}
+		xv.Id = tid.String()
+		xv.Coinbase = tv.IsCoinBase()
+		xv.Ins = []txin{}
+		xv.Outs = []txout{}
+		for _, iv := range tv.Ins {
+			xvi := txin{}
+			xvi.Script = hex.EncodeToString(iv.Script)
+			if iv.IsCoinBase() {
+				xv.Ins = append(xv.Ins, xvi)
+				continue
+			}
+			ov, err := iv.LoadTxOut(bi)
+			if err != nil {
+				panic(err)
+			}
+			xvi.Amount = ov.Value.String()
+			addr, err := ov.Script.GetAddress()
+			if err != nil {
+				panic(err)
+			}
+			xvi.Addr = string(addr)
+			xv.Ins = append(xv.Ins, xvi)
+		}
+		for _, ov := range tv.Outs {
+			xvo := txout{}
+			xvo.Amount = ov.Value.String()
+			addr, err := ov.Script.GetAddress()
+			if err != nil {
+				panic(err)
+			}
+			xvo.Addr = string(addr)
+			xvo.Script = hex.EncodeToString(ov.Script)
+			xv.Outs = append(xv.Outs, xvo)
+		}
+		res.Txs = append(res.Txs, xv)
+	}
+	c.JSON(http.StatusOK, res)
+}
+
 func getTxInfoApi(c *gin.Context) {
 	bi := GetBlockIndex()
 	ids := c.Param("id")
@@ -350,7 +485,6 @@ func getTxInfoApi(c *gin.Context) {
 		Ins      []txin  `json:"ins"`
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
-		Confirm  int     `json:"confirm"`
 	}
 	xv := tx{}
 	tid, err := tp.ID()
@@ -361,7 +495,6 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Coinbase = tp.IsCoinBase()
 	xv.Ins = []txin{}
 	xv.Outs = []txout{}
-	xv.Confirm = bi.GetTxConfirm(tid)
 	for _, iv := range tp.Ins {
 		xvi := txin{}
 		xvi.Script = hex.EncodeToString(iv.Script)

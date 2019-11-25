@@ -136,7 +136,7 @@ func (ap *Account) Load(s string) error {
 }
 
 //导出账号信息
-func (ap Account) Dump() (string, error) {
+func (ap Account) Dump(ispri bool) (string, error) {
 	aj := AccountJson{
 		Num:  ap.num,
 		Less: ap.less,
@@ -147,8 +147,10 @@ func (ap Account) Dump() (string, error) {
 	for _, pub := range ap.pubs {
 		aj.Pubs = append(aj.Pubs, pub.Dump())
 	}
-	for _, pri := range ap.pris {
-		aj.Pris = append(aj.Pris, pri.Dump())
+	if ispri && ap.HasPrivate() {
+		for _, pri := range ap.pris {
+			aj.Pris = append(aj.Pris, pri.Dump())
+		}
 	}
 	data, err := json.Marshal(aj)
 	if err != nil {

@@ -34,8 +34,10 @@ type IWallet interface {
 	Close()
 	//新建账号
 	NewAccount(num uint8, less uint8, arb bool) (Address, error)
-	//导入账号 pw != ""添加密码
-	ImportAccount(str string) error
+	//导入账号
+	ImportAccount(str string) (*Account, error)
+	//导出账号 ispri包含私钥
+	ExportAccount(addr Address, ispri bool) (string, error)
 	//获取所有账号
 	ListAccount() ([]Address, error)
 	//删除账号
@@ -134,7 +136,7 @@ func (db *LevelDBWallet) NewAccount(num uint8, less uint8, arb bool) (Address, e
 	if err != nil {
 		return "", err
 	}
-	dump, err := acc.Dump()
+	dump, err := acc.Dump(true)
 	if err != nil {
 		return "", err
 	}
@@ -164,23 +166,33 @@ func (db *LevelDBWallet) GetMiner() (*Account, error) {
 	return db.GetAccount(Address((ab)))
 }
 
+//导出账号
+func (db *LevelDBWallet) ExportAccount(addr Address, ispri bool) (string, error) {
+	acc, err := db.GetAccount(addr)
+	if err != nil {
+		return "", err
+	}
+	return acc.Dump(ispri)
+}
+
 //导入私钥 pw != ""添加密码
-func (db *LevelDBWallet) ImportAccount(str string) error {
+func (db *LevelDBWallet) ImportAccount(str string) (*Account, error) {
 	acc, err := LoadAccount(str)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	addr, err := acc.GetAddress()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	dump, err := acc.Dump()
+	dump, err := acc.Dump(true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	vbs := append([]byte{}, StdPKPrefix...)
 	vbs = append(vbs, []byte(dump)...)
-	return db.dptr.Put(AddrPrefix, []byte(addr), vbs)
+	err = db.dptr.Put(AddrPrefix, []byte(addr), vbs)
+	return acc, err
 }
 
 //根据钱包地址获取私钥
