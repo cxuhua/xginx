@@ -503,6 +503,7 @@ func getTxInfoApi(c *gin.Context) {
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
 		Pool     bool    `json:"pool"`
+		Confirm  int     `json:"confirm"`
 	}
 	xv := tx{}
 	tid, err := tp.ID()
@@ -514,6 +515,9 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Coinbase = tp.IsCoinBase()
 	xv.Ins = []txin{}
 	xv.Outs = []txout{}
+	if !ispool {
+		xv.Confirm = bi.GetTxConfirm(tid)
+	}
 	for _, iv := range tp.Ins {
 		xvi := txin{}
 		xvi.OutTx = iv.OutHash.String()

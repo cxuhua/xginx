@@ -89,8 +89,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
+	txp := bi.GetTxPool()
 	//添加交易
-	txs, err := bi.GetTxPool().GetTxs()
+	txs, err := txp.GetTxs()
 	if err != nil {
 		return err
 	}
@@ -141,6 +142,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			break
 		}
 		if j%times == 0 {
+			//如果当前区块没有交易，收到新的交易重新打包区块
+			if len(txs) == 0 && txp.Len() > 0 {
+				return errors.New("quick gen new block for new txs")
+			}
+			//打印区块挖掘日志信息
 			l++
 			j = 0
 			LogInfof("gen new block %d*%d times, bits=%08x merkle=%v time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Header.Bits, blk.Header.Merkle, blk.Header.Time, i, blk.Meta.Height, len(txs))
