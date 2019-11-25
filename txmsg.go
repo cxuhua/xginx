@@ -1,5 +1,9 @@
 package xginx
 
+//获取交易验证merkle树
+type MsgTxMerkle struct {
+}
+
 const (
 	//交易类型
 	InvTypeTx = uint8(1)

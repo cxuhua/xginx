@@ -34,19 +34,20 @@ func TestNewBitSet(t *testing.T) {
 
 func TestMerkleArray(t *testing.T) {
 	a := []HASH256{}
-	for i := 0; i < 21; i++ {
+	for i := 0; i < 7; i++ {
 		tmp := HASH256{byte(i)}
 		a = append(a, tmp)
 	}
 	bs := bitset.New(uint(len(a)))
-	bs.Set(20)
+	bs.Set(6)
 
 	tree := NewMerkleTree(len(a))
 	tree.Build(a, bs)
 
 	nt := GetMerkleTree(tree.Trans(), tree.Hashs(), tree.Bits())
-	_, _, c1 := nt.Extract()
-	if len(c1) != 1 || c1[0] != 20 {
+	root, hashs, c1 := nt.Extract()
+	if len(c1) != 1 || c1[0] != 6 {
 		t.Errorf("test extrace error")
 	}
+	log.Println(root, hashs)
 }

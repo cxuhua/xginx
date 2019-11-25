@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -191,10 +192,16 @@ func (h *xhttp) Start(ctx context.Context, lis IListener) {
 	h.shttp = &http.Server{
 		Addr:    addr,
 		Handler: m,
+		BaseContext: func(listener net.Listener) context.Context {
+			return h.ctx
+		},
 	}
 	go func() {
 		LogInfo("start http server", addr)
-		_ = h.shttp.ListenAndServe()
+		err := h.shttp.ListenAndServe()
+		if err != nil {
+			LogError("http serve error", err)
+		}
 	}()
 }
 

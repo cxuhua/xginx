@@ -303,10 +303,10 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 func (s *TcpServer) recoverError() {
 	if gin.Mode() == gin.DebugMode {
 		s.cancel()
-		return
-	}
-	if err := recover(); err != nil {
+	} else if err := recover(); err != nil {
 		s.err = err
+		s.cancel()
+	} else {
 		s.cancel()
 	}
 }
@@ -494,6 +494,8 @@ func (s *TcpServer) tryConnect() {
 func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *time.Timer) {
 	LogInfo("server dispatch startup", idx)
 	defer s.recoverError()
+	s.wg.Add(1)
+	defer s.wg.Done()
 	for {
 		select {
 		case opt := <-s.dopt:
@@ -590,6 +592,9 @@ func (s *TcpServer) loadSeedIp() {
 func (s *TcpServer) run() {
 	LogInfo(s.addr.Network(), "server startup", s.addr)
 	defer s.recoverError()
+	s.wg.Add(1)
+	defer s.wg.Done()
+	var delay time.Duration
 	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
 	pt := time.NewTimer(time.Second)
 	dt := time.NewTimer(time.Second)
@@ -600,10 +605,24 @@ func (s *TcpServer) run() {
 	for {
 		conn, err := s.lis.Accept()
 		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				if delay == 0 {
+					delay = 5 * time.Millisecond
+				} else {
+					delay *= 2
+				}
+				if max := 1 * time.Second; delay > max {
+					delay = max
+				}
+				LogError("Accept error: %v; retrying in %v", err, delay)
+				time.Sleep(delay)
+				continue
+			}
 			LogError(err)
 			s.cancel()
-			return
+			break
 		}
+		delay = 0
 		c := s.NewClientWithConn(conn)
 		c.typ = ClientIn
 		c.isopen = true
@@ -623,6 +642,6 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	s.clients = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
-	s.dopt = make(chan int, 10)
+	s.dopt = make(chan int, 5)
 	return s, nil
 }

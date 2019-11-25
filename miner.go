@@ -100,7 +100,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
-	LogInfof("gen new block add %d Tx", len(txs))
+	LogInfof("gen new block add %d Tx, prev=%v ", len(txs), blk.Meta.Prev)
 	//
 	if err := blk.Finish(bi); err != nil {
 		return err
@@ -143,7 +143,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		if j%times == 0 {
 			l++
 			j = 0
-			LogInfof("gen new block %d*%d times, bits=%08x id=%v time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Meta.Bits, id, blk.Header.Time, i, blk.Meta.Height, len(txs))
+			LogInfof("gen new block %d*%d times, bits=%08x merkle=%v time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Header.Bits, blk.Header.Merkle, blk.Header.Time, i, blk.Meta.Height, len(txs))
 		}
 		//重新设置时间和随机数
 		if i >= ^uint32(0) {
@@ -223,8 +223,9 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 				LogError("dispatch recv error opt", op)
 			}
 		case <-dt.C:
-			err := m.genNewBlock(1)
-			if err != nil {
+			if acc := m.GetMiner(); acc == nil {
+				LogError("miner acc not set,can't gen new block")
+			} else if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
 			dt.Reset(time.Second * 60)

@@ -733,19 +733,27 @@ func (bi *BlockIndex) loadPrev() (*TBEle, error) {
 func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
+	//获取最后一个区块头
 	last := bi.lis.Back()
 	if last == nil {
 		return 0, ZERO, true
 	}
-	lv := last.Value.(*TBEle)
-	id, err := lv.ID()
+	ele := last.Value.(*TBEle)
+	id, err := ele.ID()
 	if err != nil {
 		return 0, id, false
 	}
-	if !meta.Prev.Equal(id) {
+	//时间戳检测
+	if meta.Time <= ele.Time {
+		LogError("check islink back time < prev time")
 		return 0, id, false
 	}
-	return lv.Height, id, true
+	//prev id检测
+	if !meta.Prev.Equal(id) {
+		LogError("check islink back previd != lastid")
+		return 0, id, false
+	}
+	return ele.Height, id, true
 }
 
 //加入一个队列尾并设置高度
@@ -760,6 +768,9 @@ func (bi *BlockIndex) linkback(ele *TBEle) error {
 	id, err := lv.ID()
 	if err != nil {
 		return err
+	}
+	if ele.Time <= lv.Time {
+		return errors.New("check linkback  time < prev time error")
 	}
 	if !ele.Prev.Equal(id) {
 		return errors.New("ele prev hash error")

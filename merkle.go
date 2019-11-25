@@ -53,11 +53,9 @@ func (tree *MerkleTree) Bits() *bitset.BitSet {
 }
 
 func (tree *MerkleTree) Hash(n1 HASH256, n2 HASH256) HASH256 {
-	ret := HASH256{}
 	v := append([]byte{}, n1[:]...)
 	v = append(v, n2[:]...)
-	copy(ret[:], Hash256(v))
-	return ret
+	return Hash256From(v)
 }
 
 func (tree *MerkleTree) Height() int {

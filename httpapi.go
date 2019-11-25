@@ -293,6 +293,8 @@ func getBlockInfoApi(c *gin.Context) {
 		return
 	}
 	type txin struct {
+		OutTx  string `json:"otx"`
+		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
 		Amount string `json:"amount,omitempty"`
 		Script string `json:"script,omitempty"`
@@ -354,6 +356,8 @@ func getBlockInfoApi(c *gin.Context) {
 				xv.Ins = append(xv.Ins, xvi)
 				continue
 			}
+			xvi.OutTx = iv.OutHash.String()
+			xvi.OutIdx = iv.OutIndex.ToInt()
 			ov, err := iv.LoadTxOut(bi)
 			if err != nil {
 				panic(err)
@@ -391,6 +395,8 @@ func listTxPoolApi(c *gin.Context) {
 	bi := GetBlockIndex()
 	txp := bi.GetTxPool()
 	type txin struct {
+		OutTx  string `json:"otx"`
+		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
 		Amount string `json:"amount,omitempty"`
 		Script string `json:"script,omitempty"`
@@ -429,6 +435,8 @@ func listTxPoolApi(c *gin.Context) {
 				xv.Ins = append(xv.Ins, xvi)
 				continue
 			}
+			xvi.OutTx = iv.OutHash.String()
+			xvi.OutIdx = iv.OutIndex.ToInt()
 			ov, err := iv.LoadTxOut(bi)
 			if err != nil {
 				panic(err)
@@ -475,6 +483,8 @@ func getTxInfoApi(c *gin.Context) {
 		return
 	}
 	type txin struct {
+		OutTx  string `json:"otx"`
+		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
 		Amount string `json:"amount,omitempty"`
 		Script string `json:"script,omitempty"`
@@ -509,6 +519,8 @@ func getTxInfoApi(c *gin.Context) {
 			xv.Ins = append(xv.Ins, xvi)
 			continue
 		}
+		xvi.OutTx = iv.OutHash.String()
+		xvi.OutIdx = iv.OutIndex.ToInt()
 		ov, err := iv.LoadTxOut(bi)
 		if err != nil {
 			panic(err)
