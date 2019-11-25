@@ -75,6 +75,10 @@ func BuildMerkleTree(ids []HASH256) *MerkleTree {
 	return tree
 }
 
+func (tree MerkleTree) IsBad() bool {
+	return tree.bad
+}
+
 func (tree *MerkleTree) Build(ids []HASH256, vb *bitset.BitSet) *MerkleTree {
 	tree.bad = false
 	tree.vhash = []HASH256{}

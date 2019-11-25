@@ -162,6 +162,22 @@ func (c *Client) processMsg(m MsgIO) error {
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
+	case NT_TX_MERKLE:
+		msg := m.(*MsgTxMerkle)
+		err := msg.Verify(bi)
+		if err != nil {
+			LogError("verify txid merkle error", err)
+		}
+	case NT_GET_TX_MERKLE:
+		msg := m.(*MsgGetTxMerkle)
+		rsg, err := bi.NewMsgTxMerkle(msg.TxId)
+		if err != nil {
+			esg := NewMsgError(ErrCodeTxMerkle, err)
+			esg.Ext = msg.TxId[:]
+			c.SendMsg(esg)
+		} else {
+			c.SendMsg(rsg)
+		}
 	case NT_FILTER_LOAD:
 		msg := m.(*MsgFilterLoad)
 		err := c.LoadFilter(int(msg.Funcs), msg.Tweak, msg.Filter)

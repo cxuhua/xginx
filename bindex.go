@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/willf/bitset"
+
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
@@ -266,6 +268,41 @@ type BlockIndex struct {
 	db   IBlkStore                 //存储和索引
 }
 
+//返回某个交易的merkle验证树
+func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
+	txv, err := bi.LoadTxValue(id)
+	if err != nil {
+		return nil, err
+	}
+	blk, err := bi.LoadBlock(txv.BlkId)
+	if err != nil {
+		return nil, err
+	}
+	ids := []HASH256{}
+	bs := bitset.New(uint(len(blk.Txs)))
+	for i, tx := range blk.Txs {
+		tid, err := tx.ID()
+		if err != nil {
+			return nil, err
+		}
+		if id.Equal(tid) {
+			bs.Set(uint(i))
+		}
+		ids = append(ids, tid)
+	}
+	tree := NewMerkleTree(len(blk.Txs))
+	tree = tree.Build(ids, bs)
+	if tree.IsBad() {
+		return nil, errors.New("merkle tree bad")
+	}
+	msg := &MsgTxMerkle{}
+	msg.TxId = id
+	msg.Hashs = tree.Hashs()
+	msg.Trans = VarInt(tree.Trans())
+	msg.Bits = FromBitSet(tree.Bits())
+	return msg, nil
+}
+
 func (bi *BlockIndex) CacheSize() int {
 	return bi.lru.Size()
 }
@@ -402,6 +439,17 @@ func (bi *BlockIndex) Len() int {
 	return bi.lis.Len()
 }
 
+//获取块头
+func (bi *BlockIndex) GetBlockHeader(id HASH256) (*TBEle, error) {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	ele, has := bi.imap[id]
+	if !has {
+		return nil, errors.New("not found")
+	}
+	return ele.Value.(*TBEle), nil
+}
+
 //获取区块的确认数
 func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 	bi.mu.RLock()
@@ -421,7 +469,7 @@ func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 
 //获取交易确认数(所属区块的确认数)
 func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
-	txv, err := bi.loadTxValue(id)
+	txv, err := bi.LoadTxValue(id)
 	if err != nil {
 		return 0
 	}
@@ -784,7 +832,7 @@ func (bi *BlockIndex) linkback(ele *TBEle) error {
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	//从缓存和区块获取
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
-		txv, err := bi.loadTxValue(id)
+		txv, err := bi.LoadTxValue(id)
 		if err != nil {
 			return 0, nil
 		}
@@ -804,7 +852,7 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	return hptr.Value().(*TX), nil
 }
 
-func (bi *BlockIndex) loadTxValue(id HASH256) (*TxValue, error) {
+func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vv := &TxValue{}
 	vb, err := bi.db.Index().Get(TXS_PREFIX, id[:])
 	if err != nil {

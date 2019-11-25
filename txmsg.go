@@ -1,8 +1,103 @@
 package xginx
 
+import "errors"
+
 //获取交易验证merkle树
-type MsgTxMerkle struct {
+type MsgGetTxMerkle struct {
+	TxId HASH256 //交易id
 }
+
+func (m MsgGetTxMerkle) Type() uint8 {
+	return NT_GET_TX_MERKLE
+}
+
+func (m MsgGetTxMerkle) Encode(w IWriter) error {
+	return m.TxId.Encode(w)
+}
+
+func (m *MsgGetTxMerkle) Decode(r IReader) error {
+	return m.TxId.Decode(r)
+}
+
+//返回交易验证merkle树
+type MsgTxMerkle struct {
+	TxId  HASH256   //当前交易id
+	Trans VarInt    //交易锁在块的交易数量
+	Hashs []HASH256 //基于merkle树的验证hash
+	Bits  VarBytes  //
+}
+
+func (m MsgTxMerkle) Type() uint8 {
+	return NT_TX_MERKLE
+}
+
+func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
+	bits := NewBitSet(m.Bits)
+	nt := GetMerkleTree(m.Trans.ToInt(), m.Hashs, bits)
+	root, hashs, idx := nt.Extract()
+	if len(idx) != 1 || hashs[0].Equal(m.TxId) {
+		return errors.New("id not found,veriry error")
+	}
+	txv, err := bi.LoadTxValue(m.TxId)
+	if err != nil {
+		return err
+	}
+	bh, err := bi.GetBlockHeader(txv.BlkId)
+	if bh.Merkle.Equal(root) {
+		return errors.New("merkle verify error")
+	}
+	return nil
+}
+
+func (m MsgTxMerkle) Encode(w IWriter) error {
+	if err := m.TxId.Encode(w); err != nil {
+		return err
+	}
+	if err := m.Trans.Encode(w); err != nil {
+		return err
+	}
+	if err := VarInt(len(m.Hashs)).Encode(w); err != nil {
+		return err
+	}
+	for _, v := range m.Hashs {
+		err := v.Encode(w)
+		if err != nil {
+			return err
+		}
+	}
+	if err := m.Bits.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *MsgTxMerkle) Decode(r IReader) error {
+	if err := m.TxId.Decode(r); err != nil {
+		return err
+	}
+	if err := m.Trans.Decode(r); err != nil {
+		return err
+	}
+	num := VarInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	m.Hashs = make([]HASH256, num.ToInt())
+	for i, _ := range m.Hashs {
+		v := HASH256{}
+		err := v.Decode(r)
+		if err != nil {
+			return err
+		}
+		m.Hashs[i] = v
+	}
+	if err := m.Bits.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+//
 
 const (
 	//交易类型

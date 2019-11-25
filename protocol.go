@@ -42,7 +42,9 @@ const (
 	NT_FILTER_LOAD  = uint8(14)
 	NT_FILTER_ADD   = uint8(15)
 	NT_FILTER_CLEAR = uint8(16)
-	//
+	//交易merkle树
+	NT_GET_TX_MERKLE = uint8(17)
+	NT_TX_MERKLE     = uint8(18)
 )
 
 //协议消息
@@ -72,6 +74,7 @@ const (
 	ErrCodeRecvTx     = 100002
 	ErrCodeFilterMiss = 100003
 	ErrCodeFilterLoad = 100004
+	ErrCodeTxMerkle   = 100005
 )
 
 type MsgError struct {

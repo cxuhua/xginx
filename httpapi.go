@@ -352,12 +352,12 @@ func getBlockInfoApi(c *gin.Context) {
 		for _, iv := range v.Ins {
 			xvi := txin{}
 			xvi.Script = hex.EncodeToString(iv.Script)
+			xvi.OutTx = iv.OutHash.String()
+			xvi.OutIdx = iv.OutIndex.ToInt()
 			if iv.IsCoinBase() {
 				xv.Ins = append(xv.Ins, xvi)
 				continue
 			}
-			xvi.OutTx = iv.OutHash.String()
-			xvi.OutIdx = iv.OutIndex.ToInt()
 			ov, err := iv.LoadTxOut(bi)
 			if err != nil {
 				panic(err)
@@ -430,13 +430,13 @@ func listTxPoolApi(c *gin.Context) {
 		xv.Outs = []txout{}
 		for _, iv := range tv.Ins {
 			xvi := txin{}
+			xvi.OutTx = iv.OutHash.String()
+			xvi.OutIdx = iv.OutIndex.ToInt()
 			xvi.Script = hex.EncodeToString(iv.Script)
 			if iv.IsCoinBase() {
 				xv.Ins = append(xv.Ins, xvi)
 				continue
 			}
-			xvi.OutTx = iv.OutHash.String()
-			xvi.OutIdx = iv.OutIndex.ToInt()
 			ov, err := iv.LoadTxOut(bi)
 			if err != nil {
 				panic(err)
@@ -514,13 +514,13 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Outs = []txout{}
 	for _, iv := range tp.Ins {
 		xvi := txin{}
+		xvi.OutTx = iv.OutHash.String()
+		xvi.OutIdx = iv.OutIndex.ToInt()
 		xvi.Script = hex.EncodeToString(iv.Script)
 		if iv.IsCoinBase() {
 			xv.Ins = append(xv.Ins, xvi)
 			continue
 		}
-		xvi.OutTx = iv.OutHash.String()
-		xvi.OutIdx = iv.OutIndex.ToInt()
 		ov, err := iv.LoadTxOut(bi)
 		if err != nil {
 			panic(err)
