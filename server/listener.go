@@ -97,11 +97,11 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss")
 	}
-	btx := blk.Txs[0]
-	if !btx.IsCoinBase() {
+	tx := blk.Txs[0]
+	if !tx.IsCoinBase() {
 		return errors.New("coinbase tx miss")
 	}
-	//交易费用处理
+	//交易费用处理，添加给矿工
 	fee, err := blk.GetFee(bi)
 	if err != nil {
 		return err
@@ -109,6 +109,6 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if fee == 0 {
 		return nil
 	}
-	btx.Outs[0].Value += fee
+	tx.Outs[0].Value += fee
 	return blk.CheckTxs(bi)
 }

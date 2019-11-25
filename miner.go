@@ -80,7 +80,7 @@ func (m *minerEngine) SetMiner(acc *Account) error {
 //创建一个区块
 func (m *minerEngine) genNewBlock(ver uint32) error {
 	if !m.ogb.Running() {
-		return errors.New("gening block")
+		return nil
 	}
 	defer m.ogb.Reset()
 	ps := GetPubSub()
@@ -140,16 +140,15 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			break
 		}
 		if j%times == 0 {
-			LogInfof("gen new block %d times, bits=%x id=%v nonce=%x height=%d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
-			i = UR32()
+			LogInfof("gen new block %d times, bits=%08x id=%v nonce=%08x height=%06d", times, blk.Meta.Bits, id, i, blk.Meta.Height)
 			j = 0
 		}
-		if i > (^uint32(0))-1 {
+		if i >= ^uint32(0) {
 			hb.SetTime(time.Now())
 			i = UR32()
 		}
 	}
-	LogInfo("gen new block ok id = ", blk)
+	LogInfo("gen new block success, id = ", blk)
 	if _, err := bi.LinkHeader(blk.Header); err != nil {
 		return err
 	}
@@ -223,6 +222,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			if err != nil {
 				LogError("gen new block error", err)
 			}
+			dt.Reset(time.Second * 60)
 		case <-m.ctx.Done():
 			return
 		}

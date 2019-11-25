@@ -200,7 +200,8 @@ func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 	}
 }
 
-func (s *TcpServer) HasAddr(addr NetAddr) bool {
+//地址是否已经链接
+func (s *TcpServer) IsAddrOpen(addr NetAddr) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, v := range s.clients {
@@ -257,8 +258,8 @@ func (s *TcpServer) NewClient() *Client {
 	c.ctx, c.cancel = context.WithCancel(s.ctx)
 	c.wc = make(chan MsgIO, 4)
 	c.rc = make(chan MsgIO, 4)
-	c.ptimer = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
-	c.vtimer = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
+	c.pt = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
+	c.vt = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	c.vmap = &sync.Map{}
 	return c
 }
@@ -288,7 +289,7 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 		if !addr.IsGlobalUnicast() {
 			continue
 		}
-		if s.HasAddr(addr) {
+		if s.IsAddrOpen(addr) {
 			continue
 		}
 		err := s.openAddr(addr)
@@ -459,21 +460,29 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 
 //尝试重新连接其他地址
 func (s *TcpServer) tryConnect() {
+	//获取需要连接的地址
+	cs := []NetAddr{}
 	s.addrs.mu.RLock()
-	defer s.addrs.mu.RUnlock()
 	for _, v := range s.addrs.addrs {
-		if s.HasAddr(v.addr) {
+		if s.IsAddrOpen(v.addr) {
 			continue
 		}
 		if !v.IsNeedConn() {
 			continue
 		}
+		v.lastTime = time.Now()
+		cs = append(cs, v.addr)
+	}
+	s.addrs.mu.RUnlock()
+	//开始连接
+	for _, v := range cs {
 		c := s.NewClient()
-		err := c.Open(v.addr)
+		err := c.Open(v)
 		if err != nil {
 			LogError("try connect error", err)
 			continue
 		}
+		//连接成功开始工作
 		c.Loop()
 		if s.ConnNum() >= conf.MaxConn {
 			break
@@ -552,12 +561,14 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 //加载seed域名ip地址
 func (s *TcpServer) loadSeedIp() {
 	lipc := 0
+	sipc := 0
 	for _, v := range conf.Seeds {
 		ips, err := net.LookupIP(v)
 		if err != nil {
 			continue
 		}
 		for _, ip := range ips {
+			sipc++
 			addr := NetAddr{
 				ip:   ip,
 				port: uint16(9333), //使用默认端口
@@ -572,7 +583,7 @@ func (s *TcpServer) loadSeedIp() {
 			lipc++
 		}
 	}
-	LogInfo("load seed ip", lipc)
+	LogInfof("load seed ip %d/%d", lipc, sipc)
 }
 
 func (s *TcpServer) run() {

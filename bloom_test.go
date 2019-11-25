@@ -5,7 +5,11 @@ import (
 )
 
 func TestBloomFilter(t *testing.T) {
-	b := NewBloomFilterWithNumber(500, 10, 0.6, 0x11)
+	fb := make([]byte, 100)
+	b, err := NewBloomFilter(10, 0, fb)
+	if err != nil {
+		panic(err)
+	}
 	b.Add([]byte{1})
 	b.Add([]byte{4})
 	b.Add([]byte{5})
@@ -22,7 +26,10 @@ func TestBloomFilter(t *testing.T) {
 
 	d := b.GetFilter()
 
-	c := NewBloomFilterWithNumber(500, 10, 0.6, 0x11)
+	c, err := NewBloomFilter(10, 0, fb)
+	if err != nil {
+		panic(err)
+	}
 	c.SetFilter(d)
 	if !c.Has([]byte{10, 11, 32}) {
 		t.Errorf("new load bloom miss")

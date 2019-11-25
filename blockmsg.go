@@ -11,7 +11,7 @@ const (
 
 // NT_GET_HEADERS
 type MsgGetHeaders struct {
-	Skip  VarUInt //跳过
+	Skip  VarInt //跳过
 	Start HASH256
 	Limit VarInt
 }

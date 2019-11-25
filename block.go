@@ -223,7 +223,10 @@ func (v *BlockInfo) GetMerkle() (HASH256, error) {
 			ids = append(ids, vid)
 		}
 	}
-	root = BuildMerkleTree(ids).ExtractRoot()
+	root, err := BuildMerkleTree(ids).ExtractRoot()
+	if err != nil {
+		return root, err
+	}
 	v.merher.SetHash(root)
 	return root, nil
 }

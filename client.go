@@ -44,13 +44,13 @@ type Client struct {
 	err     interface{}
 	ss      *TcpServer
 	ping    int
-	ptimer  *time.Timer
-	vtimer  *time.Timer
+	pt      *time.Timer
+	vt      *time.Timer
 	isopen  bool      //收到msgversion算打开成功
-	Ver     uint32    //版本
-	Service uint32    //服务
+	Ver     uint32    //节点版本
+	Service uint32    //节点提供的服务
 	Height  BHeight   //节点区块高度
-	vmap    *sync.Map //线程安全的属性存储器
+	vmap    *sync.Map //属性存储器
 }
 
 //添加过滤数据
@@ -114,11 +114,6 @@ func (c *Client) Equal(b *Client) bool {
 	return c.id == b.id
 }
 
-//服务器端处理包
-func (c *Client) processMsgIn(m MsgIO) {
-
-}
-
 //是否是连入的
 func (c *Client) IsIn() bool {
 	return c.typ == ClientIn
@@ -127,11 +122,6 @@ func (c *Client) IsIn() bool {
 //是否是连出的
 func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
-}
-
-//客户端处理包
-func (c *Client) processMsgOut(m MsgIO) {
-
 }
 
 //请求对方区块头
@@ -248,19 +238,10 @@ func (c *Client) processMsg(m MsgIO) error {
 		if c.IsIn() {
 			rsg := bi.NewMsgVersion()
 			c.SendMsg(rsg)
-			//返回本节点的地址列表
-			asg := c.ss.NewMsgAddrs(c)
-			c.SendMsg(asg)
 		}
 		//连出的判断区块高度
 		if c.IsOut() {
 			c.ReqBlockHeaders(bi, msg.Height.HH)
-		}
-	default:
-		if c.IsIn() {
-			c.processMsgIn(m)
-		} else if c.IsOut() {
-			c.processMsgOut(m)
 		}
 	}
 	//发布消息
@@ -302,7 +283,7 @@ func (c *Client) Open(addr NetAddr) error {
 	if addr.Equal(conf.GetNetAddr()) {
 		return errors.New("self connect self,ignore")
 	}
-	if c.ss.HasAddr(addr) {
+	if c.ss.IsAddrOpen(addr) {
 		return errors.New("addr has client connected,ignore!")
 	}
 	return c.connect(addr)
@@ -316,7 +297,7 @@ func (c *Client) connect(addr NetAddr) error {
 	if ap := c.ss.addrs.Get(addr); ap != nil {
 		ap.lastTime = time.Now()
 	}
-	conn, err := net.DialTimeout(addr.Network(), addr.Addr(), time.Second*15)
+	conn, err := net.DialTimeout(addr.Network(), addr.Addr(), time.Second*10)
 	if err != nil {
 		return err
 	}
@@ -349,7 +330,7 @@ func (c *Client) loop() {
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {
-				LogError("client read error", err)
+				LogError("client read error", err, " closed")
 				c.cancel()
 				break
 			}
@@ -368,19 +349,22 @@ func (c *Client) loop() {
 			if err != nil {
 				LogError("process msg", rp.Type(), "error", err)
 			}
-		case <-c.vtimer.C:
+		case <-c.vt.C:
 			if !c.isopen {
 				c.Close()
-				LogError("msgversion timeout,closed")
+				LogError("MsgVersion recv timeout,closed")
+			} else if c.IsIn() {
+				msg := c.ss.NewMsgAddrs(c)
+				c.SendMsg(msg)
 			}
-		case <-c.ptimer.C:
+		case <-c.pt.C:
 			if !c.isopen {
 				break
 			}
 			bi := GetBlockIndex()
 			msg := NewMsgPing(bi.GetNodeHeight())
 			c.SendMsg(msg)
-			c.ptimer.Reset(time.Second * time.Duration(Rand(40, 60)))
+			c.pt.Reset(time.Second * time.Duration(Rand(40, 60)))
 		case <-c.ctx.Done():
 			return
 		}
