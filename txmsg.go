@@ -34,7 +34,7 @@ func (m MsgTxMerkle) Type() uint8 {
 func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	bits := NewBitSet(m.Bits)
 	nt := GetMerkleTree(m.Trans.ToInt(), m.Hashs, bits)
-	root, hashs, idx := nt.Extract()
+	merkle, hashs, idx := nt.Extract()
 	if len(idx) != 1 || !hashs[0].Equal(m.TxId) {
 		return errors.New("id not found,veriry error")
 	}
@@ -46,7 +46,7 @@ func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	if err != nil {
 		return err
 	}
-	if !bh.Merkle.Equal(root) {
+	if !bh.Merkle.Equal(merkle) {
 		return errors.New("merkle verify error")
 	}
 	return nil
