@@ -28,6 +28,8 @@ const (
 type IWallet interface {
 	//根据地址获取账号
 	GetAccount(addr Address) (*Account, error)
+	//根据pkh获取账号
+	GetAccountWithPkh(pkh HASH160) (*Account, error)
 	//关闭钱包
 	Close()
 	//新建账号
@@ -53,6 +55,15 @@ type IWallet interface {
 type LevelDBWallet struct {
 	dir  string
 	dptr DBImp
+}
+
+//根据pkh获取账号
+func (db *LevelDBWallet) GetAccountWithPkh(pkh HASH160) (*Account, error) {
+	addr, err := EncodeAddress(pkh)
+	if err != nil {
+		return nil, err
+	}
+	return db.GetAccount(addr)
 }
 
 //初始化管理员密码只能设置一次

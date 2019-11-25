@@ -11,8 +11,6 @@ type IListener interface {
 	OnNewBlock(bi *BlockIndex, blk *BlockInfo) error
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
-	//获取签名账户
-	GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error)
 	//链关闭时
 	OnClose(bi *BlockIndex)
 	//获取当前设置的钱包

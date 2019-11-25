@@ -8,9 +8,9 @@ import (
 const (
 	InvalidArb = ^uint8(0) //无效的仲裁
 
-	SCRIPT_COINBASE_TYPE = uint8(0) //coinbase input 0
-	SCRIPT_LOCKED_TYPE   = uint8(1) //标准锁定脚本 HASH160(pubkey)
-	SCRIPT_WITNESS_TYPE  = uint8(2) //witness type
+	SCRIPT_COINBASE_TYPE = uint8(0) //coinbase script
+	SCRIPT_LOCKED_TYPE   = uint8(1) //标准锁定脚本
+	SCRIPT_WITNESS_TYPE  = uint8(2) //witness script
 )
 
 type Script []byte
@@ -23,19 +23,24 @@ func (s Script) Type() uint8 {
 	return s[0]
 }
 
-func getwitnesssize() int {
+func getwitnessminsize() int {
+	pri, err := NewPrivateKey()
+	if err != nil {
+		panic(err)
+	}
 	x := WitnessScript{}
 	x.Type = SCRIPT_WITNESS_TYPE
+	x.Pks = append(x.Pks, pri.PublicKey().GetPks())
 	buf := NewWriter()
 	_ = x.Encode(buf)
 	return buf.Len()
 }
 
 func getcoinbaseminsize() int {
-	return GetCoinbaseScript(0, []byte{}).Len()
+	return NewCoinbaseScript(0, []byte{}).Len()
 }
 
-func getlockedsize() int {
+func getlockedminsize() int {
 	x := LockedScript{}
 	x.Type = SCRIPT_LOCKED_TYPE
 	buf := NewWriter()
@@ -44,8 +49,9 @@ func getlockedsize() int {
 }
 
 var (
-	lockedminsize  = getlockedsize()
+	lockedminsize  = getlockedminsize()
 	conbaseminsize = getcoinbaseminsize()
+	witnessminsize = getwitnessminsize()
 )
 
 //in script
@@ -55,12 +61,12 @@ func (s Script) IsCoinBase() bool {
 
 //in script
 func (s Script) IsWitness() bool {
-	return s.Len() >= 4 && s.Len() < ACCOUNT_KEY_MAX_SIZE*128 && s[0] == SCRIPT_WITNESS_TYPE
+	return s.Len() >= witnessminsize && s.Len() < ACCOUNT_KEY_MAX_SIZE*128 && s[0] == SCRIPT_WITNESS_TYPE
 }
 
 //out script
 func (s Script) IsLocked() bool {
-	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MAX_EXT_SIZE) && s[0] == SCRIPT_LOCKED_TYPE
+	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MAX_EXT_SIZE+4) && s[0] == SCRIPT_LOCKED_TYPE
 }
 
 //从锁定脚本获取输出地址
@@ -142,7 +148,7 @@ func (s Script) ToWitness() (WitnessScript, error) {
 	return wit, nil
 }
 
-func GetCoinbaseScript(h uint32, bs ...[]byte) Script {
+func NewCoinbaseScript(h uint32, bs ...[]byte) Script {
 	s := Script{SCRIPT_COINBASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
 	//当前块高度

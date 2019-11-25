@@ -186,6 +186,9 @@ func (sr *stdsigner) Sign(acc *Account) error {
 	if err := acc.Check(); err != nil {
 		return err
 	}
+	if !acc.HasPrivate() {
+		return errors.New("account miss private key,can't sign tx")
+	}
 	wits := acc.NewWitnessScript()
 	if hash, err := wits.Hash(); err != nil {
 		return err

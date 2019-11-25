@@ -73,9 +73,6 @@ func (m *minerEngine) GetMiner() *Account {
 func (m *minerEngine) SetMiner(acc *Account) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if !acc.HasPrivate() {
-		return errors.New("miner account must has privatekey")
-	}
 	m.acc = acc
 	return nil
 }
@@ -208,7 +205,7 @@ func (m *minerEngine) recoverError() {
 	}
 }
 
-func (m *minerEngine) loop(i int, ch chan interface{}) {
+func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 	LogInfo("miner worker", i, "start")
 	defer m.recoverError()
 	m.wg.Add(1)
@@ -220,6 +217,11 @@ func (m *minerEngine) loop(i int, ch chan interface{}) {
 				m.processOpt(opv)
 			} else {
 				LogError("dispatch recv error opt", op)
+			}
+		case <-dt.C:
+			err := m.genNewBlock(1)
+			if err != nil {
+				LogError("gen new block error", err)
 			}
 		case <-m.ctx.Done():
 			return
@@ -233,8 +235,9 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
+	dt := time.NewTimer(time.Second * 60)
 	for i := 0; i < 4; i++ {
-		go m.loop(i, ch)
+		go m.loop(i, ch, dt)
 	}
 }
 

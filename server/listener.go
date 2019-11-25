@@ -112,12 +112,3 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	btx.Outs[0].Value += fee
 	return blk.CheckTxs(bi)
 }
-
-//从钱包获取签名账号
-func (lis *listener) GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error) {
-	addr, err := EncodeAddress(pkh)
-	if err != nil {
-		return nil, err
-	}
-	return lis.wallet.GetAccount(addr)
-}

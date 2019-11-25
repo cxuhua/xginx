@@ -620,7 +620,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	if err != nil {
 		return nil, err
 	}
-	acc, err := bi.lptr.GetAccount(bi, spkh)
+	acc, err := bi.lptr.GetWallet().GetAccountWithPkh(spkh)
 	if err != nil {
 		return nil, err
 	}

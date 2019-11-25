@@ -115,8 +115,8 @@ func loginApi(c *gin.Context) {
 }
 
 //登陆后存在
-func getApiUser(c *gin.Context) string {
-	return c.MustGet(userkey).(string)
+func getUserFlags(c *gin.Context) uint32 {
+	return c.MustGet(userkey).(uint32)
 }
 
 func isLoginApi(c *gin.Context) {

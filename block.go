@@ -171,7 +171,7 @@ func (blk BlockInfo) String() string {
 
 //创建Cosinbase 脚本
 func (blk *BlockInfo) CoinbaseScript(bs ...[]byte) Script {
-	return GetCoinbaseScript(blk.Meta.Height, bs...)
+	return NewCoinbaseScript(blk.Meta.Height, bs...)
 }
 
 //获取区块奖励
@@ -812,7 +812,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		acc, err := lptr.GetAccount(bi, pkh)
+		acc, err := bi.lptr.GetWallet().GetAccountWithPkh(pkh)
 		if err != nil {
 			return err
 		}

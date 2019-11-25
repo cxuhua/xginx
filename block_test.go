@@ -114,15 +114,6 @@ func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	return blk.CheckTxs(bi)
 }
 
-//获取签名私钥
-func (lis *tlis) GetAccount(bi *BlockIndex, pkh HASH160) (*Account, error) {
-	//addr, err := out.Script.GetAddress()
-	//if err != nil {
-	//	return nil, err
-	//}
-	return TestAccount, nil
-}
-
 func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	blk, err := bi.NewBlock(1)
 	if err != nil {
