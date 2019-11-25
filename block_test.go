@@ -51,6 +51,10 @@ func (lis *tlis) OnInitHttp(m *gin.Engine) {
 
 }
 
+func (lis *tlis) OnClientMsg(c *Client, msg MsgIO) {
+
+}
+
 func (lis *tlis) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
 
 }

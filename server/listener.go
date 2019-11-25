@@ -33,6 +33,10 @@ func (lis *listener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
 
 }
 
+func (lis *listener) OnClientMsg(c *Client, msg MsgIO) {
+
+}
+
 func (lis *listener) OnInitHttp(m *gin.Engine) {
 
 }

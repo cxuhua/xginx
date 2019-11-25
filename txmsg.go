@@ -35,7 +35,7 @@ func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	bits := NewBitSet(m.Bits)
 	nt := GetMerkleTree(m.Trans.ToInt(), m.Hashs, bits)
 	root, hashs, idx := nt.Extract()
-	if len(idx) != 1 || hashs[0].Equal(m.TxId) {
+	if len(idx) != 1 || !hashs[0].Equal(m.TxId) {
 		return errors.New("id not found,veriry error")
 	}
 	txv, err := bi.LoadTxValue(m.TxId)
@@ -43,7 +43,10 @@ func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 		return err
 	}
 	bh, err := bi.GetBlockHeader(txv.BlkId)
-	if bh.Merkle.Equal(root) {
+	if err != nil {
+		return err
+	}
+	if !bh.Merkle.Equal(root) {
 		return errors.New("merkle verify error")
 	}
 	return nil

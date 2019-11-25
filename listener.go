@@ -2,6 +2,7 @@ package xginx
 
 import "github.com/gin-gonic/gin"
 
+//所有回调可能来自不同的协程
 type IListener interface {
 	//当区块头被成功链接时
 	OnUpdateHeader(bi *BlockIndex, ele *TBEle)
@@ -11,6 +12,8 @@ type IListener interface {
 	OnNewBlock(bi *BlockIndex, blk *BlockInfo) error
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(bi *BlockIndex, blk *BlockInfo) error
+	//当收到网络数据时
+	OnClientMsg(c *Client, msg MsgIO)
 	//链关闭时
 	OnClose(bi *BlockIndex)
 	//获取当前设置的钱包

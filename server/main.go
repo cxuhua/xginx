@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	. "github.com/cxuhua/xginx"
 )
 
@@ -15,7 +17,8 @@ var (
 	cfile  = flag.String("conf", "v10000.json", "config file name")
 	user   = flag.String("user", "", "admin user")
 	pass   = flag.String("pass", "", "admin pass")
-	isinit = flag.Bool("init", false, "init admin info")
+	isinit = flag.Bool("init", false, "init admin info,-init=true -user=*** -pass=***")
+	debug  = flag.Bool("debug", true, "startup mode")
 )
 
 func initdb(conf *Config) {
@@ -44,6 +47,11 @@ func main() {
 	flag.Parse()
 	if *cfile == "" {
 		panic("config file miss")
+	}
+	if *debug {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 	conf := InitConfig(*cfile)
 	defer conf.Close()

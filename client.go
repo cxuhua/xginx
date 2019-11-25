@@ -329,6 +329,10 @@ func (c *Client) connect(addr NetAddr) error {
 	//主动发送第一个包
 	bi := GetBlockIndex()
 	c.SendMsg(bi.NewMsgVersion())
+
+	//发送测试包
+	mm := &MsgGetTxMerkle{TxId: NewHASH256("7dd56e3b1cad0aaa09c6a0e27a1ddc430300b57a6aadd2f3fb8d4acc0c82f379")}
+	c.SendMsg(mm)
 	return nil
 }
 

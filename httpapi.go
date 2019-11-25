@@ -221,6 +221,7 @@ func transferFee(c *gin.Context) {
 func listBestBlock(c *gin.Context) {
 	type item struct {
 		Id     string `json:"id"`
+		Prev   string `json:"prev"`
 		Time   string `json:"time"`
 		Amount string `json:"amount"`
 		Size   int    `json:"size"`
@@ -245,6 +246,7 @@ func listBestBlock(c *gin.Context) {
 		ele := iter.Curr()
 		i := item{}
 		i.Id = iter.ID().String()
+		i.Prev = ele.Prev.String()
 		i.Time = time.Unix(int64(ele.Time), 0).Format("2006-01-02 15:04:05")
 		amount, err := blk.GetIncome(bi)
 		if err != nil {

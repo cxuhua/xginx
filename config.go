@@ -50,7 +50,6 @@ type Config struct {
 	Ver        uint32       `json:"version"`     //节点版本
 	TcpPort    int          `json:"tcp_port"`    //服务端口和ip
 	TcpIp      string       `json:"tcp_ip"`      //节点远程连接ip
-	Debug      bool         `json:"debug"`       //是否在测试模式
 	mu         sync.RWMutex `json:"-"`           //
 	logFile    *os.File     `json:"-"`           //日志文件
 	genesis    HASH256      `json:"-"`           //第一个区块id
@@ -103,11 +102,6 @@ func (c *Config) Init() error {
 	gin.DefaultWriter = c.logFile
 	gin.DefaultErrorWriter = c.logFile
 	log.SetFlags(logflags)
-	if c.Debug {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
-	}
 	//设置第一个区块id
 	c.genesis = NewHASH256(c.Genesis)
 	c.LimitHash = NewUINT256(c.PowLimit)

@@ -97,7 +97,7 @@ func (s *server) DoOpt(opt int) {
 
 func (s *server) Addrs() []*AddrNode {
 	s.ser.addrs.mu.RLock()
-	s.ser.addrs.mu.RUnlock()
+	defer s.ser.addrs.mu.RUnlock()
 	ds := []*AddrNode{}
 	for _, v := range s.ser.addrs.addrs {
 		ds = append(ds, v)
@@ -136,11 +136,13 @@ func (s *server) Start(ctx context.Context, lis IListener) {
 	if err != nil {
 		panic(err)
 	}
+	ser.lptr = lis
 	s.ser = ser
 	s.ser.Run()
 }
 
 type TcpServer struct {
+	lptr    IListener
 	lis     net.Listener
 	addr    *net.TCPAddr
 	ctx     context.Context
@@ -513,13 +515,15 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			return
 		case cv := <-ch:
 			if tx, ok := cv.(*TX); ok {
-				//广播交易
 				s.BroadMsg(NewMsgTx(tx))
 				break
 			}
 			m, ok := cv.(*ClientMsg)
 			if !ok {
 				break
+			}
+			if msg, ok := m.m.(MsgIO); ok {
+				s.lptr.OnClientMsg(m.c, msg)
 			}
 			if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
 				err := s.recvMsgAddrs(m.c, msg)
