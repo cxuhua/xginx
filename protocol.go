@@ -43,8 +43,8 @@ const (
 	NT_FILTER_ADD   = uint8(15)
 	NT_FILTER_CLEAR = uint8(16)
 	//交易merkle树
-	NT_GET_TX_MERKLE = uint8(17)
-	NT_TX_MERKLE     = uint8(18)
+	NT_GET_MERKLE = uint8(17)
+	NT_TX_MERKLE  = uint8(18)
 )
 
 //协议消息

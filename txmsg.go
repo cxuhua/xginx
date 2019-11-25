@@ -3,19 +3,19 @@ package xginx
 import "errors"
 
 //获取交易验证merkle树
-type MsgGetTxMerkle struct {
+type MsgGetMerkle struct {
 	TxId HASH256 //交易id
 }
 
-func (m MsgGetTxMerkle) Type() uint8 {
-	return NT_GET_TX_MERKLE
+func (m MsgGetMerkle) Type() uint8 {
+	return NT_GET_MERKLE
 }
 
-func (m MsgGetTxMerkle) Encode(w IWriter) error {
+func (m MsgGetMerkle) Encode(w IWriter) error {
 	return m.TxId.Encode(w)
 }
 
-func (m *MsgGetTxMerkle) Decode(r IReader) error {
+func (m *MsgGetMerkle) Decode(r IReader) error {
 	return m.TxId.Decode(r)
 }
 

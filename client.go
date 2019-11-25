@@ -168,8 +168,8 @@ func (c *Client) processMsg(m MsgIO) error {
 		if err != nil {
 			LogError("verify txid merkle error", err)
 		}
-	case NT_GET_TX_MERKLE:
-		msg := m.(*MsgGetTxMerkle)
+	case NT_GET_MERKLE:
+		msg := m.(*MsgGetMerkle)
 		rsg, err := bi.NewMsgTxMerkle(msg.TxId)
 		if err != nil {
 			esg := NewMsgError(ErrCodeTxMerkle, err)
@@ -331,7 +331,7 @@ func (c *Client) connect(addr NetAddr) error {
 	c.SendMsg(bi.NewMsgVersion())
 
 	//发送测试包
-	mm := &MsgGetTxMerkle{TxId: NewHASH256("7dd56e3b1cad0aaa09c6a0e27a1ddc430300b57a6aadd2f3fb8d4acc0c82f379")}
+	mm := &MsgGetMerkle{TxId: NewHASH256("7dd56e3b1cad0aaa09c6a0e27a1ddc430300b57a6aadd2f3fb8d4acc0c82f379")}
 	c.SendMsg(mm)
 	return nil
 }
