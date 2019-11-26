@@ -53,12 +53,16 @@ func (p *TxPool) Del(id HASH256) *TX {
 
 //加入其他节点过来的多个交易数据
 func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
+	bl := p.Len()
 	for _, v := range msg.Txs {
 		if err := v.Tx.Check(bi, true); err != nil {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
 		}
 		_ = p.PushBack(v.Tx)
+	}
+	if p.Len() > bl {
+		LogInfof("tx pool new add %d tx", p.Len()-bl)
 	}
 }
 
