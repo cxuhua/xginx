@@ -153,6 +153,8 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.GET("/get/miner", getMinerApi)
 	//创建一个区块
 	mgr.POST("/new/block", newBlockApi)
+	//停止当前正在创建的区块
+	mgr.POST("/stop/block", stopBlockApi)
 	//转账
 	mgr.POST("/transfer", transferFee)
 	//更换管理员密码

@@ -394,6 +394,25 @@ func LoadPublicKey(s string) (*PublicKey, error) {
 //账号地址
 type Address string
 
+//创建一个输出
+func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
+	if v == 0 || !v.IsRange() {
+		return nil, errors.New("amount errror")
+	}
+	out := &TxOut{}
+	out.Value = v
+	dpkh, err := a.GetPkh()
+	if err != nil {
+		return nil, err
+	}
+	if script, err := NewLockedScript(dpkh, ext...); err != nil {
+		return nil, err
+	} else {
+		out.Script = script
+	}
+	return out, nil
+}
+
 func (a Address) GetPkh() (HASH160, error) {
 	return DecodeAddress(a)
 }

@@ -14,14 +14,6 @@ import (
 const (
 	//收到所有消息
 	NetMsgTopic = "NetMsg"
-	//收到地址消息订阅
-	NetMsgAddrsTopic = "NetMsgAddrs"
-	//收到区块头
-	NetMsgHeadersTopic = "NetMsgHeaders"
-	//收到交易
-	NetMsgTxTopic = "NetMsgTx"
-	//收到区块
-	NetMsgBlockTopic = "NetMsgBlock"
 	//创建了新的交易进入了交易池
 	NewTxTopic = "NewTx"
 )

@@ -194,7 +194,14 @@ func transferFee(c *gin.Context) {
 		})
 		return
 	}
-	tx, err := bi.Transfer(args.Src, args.Dst, amt, fee, ext)
+	mi := bi.EmptyMulTransInfo()
+	mi.Src = []Address{args.Src}
+	mi.Keep = 0
+	mi.Dst = []Address{args.Dst}
+	mi.Amts = []Amount{amt}
+	mi.Fee = fee
+	mi.Ext = ext
+	tx, err := mi.NewTx(true)
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 104,
@@ -637,6 +644,26 @@ func getStatusApi(c *gin.Context) {
 	s.Cache = bi.lru.Size()
 	s.Tps = bi.GetTxPool().Len()
 	c.JSON(http.StatusOK, s)
+}
+
+//停止当前创建的区块
+func stopBlockApi(c *gin.Context) {
+	if Miner == nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  "miner not running",
+		})
+		return
+	}
+	ps := GetPubSub()
+	ps.Pub(MinerAct{
+		Opt: OptStopGenBlock,
+		Arg: true,
+	}, NewMinerActTopic)
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  "OK",
+	})
 }
 
 //开始创建一个区块

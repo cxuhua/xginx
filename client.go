@@ -209,7 +209,6 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_HEADERS:
 		msg := m.(*MsgHeaders)
 		c.Height = msg.Height
-		ps.Pub(msg, NetMsgHeadersTopic)
 	case NT_GET_HEADERS:
 		msg := m.(*MsgGetHeaders)
 		rsg := bi.GetMsgHeaders(msg)
@@ -220,17 +219,9 @@ func (c *Client) processMsg(m MsgIO) error {
 			break
 		}
 		bi.GetMsgGetInv(msg, c)
-	case NT_BLOCK:
-		msg := m.(*MsgBlock)
-		ps.Pub(msg.Blk, NetMsgBlockTopic)
-	case NT_TX:
-		msg := m.(*MsgTx)
-		for _, tx := range msg.Txs {
-			ps.Pub(tx, NetMsgTxTopic)
-		}
 	case NT_ADDRS:
 		msg := m.(*MsgAddrs)
-		ps.Pub(msg, NetMsgAddrsTopic)
+		LogInfo("get addrs count =", len(msg.Addrs), "from", c.Addr)
 	case NT_GET_ADDRS:
 		msg := c.ss.NewMsgAddrs(c)
 		c.SendMsg(msg)
@@ -380,12 +371,15 @@ func (c *Client) loop() {
 				LogError("MsgVersion recv timeout,closed")
 				break
 			}
-			//获取地址列表和交易池数据
+			//获取地址列表
 			if c.Service&SERVICE_NODE != 0 {
-				amsg := c.ss.NewMsgAddrs(c)
-				c.SendMsg(amsg)
-				tmsg := &MsgGetTxPool{}
-				c.SendMsg(tmsg)
+				msg := c.ss.NewMsgAddrs(c)
+				c.SendMsg(msg)
+			}
+			//和交易池数据
+			if c.Service&SERVICE_NODE != 0 {
+				msg := &MsgGetTxPool{}
+				c.SendMsg(msg)
 			}
 		case <-c.pt.C:
 			if !c.isopen {

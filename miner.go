@@ -25,6 +25,8 @@ const (
 	OptGenBlock = iota
 	//设置矿工奖励账号 arg=*Account
 	OptSetMiner
+	//停止当前区块创建
+	OptStopGenBlock
 )
 
 //矿产操作
@@ -58,10 +60,13 @@ type minerEngine struct {
 	acc    *Account
 	mu     sync.RWMutex
 	ogb    ONCE
+	sch    chan bool //停止当前正在创建的区块
 }
 
 func newMinerEngine() IMiner {
-	return &minerEngine{}
+	return &minerEngine{
+		sch: make(chan bool, 1),
+	}
 }
 
 func (m *minerEngine) GetMiner() *Account {
@@ -118,6 +123,8 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	defer ps.Unsub(hbc)
 	for i, j, l := UR32(), uint32(0), 0; ; i++ {
 		select {
+		case <-m.sch:
+			return errors.New("force stop current gen block")
 		case <-m.ctx.Done():
 			return m.ctx.Err()
 		case bhp := <-hbc:
@@ -173,6 +180,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 //处理操作
 func (m *minerEngine) processOpt(opt MinerAct) {
 	switch opt.Opt {
+	case OptStopGenBlock:
+		m.sch <- true
+		LogInfo("recv stop current gen block")
 	case OptGenBlock:
 		ver, ok := opt.Arg.(uint32)
 		if !ok {

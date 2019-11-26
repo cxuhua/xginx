@@ -697,6 +697,15 @@ type TX struct {
 	Refs     []HASH256  //引用到的交易id
 }
 
+func NewTx() *TX {
+	tx := &TX{}
+	tx.Ver = 1
+	tx.Outs = []*TxOut{}
+	tx.Ins = []*TxIn{}
+	tx.LockTime = 0
+	return tx
+}
+
 //重置缓存
 func (tx *TX) ResetAll() {
 	tx.idhc.Reset()

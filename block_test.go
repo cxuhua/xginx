@@ -55,17 +55,15 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	mi := bi.EmptyMulTransInfo()
+	mi.Src = []Address{"st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v"}
+	mi.Keep = 0
+	mi.Dst = []Address{"st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w"}
+	mi.Amts = []Amount{3 * COIN}
+	mi.Fee = 1 * COIN
+	mi.Ext = []byte{}
 	//A -> B
-	tx, err := bi.Transfer("st1qhkwszvzcl0qza276afsr5wgfq2dcs03uuq2yuw", "st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w", 1*COIN, 0)
-	if err != nil {
-		panic(err)
-	}
-	err = blk.AddTx(bi, tx)
-	if err != nil {
-		panic(err)
-	}
-	//B -> C
-	tx, err = bi.Transfer("st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w", "st1qqgndaafn6lmhnp5mvqm6erh5r35t0rul6wt2t6", 1*COIN, 0)
+	tx, err := mi.NewTx(false)
 	if err != nil {
 		panic(err)
 	}

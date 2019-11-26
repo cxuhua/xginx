@@ -654,85 +654,140 @@ func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 	return nil
 }
 
-//转账交易
-//从acc账号转向addr地址 金额:amt，交易费:fee
-func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount, ext ...[]byte) (*TX, error) {
-	if !fee.IsRange() || amt == 0 || !amt.IsRange() {
-		return nil, errors.New("amount zero or fee error")
+type MulTransInfo struct {
+	bi   *BlockIndex
+	Src  []Address //原地址
+	Keep int       //找零到这个索引对应的src地址
+	Dst  []Address //目标地址
+	Amts []Amount  //目标金额
+	Fee  Amount    //交易费
+	Ext  []byte    //扩展信息
+}
+
+func (m *MulTransInfo) Check() error {
+	if len(m.Src) == 0 || len(m.Dst) == 0 || len(m.Dst) != len(m.Amts) {
+		return errors.New("src dst amts num error")
 	}
-	spkh, err := src.GetPkh()
+	if m.Keep < 0 || m.Keep >= len(m.Src) {
+		return errors.New("keep index out bound")
+	}
+	if !m.Fee.IsRange() {
+		return errors.New("fee value error")
+	}
+	sum := Amount(0)
+	for _, v := range m.Amts {
+		sum += v
+	}
+	if sum == 0 || !sum.IsRange() {
+		return errors.New("amts value error")
+	}
+	return nil
+}
+
+//获取地址对应的账户和金额列表
+func (m *MulTransInfo) getAddressInfo(addr Address) (*Account, Coins, error) {
+	spkh, err := addr.GetPkh()
 	if err != nil {
+		return nil, nil, err
+	}
+	acc, err := m.bi.lptr.GetWallet().GetAccountWithPkh(spkh)
+	if err != nil {
+		return nil, nil, err
+	}
+	ds, err := m.bi.ListCoinsWithID(spkh)
+	if err != nil {
+		return nil, nil, err
+	}
+	return acc, ds, nil
+}
+
+//生成交易
+//pri=true 只使用有私钥的账户
+func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
+	if err := m.Check(); err != nil {
 		return nil, err
 	}
-	dpkh, err := addr.GetPkh()
-	if err != nil {
-		return nil, err
+	tx := NewTx()
+	//输出总计
+	sum := m.Fee
+	for _, v := range m.Amts {
+		sum += v
 	}
-	acc, err := bi.lptr.GetWallet().GetAccountWithPkh(spkh)
-	if err != nil {
-		return nil, err
+	//计算使用哪些输入
+	for _, src := range m.Src {
+		//获取转出账号信息
+		acc, ds, err := m.getAddressInfo(src)
+		if err != nil {
+			return nil, err
+		}
+		if pri && !acc.HasPrivate() {
+			continue
+		}
+		//获取需要消耗的输出
+		for _, cv := range ds {
+			//如果来自内存池，保存引用到的交易，之后检测时，引用到的交易必须存在当前区块中
+			if cv.pool {
+				tx.Refs = append(tx.Refs, cv.TxId)
+			}
+			in, err := cv.NewTxIn(acc)
+			if err != nil {
+				return nil, err
+			}
+			tx.Ins = append(tx.Ins, in)
+			sum -= cv.Value
+			if sum <= 0 {
+				break
+			}
+		}
 	}
-	ds, err := bi.ListCoinsWithID(spkh)
-	if err != nil {
-		return nil, err
-	}
-	balance := ds.Balance()
-	if (amt + fee) > balance {
+	//没有减完，余额不足
+	if sum > 0 {
 		return nil, errors.New("Insufficient balance")
 	}
-	tx := &TX{}
-	tx.Ver = 1
-	sum := Amount(0)
-	tx.Outs = []*TxOut{}
-	//获取需要的输入
-	tx.Ins = []*TxIn{}
-	for _, cv := range ds {
-		//如果来自内存池，保存引用到的交易，之后检测时，引用到的交易必须存在当前区块中
-		if cv.pool {
-			tx.Refs = append(tx.Refs, cv.TxId)
+	//转出到其他账号的输出
+	for i, v := range m.Amts {
+		if v == 0 {
+			continue
 		}
-		in, err := cv.NewTxIn(acc)
+		addr := m.Dst[i]
+		//创建目标输出
+		out, err := addr.NewTxOut(v, m.Ext)
 		if err != nil {
 			return nil, err
 		}
-		tx.Ins = append(tx.Ins, in)
-		sum += cv.Value
-		if sum >= amt+fee {
-			break
-		}
+		tx.Outs = append(tx.Outs, out)
 	}
-	//创建目标输出
-	out := &TxOut{}
-	out.Value = amt
-	if script, err := NewLockedScript(dpkh, ext...); err != nil {
-		return nil, err
-	} else {
-		out.Script = script
-	}
-	tx.Outs = append(tx.Outs, out)
-	//找零钱给自己
-	if rv := sum - fee - amt; rv > 0 {
-		mine := &TxOut{}
-		script, err := acc.NewLockedScript()
+	//多减的就是找零钱给自己
+	if rv := -sum; rv > 0 {
+		out, err := m.Src[m.Keep].NewTxOut(rv)
 		if err != nil {
 			return nil, err
 		}
-		mine.Script = script
-		mine.Value = rv
-		tx.Outs = append(tx.Outs, mine)
+		tx.Outs = append(tx.Outs, out)
 	}
-	if err := tx.Sign(bi); err != nil {
+	if err := tx.Sign(m.bi); err != nil {
 		return nil, err
 	}
 	//回调处理错误不放入交易池
-	if err := bi.lptr.OnNewTx(bi, tx); err != nil {
+	if err := m.bi.lptr.OnNewTx(m.bi, tx); err != nil {
 		return nil, err
 	}
 	//放入交易池
-	if err := bi.txp.PushBack(tx); err != nil {
+	if err := m.bi.txp.PushBack(tx); err != nil {
 		return nil, err
 	}
 	return tx, nil
+}
+
+func (bi *BlockIndex) EmptyMulTransInfo() *MulTransInfo {
+	return &MulTransInfo{
+		bi:   bi,
+		Src:  []Address{},
+		Keep: 0,
+		Dst:  []Address{},
+		Amts: []Amount{},
+		Fee:  0,
+	}
 }
 
 //获取区块头
@@ -1216,18 +1271,18 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	meta := &TBMeta{
 		BlockHeader: header,
 	}
-	cid, err := meta.ID()
+	bid, err := meta.ID()
 	if err != nil {
 		return nil, err
 	}
-	if !CheckProofOfWork(cid, meta.Bits) {
+	if !CheckProofOfWork(bid, meta.Bits) {
 		return nil, errors.New("block header bits check error")
 	}
 	nexth := InvalidHeight
 	//是否能连接到主链后
 	phv, pid, isok := bi.islinkback(meta)
 	if !isok {
-		return nil, fmt.Errorf("can't link to chain last, hash=%v", cid)
+		return nil, fmt.Errorf("can't link to chain last, hash=%v", bid)
 	}
 	if pid.IsZero() {
 		nexth = phv
@@ -1241,9 +1296,9 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 		return nil, err
 	}
 	//保存区块头
-	bt.Put(BLOCK_PREFIX, cid[:], hbs)
+	bt.Put(BLOCK_PREFIX, bid[:], hbs)
 	//保存最后一个头
-	bh := BestValue{Height: nexth, Id: cid}
+	bh := BestValue{Height: nexth, Id: bid}
 	bt.Put(LastHeaderKey, bh.Bytes())
 	//保存数据
 	err = bi.db.Index().Write(bt)
@@ -1261,15 +1316,11 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 
 //获取索引存储db
 func (bi *BlockIndex) GetStoreDB() IBlkStore {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
 	return bi.db
 }
 
 //获取内存交易池
 func (bi *BlockIndex) GetTxPool() *TxPool {
-	bi.mu.RLock()
-	defer bi.mu.RUnlock()
 	return bi.txp
 }
 
@@ -1281,11 +1332,10 @@ func (bi *BlockIndex) Close() {
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
-	bi.hmap = nil
-	bi.imap = nil
-	bi.lru.EvictAll()
 	_ = bi.lru.Close()
 	bi.txp.Close()
+	bi.hmap = nil
+	bi.imap = nil
 	LogInfo("block index closed")
 }
 
@@ -1297,7 +1347,7 @@ func NewBlockIndex(lptr IListener) *BlockIndex {
 		hmap: map[uint32]*list.Element{},
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
-		lru:  NewIndexCacher(64 * opt.MiB),
+		lru:  NewIndexCacher(256 * opt.MiB),
 	}
 	return bi
 }
