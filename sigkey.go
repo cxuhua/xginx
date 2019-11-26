@@ -396,7 +396,7 @@ type Address string
 
 //创建一个输出
 func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
-	if v == 0 || !v.IsRange() {
+	if !v.IsRange() {
 		return nil, errors.New("amount errror")
 	}
 	out := &TxOut{}
