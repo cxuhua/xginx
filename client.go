@@ -168,6 +168,7 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_TXPOOL:
 		msg := m.(*MsgTxPool)
 		bi.GetTxPool().PushTxs(msg)
+		LogInfo("get tx pool count =", len(msg.Txs), "from", c.Addr)
 	case NT_TX_MERKLE:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)
@@ -379,10 +380,13 @@ func (c *Client) loop() {
 				LogError("MsgVersion recv timeout,closed")
 				break
 			}
-			amsg := c.ss.NewMsgAddrs(c)
-			c.SendMsg(amsg)
-			tmsg := &MsgGetTxPool{}
-			c.SendMsg(tmsg)
+			//获取地址列表和交易池数据
+			if c.Service&SERVICE_NODE != 0 {
+				amsg := c.ss.NewMsgAddrs(c)
+				c.SendMsg(amsg)
+				tmsg := &MsgGetTxPool{}
+				c.SendMsg(tmsg)
+			}
 		case <-c.pt.C:
 			if !c.isopen {
 				break
