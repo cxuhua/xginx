@@ -51,6 +51,13 @@ func (p *TxPool) Del(id HASH256) *TX {
 	return nil
 }
 
+//加入其他节点过来的多个交易数据
+func (p *TxPool) PushTxs(msg *MsgTxPool) {
+	for _, v := range msg.Txs {
+		_ = p.PushBack(v.Tx)
+	}
+}
+
 //获取交易池子数据
 func (p *TxPool) NewMsgTxPool() *MsgTxPool {
 	p.mu.Lock()

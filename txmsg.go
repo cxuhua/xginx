@@ -289,6 +289,7 @@ func (m TxItem) Encode(w IWriter) error {
 }
 
 func (m *TxItem) Decode(r IReader) error {
+	m.Tx = &TX{}
 	if err := m.Tx.Decode(r); err != nil {
 		return err
 	}

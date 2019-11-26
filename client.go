@@ -167,10 +167,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		c.SendMsg(tp.NewMsgTxPool())
 	case NT_TXPOOL:
 		msg := m.(*MsgTxPool)
-		tp := bi.GetTxPool()
-		for _, tx := range msg.Txs {
-			_ = tp.PushBack(tx.Tx)
-		}
+		bi.GetTxPool().PushTxs(msg)
 	case NT_TX_MERKLE:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)
@@ -380,13 +377,12 @@ func (c *Client) loop() {
 			if !c.isopen {
 				c.Close()
 				LogError("MsgVersion recv timeout,closed")
-			} else if c.IsIn() {
-				msg := c.ss.NewMsgAddrs(c)
-				c.SendMsg(msg)
-			} else if c.IsOut() {
-				msg := &MsgGetTxPool{}
-				c.SendMsg(msg)
+				break
 			}
+			amsg := c.ss.NewMsgAddrs(c)
+			c.SendMsg(amsg)
+			tmsg := &MsgGetTxPool{}
+			c.SendMsg(tmsg)
 		case <-c.pt.C:
 			if !c.isopen {
 				break
