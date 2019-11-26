@@ -117,6 +117,7 @@ type CoinKeyValue struct {
 	TxId  HASH256 //tx id
 	Index VarUInt //txout idx
 	Value Amount  //list时设置不包含在key中
+	pool  bool    //是否来自内存池
 }
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
@@ -141,6 +142,7 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
+//创建一个消费输入
 func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
 	in := &TxIn{}
 	in.OutHash = tk.TxId

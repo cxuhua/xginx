@@ -1,122 +1,10 @@
 package xginx
 
 import (
-	"errors"
 	"log"
 	"testing"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
-
-var (
-	//1-1
-	//3-2
-	a32 = "XrxPtJaoXqJWg79S931ceyMsYcgMCUXousiVm2UB7PnVfWCD9RB5gpQ5mWGYGgemTUTXfcpGv4G4x8v2ErgW5TstcLPRW927Jxzj1tyqQmcCDdB5xFgKv4c6xXEHfnUzThURZh26L5tzScWSJ62NFkT4gPoosrkTFMdUvxZT1mxiX6WBa6PL4YVxnhFtinYn9FSqqeF7VKEbDWQC4jPJt9Df86TndKcB2sfPzX5LfAVcBPieDVKRXPm93SBp2hTJXZXyDRV1U8c2j6n2V5pyYhpRGDbH3iFpWJFuQGDCKto3dP8aM9hxTbXWHf95Zywg5ZZnTXwobhxwz7khcn1JWhdwni9cXqzhddzhGZVmYS7mFqJY5hGR814uDrsB18yCFCyBRMELRq6GMTaafoo7MaBgjzxKYkfeneXrCx4XrX2G3QjiThhkSrX1HQGeCWdp8iNSsjE1zjrZFivgamUJQ46JVWNxd8LChKjuLfuexcG4uDairUptYqUm7hUT"
-	//3-3签名
-	a33 = "XrxPtJaoXqJWg79S931ceyMsYcgMCUXousiVm2UB7PnVfWCD9RB5gpQ5mWGYGgemTUTXfcpGv4G4x8v2ErgW5TstcLPRW927Jxzj1tyqQmcCDdB5xFgKv4c6xXEHfnUzThURZh26L5tzScWSJ62NFkT4gPoosrkTFMdUvxZT1mxiX6WBa6PL4YVxnhFtinYn9FSqqeF7VKEbDWQC4jPJt9Df86TndKcB2sfPzX5LfAVcBPieDVKRXPm93SBp2hTJXZXyDRV1U8c2j6n2V5pyYhpRGDbH3iFpWJFuQGDCKto3dP8aM9hxTbXWHf95Zywg5ZZnTXwobhxwz7khcn1JWhdwni9cXqzhddzhGZVmYS7mFqJY5hGR814uDrsB18yCFCyBRMELRq6GMTaafoo7MaBgjzxKYkfeneXrCx4XrX2G3QjiThhkSrX1HQGeCWdp8iNSsjE1zjrZFivgamUJQ46JVWNxd8LChKjuLfuexcG4uDairUptYqUm7hUT"
-
-	TestAccount, _ = LoadAccount(a32)
-	DstAccount, _  = LoadAccount(a33)
-)
-
-func TestBlockHeader(t *testing.T) {
-	h := BlockHeader{}
-	h.Time = 1
-	h.Nonce = 2
-
-	b := h.Bytes()
-	b.SetTime(time.Now())
-	b.SetNonce(4)
-
-	h2 := b.Header()
-
-	if h2.Time != 3 {
-		t.Errorf("time set error")
-	}
-
-	if h2.Nonce != 4 {
-		t.Errorf("nonce set error")
-	}
-}
-
-//测试用监听器
-type tlis struct {
-}
-
-func (lis *tlis) OnClose(bi *BlockIndex) {
-
-}
-func (lis *tlis) OnInitHttp(m *gin.Engine) {
-
-}
-
-func (lis *tlis) OnClientMsg(c *Client, msg MsgIO) {
-
-}
-
-func (lis *tlis) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
-
-}
-
-func (lis *tlis) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
-
-}
-
-func (lis *tlis) OnStartup() {
-
-}
-
-//当块创建完毕
-func (lis *tlis) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
-
-	//设置base out script
-	//创建coinbase tx
-	tx := &TX{}
-	tx.Ver = 1
-
-	//base tx
-	in := &TxIn{}
-	in.Script = blk.CoinbaseScript([]byte("Test Block"))
-	tx.Ins = []*TxIn{in}
-
-	out := &TxOut{}
-	out.Value = blk.CoinbaseReward()
-	if script, err := TestAccount.NewLockedScript(); err != nil {
-		return err
-	} else {
-		out.Script = script
-	}
-	tx.Outs = []*TxOut{out}
-
-	blk.Txs = []*TX{tx}
-
-	return nil
-}
-
-func (lis *tlis) GetWallet() IWallet {
-	return nil
-}
-
-//完成区块
-func (lis *tlis) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
-	if len(blk.Txs) == 0 {
-		return errors.New("txs miss")
-	}
-	btx := blk.Txs[0]
-	if !btx.IsCoinBase() {
-		return errors.New("coinbase tx miss")
-	}
-	fee, err := blk.GetFee(bi)
-	if err != nil {
-		return err
-	}
-	if fee == 0 {
-		return nil
-	}
-	btx.Outs[0].Value += fee
-	return blk.CheckTxs(bi)
-}
 
 func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	blk, err := bi.NewBlock(1)
@@ -132,13 +20,20 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	return blk
 }
 
-func TestBlockChain(t *testing.T) {
+func getTestBi() *BlockIndex {
 	conf = LoadConfig("v10000.json")
-	InitBlockIndex(&tlis{})
-	bi := GetBlockIndex()
+	lis := newListener(conf.WalletDir)
+	InitBlockIndex(lis)
+	lis.OnStartup()
+	return GetBlockIndex()
+}
+
+func TestBlockChain(t *testing.T) {
+	bi := getTestBi()
 	defer bi.Close()
-	testnum := uint32(10)
+	testnum := uint32(1)
 	for i := uint32(0); i < testnum; i++ {
+		time.Sleep(time.Second)
 		cb := NewTestBlock(bi)
 		_, err := bi.LinkHeader(cb.Header)
 		if err != nil {
@@ -156,29 +51,27 @@ func TestBlockChain(t *testing.T) {
 }
 
 func TestTransfire(t *testing.T) {
-	conf = LoadConfig("v10000.json")
-	InitBlockIndex(&tlis{})
-	addr, err := DstAccount.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	src, err := TestAccount.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	bi := GetBlockIndex()
+	bi := getTestBi()
+	w := bi.lptr.GetWallet()
+	log.Println(w.ListAccount())
 	blk, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
 	}
-	tx, err := bi.Transfer(src, addr, 3*COIN, 1*COIN)
+	//A -> B
+	tx, err := bi.Transfer("st1qhkwszvzcl0qza276afsr5wgfq2dcs03uuq2yuw", "st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w", 1*COIN, 0)
 	if err != nil {
 		panic(err)
 	}
-	//tx, err = bi.Transfer(TestAccount, addr, 3*COIN, 1*COIN)
-	//if err != nil {
-	//	panic(err)
-	//}
+	err = blk.AddTx(bi, tx)
+	if err != nil {
+		panic(err)
+	}
+	//B -> C
+	tx, err = bi.Transfer("st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w", "st1qqgndaafn6lmhnp5mvqm6erh5r35t0rul6wt2t6", 1*COIN, 0)
+	if err != nil {
+		panic(err)
+	}
 	err = blk.AddTx(bi, tx)
 	if err != nil {
 		panic(err)
@@ -197,7 +90,7 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	ds, err := bi.ListCoins(addr)
+	ds, err := bi.ListCoins("st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w")
 	if err != nil {
 		panic(err)
 	}
@@ -206,7 +99,7 @@ func TestTransfire(t *testing.T) {
 
 func TestUnlinkBlock(t *testing.T) {
 	conf = LoadConfig("v10000.json")
-	InitBlockIndex(&tlis{})
+	InitBlockIndex(newListener(conf.WalletDir))
 	bi := GetBlockIndex()
 	err := bi.UnlinkLast()
 	if err != nil {

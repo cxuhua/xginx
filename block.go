@@ -260,9 +260,30 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	return nil
 }
 
+//查找区块内的交易
+func (blk *BlockInfo) findTx(id HASH256) (*TX, error) {
+	for _, tx := range blk.Txs {
+		tid, err := tx.ID()
+		if err != nil {
+			return nil, err
+		}
+		if tid.Equal(id) {
+			return tx, nil
+		}
+	}
+	return nil, errors.New("not found tx")
+}
+
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	//引用的交易必须在区块中
+	for _, rid := range tx.refs {
+		_, err := blk.findTx(rid)
+		if err != nil {
+			return err
+		}
+	}
 	if err := tx.CheckLockTime(blk); err != nil {
 		return err
 	}
@@ -550,7 +571,11 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	if v.OutHash.IsZero() {
 		return nil, errors.New("zero hash id")
 	}
+	tp := bi.GetTxPool()
 	otx, err := bi.LoadTX(v.OutHash)
+	if err != nil {
+		otx, err = tp.Get(v.OutHash)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("txin outtx miss %w", err)
 	}
@@ -621,9 +646,11 @@ type TxOut struct {
 	Script Script //锁定脚本
 }
 
-//输出是否可以被in消费在blk区块中
+//输出是否可以被in消费
 func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
-	tk := CoinKeyValue{}
+	db := bi.GetStoreDB()
+	tp := bi.GetTxPool()
+	tk := &CoinKeyValue{}
 	tk.Value = v.Value
 	if pkh, err := v.Script.GetPkh(); err != nil {
 		return true
@@ -633,7 +660,8 @@ func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
 	key := tk.GetKey()
-	return !bi.db.Index().Has(key)
+	//从索引和内存中查询是否有可用的金额，都不存在肯定已经被消费
+	return !db.Index().Has(key) && !tp.HasCoin(tk)
 }
 
 func (v *TxOut) Check(bi *BlockIndex) error {
@@ -672,6 +700,8 @@ type TX struct {
 	idhc     HashCacher //hash缓存
 	outs     HashCacher //签名hash缓存
 	pres     HashCacher //签名hash缓存
+	pool     bool       //是否来自内存池
+	refs     []HASH256  //引用到的交易id
 }
 
 //重置缓存
@@ -924,7 +954,7 @@ func (v *TX) CheckLockTime(blk *BlockInfo) error {
 }
 
 //检测除coinbase交易外的交易金额
-//csp是否检测输出金额是否已经被下消费
+//csp是否检测输出金额是否已经被消费
 func (v *TX) Check(bi *BlockIndex, csp bool) error {
 	//这里不检测coinbase交易
 	if v.IsCoinBase() {

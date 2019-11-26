@@ -91,7 +91,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	}
 	txp := bi.GetTxPool()
 	//添加交易
-	txs, err := txp.GetTxs(blk)
+	txs, err := txp.GetTxs(bi, blk)
 	if err != nil {
 		return err
 	}

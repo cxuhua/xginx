@@ -4,6 +4,12 @@ import (
 	"container/list"
 	"errors"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb/util"
+
+	"github.com/syndtr/goleveldb/leveldb/comparer"
+
+	"github.com/syndtr/goleveldb/leveldb/memdb"
 )
 
 const (
@@ -16,13 +22,19 @@ type TxPool struct {
 	mu   sync.RWMutex
 	tlis *list.List
 	tmap map[HASH256]*list.Element
+	mdb  *memdb.DB
 }
 
 func NewTxPool() *TxPool {
 	return &TxPool{
 		tlis: list.New(),
 		tmap: map[HASH256]*list.Element{},
+		mdb:  memdb.New(comparer.DefaultComparer, 1024*4),
 	}
+}
+
+func (p *TxPool) Close() {
+	p.mdb.Reset()
 }
 
 //返回非空是移除的交易
@@ -31,9 +43,61 @@ func (p *TxPool) Del(id HASH256) *TX {
 	defer p.mu.Unlock()
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
+		_ = p.setMemIdx(tx, false)
 		p.tlis.Remove(ele)
 		delete(p.tmap, id)
 		return tx
+	}
+	return nil
+}
+
+//当交易加入交易池
+func (p *TxPool) setMemIdx(tx *TX, add bool) error {
+	tid, err := tx.ID()
+	if err != nil {
+		return err
+	}
+	tx.pool = add
+	//存储已经消费的输出
+	buf := NewWriter()
+	for _, in := range tx.Ins {
+		buf.Reset()
+		err := in.OutHash.Encode(buf)
+		if err != nil {
+			return err
+		}
+		err = in.OutIndex.Encode(buf)
+		if err != nil {
+			return err
+		}
+		if add {
+			err = p.mdb.Put(buf.Bytes(), tid[:])
+		} else {
+			err = p.mdb.Delete(buf.Bytes())
+		}
+		if err != nil {
+			return err
+		}
+	}
+	//存储可用的金额
+	for idx, out := range tx.Outs {
+		tk := &CoinKeyValue{}
+		pkh, err := out.Script.GetPkh()
+		if err != nil {
+			return err
+		}
+		tk.Value = out.Value
+		tk.CPkh = pkh
+		tk.Index = VarUInt(idx)
+		tk.TxId = tid
+		if add {
+			err = p.mdb.Put(tk.GetKey(), tk.GetValue())
+		} else {
+			err = p.mdb.Delete(tk.GetKey())
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -42,14 +106,6 @@ func (p *TxPool) Del(id HASH256) *TX {
 func (p *TxPool) DelTxs(txs []*TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	//检测错误
-	for _, tx := range txs {
-		_, err := tx.ID()
-		if err != nil {
-			return err
-		}
-	}
-	//开始移除
 	for _, tx := range txs {
 		id, err := tx.ID()
 		if err != nil {
@@ -59,6 +115,7 @@ func (p *TxPool) DelTxs(txs []*TX) error {
 		if !has {
 			continue
 		}
+		_ = p.setMemIdx(tx, false)
 		p.tlis.Remove(ele)
 		delete(p.tmap, id)
 	}
@@ -79,7 +136,7 @@ func (p *TxPool) AllTxs() []*TX {
 }
 
 //取出交易，大小不能超过限制
-func (p *TxPool) GetTxs(blk *BlockInfo) ([]*TX, error) {
+func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	txs := []*TX{}
@@ -91,6 +148,10 @@ func (p *TxPool) GetTxs(blk *BlockInfo) ([]*TX, error) {
 		tx := cur.Value.(*TX)
 		//未到达时间不获取
 		err := tx.CheckLockTime(blk)
+		if err != nil {
+			continue
+		}
+		err = tx.Check(bi, true)
 		if err != nil {
 			continue
 		}
@@ -107,26 +168,51 @@ func (p *TxPool) GetTxs(blk *BlockInfo) ([]*TX, error) {
 	return txs, nil
 }
 
-//一笔钱是否已经在内存交易池中某个交易消费
-func (p *TxPool) FindCoin(coin *CoinKeyValue) (*TX, error) {
+//是否存在可消费的coin
+func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	for _, ele := range p.tmap {
-		tx := ele.Value.(*TX)
-		for _, in := range tx.Ins {
-			if !in.OutHash.Equal(coin.TxId) {
-				continue
-			}
-			if in.OutIndex != coin.Index {
-				continue
-			}
-			return tx, nil
-		}
-	}
-	return nil, errors.New("txpool not found coin")
+	return p.mdb.Contains(coin.GetKey())
 }
 
-//交易池是否存在交易
+//获取pkh在交易池中可用的金额
+func (p *TxPool) ListCoins(spkh HASH160) (Coins, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	coins := Coins{}
+	key := append([]byte{}, COIN_PREFIX...)
+	key = append(key, spkh[:]...)
+	iter := p.mdb.NewIterator(util.BytesPrefix(key))
+	defer iter.Release()
+	for iter.Next() {
+		tk := &CoinKeyValue{}
+		err := tk.From(iter.Key(), iter.Value())
+		if err != nil {
+			return nil, err
+		}
+		tk.pool = true
+		coins = append(coins, tk)
+	}
+	return coins, nil
+}
+
+//一笔钱是否已经在内存交易池中某个交易消费
+func (p *TxPool) IsSpentCoin(coin *CoinKeyValue) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	buf := NewWriter()
+	err := coin.TxId.Encode(buf)
+	if err != nil {
+		return false
+	}
+	err = coin.Index.Encode(buf)
+	if err != nil {
+		return false
+	}
+	return p.mdb.Contains(buf.Bytes())
+}
+
+//交易池是否存在某个交易
 func (p *TxPool) Has(id HASH256) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -150,7 +236,7 @@ func (p *TxPool) Len() int {
 }
 
 //添加进去一笔交易放入最后
-//交易必须是实现校验过的
+//交易必须是校验过的
 func (p *TxPool) PushBack(tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -163,6 +249,9 @@ func (p *TxPool) PushBack(tx *TX) error {
 	}
 	if _, has := p.tmap[id]; has {
 		return errors.New("tx exists")
+	}
+	if err := p.setMemIdx(tx, true); err != nil {
+		return err
 	}
 	ele := p.tlis.PushBack(tx)
 	p.tmap[id] = ele

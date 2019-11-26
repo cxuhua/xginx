@@ -687,10 +687,9 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	//获取需要的输入
 	tx.Ins = []*TxIn{}
 	for _, cv := range ds {
-		//看是否在之前就已经消费已经消费直接跳过
-		_, err := bi.txp.FindCoin(cv)
-		if err == nil {
-			continue
+		//如果来自内存池，保存引用到的交易，之后检测时，引用到的交易必须存在当前区块中
+		if cv.pool {
+			tx.refs = append(tx.refs, cv.TxId)
 		}
 		in, err := cv.NewTxIn(acc)
 		if err != nil {
@@ -723,6 +722,10 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 		tx.Outs = append(tx.Outs, mine)
 	}
 	if err := tx.Sign(bi); err != nil {
+		return nil, err
+	}
+	//回调处理错误不放入交易池
+	if err := bi.lptr.OnNewTx(bi, tx); err != nil {
 		return nil, err
 	}
 	//放入交易池
@@ -1059,12 +1062,13 @@ func (bi *BlockIndex) ListCoins(addr Address) (Coins, error) {
 	return bi.ListCoinsWithID(pkh)
 }
 
-//获取某个id的所有积分
+//获取某个id的所有余额
 func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
 	prefix := getDBKey(COIN_PREFIX, id[:])
 	kvs := Coins{}
+	//获取区块链中历史可用金额
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {
@@ -1072,6 +1076,22 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 		err := tk.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
+		}
+		//如果已经在内存中被消费了，不列出
+		if bi.txp.IsSpentCoin(tk) {
+			continue
+		}
+		kvs = append(kvs, tk)
+	}
+	//获取交易池中的用于id的金额
+	cvs, err := bi.txp.ListCoins(id)
+	if err != nil {
+		return nil, err
+	}
+	for _, tk := range cvs {
+		//如果被消费了，不列出
+		if bi.txp.IsSpentCoin(tk) {
+			continue
 		}
 		kvs = append(kvs, tk)
 	}
@@ -1243,6 +1263,14 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	return ele, nil
 }
 
+//获取索引存储db
+func (bi *BlockIndex) GetStoreDB() IBlkStore {
+	bi.mu.RLock()
+	defer bi.mu.RUnlock()
+	return bi.db
+}
+
+//获取内存交易池
 func (bi *BlockIndex) GetTxPool() *TxPool {
 	bi.mu.RLock()
 	defer bi.mu.RUnlock()
@@ -1251,9 +1279,6 @@ func (bi *BlockIndex) GetTxPool() *TxPool {
 
 //关闭链数据
 func (bi *BlockIndex) Close() {
-	if bi.hmap == nil {
-		return
-	}
 	bi.mu.Lock()
 	defer bi.mu.Unlock()
 	LogInfo("block index closing")
@@ -1264,6 +1289,7 @@ func (bi *BlockIndex) Close() {
 	bi.imap = nil
 	bi.lru.EvictAll()
 	_ = bi.lru.Close()
+	bi.txp.Close()
 	LogInfo("block index closed")
 }
 

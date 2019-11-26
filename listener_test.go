@@ -1,4 +1,4 @@
-package main
+package xginx
 
 import (
 	"errors"
@@ -6,12 +6,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	. "github.com/cxuhua/xginx"
 )
 
 //测试用监听器
-type listener struct {
+type testLisener struct {
 	wallet IWallet
 }
 
@@ -20,41 +18,41 @@ func newListener(wdir string) IListener {
 	if err != nil {
 		panic(err)
 	}
-	return &listener{
+	return &testLisener{
 		wallet: w,
 	}
 }
 
-func (lis *listener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
-
-}
-
-func (lis *listener) OnNewTx(bi *BlockIndex, tx *TX) error {
+func (lis *testLisener) OnNewTx(bi *BlockIndex, tx *TX) error {
 	return nil
 }
 
-func (lis *listener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
+func (lis *testLisener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
 
 }
 
-func (lis *listener) OnClientMsg(c *Client, msg MsgIO) {
+func (lis *testLisener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
 
 }
 
-func (lis *listener) OnInitHttp(m *gin.Engine) {
+func (lis *testLisener) OnClientMsg(c *Client, msg MsgIO) {
 
 }
 
-func (lis *listener) OnClose(bi *BlockIndex) {
+func (lis *testLisener) OnInitHttp(m *gin.Engine) {
+
+}
+
+func (lis *testLisener) OnClose(bi *BlockIndex) {
 	lis.wallet.Close()
 }
 
-func (lis *listener) GetWallet() IWallet {
+func (lis *testLisener) GetWallet() IWallet {
 	return lis.wallet
 }
 
 //当块创建完毕
-func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *testLisener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	//获取矿工账号
 	acc := Miner.GetMiner()
 	if acc == nil {
@@ -84,7 +82,7 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	return nil
 }
 
-func (lis *listener) OnStartup() {
+func (lis *testLisener) OnStartup() {
 	acc, err := lis.wallet.GetMiner()
 	if err != nil {
 		panic(err)
@@ -101,7 +99,7 @@ func (lis *listener) OnStartup() {
 }
 
 //完成区块
-func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *testLisener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss")
 	}
