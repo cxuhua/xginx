@@ -322,6 +322,7 @@ func getBlockInfoApi(c *gin.Context) {
 		Coinbase bool    `json:"coinbase"`
 		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
+		Fee      string  `json:"fee"`
 	}
 	type block struct {
 		Id      string `json:"id"`
@@ -362,6 +363,11 @@ func getBlockInfoApi(c *gin.Context) {
 		xv.Outs = []txout{}
 		xv.Confirm = bi.GetTxConfirm(tid)
 		xv.LockTime = v.LockTime
+		fee, err := v.GetTransFee(bi)
+		if err != nil {
+			panic(err)
+		}
+		xv.Fee = fee.String()
 		for _, iv := range v.Ins {
 			xvi := txin{}
 			xvi.Script = hex.EncodeToString(iv.Script)
@@ -425,6 +431,7 @@ func listTxPoolApi(c *gin.Context) {
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
 		LockTime uint32  `json:"lock_time"`
+		Fee      string  `json:"fee"`
 	}
 	type result struct {
 		Code int  `json:"code"`
@@ -443,6 +450,11 @@ func listTxPoolApi(c *gin.Context) {
 		xv.Ins = []txin{}
 		xv.Outs = []txout{}
 		xv.LockTime = tv.LockTime
+		fee, err := tv.GetTransFee(bi)
+		if err != nil {
+			panic(err)
+		}
+		xv.Fee = fee.String()
 		for _, iv := range tv.Ins {
 			xvi := txin{}
 			xvi.OutTx = iv.OutHash.String()
@@ -518,6 +530,7 @@ func getTxInfoApi(c *gin.Context) {
 		Pool     bool    `json:"pool"`
 		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
+		Fee      string  `json:"fee"`
 	}
 	xv := tx{}
 	tid, err := tp.ID()
@@ -530,6 +543,11 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Ins = []txin{}
 	xv.Outs = []txout{}
 	xv.LockTime = tp.LockTime
+	fee, err := tp.GetTransFee(bi)
+	if err != nil {
+		panic(err)
+	}
+	xv.Fee = fee.String()
 	if !ispool {
 		xv.Confirm = bi.GetTxConfirm(tid)
 	}
