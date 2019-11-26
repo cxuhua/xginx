@@ -79,7 +79,7 @@ func (p *TxPool) AllTxs() []*TX {
 }
 
 //取出交易，大小不能超过限制
-func (p *TxPool) GetTxs() ([]*TX, error) {
+func (p *TxPool) GetTxs(blk *BlockInfo) ([]*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	txs := []*TX{}
@@ -89,7 +89,12 @@ func (p *TxPool) GetTxs() ([]*TX, error) {
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()
 		tx := cur.Value.(*TX)
-		err := tx.Encode(buf)
+		//未到达时间不获取
+		err := tx.CheckLockTime(blk)
+		if err != nil {
+			continue
+		}
+		err = tx.Encode(buf)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +107,7 @@ func (p *TxPool) GetTxs() ([]*TX, error) {
 	return txs, nil
 }
 
-//一笔钱是否已经在池中某个交易消费
+//一笔钱是否已经在内存交易池中某个交易消费
 func (p *TxPool) FindCoin(coin *CoinKeyValue) (*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

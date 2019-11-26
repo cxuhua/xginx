@@ -168,6 +168,9 @@ func (sr *stdsigner) GetSigHash() ([]byte, error) {
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}
+	if err := buf.TWrite(sr.tx.LockTime); err != nil {
+		return nil, err
+	}
 	return Hash256(buf.Bytes()), nil
 }
 

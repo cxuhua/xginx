@@ -13,6 +13,8 @@ const (
 	MAX_LOG_SIZE = 1024 * 1024
 	//最大扩展数据
 	MAX_EXT_SIZE = 4 * 1024
+	//
+	LOCKTIME_THRESHOLD = uint32(500000000)
 )
 
 //存储交易索引值
@@ -261,6 +263,9 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	if err := tx.CheckLockTime(blk); err != nil {
+		return err
+	}
 	otxs := blk.Txs
 	//检测交易是否可进行
 	if err := tx.Check(bi, true); err != nil {
@@ -332,10 +337,14 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	}
 	//检测所有交易
 	for i, tx := range blk.Txs {
+		err := tx.CheckLockTime(blk)
+		if err != nil {
+			return err
+		}
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, false)
+		err = tx.Check(bi, false)
 		if err != nil {
 			return err
 		}
@@ -656,12 +665,13 @@ func (v *TxOut) Decode(r IReader) error {
 
 //交易
 type TX struct {
-	Ver  VarUInt    //版本
-	Ins  []*TxIn    //输入
-	Outs []*TxOut   //输出
-	idhc HashCacher //hash缓存
-	outs HashCacher //签名hash缓存
-	pres HashCacher //签名hash缓存
+	Ver      VarUInt    //版本
+	Ins      []*TxIn    //输入
+	Outs     []*TxOut   //输出
+	LockTime uint32     //锁定时间或者区块
+	idhc     HashCacher //hash缓存
+	outs     HashCacher //签名hash缓存
+	pres     HashCacher //签名hash缓存
 }
 
 //重置缓存
@@ -857,6 +867,9 @@ func (tx *TX) ID() (HASH256, error) {
 			return id, err
 		}
 	}
+	if err := buf.TWrite(tx.LockTime); err != nil {
+		return id, err
+	}
 	return tx.idhc.Hash(buf.Bytes()), nil
 }
 
@@ -892,6 +905,22 @@ func (v *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 		fee -= out.Value
 	}
 	return fee, nil
+}
+
+//检测locktime
+//当locktime < LOCKTIME_THRESHOLD 表示区块高度限制
+//当locktime >= LOCKTIME_THRESHOLD 表示时间戳
+func (v *TX) CheckLockTime(blk *BlockInfo) error {
+	if v.LockTime == 0 {
+		return nil
+	}
+	if v.LockTime < LOCKTIME_THRESHOLD && v.LockTime < blk.Meta.Height {
+		return nil
+	}
+	if v.LockTime < blk.Meta.Time {
+		return nil
+	}
+	return errors.New("locktime limit,can't join block")
 }
 
 //检测除coinbase交易外的交易金额
@@ -966,6 +995,9 @@ func (v *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
+	if err := w.TWrite(v.LockTime); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -998,6 +1030,9 @@ func (v *TX) Decode(r IReader) error {
 			return err
 		}
 		v.Outs[i] = out
+	}
+	if err := r.TRead(&v.LockTime); err != nil {
+		return err
 	}
 	return nil
 }
