@@ -364,10 +364,9 @@ func getBlockInfoApi(c *gin.Context) {
 		xv.Confirm = bi.GetTxConfirm(tid)
 		xv.LockTime = v.LockTime
 		fee, err := v.GetTransFee(bi)
-		if err != nil {
-			panic(err)
+		if err == nil {
+			xv.Fee = fee.String()
 		}
-		xv.Fee = fee.String()
 		for _, iv := range v.Ins {
 			xvi := txin{}
 			xvi.Script = hex.EncodeToString(iv.Script)
@@ -451,10 +450,9 @@ func listTxPoolApi(c *gin.Context) {
 		xv.Outs = []txout{}
 		xv.LockTime = tv.LockTime
 		fee, err := tv.GetTransFee(bi)
-		if err != nil {
-			panic(err)
+		if err == nil {
+			xv.Fee = fee.String()
 		}
-		xv.Fee = fee.String()
 		for _, iv := range tv.Ins {
 			xvi := txin{}
 			xvi.OutTx = iv.OutHash.String()
@@ -544,10 +542,9 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Outs = []txout{}
 	xv.LockTime = tp.LockTime
 	fee, err := tp.GetTransFee(bi)
-	if err != nil {
-		panic(err)
+	if err == nil {
+		xv.Fee = fee.String()
 	}
-	xv.Fee = fee.String()
 	if !ispool {
 		xv.Confirm = bi.GetTxConfirm(tid)
 	}
