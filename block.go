@@ -246,7 +246,14 @@ func (v *BlockInfo) SetMerkle() error {
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	otxs := blk.Txs
+	//加入多个交易到区块中
 	for _, tx := range txs {
+		if !blk.HasTxs(tx.refs) {
+			return fmt.Errorf("ref tx miss")
+		}
+		if err := tx.CheckLockTime(blk); err != nil {
+			return err
+		}
 		if err := tx.Check(bi, true); err != nil {
 			return err
 		}
@@ -261,28 +268,33 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 }
 
 //查找区块内的交易
-func (blk *BlockInfo) findTx(id HASH256) (*TX, error) {
+func (blk *BlockInfo) HasTxs(ids []HASH256) bool {
+	if len(ids) == 0 {
+		return true
+	}
+	imap := map[HASH256]bool{}
 	for _, tx := range blk.Txs {
 		tid, err := tx.ID()
 		if err != nil {
-			return nil, err
+			return false
 		}
-		if tid.Equal(id) {
-			return tx, nil
+		imap[tid] = true
+	}
+	for _, id := range ids {
+		_, has := imap[id]
+		if !has {
+			return false
 		}
 	}
-	return nil, errors.New("not found tx")
+	return true
 }
 
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	//引用的交易必须在区块中
-	for _, rid := range tx.refs {
-		_, err := blk.findTx(rid)
-		if err != nil {
-			return err
-		}
+	if !blk.HasTxs(tx.refs) {
+		return fmt.Errorf("ref tx miss")
 	}
 	if err := tx.CheckLockTime(blk); err != nil {
 		return err
@@ -389,25 +401,6 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		return errors.New("coinbase fee error")
 	}
 	return nil
-}
-
-//10000000
-func (blk *BlockInfo) CalcPowHash(cnt uint32, bi *BlockIndex) error {
-	hb := blk.Header.Bytes()
-	for i := uint32(0); i < cnt; i++ {
-		id := hb.Hash()
-		if !CheckProofOfWork(id, blk.Header.Bits) {
-			hb.SetNonce(i)
-		} else {
-			blk.Header = hb.Header()
-			LogInfof("new block success ID=%v Bits=%x Height=%x", blk, blk.Meta.Bits, blk.Meta.Height)
-			return nil
-		}
-		if cnt > 0 && i%(cnt/10) == 0 {
-			LogInfof("genblock bits=%x ID=%v Nonce=%x Height=%d", blk.Meta.Bits, id, i, blk.Meta.Height)
-		}
-	}
-	return errors.New("calc bits failed")
 }
 
 //完成块数据

@@ -51,7 +51,7 @@ func (p *TxPool) Del(id HASH256) *TX {
 	return nil
 }
 
-//当交易加入交易池
+//设置内存消费金额索引
 func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 	tid, err := tx.ID()
 	if err != nil {
@@ -59,21 +59,14 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 	}
 	tx.pool = add
 	//存储已经消费的输出
-	buf := NewWriter()
 	for _, in := range tx.Ins {
-		buf.Reset()
-		err := in.OutHash.Encode(buf)
-		if err != nil {
-			return err
-		}
-		err = in.OutIndex.Encode(buf)
-		if err != nil {
-			return err
-		}
+		tk := &CoinKeyValue{}
+		tk.Index = in.OutIndex
+		tk.TxId = in.OutHash
 		if add {
-			err = p.mdb.Put(buf.Bytes(), tid[:])
+			err = p.mdb.Put(tk.SpentKey(), tid[:])
 		} else {
-			err = p.mdb.Delete(buf.Bytes())
+			err = p.mdb.Delete(tk.SpentKey())
 		}
 		if err != nil {
 			return err
@@ -191,6 +184,9 @@ func (p *TxPool) ListCoins(spkh HASH160) (Coins, error) {
 			return nil, err
 		}
 		tk.pool = true
+		if p.mdb.Contains(tk.SpentKey()) {
+			continue
+		}
 		coins = append(coins, tk)
 	}
 	return coins, nil
@@ -200,16 +196,7 @@ func (p *TxPool) ListCoins(spkh HASH160) (Coins, error) {
 func (p *TxPool) IsSpentCoin(coin *CoinKeyValue) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	buf := NewWriter()
-	err := coin.TxId.Encode(buf)
-	if err != nil {
-		return false
-	}
-	err = coin.Index.Encode(buf)
-	if err != nil {
-		return false
-	}
-	return p.mdb.Contains(buf.Bytes())
+	return p.mdb.Contains(coin.SpentKey())
 }
 
 //交易池是否存在某个交易

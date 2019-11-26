@@ -1089,10 +1089,6 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160) (Coins, error) {
 		return nil, err
 	}
 	for _, tk := range cvs {
-		//如果被消费了，不列出
-		if bi.txp.IsSpentCoin(tk) {
-			continue
-		}
 		kvs = append(kvs, tk)
 	}
 	return kvs, nil

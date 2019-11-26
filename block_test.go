@@ -79,9 +79,8 @@ func TestTransfire(t *testing.T) {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
-	if err := blk.CalcPowHash(1000000, bi); err != nil {
-		panic(err)
-	}
+	log.Println(blk.GetFee(bi))
+	log.Println(blk.CoinbaseFee())
 	_, err = bi.LinkHeader(blk.Header)
 	if err != nil {
 		panic(err)

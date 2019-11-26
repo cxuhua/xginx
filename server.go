@@ -313,32 +313,36 @@ func (s *TcpServer) recoverError() {
 	}
 }
 
-func (s *TcpServer) recvMsgTx(c *Client, tx *TX) error {
+func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	bi := GetBlockIndex()
-	//获取交易id
-	id, err := tx.ID()
-	if err != nil {
-		return err
-	}
-	//检测交易是否可用
-	if err := tx.Check(bi, true); err != nil {
-		return err
-	}
-	//如果交易已经在区块中忽略
-	if _, err := bi.LoadTX(id); err == nil {
-		return nil
-	}
-	txp := bi.GetTxPool()
-	//已经存在交易池中忽略
-	if txp.Has(id) {
-		return nil
+	rsg := &MsgTx{}
+	for _, tx := range msg.Txs {
+		//获取交易id
+		id, err := tx.ID()
+		if err != nil {
+			return err
+		}
+		//检测交易是否可用
+		if err := tx.Check(bi, true); err != nil {
+			return err
+		}
+		//如果交易已经在区块中忽略
+		if _, err := bi.LoadTX(id); err == nil {
+			return nil
+		}
+		txp := bi.GetTxPool()
+		//已经存在交易池中忽略
+		if txp.Has(id) {
+			return nil
+		}
+		//放入交易池
+		err = txp.PushBack(tx)
+		rsg.Add(tx)
+		LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	}
 	//广播到周围节点,不包括c
-	s.BroadMsg(NewMsgTx(tx), c)
-	//放入交易池
-	err = txp.PushBack(tx)
-	LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
-	return err
+	s.BroadMsg(rsg, c)
+	return nil
 }
 
 //获取一个可以获取此区块头数据的连接
@@ -547,7 +551,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 				break
 			}
 			if msg, ok := m.m.(*MsgTx); ok {
-				err := s.recvMsgTx(m.c, msg.Tx)
+				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
 				}

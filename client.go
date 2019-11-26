@@ -218,7 +218,9 @@ func (c *Client) processMsg(m MsgIO) error {
 		ps.Pub(msg.Blk, NetMsgBlockTopic)
 	case NT_TX:
 		msg := m.(*MsgTx)
-		ps.Pub(msg.Tx, NetMsgTxTopic)
+		for _, tx := range msg.Txs {
+			ps.Pub(tx, NetMsgTxTopic)
+		}
 	case NT_ADDRS:
 		msg := m.(*MsgAddrs)
 		ps.Pub(msg, NetMsgAddrsTopic)

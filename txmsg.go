@@ -251,22 +251,47 @@ func (m *MsgInv) Decode(r IReader) error {
 
 // NT_TX
 type MsgTx struct {
-	Tx *TX
+	Txs []*TX
 }
 
 func NewMsgTx(tx *TX) *MsgTx {
-	return &MsgTx{Tx: tx}
+	return &MsgTx{Txs: []*TX{tx}}
 }
 
 func (m MsgTx) Type() uint8 {
 	return NT_TX
 }
 
+func (m *MsgTx) Add(tx *TX) {
+	m.Txs = append(m.Txs, tx)
+}
+
 func (m MsgTx) Encode(w IWriter) error {
-	return m.Tx.Encode(w)
+	if err := VarUInt(len(m.Txs)).Encode(w); err != nil {
+		return err
+	}
+	for _, tx := range m.Txs {
+		err := tx.Encode(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *MsgTx) Decode(r IReader) error {
-	m.Tx = &TX{}
-	return m.Tx.Decode(r)
+	num := VarUInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	m.Txs = make([]*TX, num.ToInt())
+	for i, _ := range m.Txs {
+		tx := &TX{}
+		err := tx.Decode(r)
+		if err != nil {
+			return err
+		}
+		m.Txs[i] = tx
+	}
+	return nil
 }

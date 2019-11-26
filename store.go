@@ -159,12 +159,43 @@ func (tk CoinKeyValue) GetValue() []byte {
 	return tk.Value.Bytes()
 }
 
+//消费key,用来记录输入对应的输出是否已经别消费
+func (tk CoinKeyValue) SpentKey() []byte {
+	buf := NewWriter()
+	_, err := buf.Write(COIN_PREFIX)
+	if err != nil {
+		panic(err)
+	}
+	err = tk.TxId.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	err = tk.Index.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+//用来存储pkh拥有的可消费的金额
 func (tk CoinKeyValue) GetKey() []byte {
 	buf := NewWriter()
-	_, _ = buf.Write(COIN_PREFIX)
-	_ = tk.CPkh.Encode(buf)
-	_ = tk.TxId.Encode(buf)
-	_ = tk.Index.Encode(buf)
+	_, err := buf.Write(COIN_PREFIX)
+	if err != nil {
+		panic(err)
+	}
+	err = tk.CPkh.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	err = tk.TxId.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	err = tk.Index.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
 	return buf.Bytes()
 }
 
