@@ -1273,9 +1273,6 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !CheckProofOfWork(bid, meta.Bits) {
-		return nil, errors.New("block header bits check error")
-	}
 	nexth := InvalidHeight
 	//是否能连接到主链后
 	phv, pid, isok := bi.islinkback(meta)
@@ -1286,6 +1283,14 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 		nexth = phv
 	} else {
 		nexth = phv + 1
+	}
+	//计算本高度下正确的难度
+	bits := bi.CalcBits(nexth)
+	if bits != meta.Bits {
+		return nil, errors.New("block header bits error")
+	}
+	if !CheckProofOfWork(bid, meta.Bits) {
+		return nil, errors.New("block header bits check error")
 	}
 	bt := bi.db.Index().NewBatch()
 	//保存区块头数据
