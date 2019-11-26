@@ -51,6 +51,18 @@ func (p *TxPool) Del(id HASH256) *TX {
 	return nil
 }
 
+//获取交易池子数据
+func (p *TxPool) NewMsgTxPool() *MsgTxPool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	msg := &MsgTxPool{}
+	for _, ele := range p.tmap {
+		tx := ele.Value.(*TX)
+		msg.Add(tx)
+	}
+	return msg
+}
+
 //设置内存消费金额索引
 func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 	tid, err := tx.ID()

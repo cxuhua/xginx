@@ -45,6 +45,9 @@ const (
 	//交易merkle树
 	NT_GET_MERKLE = uint8(17)
 	NT_TX_MERKLE  = uint8(18)
+	//获取内存交易池
+	NT_GET_TXPOOL = uint8(19)
+	NT_TXPOOL     = uint8(20)
 )
 
 //协议消息
@@ -311,6 +314,7 @@ type MsgVersion struct {
 	Addr    NetAddr //节点外网地址
 	Height  BHeight //节点区块高度
 	NodeID  uint64  //节点随机id
+	Tps     VarUInt //交易池数量
 }
 
 //在链上生成一个版本数据包
@@ -321,6 +325,7 @@ func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m.Height = bi.GetNodeHeight()
 	m.Service = SERVICE_NODE
 	m.NodeID = conf.nodeid
+	m.Tps = VarUInt(bi.txp.Len())
 	return m
 }
 
@@ -344,6 +349,9 @@ func (v MsgVersion) Encode(w IWriter) error {
 	if err := w.TWrite(v.NodeID); err != nil {
 		return err
 	}
+	if err := v.Tps.Encode(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -361,6 +369,9 @@ func (v *MsgVersion) Decode(r IReader) error {
 		return err
 	}
 	if err := r.TRead(&v.NodeID); err != nil {
+		return err
+	}
+	if err := v.Tps.Decode(r); err != nil {
 		return err
 	}
 	return nil

@@ -14,9 +14,6 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
-	if err := blk.CalcPowHash(1000000, bi); err != nil {
-		panic(err)
-	}
 	return blk
 }
 

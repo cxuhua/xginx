@@ -131,6 +131,7 @@ func listCoins(c *gin.Context) {
 		Tx    string `json:"tx"`
 		Idx   int    `json:"idx"`
 		Value string `json:"value"`
+		Pool  bool   `json:"pool"`
 	}
 	type result struct {
 		Code   int    `json:"code"`
@@ -144,6 +145,7 @@ func listCoins(c *gin.Context) {
 		i.Tx = v.TxId.String()
 		i.Idx = v.Index.ToInt()
 		i.Value = v.Value.String()
+		i.Pool = v.pool
 		res.Coins = append(res.Coins, i)
 		total += v.Value
 	}
@@ -311,6 +313,7 @@ func getBlockInfoApi(c *gin.Context) {
 		Ins      []txin  `json:"ins"`
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
+		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
 	}
 	type block struct {
@@ -351,6 +354,7 @@ func getBlockInfoApi(c *gin.Context) {
 		xv.Ins = []txin{}
 		xv.Outs = []txout{}
 		xv.Confirm = bi.GetTxConfirm(tid)
+		xv.LockTime = v.LockTime
 		for _, iv := range v.Ins {
 			xvi := txin{}
 			xvi.Script = hex.EncodeToString(iv.Script)
@@ -413,6 +417,7 @@ func listTxPoolApi(c *gin.Context) {
 		Ins      []txin  `json:"ins"`
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
+		LockTime uint32  `json:"lock_time"`
 	}
 	type result struct {
 		Code int  `json:"code"`
@@ -430,6 +435,7 @@ func listTxPoolApi(c *gin.Context) {
 		xv.Coinbase = tv.IsCoinBase()
 		xv.Ins = []txin{}
 		xv.Outs = []txout{}
+		xv.LockTime = tv.LockTime
 		for _, iv := range tv.Ins {
 			xvi := txin{}
 			xvi.OutTx = iv.OutHash.String()
@@ -503,6 +509,7 @@ func getTxInfoApi(c *gin.Context) {
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
 		Pool     bool    `json:"pool"`
+		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
 	}
 	xv := tx{}
@@ -515,6 +522,7 @@ func getTxInfoApi(c *gin.Context) {
 	xv.Coinbase = tp.IsCoinBase()
 	xv.Ins = []txin{}
 	xv.Outs = []txout{}
+	xv.LockTime = tp.LockTime
 	if !ispool {
 		xv.Confirm = bi.GetTxConfirm(tid)
 	}

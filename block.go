@@ -248,7 +248,7 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
-		if !blk.HasTxs(tx.refs) {
+		if !blk.HasTxs(tx.Refs) {
 			return fmt.Errorf("ref tx miss")
 		}
 		if err := tx.CheckLockTime(blk); err != nil {
@@ -293,7 +293,7 @@ func (blk *BlockInfo) HasTxs(ids []HASH256) bool {
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	//引用的交易必须在区块中
-	if !blk.HasTxs(tx.refs) {
+	if !blk.HasTxs(tx.Refs) {
 		return fmt.Errorf("ref tx miss")
 	}
 	if err := tx.CheckLockTime(blk); err != nil {
@@ -694,7 +694,7 @@ type TX struct {
 	outs     HashCacher //签名hash缓存
 	pres     HashCacher //签名hash缓存
 	pool     bool       //是否来自内存池
-	refs     []HASH256  //引用到的交易id
+	Refs     []HASH256  //引用到的交易id
 }
 
 //重置缓存

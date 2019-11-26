@@ -162,6 +162,15 @@ func (c *Client) processMsg(m MsgIO) error {
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
+	case NT_GET_TXPOOL:
+		tp := bi.GetTxPool()
+		c.SendMsg(tp.NewMsgTxPool())
+	case NT_TXPOOL:
+		msg := m.(*MsgTxPool)
+		tp := bi.GetTxPool()
+		for _, tx := range msg.Txs {
+			_ = tp.PushBack(tx.Tx)
+		}
 	case NT_TX_MERKLE:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)
@@ -373,6 +382,9 @@ func (c *Client) loop() {
 				LogError("MsgVersion recv timeout,closed")
 			} else if c.IsIn() {
 				msg := c.ss.NewMsgAddrs(c)
+				c.SendMsg(msg)
+			} else if c.IsOut() {
+				msg := &MsgGetTxPool{}
 				c.SendMsg(msg)
 			}
 		case <-c.pt.C:

@@ -689,7 +689,7 @@ func (bi *BlockIndex) Transfer(src Address, addr Address, amt Amount, fee Amount
 	for _, cv := range ds {
 		//如果来自内存池，保存引用到的交易，之后检测时，引用到的交易必须存在当前区块中
 		if cv.pool {
-			tx.refs = append(tx.refs, cv.TxId)
+			tx.Refs = append(tx.Refs, cv.TxId)
 		}
 		in, err := cv.NewTxIn(acc)
 		if err != nil {
