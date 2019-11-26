@@ -755,9 +755,6 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 		if err != nil {
 			return err
 		}
-		if out.Value == 0 {
-			continue
-		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
 		if pkh, err := out.Script.GetPkh(); err != nil {
@@ -773,10 +770,6 @@ func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
 	}
 	//输出coin
 	for idx, out := range tx.Outs {
-		//金额为0不写入coin索引
-		if out.Value == 0 {
-			continue
-		}
 		tk := CoinKeyValue{}
 		tk.Value = out.Value
 		if pkh, err := out.Script.GetPkh(); err != nil {

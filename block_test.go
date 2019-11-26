@@ -59,7 +59,7 @@ func TestTransfire(t *testing.T) {
 	mi.Src = []Address{"st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v"}
 	mi.Keep = 0
 	mi.Dst = []Address{"st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w"}
-	mi.Amts = []Amount{3 * COIN}
+	mi.Amts = []Amount{0}
 	mi.Fee = 1 * COIN
 	mi.Ext = []byte{}
 	//A -> B

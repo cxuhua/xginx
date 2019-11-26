@@ -678,7 +678,7 @@ func (m *MulTransInfo) Check() error {
 	for _, v := range m.Amts {
 		sum += v
 	}
-	if sum == 0 || !sum.IsRange() {
+	if !sum.IsRange() {
 		return errors.New("amts value error")
 	}
 	return nil
@@ -747,9 +747,6 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//转出到其他账号的输出
 	for i, v := range m.Amts {
-		if v == 0 {
-			continue
-		}
 		addr := m.Dst[i]
 		//创建目标输出
 		out, err := addr.NewTxOut(v, m.Ext)
