@@ -239,7 +239,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			} else if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
-			dt.Reset(time.Second * 60)
+			dt.Reset(time.Second * 10)
 		case <-m.ctx.Done():
 			return
 		}
@@ -252,7 +252,8 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
-	dt := time.NewTimer(time.Second * 60)
+	//每隔10秒开始自动创建区块
+	dt := time.NewTimer(time.Second * 10)
 	for i := 0; i < 4; i++ {
 		go m.loop(i, ch, dt)
 	}

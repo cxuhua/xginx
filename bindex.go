@@ -720,6 +720,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		if err != nil {
 			return nil, err
 		}
+		//是否只使用有私钥的账户
 		if pri && !acc.HasPrivate() {
 			continue
 		}
@@ -758,8 +759,8 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		tx.Outs = append(tx.Outs, out)
 	}
 	//多减的就是找零钱给自己
-	if rv := -sum; rv > 0 {
-		out, err := m.Src[m.Keep].NewTxOut(rv)
+	if amt := -sum; amt > 0 {
+		out, err := m.Src[m.Keep].NewTxOut(amt)
 		if err != nil {
 			return nil, err
 		}
