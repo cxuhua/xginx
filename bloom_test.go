@@ -1,8 +1,14 @@
 package xginx
 
 import (
+	"log"
 	"testing"
 )
+
+func TestCalcBloomFilterSize(t *testing.T) {
+	a, b := CalcBloomFilterSize(100, 0.1)
+	log.Println(a, b)
+}
 
 func TestBloomFilter(t *testing.T) {
 	fb := make([]byte, 100)

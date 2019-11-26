@@ -168,7 +168,6 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_TXPOOL:
 		msg := m.(*MsgTxPool)
 		bi.GetTxPool().PushTxs(bi, msg)
-		LogInfo("get tx pool count =", len(msg.Txs), "from", c.Addr)
 	case NT_TX_MERKLE:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)

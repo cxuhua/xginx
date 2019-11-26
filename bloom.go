@@ -2,12 +2,15 @@ package xginx
 
 import (
 	"errors"
+	"math"
 	"sync"
 )
 
 const (
 	MAX_BLOOM_FILTER_SIZE = 36000
 	MAX_HASH_FUNCS        = 50
+	LN2SQUARED            = 0.4804530139182014246671025263266649717305529515945455
+	LN2                   = 0.6931471805599453094172321214581765680755001343602552
 )
 
 type BloomFilter struct {
@@ -15,6 +18,22 @@ type BloomFilter struct {
 	filter []byte
 	funcs  int
 	tweak  uint32
+}
+
+func CalcBloomFilterSize(elements int, fprate float64) (int, int) {
+	if fprate <= 0 {
+		fprate = 0.1
+	}
+	max := MAX_BLOOM_FILTER_SIZE * 8
+	dsiz := int(-1 / LN2SQUARED * float64(elements) * math.Log(fprate))
+	if dsiz > max {
+		dsiz = max
+	}
+	fsize := int(float64(dsiz) / float64(elements) * LN2)
+	if fsize > MAX_HASH_FUNCS {
+		fsize = MAX_HASH_FUNCS
+	}
+	return dsiz / 8, fsize
 }
 
 func NewBloomFilter(funcs int, tweak uint32, filter []byte) (*BloomFilter, error) {

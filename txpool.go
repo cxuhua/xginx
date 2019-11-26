@@ -55,6 +55,14 @@ func (p *TxPool) Del(id HASH256) *TX {
 func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 	bl := p.Len()
 	for _, v := range msg.Txs {
+		id, err := v.Tx.ID()
+		if err != nil {
+			continue
+		}
+		//已经被打包
+		if _, err := bi.LoadTxValue(id); err == nil {
+			continue
+		}
 		if err := v.Tx.Check(bi, true); err != nil {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
@@ -68,8 +76,8 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 
 //获取交易池子数据
 func (p *TxPool) NewMsgTxPool() *MsgTxPool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	msg := &MsgTxPool{}
 	for _, ele := range p.tmap {
 		tx := ele.Value.(*TX)
