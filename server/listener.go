@@ -29,7 +29,7 @@ func (lis *listener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
 
 }
 
-func (lis *listener) OnNewTx(bi *BlockIndex, tx *TX) error {
+func (lis *listener) OnTxPool(bi *BlockIndex, tx *TX) error {
 	return nil
 }
 

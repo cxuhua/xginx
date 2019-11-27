@@ -340,7 +340,11 @@ func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 			return nil
 		}
 		//放入交易池
-		err = txp.PushBack(tx)
+		err = txp.PushTx(bi, tx)
+		if err != nil {
+			LogError("push tx error", err, "skip push tx")
+			continue
+		}
 		rsg.Add(tx)
 		LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	}
@@ -626,7 +630,7 @@ func (s *TcpServer) run() {
 			time.Sleep(delay)
 			continue
 		} else {
-			LogError(err)
+			s.err = err
 			s.cancel()
 			break
 		}

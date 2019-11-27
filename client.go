@@ -347,7 +347,7 @@ func (c *Client) loop() {
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {
-				LogError("client read error", err, " closed")
+				c.err = err
 				c.cancel()
 				break
 			}

@@ -67,7 +67,7 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
 		}
-		_ = p.PushBack(v.Tx)
+		_ = p.PushTx(bi, v.Tx)
 	}
 	if p.Len() > bl {
 		LogInfof("tx pool new add %d tx", p.Len()-bl)
@@ -291,9 +291,12 @@ func (p *TxPool) Len() int {
 
 //添加进去一笔交易放入最后
 //交易必须是校验过的
-func (p *TxPool) PushBack(tx *TX) error {
+func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if err := bi.lptr.OnTxPool(bi, tx); err != nil {
+		return err
+	}
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
 		return errors.New("tx pool full,ignore push back")
 	}

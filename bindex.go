@@ -790,12 +790,8 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	if err := tx.Sign(m.bi); err != nil {
 		return nil, err
 	}
-	//回调处理错误不放入交易池
-	if err := m.bi.lptr.OnNewTx(m.bi, tx); err != nil {
-		return nil, err
-	}
 	//放入交易池
-	if err := m.bi.txp.PushBack(tx); err != nil {
+	if err := m.bi.txp.PushTx(m.bi, tx); err != nil {
 		return nil, err
 	}
 	return tx, nil
@@ -1391,7 +1387,6 @@ func (bi *BlockIndex) GetTxPool() *TxPool {
 func (bi *BlockIndex) Close() {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
-	LogInfo("block index closing")
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
@@ -1399,7 +1394,6 @@ func (bi *BlockIndex) Close() {
 	bi.txp.Close()
 	bi.hmap = nil
 	bi.imap = nil
-	LogInfo("block index closed")
 }
 
 func NewBlockIndex(lptr IListener) *BlockIndex {
