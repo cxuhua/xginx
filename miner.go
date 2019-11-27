@@ -261,7 +261,7 @@ finished:
 				ppv = (mg.Times() - ptime) / 3
 				ptime = mg.Times()
 			}
-			LogInfof("%d times/s, bits=%08x time=%08x height=%d txs=%d txp=%d cpu=%d", ppv, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
+			LogInfof("%d times/s, total=%d, bits=%08x time=%08x height=%d txs=%d txp=%d cpu=%d", ppv, ptime, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
 			dt.Reset(time.Second * 3)
 		case <-mg.exit:
 			if mg.ok {
