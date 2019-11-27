@@ -247,11 +247,20 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	mg.Run()
 	dt := time.NewTimer(time.Second * 3)
 	mok := false
+	ptime := uint64(0)
 finished:
 	for !mok {
 		select {
 		case <-dt.C:
-			LogInfof("%d times, bits=%08x time=%08x height=%d txs=%d txp=%d", mg.Times(), blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len())
+			ppv := uint64(0)
+			if ptime == 0 {
+				ptime = mg.Times()
+				ppv = ptime / 3
+			} else {
+				ppv = (mg.Times() - ptime) / 3
+				ptime = mg.Times()
+			}
+			LogInfof("%d times/s, bits=%08x time=%08x height=%d txs=%d txp=%d", ppv, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len())
 			dt.Reset(time.Second * 3)
 		case <-mg.exit:
 			if mg.ok {
