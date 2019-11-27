@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,7 +44,7 @@ type MinerGroup struct {
 }
 
 func (g *MinerGroup) Times() uint64 {
-	return g.times
+	return atomic.LoadUint64(&g.times)
 }
 
 func (g *MinerGroup) single(cb HeaderBytes) {
@@ -54,7 +55,7 @@ func (g *MinerGroup) single(cb HeaderBytes) {
 		}
 		if id := cb.Hash(); !CheckProofOfWork(id, g.bits) {
 			cb.SetNonce(i)
-			g.times++
+			atomic.AddUint64(&g.times, 1)
 		} else {
 			g.ok = true
 			g.bh = cb.Header()
