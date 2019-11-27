@@ -42,6 +42,13 @@ type AddrMap struct {
 	addrs map[string]*AddrNode
 }
 
+func (m *AddrMap) Has(a NetAddr) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, has := m.addrs[a.String()]
+	return has
+}
+
 func (m *AddrMap) Get(a NetAddr) *AddrNode {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -281,6 +288,9 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 	}
 	for _, addr := range msg.Addrs {
 		if !addr.IsGlobalUnicast() {
+			continue
+		}
+		if s.addrs.Has(addr) {
 			continue
 		}
 		if s.IsAddrOpen(addr) {

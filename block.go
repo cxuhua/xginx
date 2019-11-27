@@ -64,6 +64,12 @@ func (v TxValue) Bytes() ([]byte, error) {
 //区块头数据
 type HeaderBytes []byte
 
+func (b HeaderBytes) Clone() HeaderBytes {
+	v := make([]byte, len(b))
+	copy(v, b)
+	return v
+}
+
 func (b *HeaderBytes) SetNonce(v uint32) {
 	l := len(*b)
 	Endian.PutUint32((*b)[l-4:], v)

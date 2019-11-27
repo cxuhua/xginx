@@ -2,14 +2,11 @@ package xginx
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 const (
@@ -31,6 +28,77 @@ const (
 	//发送一个区块头数据进行验证 args = HeaderBytes
 	OptSendHeadBytes
 )
+
+//计算群组
+type MinerGroup struct {
+	hb    HeaderBytes
+	stop  bool
+	wg    sync.WaitGroup
+	num   int
+	ok    bool
+	bh    BlockHeader
+	bits  uint32
+	times uint64 //总计算次数
+	exit  chan bool
+}
+
+func (g *MinerGroup) Times() uint64 {
+	return g.times
+}
+
+func (g *MinerGroup) single(cb HeaderBytes) {
+	defer g.wg.Done()
+	for i := UR32(); ; i++ {
+		if g.stop {
+			break
+		}
+		if id := cb.Hash(); !CheckProofOfWork(id, g.bits) {
+			cb.SetNonce(i)
+			g.times++
+		} else {
+			g.ok = true
+			g.bh = cb.Header()
+			break
+		}
+		if i >= ^uint32(0) {
+			cb.SetTime(time.Now())
+			i = UR32()
+		}
+	}
+	g.Stop()
+}
+
+func (g *MinerGroup) Stop() {
+	g.stop = true
+}
+
+func (g *MinerGroup) WaitStop() {
+	g.stop = true
+	<-g.exit
+}
+
+func (g *MinerGroup) Run() {
+	for i := 0; i < g.num; i++ {
+		g.wg.Add(1)
+		cb := g.hb.Clone()
+		go g.single(cb)
+	}
+	go func() {
+		g.wg.Wait()
+		g.exit <- true
+	}()
+}
+
+func NewMinerGroup(hb HeaderBytes, bits uint32, num int) *MinerGroup {
+	m := &MinerGroup{
+		hb:   hb,
+		stop: false,
+		num:  num,
+		bits: bits,
+		exit: make(chan bool),
+	}
+	return m
+}
 
 //矿产操作
 type MinerAct struct {
@@ -169,20 +237,40 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
+
 	m.mbv = blk.Header.Bytes()
-	//次数
-	times := uint32(opt.MiB * 10)
-	//当一个新块头，并且比当前区块高时取消当前进度
+
 	hbc := ps.Sub(NewLinkHeaderTopic)
 	defer ps.Unsub(hbc)
-	for i, j, l := UR32(), uint32(0), 0; ; i++ {
+
+	mg := NewMinerGroup(m.mbv, blk.Header.Bits, 4)
+	mg.Run()
+	dt := time.NewTimer(time.Second * 3)
+	mok := false
+finished:
+	for !mok {
 		select {
+		case <-dt.C:
+			LogInfof("%d times, bits=%08x time=%08x height=%d txs=%d txp=%d", mg.Times(), blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len())
+			dt.Reset(time.Second * 3)
+		case <-mg.exit:
+			if mg.ok {
+				blk.Header = mg.bh
+				mok = true
+				break finished
+			}
 		case mbv := <-m.mch:
-			m.mbv = mbv
-			LogInfo("recv block header bytes", hex.EncodeToString(mbv))
+			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
+				mg.Stop()
+				blk.Header = mbv.Header()
+				mok = true
+				break finished
+			}
 		case <-m.sch:
+			mg.WaitStop()
 			return errors.New("force stop current gen block")
 		case <-m.ctx.Done():
+			mg.WaitStop()
 			return m.ctx.Err()
 		case bhp := <-hbc:
 			ele, ok := bhp.(*TBEle)
@@ -193,28 +281,12 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			if ele.Height < blk.Meta.Height {
 				break
 			}
+			mg.WaitStop()
 			return errors.New("recv new block header ,ignore gen block")
-		default:
-			break
 		}
-		if id := m.mbv.Hash(); !CheckProofOfWork(id, blk.Header.Bits) {
-			j++
-			m.mbv.SetNonce(i)
-		} else {
-			blk.Header = m.mbv.Header()
-			break
-		}
-		if j%times == 0 {
-			l++
-			j = 0
-			LogInfof("%d*%d times , bits=%08x time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Header.Bits, blk.Header.Time, i, blk.Meta.Height, len(txs))
-		}
-		//重新设置时间和随机数
-		if i >= ^uint32(0) {
-			blk.Header.Time = uint32(time.Now().Unix())
-			m.mbv.SetTime(time.Now())
-			i = UR32()
-		}
+	}
+	if !mok {
+		return errors.New("miner gen block not ok")
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if _, err := bi.LinkHeader(blk.Header); err != nil {
