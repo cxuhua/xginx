@@ -228,7 +228,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
-	LogInfof("gen new block add %d Tx, prev=%v ", len(txs), blk.Meta.Prev)
+	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
 	//
 	if err := blk.Finish(bi); err != nil {
 		return err
@@ -260,7 +260,7 @@ finished:
 				ppv = (mg.Times() - ptime) / 3
 				ptime = mg.Times()
 			}
-			LogInfof("%d times/s, bits=%08x time=%08x height=%d txs=%d txp=%d", ppv, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len())
+			LogInfof("%d times/s, bits=%08x time=%08x height=%d txs=%d txp=%d cpu=", ppv, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
 			dt.Reset(time.Second * 3)
 		case <-mg.exit:
 			if mg.ok {
