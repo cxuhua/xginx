@@ -211,7 +211,12 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return nil
 	}
 	defer m.ogb.Reset()
+	if conf.MinerNum == 0 {
+		return errors.New("miner_num = 0,disable miner calc")
+	}
 	ps := GetPubSub()
+	hbc := ps.Sub(NewLinkHeaderTopic)
+	defer ps.Unsub(hbc)
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
@@ -229,7 +234,6 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
-	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
 	//
 	if err := blk.Finish(bi); err != nil {
 		return err
@@ -238,12 +242,8 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
-
+	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
 	m.mbv = blk.Header.Bytes()
-
-	hbc := ps.Sub(NewLinkHeaderTopic)
-	defer ps.Unsub(hbc)
-
 	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
 	mg.Run()
 	dt := time.NewTimer(time.Second * 3)
@@ -296,7 +296,7 @@ finished:
 		}
 	}
 	if !mok {
-		return errors.New("miner gen block not ok")
+		return errors.New("miner gen block failed")
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if _, err := bi.LinkHeader(blk.Header); err != nil {
@@ -381,7 +381,9 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			} else if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
-			dt.Reset(time.Second * 10)
+			if conf.MinerNum > 0 {
+				dt.Reset(time.Second * 10)
+			}
 		case <-m.ctx.Done():
 			return
 		}

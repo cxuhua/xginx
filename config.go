@@ -6,7 +6,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -34,28 +33,27 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
-	MinerNum   int          `json:"miner_num"`   //挖掘机数量
-	MaxConn    int          `json:"max_conn"`    //最大激活的连接，包括连入和连出的
-	Seeds      []string     `json:"seeds"`       //dns seed服务器
-	WalletDir  string       `json:"wallet_dir"`  //钱包地址
-	DataDir    string       `json:"data_dir"`    //数据路径
-	AddrPrefix string       `json:"addr_prefix"` //地址前缀
-	Genesis    string       `json:"genesis"`     //第一个区块
-	LogFile    string       `json:"log_file"`    //日志文件路径
-	HttpPort   int          `json:"http_port"`   //http服务器端口
-	PowTime    uint         `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
-	PowLimit   string       `json:"pow_limit"`   //最小难度设置
-	PowSpan    uint32       `json:"pow_span"`    //难度计算间隔 2016
-	Halving    int          `json:"halving"`     //210000
-	Flags      string       `json:"flags"`       //协议头标记
-	Ver        uint32       `json:"version"`     //节点版本
-	TcpPort    int          `json:"tcp_port"`    //服务端口和ip
-	TcpIp      string       `json:"tcp_ip"`      //节点远程连接ip
-	mu         sync.RWMutex `json:"-"`           //
-	logFile    *os.File     `json:"-"`           //日志文件
-	genesis    HASH256      `json:"-"`           //第一个区块id
-	LimitHash  UINT256      `json:"-"`           //最小工作难度
-	nodeid     uint64       `json:"-"`           //节点随机id
+	MinerNum   int      `json:"miner_num"`   //挖掘机数量,=0不会启动协程计算
+	MaxConn    int      `json:"max_conn"`    //最大激活的连接，包括连入和连出的
+	Seeds      []string `json:"seeds"`       //dns seed服务器
+	WalletDir  string   `json:"wallet_dir"`  //钱包地址
+	DataDir    string   `json:"data_dir"`    //数据路径
+	AddrPrefix string   `json:"addr_prefix"` //地址前缀
+	Genesis    string   `json:"genesis"`     //第一个区块
+	LogFile    string   `json:"log_file"`    //日志文件路径
+	HttpPort   int      `json:"http_port"`   //http服务器端口
+	PowTime    uint     `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
+	PowLimit   string   `json:"pow_limit"`   //最小难度设置
+	PowSpan    uint32   `json:"pow_span"`    //难度计算间隔 2016
+	Halving    int      `json:"halving"`     //210000
+	Flags      string   `json:"flags"`       //协议头标记
+	Ver        uint32   `json:"version"`     //节点版本
+	TcpPort    int      `json:"tcp_port"`    //服务端口和ip
+	TcpIp      string   `json:"tcp_ip"`      //节点远程连接ip
+	logFile    *os.File `json:"-"`           //日志文件
+	genesis    HASH256  `json:"-"`           //第一个区块id
+	LimitHash  UINT256  `json:"-"`           //最小工作难度
+	nodeid     uint64   `json:"-"`           //节点随机id
 }
 
 func (c *Config) GetTcpListenAddr() NetAddr {

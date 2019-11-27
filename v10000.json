@@ -1,7 +1,7 @@
 {
   "data_dir": "/Users/xuhua/datadir",
   "wallet_dir": "/Users/xuhua/wallet",
-  "miner_num": 4,
+  "miner_num": 0,
   "flags": "xhlm",
   "version":10000,
   "tcp_port": 9333,
