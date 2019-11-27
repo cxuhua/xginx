@@ -648,9 +648,6 @@ func (bi *BlockIndex) HasSync() bool {
 
 //获取回退代价，也就是回退多少个
 func (bi *BlockIndex) unlinkCount(id HASH256) (uint32, error) {
-	if id.IsZero() {
-		return bi.lastHeight() + 1, nil
-	}
 	ele, err := bi.getEle(id)
 	if err != nil {
 		return 0, errors.New("not found id")
@@ -686,7 +683,7 @@ type MulTransInfo struct {
 	Src  []Address //原地址
 	Keep int       //找零到这个索引对应的src地址
 	Dst  []Address //目标地址
-	Amts []Amount  //目标金额
+	Amts []Amount  //目标金额 大小与dst对应
 	Fee  Amount    //交易费
 	Ext  []byte    //扩展信息
 }
@@ -770,19 +767,18 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//没有减完，余额不足
 	if sum > 0 {
-		return nil, errors.New("Insufficient balance")
+		return nil, errors.New("insufficient balance")
 	}
 	//转出到其他账号的输出
 	for i, v := range m.Amts {
-		addr := m.Dst[i]
 		//创建目标输出
-		out, err := addr.NewTxOut(v, m.Ext)
+		out, err := m.Dst[i].NewTxOut(v, m.Ext)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
-	//多减的就是找零钱给自己
+	//多减的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
 		out, err := m.Src[m.Keep].NewTxOut(amt)
 		if err != nil {
@@ -790,15 +786,12 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
+	//开始签名
 	if err := tx.Sign(m.bi); err != nil {
 		return nil, err
 	}
-	//回调处理错误不放入交易池
-	if err := m.bi.lptr.OnNewTx(m.bi, tx); err != nil {
-		return nil, err
-	}
 	//放入交易池
-	if err := m.bi.txp.PushBack(tx); err != nil {
+	if err := m.bi.txp.PushTx(m.bi, tx); err != nil {
 		return nil, err
 	}
 	return tx, nil
@@ -980,8 +973,13 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 
 //设置最后的头信息
 func (bi *BlockIndex) setLastHeader(bt *Batch) error {
-	if iter := bi.NewIter(); iter.Prev() && iter.Prev() {
-		ele := iter.Curr()
+	last := bi.lis.Back()
+	if last == nil {
+		return nil
+	}
+	last = last.Prev()
+	if last != nil {
+		ele := last.Value.(*TBEle)
 		pid, err := ele.ID()
 		if err != nil {
 			return err
@@ -1016,7 +1014,7 @@ func (bi *BlockIndex) unlinkLastEle(ele *TBEle) error {
 func (bi *BlockIndex) UnlinkLast() error {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
-	return bi.unlinkback()
+	return bi.unlinkLast()
 }
 
 //断开最后一个
@@ -1047,7 +1045,7 @@ func (bi *BlockIndex) unlinkLast() error {
 
 //断开一个区块
 func (bi *BlockIndex) unlink(bp *BlockInfo) error {
-	if bi.Len() == 0 {
+	if bi.lis.Len() == 0 {
 		return nil
 	}
 	if bp.Meta == nil {
@@ -1274,10 +1272,12 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	//写入索引数据
 	bt := bi.db.Index().NewBatch()
 	rt := bt.NewRev()
+	//写入最好区块数据信息
 	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
 	if bv := bi.GetBestValue(); bv.IsValid() {
 		rt.Put(BestBlockKey, bv.Bytes())
 	}
+	//写入交易信息
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -1307,12 +1307,7 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 		return err
 	}
 	//删除交易池中存在这个区块中的交易
-	for _, tx := range blk.Txs {
-		id, err := tx.ID()
-		if err == nil {
-			bi.txp.Del(id)
-		}
-	}
+	bi.txp.DelTxs(blk.Txs)
 	bi.lptr.OnUpdateBlock(bi, blk)
 	return nil
 }
@@ -1350,6 +1345,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	if !CheckProofOfWork(bid, meta.Bits) {
 		return nil, errors.New("block header bits check error")
 	}
+	//批量写入
 	bt := bi.db.Index().NewBatch()
 	//保存区块头数据
 	hbs, err := meta.Bytes()
@@ -1358,7 +1354,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	}
 	//保存区块头
 	bt.Put(BLOCK_PREFIX, bid[:], hbs)
-	//保存最后一个头
+	//保存最后一个头区块头数据
 	bh := BestValue{Height: nexth, Id: bid}
 	bt.Put(LastHeaderKey, bh.Bytes())
 	//保存数据
@@ -1389,7 +1385,6 @@ func (bi *BlockIndex) GetTxPool() *TxPool {
 func (bi *BlockIndex) Close() {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
-	LogInfo("block index closing")
 	bi.lptr.OnClose(bi)
 	bi.db.Close()
 	bi.lis.Init()
@@ -1397,7 +1392,6 @@ func (bi *BlockIndex) Close() {
 	bi.txp.Close()
 	bi.hmap = nil
 	bi.imap = nil
-	LogInfo("block index closed")
 }
 
 func NewBlockIndex(lptr IListener) *BlockIndex {

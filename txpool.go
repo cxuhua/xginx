@@ -43,7 +43,7 @@ func (p *TxPool) Del(id HASH256) *TX {
 	defer p.mu.Unlock()
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
-		_ = p.setMemIdx(tx, false)
+		p.setMemIdx(tx, false)
 		p.tlis.Remove(ele)
 		delete(p.tmap, id)
 		return tx
@@ -67,7 +67,7 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
 		}
-		_ = p.PushBack(v.Tx)
+		_ = p.PushTx(bi, v.Tx)
 	}
 	if p.Len() > bl {
 		LogInfof("tx pool new add %d tx", p.Len()-bl)
@@ -111,10 +111,10 @@ func (p *TxPool) NewMsgTxPool(m *MsgGetTxPool) *MsgTxPool {
 }
 
 //设置内存消费金额索引
-func (p *TxPool) setMemIdx(tx *TX, add bool) error {
+func (p *TxPool) setMemIdx(tx *TX, add bool) {
 	tid, err := tx.ID()
 	if err != nil {
-		return err
+		panic(err)
 	}
 	tx.pool = add
 	//存储已经消费的输出
@@ -128,7 +128,7 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 			err = p.mdb.Delete(tk.SpentKey())
 		}
 		if err != nil {
-			return err
+			panic(err)
 		}
 	}
 	//存储可用的金额
@@ -136,7 +136,7 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 		tk := &CoinKeyValue{}
 		pkh, err := out.Script.GetPkh()
 		if err != nil {
-			return err
+			panic(err)
 		}
 		tk.Value = out.Value
 		tk.CPkh = pkh
@@ -148,30 +148,28 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) error {
 			err = p.mdb.Delete(tk.GetKey())
 		}
 		if err != nil {
-			return err
+			panic(err)
 		}
 	}
-	return nil
 }
 
 //移除多个交易
-func (p *TxPool) DelTxs(txs []*TX) error {
+func (p *TxPool) DelTxs(txs []*TX) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, tx := range txs {
 		id, err := tx.ID()
 		if err != nil {
-			continue
+			panic(err)
 		}
 		ele, has := p.tmap[id]
 		if !has {
 			continue
 		}
-		_ = p.setMemIdx(tx, false)
+		p.setMemIdx(tx, false)
 		p.tlis.Remove(ele)
 		delete(p.tmap, id)
 	}
-	return nil
 }
 
 //获取所有的tx
@@ -291,9 +289,12 @@ func (p *TxPool) Len() int {
 
 //添加进去一笔交易放入最后
 //交易必须是校验过的
-func (p *TxPool) PushBack(tx *TX) error {
+func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if err := bi.lptr.OnTxPool(bi, tx); err != nil {
+		return err
+	}
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
 		return errors.New("tx pool full,ignore push back")
 	}
@@ -304,9 +305,7 @@ func (p *TxPool) PushBack(tx *TX) error {
 	if _, has := p.tmap[id]; has {
 		return errors.New("tx exists")
 	}
-	if err := p.setMemIdx(tx, true); err != nil {
-		return err
-	}
+	p.setMemIdx(tx, true)
 	ele := p.tlis.PushBack(tx)
 	p.tmap[id] = ele
 	return nil

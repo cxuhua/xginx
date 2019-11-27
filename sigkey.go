@@ -401,11 +401,11 @@ func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	}
 	out := &TxOut{}
 	out.Value = v
-	dpkh, err := a.GetPkh()
+	pkh, err := a.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	if script, err := NewLockedScript(dpkh, ext...); err != nil {
+	if script, err := NewLockedScript(pkh, ext...); err != nil {
 		return nil, err
 	} else {
 		out.Script = script

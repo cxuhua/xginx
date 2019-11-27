@@ -168,7 +168,8 @@ func (c *Client) processMsg(m MsgIO) error {
 		c.SendMsg(tp.NewMsgTxPool(msg))
 	case NT_TXPOOL:
 		msg := m.(*MsgTxPool)
-		bi.GetTxPool().PushTxs(bi, msg)
+		tp := bi.GetTxPool()
+		tp.PushTxs(bi, msg)
 	case NT_TX_MERKLE:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)
@@ -346,7 +347,7 @@ func (c *Client) loop() {
 		for {
 			m, err := c.ReadMsg()
 			if err != nil {
-				LogError("client read error", err, " closed")
+				c.err = err
 				c.cancel()
 				break
 			}

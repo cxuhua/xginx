@@ -67,8 +67,6 @@ func (m MsgGetAddrs) Type() uint8 {
 	return NT_GET_ADDRS
 }
 
-//
-
 //消息广播
 type MsgAlert struct {
 	Msg VarBytes //消息内容

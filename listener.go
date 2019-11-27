@@ -22,6 +22,6 @@ type IListener interface {
 	OnStartup()
 	//初始化http服务器后
 	OnInitHttp(m *gin.Engine)
-	//当产生了新交易
-	OnNewTx(bi *BlockIndex, tx *TX) error
+	//当交易进入交易池之前
+	OnTxPool(bi *BlockIndex, tx *TX) error
 }

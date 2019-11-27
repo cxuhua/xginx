@@ -42,6 +42,13 @@ type AddrMap struct {
 	addrs map[string]*AddrNode
 }
 
+func (m *AddrMap) Has(a NetAddr) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, has := m.addrs[a.String()]
+	return has
+}
+
 func (m *AddrMap) Get(a NetAddr) *AddrNode {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -146,6 +153,8 @@ type TcpServer struct {
 	addrs   *AddrMap
 	single  sync.Mutex
 	dopt    chan int //获取线程做一些操作
+	dt      *time.Timer
+	pt      *time.Timer
 }
 
 //地址是否打开
@@ -283,6 +292,9 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 		if !addr.IsGlobalUnicast() {
 			continue
 		}
+		if s.addrs.Has(addr) {
+			continue
+		}
 		if s.IsAddrOpen(addr) {
 			continue
 		}
@@ -328,7 +340,11 @@ func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 			return nil
 		}
 		//放入交易池
-		err = txp.PushBack(tx)
+		err = txp.PushTx(bi, tx)
+		if err != nil {
+			LogError("push tx error", err, "skip push tx")
+			continue
+		}
 		rsg.Add(tx)
 		LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	}
@@ -379,7 +395,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) erro
 	}
 	ps.Pub(blk, NewUpdateBlockTopic)
 	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
-	dt.Reset(time.Microsecond * 10)
+	dt.Reset(time.Microsecond * 300)
 	return nil
 }
 
@@ -406,8 +422,13 @@ func (s *TcpServer) reqMsgGetBlock() error {
 
 //需要更多的证明
 func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt uint32) error {
+	num := cnt + 10
+	//对方区块头数量必须比请求的多
+	if c.Height.HH <= num {
+		return nil
+	}
 	rsg := &MsgGetHeaders{}
-	rsg.Limit = VarInt(-(10 + cnt)) //向前多获取10个
+	rsg.Limit = VarInt(-num) //<0 向前多获取num个
 	rsg.Start = id
 	c.SendMsg(rsg)
 	return nil
@@ -426,6 +447,8 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	if err := msg.Check(bi); err != nil {
 		return err
 	}
+	//成功连接的数量
+	lc := 0
 	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
 		hv := msg.Headers[i]
 		id, err := hv.ID()
@@ -439,12 +462,15 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 			lid = id
 			i++
 		} else if ele, err := bi.LinkHeader(hv); err == nil {
-			ps.Pub(ele, NewLinkHeaderTopic)
 			LogInfo("link block header id =", hv, "height =", bi.LastHeight())
+			ps.Pub(ele, NewLinkHeaderTopic)
 			i++
+			lc++
 		} else if unnum, err := bi.UnlinkCount(lid); err != nil {
+			//计算需要断开的区块数量
 			return err
 		} else if hl-i-1 <= int(unnum) {
+			//如果证据区块头不足请求更多
 			return s.reqMoreHeaders(c, msg.LastID(), unnum)
 		} else if err = bi.UnlinkTo(lid); err != nil {
 			return err
@@ -453,6 +479,10 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	//请求下一批区块头
 	if cc := s.findHeaderClient(msg.Height.HH); cc != nil {
 		cc.ReqBlockHeaders(bi, msg.Height.HH)
+	}
+	//立即请求数据区块
+	if lc > 0 {
+		s.dt.Reset(time.Millisecond * 300)
 	}
 	return nil
 }
@@ -489,7 +519,7 @@ func (s *TcpServer) tryConnect() {
 	}
 }
 
-func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *time.Timer) {
+func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 	LogInfo("server dispatch startup", idx)
 	defer s.recoverError()
 	s.wg.Add(1)
@@ -526,7 +556,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 					LogError(err)
 				}
 			} else if msg, ok := m.m.(*MsgBlock); ok {
-				err := s.recvMsgBlock(m.c, msg.Blk, dt)
+				err := s.recvMsgBlock(m.c, msg.Blk, s.dt)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
@@ -539,14 +569,14 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			if msg, ok := m.m.(MsgIO); ok {
 				s.lptr.OnClientMsg(m.c, msg)
 			}
-		case <-dt.C:
+		case <-s.dt.C:
 			_ = s.reqMsgGetBlock()
-			dt.Reset(time.Second * 5)
-		case <-pt.C:
+			s.dt.Reset(time.Second * 5)
+		case <-s.pt.C:
 			if s.ConnNum() < conf.MaxConn {
 				s.tryConnect()
 			}
-			pt.Reset(time.Second * 10)
+			s.pt.Reset(time.Second * 10)
 		}
 	}
 }
@@ -586,38 +616,38 @@ func (s *TcpServer) run() {
 	defer s.wg.Done()
 	var delay time.Duration
 	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
-	pt := time.NewTimer(time.Second)
-	dt := time.NewTimer(time.Second)
 	for i := 0; i < 4; i++ {
-		go s.dispatch(i, ch, pt, dt)
+		go s.dispatch(i, ch)
 	}
 	s.dopt <- 1 //load seed ip
 	for {
 		conn, err := s.lis.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				if delay == 0 {
-					delay = 5 * time.Millisecond
-				} else {
-					delay *= 2
-				}
-				if max := 1 * time.Second; delay > max {
-					delay = max
-				}
-				LogError("Accept error: %v; retrying in %v", err, delay)
-				time.Sleep(delay)
-				continue
+		if err == nil {
+			delay = 0
+			c := s.NewClientWithConn(conn)
+			c.typ = ClientIn
+			c.isopen = true
+			LogInfo("new connection", conn.RemoteAddr())
+			c.Loop()
+			continue
+		}
+		if ne, ok := err.(net.Error); ok && ne.Temporary() {
+			if delay == 0 {
+				delay = 5 * time.Millisecond
+			} else {
+				delay *= 2
 			}
-			LogError(err)
+			if max := 1 * time.Second; delay > max {
+				delay = max
+			}
+			LogError("Accept error: %v; retrying in %v", err, delay)
+			time.Sleep(delay)
+			continue
+		} else {
+			s.err = err
 			s.cancel()
 			break
 		}
-		delay = 0
-		c := s.NewClientWithConn(conn)
-		c.typ = ClientIn
-		c.isopen = true
-		LogInfo("new connection", conn.RemoteAddr())
-		c.Loop()
 	}
 }
 
@@ -633,5 +663,7 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.clients = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
 	s.dopt = make(chan int, 5)
+	s.pt = time.NewTimer(time.Second)
+	s.dt = time.NewTimer(time.Second)
 	return s, nil
 }
