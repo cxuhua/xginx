@@ -13,7 +13,7 @@ func logger(l string, v ...interface{}) {
 }
 
 func loggerf(l string, f string, v ...interface{}) {
-	_ = log.Output(3, fmt.Sprintf(l+f+"\n", v...))
+	_ = log.Output(3, fmt.Sprintf(l+" "+f+"\n", v...))
 }
 
 func LogInfo(v ...interface{}) {

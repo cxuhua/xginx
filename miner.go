@@ -20,6 +20,11 @@ const (
 )
 
 const (
+	//每隔多少秒打印挖掘状态
+	MINER_LOG_SECONDS = 5
+)
+
+const (
 	//开始挖矿操作 args(uint32) = block ver
 	OptGenBlock = iota
 	//设置矿工奖励账号 arg=*Account
@@ -246,34 +251,35 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	m.mbv = blk.Header.Bytes()
 	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
 	mg.Run()
-	dt := time.NewTimer(time.Second * 3)
-	mok := false
+	dt := time.NewTimer(time.Second * MINER_LOG_SECONDS)
+	genok := false
 	ptime := uint64(0)
 finished:
-	for !mok {
+	for !genok {
 		select {
 		case <-dt.C:
 			ppv := uint64(0)
+			smt := mg.Times()
 			if ptime == 0 {
-				ptime = mg.Times()
-				ppv = ptime / 3
+				ptime = smt
+				ppv = ptime / MINER_LOG_SECONDS
 			} else {
-				ppv = (mg.Times() - ptime) / 3
-				ptime = mg.Times()
+				ppv = (smt - ptime) / MINER_LOG_SECONDS
+				ptime = smt
 			}
 			LogInfof("%d times/s, total=%d, bits=%08x time=%08x height=%d txs=%d txp=%d cpu=%d", ppv, ptime, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
-			dt.Reset(time.Second * 3)
+			dt.Reset(time.Second * MINER_LOG_SECONDS)
 		case <-mg.exit:
 			if mg.ok {
 				blk.Header = mg.bh
-				mok = true
+				genok = true
 				break finished
 			}
 		case mbv := <-m.mch:
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
 				mg.Stop()
 				blk.Header = mbv.Header()
-				mok = true
+				genok = true
 				break finished
 			}
 		case <-m.sch:
@@ -295,7 +301,7 @@ finished:
 			return errors.New("recv new block header ,ignore gen block")
 		}
 	}
-	if !mok {
+	if !genok {
 		return errors.New("miner gen block failed")
 	}
 	LogInfo("gen new block success, id = ", blk)
