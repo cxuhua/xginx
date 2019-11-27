@@ -243,7 +243,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	hbc := ps.Sub(NewLinkHeaderTopic)
 	defer ps.Unsub(hbc)
 
-	mg := NewMinerGroup(m.mbv, blk.Header.Bits, 4)
+	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
 	mg.Run()
 	dt := time.NewTimer(time.Second * 3)
 	mok := false

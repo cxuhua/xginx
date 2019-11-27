@@ -34,6 +34,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	MinerNum   int          `json:"miner_num"`   //挖掘机数量
 	MaxConn    int          `json:"max_conn"`    //最大激活的连接，包括连入和连出的
 	Seeds      []string     `json:"seeds"`       //dns seed服务器
 	WalletDir  string       `json:"wallet_dir"`  //钱包地址
