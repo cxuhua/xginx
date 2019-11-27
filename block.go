@@ -104,6 +104,9 @@ func (v BlockHeader) Check() error {
 	if err != nil {
 		return err
 	}
+	if v.Merkle.IsZero() {
+		return errors.New("merkle id error")
+	}
 	if !CheckProofOfWork(id, v.Bits) {
 		return errors.New("block header bits check error")
 	}

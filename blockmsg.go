@@ -171,13 +171,13 @@ func (m MsgHeaders) LastID() HASH256 {
 	return id
 }
 
-//检测连续性
-func (m MsgHeaders) Check() error {
+//检测连续性和难度
+func (m MsgHeaders) Check(bi *BlockIndex) error {
 	if len(m.Headers) == 0 {
 		return nil
 	}
-	ph := m.Headers[0]
-	if err := ph.Check(); err != nil {
+	pv := m.Headers[0]
+	if err := pv.Check(); err != nil {
 		return err
 	}
 	for i := 1; i < len(m.Headers); i++ {
@@ -185,10 +185,15 @@ func (m MsgHeaders) Check() error {
 		if err := cv.Check(); err != nil {
 			return err
 		}
-		if !cv.Prev.Equal(ph.MustID()) {
+		//时间必须连续
+		if cv.Time < pv.Time {
+			return errors.New("time not continue")
+		}
+		//id必须能连接
+		if !cv.Prev.Equal(pv.MustID()) {
 			return errors.New("headers not continue")
 		}
-		ph = cv
+		pv = cv
 	}
 	return nil
 }

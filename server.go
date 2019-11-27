@@ -423,7 +423,7 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	bi := GetBlockIndex()
 	ps := GetPubSub()
 	//检查连续性
-	if err := msg.Check(); err != nil {
+	if err := msg.Check(bi); err != nil {
 		return err
 	}
 	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
@@ -436,8 +436,8 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 			return err
 		}
 		if bi.HasBlock(id) {
-			i++
 			lid = id
+			i++
 		} else if ele, err := bi.LinkHeader(hv); err == nil {
 			ps.Pub(ele, NewLinkHeaderTopic)
 			LogInfo("link block header id =", hv, "height =", bi.LastHeight())
@@ -504,10 +504,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 				LogInfo(opt)
 			}
 		case <-s.ctx.Done():
-			err := s.lis.Close()
-			if err != nil {
-				LogError("server listen close", err)
-			}
+			_ = s.lis.Close()
 			return
 		case cv := <-ch:
 			if tx, ok := cv.(*TX); ok {
@@ -518,36 +515,29 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			if !ok {
 				break
 			}
-			if msg, ok := m.m.(MsgIO); ok {
-				s.lptr.OnClientMsg(m.c, msg)
-			}
 			if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
 				err := s.recvMsgAddrs(m.c, msg)
 				if err != nil {
 					LogError(err)
 				}
-				break
-			}
-			if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
+			} else if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
 				err := s.recvMsgHeaders(m.c, msg)
 				if err != nil {
 					LogError(err)
 				}
-				break
-			}
-			if msg, ok := m.m.(*MsgBlock); ok {
+			} else if msg, ok := m.m.(*MsgBlock); ok {
 				err := s.recvMsgBlock(m.c, msg.Blk, dt)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
-				break
-			}
-			if msg, ok := m.m.(*MsgTx); ok {
+			} else if msg, ok := m.m.(*MsgTx); ok {
 				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
 				}
-				break
+			}
+			if msg, ok := m.m.(MsgIO); ok {
+				s.lptr.OnClientMsg(m.c, msg)
 			}
 		case <-dt.C:
 			_ = s.reqMsgGetBlock()

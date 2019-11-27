@@ -332,7 +332,7 @@ func (bi *BlockIndex) gethele(h uint32) *TBEle {
 	return ele.Value.(*TBEle)
 }
 
-//计算当前难度
+//计算当前区块高度对应的难度
 func (bi *BlockIndex) CalcBits(height uint32) uint32 {
 	last := bi.Last()
 	if last == nil || height == 0 {

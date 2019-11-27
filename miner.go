@@ -151,7 +151,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		if j%times == 0 {
 			l++
 			j = 0
-			LogInfof("gen new block %d*%d times, bits=%08x merkle=%v time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Header.Bits, blk.Header.Merkle, blk.Header.Time, i, blk.Meta.Height, len(txs))
+			LogInfof("%d*%d times , bits=%08x time=%08x nonce=%08x height=%d txs=%d", l, times, blk.Header.Bits, blk.Header.Time, i, blk.Meta.Height, len(txs))
 		}
 		//重新设置时间和随机数
 		if i >= ^uint32(0) {
