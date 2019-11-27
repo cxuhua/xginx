@@ -10,6 +10,68 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func setHeaderApi(c *gin.Context) {
+	args := struct {
+		Hex string `form:"hex"` //数据hex编码
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	if Miner == nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  "miner not running",
+		})
+		return
+	}
+	b, err := hex.DecodeString(args.Hex)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 102,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	err = Miner.SetHeader(b)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 103,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  "OK",
+	})
+}
+
+func getHeaderApi(c *gin.Context) {
+	if Miner == nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  "miner not running",
+		})
+		return
+	}
+	b, err := Miner.GetHeader()
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, ApiResult{
+		Code: 0,
+		Msg:  hex.EncodeToString(b),
+	})
+}
+
 //导入账号
 func importAccountApi(c *gin.Context) {
 	args := struct {
@@ -670,11 +732,14 @@ func stopBlockApi(c *gin.Context) {
 		})
 		return
 	}
-	ps := GetPubSub()
-	ps.Pub(MinerAct{
-		Opt: OptStopGenBlock,
-		Arg: true,
-	}, NewMinerActTopic)
+	err := Miner.ResetMiner()
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  err.Error(),
+		})
+		return
+	}
 	c.JSON(http.StatusOK, ApiResult{
 		Code: 0,
 		Msg:  "OK",

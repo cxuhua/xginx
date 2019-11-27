@@ -260,6 +260,7 @@ func (db *leveldbimp) Write(b *Batch) error {
 	return db.l.Write(b.GetBatch(), opts)
 }
 
+//
 type leveldbtr struct {
 	tr *leveldb.Transaction
 }

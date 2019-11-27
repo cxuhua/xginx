@@ -190,7 +190,7 @@ func (s *sstore) Init() error {
 type sstore struct {
 	id    uint32            //当前文件id
 	mu    sync.Mutex        //
-	files map[uint32]*sfile //指针缓存
+	files map[uint32]*sfile //文件指针缓存
 	ext   string            //扩展名称
 	size  int64             //单个文件最大长度
 	dir   string            //目录名称
@@ -204,8 +204,14 @@ var (
 func sfileHeaderBytes() []byte {
 	flags := []byte(conf.Flags)
 	w := NewWriter()
-	_ = w.TWrite(flags[:4])
-	_ = w.TWrite(conf.Ver)
+	err := w.TWrite(flags[:4])
+	if err != nil {
+		panic(err)
+	}
+	err = w.TWrite(conf.Ver)
+	if err != nil {
+		panic(err)
+	}
 	return w.Bytes()
 }
 

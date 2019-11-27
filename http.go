@@ -163,6 +163,10 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.POST("/import/account", importAccountApi)
 	//导出账号
 	mgr.POST("/export/account", exportAccountApi)
+	//获取正在处理的区块头 hex编码
+	mgr.GET("/get/header", getHeaderApi)
+	//设置区块头数据
+	mgr.POST("/set/header", setHeaderApi)
 
 	//数据浏览接口
 	v1 := m.Group("v1")

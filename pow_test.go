@@ -29,8 +29,9 @@ func TestCalculateWorkRequired(t *testing.T) {
 
 //Check whether a block hash satisfies the proof-of-work requirement specified by nBits
 func TestCheckProofOfWork(t *testing.T) {
-	h := NewHASH256("00000000000003010530e33a849b27ded874202911e9e63263cb49245744fb9e")
-	b := CheckProofOfWork(h, 0x1a0575ef)
+	InitConfig("v10000.json")
+	h := NewHASH256("0000000000000000000e20e727e0f9e4d88c44d68e572fbc9a2bd8c61e50010b")
+	b := CheckProofOfWork(h, 0x1715b23e)
 	if !b {
 		t.Errorf("test failed")
 	}

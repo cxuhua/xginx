@@ -163,8 +163,9 @@ func (c *Client) processMsg(m MsgIO) error {
 	typ := m.Type()
 	switch typ {
 	case NT_GET_TXPOOL:
+		msg := m.(*MsgGetTxPool)
 		tp := bi.GetTxPool()
-		c.SendMsg(tp.NewMsgTxPool())
+		c.SendMsg(tp.NewMsgTxPool(msg))
 	case NT_TXPOOL:
 		msg := m.(*MsgTxPool)
 		bi.GetTxPool().PushTxs(bi, msg)
@@ -370,14 +371,16 @@ func (c *Client) loop() {
 				LogError("MsgVersion recv timeout,closed")
 				break
 			}
-			//获取地址列表
+			bi := GetBlockIndex()
+			tp := bi.GetTxPool()
+			//获取对方地址列表
 			if c.Service&SERVICE_NODE != 0 {
 				msg := c.ss.NewMsgAddrs(c)
 				c.SendMsg(msg)
 			}
-			//和交易池数据
+			//同步双发交易池数据
 			if c.Service&SERVICE_NODE != 0 {
-				msg := &MsgGetTxPool{}
+				msg := tp.NewMsgGetTxPool()
 				c.SendMsg(msg)
 			}
 		case <-c.pt.C:

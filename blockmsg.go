@@ -91,10 +91,8 @@ func (bi *BlockIndex) ReqMsgHeaders() *MsgGetHeaders {
 	if last == nil {
 		msg.Start = conf.genesis //从头开始获取
 		msg.Skip = 0
-	} else if id, err := last.ID(); err != nil {
-		panic(err)
 	} else {
-		msg.Start = id
+		msg.Start = last.MustID()
 		msg.Skip = 1 //跳过一个，不包含id
 	}
 	return msg

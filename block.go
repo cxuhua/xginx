@@ -88,6 +88,17 @@ func (b *HeaderBytes) Header() BlockHeader {
 	return hptr
 }
 
+func getblockheadersize() int {
+	buf := NewWriter()
+	b := BlockHeader{}
+	_ = b.Encode(buf)
+	return buf.Len()
+}
+
+var (
+	blockheadersize = getblockheadersize()
+)
+
 //区块头
 type BlockHeader struct {
 	Ver    uint32  //block ver
@@ -445,7 +456,7 @@ func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
 //检查区块数据
 func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 	//检测工作难度
-	bits := bi.CalcBits(blk.Meta.Height)
+	bits := bi.calcBits(blk.Meta.Height)
 	if bits != blk.Header.Bits {
 		return errors.New("block header bits error")
 	}

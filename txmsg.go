@@ -250,19 +250,55 @@ func (m *MsgInv) Decode(r IReader) error {
 }
 
 //NT_GET_TXPOOL
-
+//获取本节点没有的
 type MsgGetTxPool struct {
+	Skip []HASH256 //忽略的交易id
 }
 
 func (m MsgGetTxPool) Type() uint8 {
 	return NT_GET_TXPOOL
 }
 
+func (m *MsgGetTxPool) Add(id HASH256) {
+	m.Skip = append(m.Skip, id)
+}
+
+func (m MsgGetTxPool) Has(id HASH256) bool {
+	for _, v := range m.Skip {
+		if v.Equal(id) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m MsgGetTxPool) Encode(w IWriter) error {
+	if err := VarUInt(len(m.Skip)).Encode(w); err != nil {
+		return err
+	}
+	for _, v := range m.Skip {
+		err := v.Encode(w)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (m *MsgGetTxPool) Decode(r IReader) error {
+	num := VarUInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	m.Skip = make([]HASH256, num.ToInt())
+	for i, _ := range m.Skip {
+		id := HASH256{}
+		err := id.Decode(r)
+		if err != nil {
+			return err
+		}
+		m.Skip[i] = id
+	}
 	return nil
 }
 

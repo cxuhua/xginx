@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"strings"
 	"sync/atomic"
 )
 
@@ -146,7 +145,6 @@ func HexToBytes(s string) []byte {
 }
 
 func HexDecode(s string) []byte {
-	s = strings.Replace(s, "_", "", -1)
 	d, err := hex.DecodeString(s)
 	if err != nil {
 		panic(err)

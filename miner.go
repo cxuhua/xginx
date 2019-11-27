@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ const (
 	OptSetMiner
 	//停止当前区块创建
 	OptStopGenBlock
+	//发送一个区块头数据进行验证 args = HeaderBytes
+	OptSendHeadBytes
 )
 
 //矿产操作
@@ -47,6 +50,12 @@ type IMiner interface {
 	SetMiner(acc *Account) error
 	//获取矿工账号
 	GetMiner() *Account
+	//获取区块头
+	GetHeader() ([]byte, error)
+	//设置区块头
+	SetHeader(b []byte) error
+	//重新开始计算区块
+	ResetMiner() error
 }
 
 var (
@@ -60,12 +69,15 @@ type minerEngine struct {
 	acc    *Account
 	mu     sync.RWMutex
 	ogb    ONCE
-	sch    chan bool //停止当前正在创建的区块
+	sch    chan bool        //停止当前正在创建的区块
+	mbv    HeaderBytes      //正在处理的区块头数据
+	mch    chan HeaderBytes //接收一个区块头数据进行验证
 }
 
 func newMinerEngine() IMiner {
 	return &minerEngine{
 		sch: make(chan bool, 1),
+		mch: make(chan HeaderBytes, 1),
 	}
 }
 
@@ -73,6 +85,48 @@ func (m *minerEngine) GetMiner() *Account {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.acc
+}
+
+//获取区块头
+func (m *minerEngine) GetHeader() ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.ogb.IsRunning() {
+		return nil, errors.New("miner not running")
+	}
+	return m.mbv, nil
+}
+
+func (m *minerEngine) ResetMiner() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.ogb.IsRunning() {
+		return errors.New("miner not running")
+	}
+	ps := GetPubSub()
+	ps.Pub(MinerAct{
+		Opt: OptStopGenBlock,
+		Arg: true,
+	}, NewMinerActTopic)
+	return nil
+}
+
+//设置区块头
+func (m *minerEngine) SetHeader(b []byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.ogb.IsRunning() {
+		return errors.New("miner not running")
+	}
+	if len(b) != blockheadersize {
+		return errors.New("bytes len error")
+	}
+	ps := GetPubSub()
+	ps.Pub(MinerAct{
+		Opt: OptSendHeadBytes,
+		Arg: HeaderBytes(b),
+	}, NewMinerActTopic)
+	return nil
 }
 
 func (m *minerEngine) SetMiner(acc *Account) error {
@@ -115,7 +169,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err != nil {
 		return err
 	}
-	hb := blk.Header.Bytes()
+	m.mbv = blk.Header.Bytes()
 	//次数
 	times := uint32(opt.MiB * 10)
 	//当一个新块头，并且比当前区块高时取消当前进度
@@ -123,6 +177,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	defer ps.Unsub(hbc)
 	for i, j, l := UR32(), uint32(0), 0; ; i++ {
 		select {
+		case mbv := <-m.mch:
+			m.mbv = mbv
+			LogInfo("recv block header bytes", hex.EncodeToString(mbv))
 		case <-m.sch:
 			return errors.New("force stop current gen block")
 		case <-m.ctx.Done():
@@ -140,12 +197,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		default:
 			break
 		}
-		id := hb.Hash()
-		if !CheckProofOfWork(id, blk.Header.Bits) {
+		if id := m.mbv.Hash(); !CheckProofOfWork(id, blk.Header.Bits) {
 			j++
-			hb.SetNonce(i)
+			m.mbv.SetNonce(i)
 		} else {
-			blk.Header = hb.Header()
+			blk.Header = m.mbv.Header()
 			break
 		}
 		if j%times == 0 {
@@ -156,7 +212,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		//重新设置时间和随机数
 		if i >= ^uint32(0) {
 			blk.Header.Time = uint32(time.Now().Unix())
-			hb.SetTime(time.Now())
+			m.mbv.SetTime(time.Now())
 			i = UR32()
 		}
 	}
@@ -180,6 +236,10 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 //处理操作
 func (m *minerEngine) processOpt(opt MinerAct) {
 	switch opt.Opt {
+	case OptSendHeadBytes:
+		if bh, ok := opt.Arg.(HeaderBytes); ok {
+			m.mch <- bh
+		}
 	case OptStopGenBlock:
 		m.sch <- true
 		LogInfo("recv stop current gen block")

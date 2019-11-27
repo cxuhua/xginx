@@ -74,13 +74,37 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 	}
 }
 
+//发送获取交易池数据包,并告知本节点拥有的
+func (p *TxPool) NewMsgGetTxPool() *MsgGetTxPool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	msg := &MsgGetTxPool{}
+	for _, ele := range p.tmap {
+		tx := ele.Value.(*TX)
+		id, err := tx.ID()
+		if err != nil {
+			panic(err)
+		}
+		msg.Add(id)
+	}
+	return msg
+}
+
 //获取交易池子数据
-func (p *TxPool) NewMsgTxPool() *MsgTxPool {
+func (p *TxPool) NewMsgTxPool(m *MsgGetTxPool) *MsgTxPool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	msg := &MsgTxPool{}
 	for _, ele := range p.tmap {
 		tx := ele.Value.(*TX)
+		id, err := tx.ID()
+		if err != nil {
+			panic(err)
+		}
+		//忽略对方有的
+		if m.Has(id) {
+			continue
+		}
 		msg.Add(tx)
 	}
 	return msg
@@ -204,14 +228,18 @@ func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 }
 
 //获取pkh在交易池中可用的金额
-func (p *TxPool) ListCoins(spkh HASH160) (Coins, error) {
+func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	coins := Coins{}
+	if len(limit) > 0 && limit[0] <= 0 {
+		return coins, nil
+	}
 	key := append([]byte{}, COIN_PREFIX...)
 	key = append(key, spkh[:]...)
 	iter := p.mdb.NewIterator(util.BytesPrefix(key))
 	defer iter.Release()
+	sum := Amount(0)
 	for iter.Next() {
 		tk := &CoinKeyValue{}
 		err := tk.From(iter.Key(), iter.Value())
@@ -223,6 +251,10 @@ func (p *TxPool) ListCoins(spkh HASH160) (Coins, error) {
 			continue
 		}
 		coins = append(coins, tk)
+		sum += tk.Value
+		if len(limit) > 0 && sum >= limit[0] {
+			return coins, nil
+		}
 	}
 	return coins, nil
 }
