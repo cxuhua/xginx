@@ -1272,10 +1272,12 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	//写入索引数据
 	bt := bi.db.Index().NewBatch()
 	rt := bt.NewRev()
+	//写入最好区块数据信息
 	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
 	if bv := bi.GetBestValue(); bv.IsValid() {
 		rt.Put(BestBlockKey, bv.Bytes())
 	}
+	//写入交易信息
 	if err := blk.WriteTxsIdx(bi, bt); err != nil {
 		return err
 	}
@@ -1305,12 +1307,7 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 		return err
 	}
 	//删除交易池中存在这个区块中的交易
-	for _, tx := range blk.Txs {
-		id, err := tx.ID()
-		if err == nil {
-			bi.txp.Del(id)
-		}
-	}
+	bi.txp.DelTxs(blk.Txs)
 	bi.lptr.OnUpdateBlock(bi, blk)
 	return nil
 }
@@ -1348,6 +1345,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	if !CheckProofOfWork(bid, meta.Bits) {
 		return nil, errors.New("block header bits check error")
 	}
+	//批量写入
 	bt := bi.db.Index().NewBatch()
 	//保存区块头数据
 	hbs, err := meta.Bytes()
@@ -1356,7 +1354,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	}
 	//保存区块头
 	bt.Put(BLOCK_PREFIX, bid[:], hbs)
-	//保存最后一个头
+	//保存最后一个头区块头数据
 	bh := BestValue{Height: nexth, Id: bid}
 	bt.Put(LastHeaderKey, bh.Bytes())
 	//保存数据

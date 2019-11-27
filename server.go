@@ -395,7 +395,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) erro
 	}
 	ps.Pub(blk, NewUpdateBlockTopic)
 	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
-	dt.Reset(time.Microsecond * 10)
+	dt.Reset(time.Microsecond * 300)
 	return nil
 }
 

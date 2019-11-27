@@ -10,7 +10,7 @@ const (
 	// 最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
 	//最大索引数据大小
-	MAX_LOG_SIZE = 1024 * 1024
+	MAX_LOG_SIZE = 1024 * 1024 * 2
 	//最大扩展数据
 	MAX_EXT_SIZE = 4 * 1024
 	//
