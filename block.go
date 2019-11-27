@@ -384,6 +384,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
+	//获取区块奖励
 	rfee := GetCoinbaseReward(blk.Meta.Height)
 	if !rfee.IsRange() {
 		return errors.New("coinbase reward amount error")
@@ -445,12 +446,12 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 
 //检查是否有多个输入消费同一个输出
 func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
-	imap := map[string]bool{}
+	imap := map[HASH160]bool{}
 	for _, tx := range blk.Txs {
 		for _, in := range tx.Ins {
-			key := fmt.Sprintf("%v-%d", in.OutHash, in.OutIndex)
+			key := in.OutKey()
 			if _, has := imap[key]; has {
-				return errors.New("mul txin cost one txout error")
+				return fmt.Errorf("%v %d repeat cost", in.OutHash, in.OutIndex)
 			}
 			imap[key] = true
 		}
@@ -580,6 +581,14 @@ type TxIn struct {
 	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //签名后填充脚本
+}
+
+//获取输入引用key
+func (v TxIn) OutKey() HASH160 {
+	buf := NewWriter()
+	_ = v.OutHash.Encode(buf)
+	_ = v.OutIndex.Encode(buf)
+	return Hash160From(buf.Bytes())
 }
 
 //获取对应的输出
