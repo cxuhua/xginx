@@ -153,6 +153,8 @@ type TcpServer struct {
 	addrs   *AddrMap
 	single  sync.Mutex
 	dopt    chan int //获取线程做一些操作
+	dt      *time.Timer
+	pt      *time.Timer
 }
 
 //地址是否打开
@@ -499,7 +501,7 @@ func (s *TcpServer) tryConnect() {
 	}
 }
 
-func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *time.Timer) {
+func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 	LogInfo("server dispatch startup", idx)
 	defer s.recoverError()
 	s.wg.Add(1)
@@ -536,7 +538,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 					LogError(err)
 				}
 			} else if msg, ok := m.m.(*MsgBlock); ok {
-				err := s.recvMsgBlock(m.c, msg.Blk, dt)
+				err := s.recvMsgBlock(m.c, msg.Blk, s.dt)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
@@ -549,14 +551,14 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}, pt *time.Timer, dt *t
 			if msg, ok := m.m.(MsgIO); ok {
 				s.lptr.OnClientMsg(m.c, msg)
 			}
-		case <-dt.C:
+		case <-s.dt.C:
 			_ = s.reqMsgGetBlock()
-			dt.Reset(time.Second * 5)
-		case <-pt.C:
+			s.dt.Reset(time.Second * 5)
+		case <-s.pt.C:
 			if s.ConnNum() < conf.MaxConn {
 				s.tryConnect()
 			}
-			pt.Reset(time.Second * 10)
+			s.pt.Reset(time.Second * 10)
 		}
 	}
 }
@@ -596,38 +598,38 @@ func (s *TcpServer) run() {
 	defer s.wg.Done()
 	var delay time.Duration
 	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
-	pt := time.NewTimer(time.Second)
-	dt := time.NewTimer(time.Second)
 	for i := 0; i < 4; i++ {
-		go s.dispatch(i, ch, pt, dt)
+		go s.dispatch(i, ch)
 	}
 	s.dopt <- 1 //load seed ip
 	for {
 		conn, err := s.lis.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				if delay == 0 {
-					delay = 5 * time.Millisecond
-				} else {
-					delay *= 2
-				}
-				if max := 1 * time.Second; delay > max {
-					delay = max
-				}
-				LogError("Accept error: %v; retrying in %v", err, delay)
-				time.Sleep(delay)
-				continue
+		if err == nil {
+			delay = 0
+			c := s.NewClientWithConn(conn)
+			c.typ = ClientIn
+			c.isopen = true
+			LogInfo("new connection", conn.RemoteAddr())
+			c.Loop()
+			continue
+		}
+		if ne, ok := err.(net.Error); ok && ne.Temporary() {
+			if delay == 0 {
+				delay = 5 * time.Millisecond
+			} else {
+				delay *= 2
 			}
+			if max := 1 * time.Second; delay > max {
+				delay = max
+			}
+			LogError("Accept error: %v; retrying in %v", err, delay)
+			time.Sleep(delay)
+			continue
+		} else {
 			LogError(err)
 			s.cancel()
 			break
 		}
-		delay = 0
-		c := s.NewClientWithConn(conn)
-		c.typ = ClientIn
-		c.isopen = true
-		LogInfo("new connection", conn.RemoteAddr())
-		c.Loop()
 	}
 }
 
@@ -643,5 +645,7 @@ func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
 	s.clients = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
 	s.dopt = make(chan int, 5)
+	s.pt = time.NewTimer(time.Second)
+	s.dt = time.NewTimer(time.Second)
 	return s, nil
 }

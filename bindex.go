@@ -648,9 +648,6 @@ func (bi *BlockIndex) HasSync() bool {
 
 //获取回退代价，也就是回退多少个
 func (bi *BlockIndex) unlinkCount(id HASH256) (uint32, error) {
-	if id.IsZero() {
-		return bi.lastHeight() + 1, nil
-	}
 	ele, err := bi.getEle(id)
 	if err != nil {
 		return 0, errors.New("not found id")
@@ -686,7 +683,7 @@ type MulTransInfo struct {
 	Src  []Address //原地址
 	Keep int       //找零到这个索引对应的src地址
 	Dst  []Address //目标地址
-	Amts []Amount  //目标金额
+	Amts []Amount  //目标金额 大小与dst对应
 	Fee  Amount    //交易费
 	Ext  []byte    //扩展信息
 }
@@ -770,19 +767,18 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//没有减完，余额不足
 	if sum > 0 {
-		return nil, errors.New("Insufficient balance")
+		return nil, errors.New("insufficient balance")
 	}
 	//转出到其他账号的输出
 	for i, v := range m.Amts {
-		addr := m.Dst[i]
 		//创建目标输出
-		out, err := addr.NewTxOut(v, m.Ext)
+		out, err := m.Dst[i].NewTxOut(v, m.Ext)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
-	//多减的就是找零钱给自己
+	//多减的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
 		out, err := m.Src[m.Keep].NewTxOut(amt)
 		if err != nil {
@@ -790,6 +786,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
+	//开始签名
 	if err := tx.Sign(m.bi); err != nil {
 		return nil, err
 	}
