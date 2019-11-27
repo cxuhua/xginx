@@ -980,8 +980,13 @@ func (bi *BlockIndex) cleancache(b *BlockInfo) {
 
 //设置最后的头信息
 func (bi *BlockIndex) setLastHeader(bt *Batch) error {
-	if iter := bi.NewIter(); iter.Prev() && iter.Prev() {
-		ele := iter.Curr()
+	last := bi.lis.Back()
+	if last == nil {
+		return nil
+	}
+	last = last.Prev()
+	if last != nil {
+		ele := last.Value.(*TBEle)
 		pid, err := ele.ID()
 		if err != nil {
 			return err
@@ -1016,7 +1021,7 @@ func (bi *BlockIndex) unlinkLastEle(ele *TBEle) error {
 func (bi *BlockIndex) UnlinkLast() error {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
-	return bi.unlinkback()
+	return bi.unlinkLast()
 }
 
 //断开最后一个
@@ -1047,7 +1052,7 @@ func (bi *BlockIndex) unlinkLast() error {
 
 //断开一个区块
 func (bi *BlockIndex) unlink(bp *BlockInfo) error {
-	if bi.Len() == 0 {
+	if bi.lis.Len() == 0 {
 		return nil
 	}
 	if bp.Meta == nil {

@@ -78,7 +78,7 @@ func (g *MinerGroup) Stop() {
 	g.stop = true
 }
 
-func (g *MinerGroup) WaitStop() {
+func (g *MinerGroup) StopAndWait() {
 	g.stop = true
 	<-g.exit
 }
@@ -250,7 +250,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
 	m.mbv = blk.Header.Bytes()
 	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
+	defer mg.Stop()
 	mg.Run()
+	//打印定时器
 	dt := time.NewTimer(time.Second * MINER_LOG_SECONDS)
 	genok := false
 	ptime := uint64(0)
@@ -277,16 +279,16 @@ finished:
 			}
 		case mbv := <-m.mch:
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
-				mg.Stop()
+				mg.StopAndWait()
 				blk.Header = mbv.Header()
 				genok = true
 				break finished
 			}
 		case <-m.sch:
-			mg.WaitStop()
+			mg.StopAndWait()
 			return errors.New("force stop current gen block")
 		case <-m.ctx.Done():
-			mg.WaitStop()
+			mg.StopAndWait()
 			return m.ctx.Err()
 		case bhp := <-hbc:
 			ele, ok := bhp.(*TBEle)
@@ -297,7 +299,7 @@ finished:
 			if ele.Height < blk.Meta.Height {
 				break
 			}
-			mg.WaitStop()
+			mg.StopAndWait()
 			return errors.New("recv new block header ,ignore gen block")
 		}
 	}
