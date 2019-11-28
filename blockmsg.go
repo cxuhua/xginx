@@ -124,6 +124,9 @@ func (bi *BlockIndex) GetMsgHeaders(msg *MsgGetHeaders) *MsgHeaders {
 	if msg.Limit > 0 {
 		limit = msg.Limit.ToInt()
 	}
+	if limit > REQ_MAX_HEADERS_SIZE {
+		limit = REQ_MAX_HEADERS_SIZE
+	}
 	hvs := []BlockHeader{}
 	for i := 0; ifn() && i < limit; i++ {
 		bh := iter.Curr().BlockHeader

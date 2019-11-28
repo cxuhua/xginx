@@ -694,39 +694,43 @@ func (bi *BlockIndex) checkHeaders(hs []BlockHeader) error {
 //合并区块头,
 //返回成功合并的数量，最后合并的高度，最后合并的id
 //如果返回 NeedMoreHeader ，表示需要更多的区块头作为证据,第一个参数是需要的数量
-func (bi *BlockIndex) MergeHead(hs []BlockHeader) (uint32, uint32, HASH256, error) {
+func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
+	if len(hs) == 0 {
+		return 0, ZERO, errors.New("hs empty")
+	}
 	if err := bi.checkHeaders(hs); err != nil {
-		return 0, 0, ZERO, err
+		return 0, ZERO, err
+	}
+	if bi.Len() == 0 && !hs[0].IsGenesis() {
+		return REQ_MAX_HEADERS_SIZE, conf.genesis, NeedMoreHeader
 	}
 	ps := GetPubSub()
-	lc := uint32(0)
-	lh := InvalidHeight
-	for i, lid, hl := 0, ZERO, len(hs); i < hl; {
+	lc := 0
+	for i, lid, hl := 0, hs[0].MustID(), len(hs); i < hl; {
 		hh := hs[i]
 		id, err := hh.ID()
 		if err != nil {
-			return 0, lh, lid, err
+			return 0, lid, err
 		} else if err := hh.Check(); err != nil {
-			return 0, lh, lid, err
-		} else if bh, has := bi.HasBlock(id); has {
+			return 0, lid, err
+		} else if _, has := bi.HasBlock(id); has {
 			lid = id
-			lh = bh
 			i++
 		} else if ele, err := bi.LinkHeader(hh); err == nil {
 			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
 			ps.Pub(ele, NewLinkHeaderTopic)
+			lid = ele.MustID()
 			i++
-			lh = ele.Height
 			lc++
 		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
-			return 0, lh, lid, err
-		} else if hl-i <= int(num) { //如果证据区块头不足请求更多 从lid 之后获取 至少num个作为合并证据
-			return num, lh, lid, NeedMoreHeader
+			return -REQ_MAX_HEADERS_SIZE, lid, NeedMoreHeader
+		} else if hl-i <= int(num) {
+			return int(num), lid, NeedMoreHeader
 		} else if err = bi.UnlinkTo(lid); err != nil {
-			return 0, lh, lid, err
+			return 0, lid, err
 		}
 	}
-	return lc, lh, ZERO, nil
+	return lc, ZERO, nil
 }
 
 //回退到指定id

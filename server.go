@@ -389,24 +389,18 @@ func (s *TcpServer) reqMsgGetBlock() error {
 }
 
 //需要更多的证明
-func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt uint32, lh uint32) error {
+func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt int) error {
 	if c.Height.HH == InvalidHeight {
 		return nil
 	}
 	msg := &MsgGetHeaders{}
-	if lh == InvalidHeight {
-		lh = 0
-		msg.Start = conf.genesis
+	msg.Start = id
+	msg.Limit = VarInt(cnt)
+	if conf.IsGenesisId(id) {
 		msg.Skip = 0
 	} else {
-		msg.Start = id
-		msg.Skip = 1 //跳过当前id
+		msg.Skip = 1
 	}
-	//对方区块头不够就不发送了
-	if c.Height.HH < lh+cnt+1 {
-		return nil
-	}
-	msg.Limit = VarInt(cnt + 1)
 	c.SendMsg(msg)
 	return nil
 }
@@ -420,9 +414,9 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	//更新节点区块高度
 	bi := GetBlockIndex()
 	//返回合并信息
-	lc, lh, lid, err := bi.MergeHead(msg.Headers)
+	lc, lid, err := bi.MergeHead(msg.Headers)
 	if err == NeedMoreHeader {
-		return s.reqMoreHeaders(c, lid, lc, lh)
+		return s.reqMoreHeaders(c, lid, lc)
 	} else if err != nil {
 		return err
 	}
