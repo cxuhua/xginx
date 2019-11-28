@@ -357,13 +357,13 @@ func (c *Client) loop() {
 	for {
 		select {
 		case wp := <-c.wc:
-			err := c.WriteMsg(wp)
-			if err != nil {
-				panic(fmt.Errorf("write msg error %v", err))
+			if err := c.WriteMsg(wp); err != nil {
+				c.err = fmt.Errorf("write msg error %v", err)
+				c.cancel()
+				return
 			}
 		case rp := <-c.rc:
-			err := c.processMsg(rp)
-			if err != nil {
+			if err := c.processMsg(rp); err != nil {
 				LogError("process msg", rp.Type(), "error", err)
 			}
 		case <-c.vt.C:
