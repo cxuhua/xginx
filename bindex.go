@@ -252,6 +252,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 			panic(err)
 		}
 		midx = bi
+		lis.SetBlockIndex(midx)
 	})
 	return midx
 }
@@ -378,7 +379,7 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	ele := EmptyTBEle(nexth, bi)
 	ele.TBMeta.BlockHeader = blk.Header
 	blk.Meta = ele
-	if err := bi.lptr.OnNewBlock(bi, blk); err != nil {
+	if err := bi.lptr.OnNewBlock(blk); err != nil {
 		return nil, err
 	}
 	return blk, nil
@@ -1035,6 +1036,7 @@ func (bi *BlockIndex) unlinkLast() error {
 	if err != nil {
 		return err
 	}
+	bi.lptr.OnUnlinkBlock(blk)
 	err = bi.unlink(blk)
 	if err == nil {
 		bi.cleancache(blk)
@@ -1081,6 +1083,7 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	//回退后会由回退数据设置bestvalue
 	//删除区块头
 	bt.Del(BLOCK_PREFIX, id[:])
+	//恢复数据
 	if err := bi.db.Index().Write(bt); err != nil {
 		return err
 	}
@@ -1308,7 +1311,7 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 	}
 	//删除交易池中存在这个区块中的交易
 	bi.txp.DelTxs(blk.Txs)
-	bi.lptr.OnUpdateBlock(bi, blk)
+	bi.lptr.OnUpdateBlock(blk)
 	return nil
 }
 
@@ -1367,7 +1370,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	if err != nil {
 		return nil, err
 	}
-	bi.lptr.OnUpdateHeader(bi, ele)
+	bi.lptr.OnUpdateHeader(ele)
 	return ele, nil
 }
 
@@ -1385,7 +1388,7 @@ func (bi *BlockIndex) GetTxPool() *TxPool {
 func (bi *BlockIndex) Close() {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
-	bi.lptr.OnClose(bi)
+	bi.lptr.OnClose()
 	bi.db.Close()
 	bi.lis.Init()
 	_ = bi.lru.Close()

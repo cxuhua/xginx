@@ -292,7 +292,7 @@ func (p *TxPool) Len() int {
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := bi.lptr.OnTxPool(bi, tx); err != nil {
+	if err := bi.lptr.OnTxPool(tx); err != nil {
 		return err
 	}
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {

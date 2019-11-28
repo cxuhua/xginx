@@ -438,7 +438,7 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 		return err
 	}
 	//最后设置merkleid
-	if err := lptr.OnFinished(bi, blk); err != nil {
+	if err := lptr.OnFinished(blk); err != nil {
 		return err
 	}
 	return blk.SetMerkle()

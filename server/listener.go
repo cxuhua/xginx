@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,6 +13,8 @@ import (
 
 //测试用监听器
 type listener struct {
+	mu     sync.RWMutex
+	bi     *BlockIndex
 	wallet IWallet
 }
 
@@ -25,15 +28,19 @@ func newListener(wdir string) IListener {
 	}
 }
 
-func (lis *listener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
+func (lis *listener) SetBlockIndex(bi *BlockIndex) {
+	lis.bi = bi
+}
+
+func (lis *listener) OnUpdateHeader(ele *TBEle) {
 
 }
 
-func (lis *listener) OnTxPool(bi *BlockIndex, tx *TX) error {
+func (lis *listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
-func (lis *listener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
+func (lis *listener) OnUpdateBlock(blk *BlockInfo) {
 
 }
 
@@ -45,7 +52,11 @@ func (lis *listener) OnInitHttp(m *gin.Engine) {
 
 }
 
-func (lis *listener) OnClose(bi *BlockIndex) {
+func (lis *listener) OnUnlinkBlock(blk *BlockInfo) {
+
+}
+
+func (lis *listener) OnClose() {
 	lis.wallet.Close()
 }
 
@@ -54,7 +65,7 @@ func (lis *listener) GetWallet() IWallet {
 }
 
 //当块创建完毕
-func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	//获取矿工账号
 	acc := Miner.GetMiner()
 	if acc == nil {
@@ -62,9 +73,7 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 	}
 	//设置base out script
 	//创建coinbase tx
-	tx := &TX{}
-	tx.Ver = 1
-
+	tx := NewTx()
 	txt := time.Now().Format("2006-01-02 15:04:05")
 	//base tx
 	in := &TxIn{}
@@ -79,7 +88,6 @@ func (lis *listener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
 		out.Script = script
 	}
 	tx.Outs = []*TxOut{out}
-
 	blk.Txs = []*TX{tx}
 	return nil
 }
@@ -101,7 +109,7 @@ func (lis *listener) OnStartup() {
 }
 
 //完成区块
-func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *listener) OnFinished(blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss")
 	}
@@ -110,7 +118,7 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 		return errors.New("coinbase tx miss")
 	}
 	//交易费用处理，添加给矿工
-	fee, err := blk.GetFee(bi)
+	fee, err := blk.GetFee(lis.bi)
 	if err != nil {
 		return err
 	}
@@ -118,5 +126,5 @@ func (lis *listener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 		return nil
 	}
 	tx.Outs[0].Value += fee
-	return blk.CheckTxs(bi)
+	return blk.CheckTxs(lis.bi)
 }

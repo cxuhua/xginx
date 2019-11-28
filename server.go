@@ -83,66 +83,12 @@ type IServer interface {
 }
 
 var (
-	Server IServer = &server{}
+	Server = NewTcpServer()
 )
-
-type server struct {
-	ser *TcpServer
-}
-
-func (s *server) DoOpt(opt int) {
-	s.ser.dopt <- opt
-}
-
-func (s *server) Addrs() []*AddrNode {
-	s.ser.addrs.mu.RLock()
-	defer s.ser.addrs.mu.RUnlock()
-	ds := []*AddrNode{}
-	for _, v := range s.ser.addrs.addrs {
-		ds = append(ds, v)
-	}
-	return ds
-}
-
-func (s *server) Clients() []*Client {
-	cs := []*Client{}
-	s.ser.mu.RLock()
-	defer s.ser.mu.RUnlock()
-	for _, v := range s.ser.clients {
-		cs = append(cs, v)
-	}
-	return cs
-}
-
-func (s *server) BroadMsg(m MsgIO, skips ...*Client) {
-	s.ser.BroadMsg(m, skips...)
-}
-
-func (s *server) Wait() {
-	s.ser.Wait()
-}
-
-func (s *server) NewClient() *Client {
-	return s.ser.NewClient()
-}
-
-func (s *server) Stop() {
-	s.ser.Stop()
-}
-
-func (s *server) Start(ctx context.Context, lis IListener) {
-	ser, err := NewTcpServer(ctx, conf)
-	if err != nil {
-		panic(err)
-	}
-	ser.lptr = lis
-	s.ser = ser
-	s.ser.Run()
-}
 
 type TcpServer struct {
 	lptr    IListener
-	lis     net.Listener
+	tcplis  net.Listener
 	addr    *net.TCPAddr
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -155,6 +101,30 @@ type TcpServer struct {
 	dopt    chan int //获取线程做一些操作
 	dt      *time.Timer
 	pt      *time.Timer
+}
+
+func (s *TcpServer) DoOpt(opt int) {
+	s.dopt <- opt
+}
+
+func (s *TcpServer) Addrs() []*AddrNode {
+	s.addrs.mu.RLock()
+	defer s.addrs.mu.RUnlock()
+	ds := []*AddrNode{}
+	for _, v := range s.addrs.addrs {
+		ds = append(ds, v)
+	}
+	return ds
+}
+
+func (s *TcpServer) Clients() []*Client {
+	cs := []*Client{}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, v := range s.clients {
+		cs = append(cs, v)
+	}
+	return cs
 }
 
 //地址是否打开
@@ -410,11 +380,9 @@ func (s *TcpServer) reqMsgGetBlock() error {
 		return err
 	} else if c := s.findBlockClient(ele.Height); c == nil {
 		return errors.New("find client error")
-	} else if id, err := ele.ID(); err != nil {
-		return err
 	} else {
 		msg := &MsgGetInv{}
-		msg.AddInv(InvTypeBlock, id)
+		msg.AddInv(InvTypeBlock, ele.MustID())
 		c.SendMsg(msg)
 	}
 	return nil
@@ -450,27 +418,23 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	//成功连接的数量
 	lc := 0
 	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
-		hv := msg.Headers[i]
-		id, err := hv.ID()
+		hh := msg.Headers[i]
+		id, err := hh.ID()
 		if err != nil {
 			return err
-		}
-		if err := hv.Check(); err != nil {
+		} else if err := hh.Check(); err != nil {
 			return err
-		}
-		if bi.HasBlock(id) {
+		} else if bi.HasBlock(id) {
 			lid = id
 			i++
-		} else if ele, err := bi.LinkHeader(hv); err == nil {
-			LogInfo("link block header id =", hv, "height =", bi.LastHeight())
+		} else if ele, err := bi.LinkHeader(hh); err == nil {
+			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
 			ps.Pub(ele, NewLinkHeaderTopic)
 			i++
 			lc++
-		} else if unnum, err := bi.UnlinkCount(lid); err != nil {
-			//计算需要断开的区块数量
+		} else if unnum, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
 			return err
-		} else if hl-i-1 <= int(unnum) {
-			//如果证据区块头不足请求更多
+		} else if hl-i-1 <= int(unnum) { //如果证据区块头不足请求更多
 			return s.reqMoreHeaders(c, msg.LastID(), unnum)
 		} else if err = bi.UnlinkTo(lid); err != nil {
 			return err
@@ -534,7 +498,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				LogInfo(opt)
 			}
 		case <-s.ctx.Done():
-			_ = s.lis.Close()
+			_ = s.tcplis.Close()
 			return
 		case cv := <-ch:
 			if tx, ok := cv.(*TX); ok {
@@ -621,7 +585,7 @@ func (s *TcpServer) run() {
 	}
 	s.dopt <- 1 //load seed ip
 	for {
-		conn, err := s.lis.Accept()
+		conn, err := s.tcplis.Accept()
 		if err == nil {
 			delay = 0
 			c := s.NewClientWithConn(conn)
@@ -651,19 +615,24 @@ func (s *TcpServer) run() {
 	}
 }
 
-func NewTcpServer(ctx context.Context, c *Config) (*TcpServer, error) {
-	s := &TcpServer{}
-	s.addr = c.GetTcpListenAddr().ToTcpAddr()
-	lis, err := net.ListenTCP(s.addr.Network(), s.addr)
-	if err != nil {
-		return nil, err
-	}
-	s.lis = lis
+func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
+	s.lptr = lptr
 	s.ctx, s.cancel = context.WithCancel(ctx)
+	s.addr = conf.GetTcpListenAddr().ToTcpAddr()
+	tcplis, err := net.ListenTCP(s.addr.Network(), s.addr)
+	if err != nil {
+		panic(err)
+	}
+	s.tcplis = tcplis
+	s.Run()
+}
+
+func NewTcpServer() IServer {
+	s := &TcpServer{}
 	s.clients = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
-	return s, nil
+	return s
 }

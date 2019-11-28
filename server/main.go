@@ -78,7 +78,7 @@ func main() {
 	Http.Start(ctx, lis)
 
 	//延迟回调
-	time.Sleep(time.Millisecond * 500)
+	time.Sleep(time.Millisecond * 300)
 	lis.OnStartup()
 
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
