@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"bytes"
-	sha2562 "crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -472,12 +471,20 @@ func (v NetPackage) Encode(w IWriter) error {
 }
 
 func (v *NetPackage) Hash() []byte {
-	hasher := sha2562.New()
-	hasher.Write(v.Flags[:])
-	hasher.Write([]byte{v.Type})
-	hasher.Write(v.Bytes)
-	sum := hasher.Sum(nil)
-	return sum[:4]
+	buf := NewWriter()
+	err := buf.TWrite(v.Flags[:])
+	if err != nil {
+		panic(err)
+	}
+	err = buf.TWrite(v.Type)
+	if err != nil {
+		panic(err)
+	}
+	err = v.Bytes.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	return Sha256(buf.Bytes())
 }
 
 func (v *NetPackage) Decode(r IReader) error {
