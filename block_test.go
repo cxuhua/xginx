@@ -14,21 +14,73 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
+	b := blk.Header.Bytes()
+	for i := uint32(0); ; i++ {
+		b.SetNonce(i)
+		id := b.Hash()
+		if CheckProofOfWork(id, blk.Header.Bits) {
+			blk.Header = b.Header()
+			break
+		}
+	}
+	if bi.Len() == 0 {
+		conf.genesis, _ = blk.ID()
+	}
 	return blk
 }
 
 func getTestBi() *BlockIndex {
-	conf = LoadConfig("v10000.json")
+	conf = LoadConfig("test.json")
 	lis := newListener(conf.WalletDir)
 	InitBlockIndex(lis)
 	lis.OnStartup()
-	return GetBlockIndex()
+
+	bi := GetBlockIndex()
+	if bi.Len() > 0 {
+		conf.genesis, _ = bi.First().ID()
+	}
+	return bi
+}
+
+//从h开始生成n个区块头
+func makehs(h BlockHeader, n int) []BlockHeader {
+	hs := []BlockHeader{h}
+	for i := 0; i < n; i++ {
+		time.Sleep(time.Second)
+		v := h
+		v.Time = uint32(time.Now().Unix())
+		v.Prev, _ = h.ID()
+		b := v.Bytes()
+		for i := uint32(0); ; i++ {
+			b.SetNonce(i)
+			id := b.Hash()
+			if CheckProofOfWork(id, v.Bits) {
+				v = b.Header()
+				break
+			}
+		}
+		hs = append(hs, v)
+		h = v
+	}
+	return hs
+}
+
+func TestMergeChain(t *testing.T) {
+	bi := getTestBi()
+	defer bi.Close()
+
+	iter := bi.NewIter()
+	iter.SeekHeight(3)
+
+	vvs := makehs(iter.Curr().BlockHeader, 12)
+
+	log.Println(bi.MergeHead(vvs))
 }
 
 func TestBlockChain(t *testing.T) {
 	bi := getTestBi()
 	defer bi.Close()
-	testnum := uint32(1)
+	testnum := uint32(5)
 	for i := uint32(0); i < testnum; i++ {
 		time.Sleep(time.Second)
 		cb := NewTestBlock(bi)

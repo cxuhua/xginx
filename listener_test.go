@@ -10,6 +10,7 @@ import (
 
 //测试用监听器
 type testLisener struct {
+	bi     *BlockIndex
 	wallet IWallet
 }
 
@@ -23,15 +24,27 @@ func newListener(wdir string) IListener {
 	}
 }
 
-func (lis *testLisener) OnNewTx(bi *BlockIndex, tx *TX) error {
+func (lis *testLisener) OnUnlinkBlock(blk *BlockInfo) {
+
+}
+
+func (lis *testLisener) OnTxPool(tx *TX) error {
 	return nil
 }
 
-func (lis *testLisener) OnUpdateHeader(bi *BlockIndex, ele *TBEle) {
+func (lis *testLisener) SetBlockIndex(bi *BlockIndex) {
+	lis.bi = bi
+}
+
+func (lis *testLisener) OnNewTx(tx *TX) error {
+	return nil
+}
+
+func (lis *testLisener) OnUpdateHeader(ele *TBEle) {
 
 }
 
-func (lis *testLisener) OnUpdateBlock(bi *BlockIndex, blk *BlockInfo) {
+func (lis *testLisener) OnUpdateBlock(blk *BlockInfo) {
 
 }
 
@@ -43,7 +56,7 @@ func (lis *testLisener) OnInitHttp(m *gin.Engine) {
 
 }
 
-func (lis *testLisener) OnClose(bi *BlockIndex) {
+func (lis *testLisener) OnClose() {
 	lis.wallet.Close()
 }
 
@@ -52,7 +65,7 @@ func (lis *testLisener) GetWallet() IWallet {
 }
 
 //当块创建完毕
-func (lis *testLisener) OnNewBlock(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *testLisener) OnNewBlock(blk *BlockInfo) error {
 	//获取矿工账号
 	acc := Miner.GetMiner()
 	if acc == nil {
@@ -99,7 +112,7 @@ func (lis *testLisener) OnStartup() {
 }
 
 //完成区块
-func (lis *testLisener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
+func (lis *testLisener) OnFinished(blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss")
 	}
@@ -108,7 +121,7 @@ func (lis *testLisener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 		return errors.New("coinbase tx miss")
 	}
 	//交易费用处理，添加给矿工
-	fee, err := blk.GetFee(bi)
+	fee, err := blk.GetFee(lis.bi)
 	if err != nil {
 		return err
 	}
@@ -116,5 +129,5 @@ func (lis *testLisener) OnFinished(bi *BlockIndex, blk *BlockInfo) error {
 		return nil
 	}
 	tx.Outs[0].Value += fee
-	return blk.CheckTxs(bi)
+	return blk.CheckTxs(lis.bi)
 }

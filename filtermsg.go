@@ -3,7 +3,7 @@ package xginx
 //设置过滤器，调用后client的bloom生效
 //过滤器设置后只会提交符合条件的信息给客户端
 type MsgFilterLoad struct {
-	Funcs  uint8
+	Funcs  uint32
 	Tweak  uint32
 	Filter VarBytes
 }

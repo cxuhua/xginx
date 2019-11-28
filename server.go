@@ -389,16 +389,25 @@ func (s *TcpServer) reqMsgGetBlock() error {
 }
 
 //需要更多的证明
-func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt uint32) error {
-	num := cnt + 10
-	//对方区块头数量必须比请求的多
-	if c.Height.HH <= num {
+func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt uint32, lh uint32) error {
+	if c.Height.HH == InvalidHeight {
 		return nil
 	}
-	rsg := &MsgGetHeaders{}
-	rsg.Limit = VarInt(-num) //<0 向前多获取num个
-	rsg.Start = id
-	c.SendMsg(rsg)
+	msg := &MsgGetHeaders{}
+	if lh == InvalidHeight {
+		lh = 0
+		msg.Start = conf.genesis
+		msg.Skip = 0
+	} else {
+		msg.Start = id
+		msg.Skip = 1 //跳过当前id
+	}
+	//对方区块头不够就不发送了
+	if c.Height.HH < lh+cnt+1 {
+		return nil
+	}
+	msg.Limit = VarInt(cnt + 1)
+	c.SendMsg(msg)
 	return nil
 }
 
@@ -410,35 +419,12 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	defer s.single.Unlock()
 	//更新节点区块高度
 	bi := GetBlockIndex()
-	ps := GetPubSub()
-	//检查连续性
-	if err := msg.Check(bi); err != nil {
+	//返回合并信息
+	lc, lh, lid, err := bi.MergeHead(msg.Headers)
+	if err == NeedMoreHeader {
+		return s.reqMoreHeaders(c, lid, lc, lh)
+	} else if err != nil {
 		return err
-	}
-	//成功连接的数量
-	lc := 0
-	for i, lid, hl := 0, ZERO, len(msg.Headers); i < hl; {
-		hh := msg.Headers[i]
-		id, err := hh.ID()
-		if err != nil {
-			return err
-		} else if err := hh.Check(); err != nil {
-			return err
-		} else if bi.HasBlock(id) {
-			lid = id
-			i++
-		} else if ele, err := bi.LinkHeader(hh); err == nil {
-			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
-			ps.Pub(ele, NewLinkHeaderTopic)
-			i++
-			lc++
-		} else if unnum, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
-			return err
-		} else if hl-i-1 <= int(unnum) { //如果证据区块头不足请求更多
-			return s.reqMoreHeaders(c, msg.LastID(), unnum)
-		} else if err = bi.UnlinkTo(lid); err != nil {
-			return err
-		}
 	}
 	//请求下一批区块头
 	if cc := s.findHeaderClient(msg.Height.HH); cc != nil {

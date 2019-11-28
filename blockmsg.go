@@ -1,9 +1,5 @@
 package xginx
 
-import (
-	"errors"
-)
-
 const (
 	//每次请求的最大区块头数量
 	REQ_MAX_HEADERS_SIZE = 2000
@@ -171,29 +167,7 @@ func (m MsgHeaders) LastID() HASH256 {
 
 //检测连续性和难度
 func (m MsgHeaders) Check(bi *BlockIndex) error {
-	if len(m.Headers) == 0 {
-		return nil
-	}
-	pv := m.Headers[0]
-	if err := pv.Check(); err != nil {
-		return err
-	}
-	for i := 1; i < len(m.Headers); i++ {
-		cv := m.Headers[i]
-		if err := cv.Check(); err != nil {
-			return err
-		}
-		//时间必须连续
-		if cv.Time < pv.Time {
-			return errors.New("time not continue")
-		}
-		//id必须能连接
-		if !cv.Prev.Equal(pv.MustID()) {
-			return errors.New("headers not continue")
-		}
-		pv = cv
-	}
-	return nil
+	return bi.checkHeaders(m.Headers)
 }
 
 func (m MsgHeaders) Encode(w IWriter) error {

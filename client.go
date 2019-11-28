@@ -64,7 +64,7 @@ func (c *Client) FilterAdd(key []byte) error {
 }
 
 //设置过滤器
-func (c *Client) LoadFilter(funcs int, tweak uint32, filter []byte) error {
+func (c *Client) LoadFilter(funcs uint32, tweak uint32, filter []byte) error {
 	blm, err := NewBloomFilter(funcs, tweak, filter)
 	if err != nil {
 		return err
@@ -188,7 +188,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 	case NT_FILTER_LOAD:
 		msg := m.(*MsgFilterLoad)
-		err := c.LoadFilter(int(msg.Funcs), msg.Tweak, msg.Filter)
+		err := c.LoadFilter(msg.Funcs, msg.Tweak, msg.Filter)
 		if err != nil {
 			c.SendMsg(NewMsgError(ErrCodeFilterLoad, err))
 		}

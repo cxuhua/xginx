@@ -456,16 +456,16 @@ type NetPackage struct {
 }
 
 func (v NetPackage) Encode(w IWriter) error {
-	if _, err := w.Write(v.Flags[:]); err != nil {
+	if err := w.TWrite(v.Flags[:]); err != nil {
 		return err
 	}
-	if err := w.WriteByte(v.Type); err != nil {
+	if err := w.TWrite(v.Type); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
 		return err
 	}
-	if _, err := w.Write(v.Hash()); err != nil {
+	if err := w.TWrite(v.Hash()); err != nil {
 		return err
 	}
 	return nil
@@ -481,7 +481,7 @@ func (v *NetPackage) Hash() []byte {
 }
 
 func (v *NetPackage) Decode(r IReader) error {
-	if _, err := r.Read(v.Flags[:]); err != nil {
+	if err := r.TRead(v.Flags[:]); err != nil {
 		return err
 	}
 	if err := r.TRead(&v.Type); err != nil {
@@ -490,7 +490,7 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err := v.Bytes.Decode(r); err != nil {
 		return err
 	}
-	if _, err := r.Read(v.Sum[:]); err != nil {
+	if err := r.TRead(v.Sum[:]); err != nil {
 		return err
 	}
 	if !bytes.Equal(v.Flags[:], []byte(conf.Flags)) {

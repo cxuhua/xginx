@@ -25,6 +25,8 @@ var (
 	EmptyBlockChain = errors.New("this is empty chain")
 	//Block数据未下载
 	BlockDataEmpty = errors.New("block data empty,not download")
+	//需要更多的区块头
+	NeedMoreHeader = errors.New("need more block header evidence")
 )
 
 //索引头
@@ -662,6 +664,71 @@ func (bi *BlockIndex) UnlinkCount(id HASH256) (uint32, error) {
 	return bi.unlinkCount(id)
 }
 
+//检测连续的区块头列表是否有效
+func (bi *BlockIndex) checkHeaders(hs []BlockHeader) error {
+	if len(hs) == 0 {
+		return nil
+	}
+	pv := hs[0]
+	if err := pv.Check(); err != nil {
+		return err
+	}
+	for i := 1; i < len(hs); i++ {
+		cv := hs[i]
+		if err := cv.Check(); err != nil {
+			return err
+		}
+		//时间必须连续
+		if cv.Time < pv.Time {
+			return errors.New("time not continue")
+		}
+		//id必须能连接
+		if !cv.Prev.Equal(pv.MustID()) {
+			return errors.New("headers not continue")
+		}
+		pv = cv
+	}
+	return nil
+}
+
+//合并区块头,
+//返回成功合并的数量，最后合并的高度，最后合并的id
+//如果返回 NeedMoreHeader ，表示需要更多的区块头作为证据,第一个参数是需要的数量
+func (bi *BlockIndex) MergeHead(hs []BlockHeader) (uint32, uint32, HASH256, error) {
+	if err := bi.checkHeaders(hs); err != nil {
+		return 0, 0, ZERO, err
+	}
+	ps := GetPubSub()
+	lc := uint32(0)
+	lh := InvalidHeight
+	for i, lid, hl := 0, ZERO, len(hs); i < hl; {
+		hh := hs[i]
+		id, err := hh.ID()
+		if err != nil {
+			return 0, lh, lid, err
+		} else if err := hh.Check(); err != nil {
+			return 0, lh, lid, err
+		} else if bh, has := bi.HasBlock(id); has {
+			lid = id
+			lh = bh
+			i++
+		} else if ele, err := bi.LinkHeader(hh); err == nil {
+			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
+			ps.Pub(ele, NewLinkHeaderTopic)
+			i++
+			lh = ele.Height
+			lc++
+		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
+			return 0, lh, lid, err
+		} else if hl-i <= int(num) { //如果证据区块头不足请求更多 从lid 之后获取 至少num个作为合并证据
+			return num, lh, lid, NeedMoreHeader
+		} else if err = bi.UnlinkTo(lid); err != nil {
+			return 0, lh, lid, err
+		}
+	}
+	return lc, lh, ZERO, nil
+}
+
 //回退到指定id
 func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 	bi.rwm.Lock()
@@ -1181,12 +1248,16 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error
 	return kvs, nil
 }
 
-//是否存在
-func (bi *BlockIndex) HasBlock(id HASH256) bool {
+//是否存在存在返回高度
+func (bi *BlockIndex) HasBlock(id HASH256) (uint32, bool) {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
-	_, has := bi.imap[id]
-	return has
+	bh := InvalidHeight
+	ele, has := bi.imap[id]
+	if has {
+		bh = ele.Value.(*TBEle).Height
+	}
+	return bh, has
 }
 
 func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {
