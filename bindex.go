@@ -708,22 +708,20 @@ func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
 	lc := 0
 	for i, lid, hl := 0, hs[0].MustID(), len(hs); i < hl; {
 		hh := hs[i]
-		id, err := hh.ID()
-		if err != nil {
-			return 0, lid, err
-		} else if err := hh.Check(); err != nil {
-			return 0, lid, err
-		} else if _, has := bi.HasBlock(id); has {
+		id := hh.MustID()
+		if _, has := bi.HasBlock(id); has {
 			lid = id
 			i++
 		} else if ele, err := bi.LinkHeader(hh); err == nil {
-			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
 			ps.Pub(ele, NewLinkHeaderTopic)
-			lid = ele.MustID()
+			lid = id
 			i++
 			lc++
-		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
+			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
+		} else if i == 0 { //第一个就无法链接,向后获取数据
 			return -REQ_MAX_HEADERS_SIZE, lid, NeedMoreHeader
+		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
+			return 0, lid, err
 		} else if hl-i <= int(num) {
 			return int(num), lid, NeedMoreHeader
 		} else if err = bi.UnlinkTo(lid); err != nil {
