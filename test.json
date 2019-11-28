@@ -1,0 +1,18 @@
+{
+  "data_dir": "/Users/xuhua/testd",
+  "wallet_dir": "/Users/xuhua/wallet",
+  "miner_num": 0,
+  "flags": "xhlm",
+  "version":10000,
+  "tcp_port": 9333,
+  "tcp_ip": "192.168.31.198",
+  "max_conn": 50,
+  "halving": 210000,
+  "pow_limit": "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "pow_time":1209600,
+  "pow_span": 2016,
+  "http_port": 9334,
+  "addr_prefix": "st",
+  "seeds":["seed.xginx.com"],
+  "genesis": "00bfd41059a968c117102c40d0fc05e6ab6c68a0187112ae7f8cb6f5c450981d"
+}
