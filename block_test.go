@@ -72,9 +72,9 @@ func TestMergeChain(t *testing.T) {
 	iter := bi.NewIter()
 	iter.SeekHeight(3)
 
-	vvs := makehs(iter.Curr().BlockHeader, 12)
+	vvs := makehs(iter.Curr().BlockHeader, 3)
 
-	log.Println(bi.MergeHead(vvs))
+	log.Println(bi.MergeHead(vvs[1:]))
 }
 
 func TestBlockChain(t *testing.T) {
