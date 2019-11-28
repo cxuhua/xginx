@@ -1,63 +1,45 @@
 package xginx
 
 import (
+	"encoding/hex"
+	"log"
 	"testing"
 )
 
 func TestMsgVersion(t *testing.T) {
+	conf := InitConfig("test.json")
+	defer conf.Close()
 	msg := &MsgVersion{}
-	msg.Ver = conf.Ver
+	msg.Ver = 1
 	msg.Service = SERVICE_NODE
-	msg.Addr = conf.GetNetAddr()
-	buf := NewReadWriter()
-	err := msg.Encode(buf)
+	msg.Addr = NetAddrForm("127.0.0.1:9000")
+
+	buf := NewWriter()
+	if err := msg.Encode(buf); err != nil {
+		panic(err)
+	}
+	bb := buf.Bytes()
+	log.Println(hex.EncodeToString(bb))
+	flags := []byte(conf.Flags)
+	pd := &NetPackage{
+		Type:  msg.Type(),
+		Bytes: bb,
+	}
+	copy(pd.Flags[:], flags)
+	buf = NewWriter()
+	err := pd.Encode(buf)
 	if err != nil {
 		panic(err)
 	}
-	nb := make([]byte, buf.Len())
-	copy(nb, buf.Bytes())
-	m2 := &MsgVersion{}
-	err = m2.Decode(buf)
+
+	r := NewReader(buf.Bytes())
+
+	pd2 := &NetPackage{}
+	err = pd2.Decode(r)
 	if err != nil {
 		panic(err)
 	}
-	if m2.Type() != NT_VERSION {
-		t.Errorf("type error")
-	}
-	if m2.Ver != conf.Ver {
-		t.Errorf("ver error")
-	}
-	if m2.Service != msg.Service {
-		t.Errorf("service error")
-	}
-	np := NetPackage{
-		Type:  NT_VERSION,
-		Bytes: nb,
-	}
-	buf.Reset()
-	err = np.Encode(buf)
-	if err != nil {
-		panic(err)
-	}
-	np2 := NetPackage{}
-	err = np2.Decode(buf)
-	if err != nil {
-		panic(err)
-	}
-	m3, err := np2.ToMsgIO()
-	m4, ok := m3.(*MsgVersion)
-	if !ok {
-		t.Errorf("type error")
-	}
-	if m4.Type() != NT_VERSION {
-		t.Errorf("type error")
-	}
-	if m4.Ver != conf.Ver {
-		t.Errorf("ver error")
-	}
-	if m4.Service != msg.Service {
-		t.Errorf("service error")
-	}
+	log.Println(pd2.ToMsgIO())
 }
 
 func TestVarBytes(t *testing.T) {
