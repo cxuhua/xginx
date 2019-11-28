@@ -3,11 +3,9 @@ package xginx
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"strconv"
 	"time"
@@ -486,11 +484,9 @@ func (v *NetPackage) Hash() []byte {
 	if err != nil {
 		panic(err)
 	}
-	log.Println(hex.EncodeToString(v.Bytes))
 	hv := Sha256(buf.Bytes())
 	return hv[:4]
 }
-
 func (v *NetPackage) Decode(r IReader) error {
 	if err := r.TRead(v.Flags[:]); err != nil {
 		return err
