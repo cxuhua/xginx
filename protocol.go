@@ -487,6 +487,7 @@ func (v *NetPackage) Hash() []byte {
 	hv := Sha256(buf.Bytes())
 	return hv[:4]
 }
+
 func (v *NetPackage) Decode(r IReader) error {
 	if err := r.TRead(v.Flags[:]); err != nil {
 		return err
@@ -678,7 +679,7 @@ func (v VarBytes) Encode(w IWriter) error {
 	if len(v) == 0 {
 		return nil
 	}
-	if _, err := w.Write(v); err != nil {
+	if err := w.TWrite(v); err != nil {
 		return err
 	}
 	return nil
@@ -696,7 +697,7 @@ func (v *VarBytes) Decode(r IReader) error {
 		return errors.New("bytes length too long")
 	}
 	*v = make([]byte, l)
-	if _, err := r.Read(*v); err != nil {
+	if err := r.TRead(*v); err != nil {
 		return err
 	}
 	return nil
