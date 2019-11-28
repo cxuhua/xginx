@@ -2,7 +2,7 @@ package xginx
 
 const (
 	//每次请求的最大区块头数量
-	REQ_MAX_HEADERS_SIZE = 2000
+	REQ_MAX_HEADERS_SIZE = 200
 )
 
 // NT_GET_HEADERS

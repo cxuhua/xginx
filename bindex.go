@@ -722,8 +722,8 @@ func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
 			return -REQ_MAX_HEADERS_SIZE, lid, NeedMoreHeader
 		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
 			return 0, lid, err
-		} else if hl-i <= int(num) {
-			return int(num), lid, NeedMoreHeader
+		} else if hl-i <= int(num) { //是否存在比更多的区块头作为证据
+			return int(num + 1), lid, NeedMoreHeader
 		} else if err = bi.UnlinkTo(lid); err != nil {
 			return 0, lid, err
 		}

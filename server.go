@@ -390,9 +390,6 @@ func (s *TcpServer) reqMsgGetBlock() error {
 
 //需要更多的证明
 func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt int) error {
-	if c.Height.HH == InvalidHeight {
-		return nil
-	}
 	msg := &MsgGetHeaders{}
 	msg.Start = id
 	msg.Limit = VarInt(cnt)
@@ -414,9 +411,9 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	//更新节点区块高度
 	bi := GetBlockIndex()
 	//返回合并信息
-	lc, lid, err := bi.MergeHead(msg.Headers)
+	cnt, lid, err := bi.MergeHead(msg.Headers)
 	if err == NeedMoreHeader {
-		return s.reqMoreHeaders(c, lid, lc)
+		return s.reqMoreHeaders(c, lid, cnt)
 	} else if err != nil {
 		return err
 	}
@@ -425,7 +422,7 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 		cc.ReqBlockHeaders(bi, msg.Height.HH)
 	}
 	//立即请求数据区块
-	if lc > 0 {
+	if cnt > 0 {
 		s.dt.Reset(time.Millisecond * 300)
 	}
 	return nil
