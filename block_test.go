@@ -6,14 +6,7 @@ import (
 	"time"
 )
 
-func NewTestBlock(bi *BlockIndex) *BlockInfo {
-	blk, err := bi.NewBlock(1)
-	if err != nil {
-		panic(err)
-	}
-	if err := blk.Finish(bi); err != nil {
-		panic(err)
-	}
+func calcHash(blk *BlockInfo) {
 	b := blk.Header.Bytes()
 	for i := uint32(0); ; i++ {
 		b.SetNonce(i)
@@ -23,6 +16,17 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 			break
 		}
 	}
+}
+
+func NewTestBlock(bi *BlockIndex) *BlockInfo {
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	if err := blk.Finish(bi); err != nil {
+		panic(err)
+	}
+	calcHash(blk)
 	if bi.Len() == 0 {
 		conf.genesis, _ = blk.ID()
 	}
@@ -101,17 +105,16 @@ func TestBlockChain(t *testing.T) {
 
 func TestTransfire(t *testing.T) {
 	bi := GetTestBlockIndex()
-	w := bi.lptr.GetWallet()
-	log.Println(w.ListAccount())
+	defer bi.Close()
 	blk, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
 	}
 	mi := bi.EmptyMulTransInfo()
-	mi.Src = []Address{"st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v"}
+	mi.Src = []Address{"st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q"}
 	mi.Keep = 0
-	mi.Dst = []Address{"st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w"}
-	mi.Amts = []Amount{0}
+	mi.Dst = []Address{"st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3"}
+	mi.Amts = []Amount{15 * COIN}
 	mi.Fee = 1 * COIN
 	mi.Ext = []byte{}
 	//A -> B
@@ -123,11 +126,44 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+
+	ds, err := bi.ListCoins("st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")
+	if err != nil {
+		panic(err)
+	}
+	log.Println(ds)
+
+	mi = bi.EmptyMulTransInfo()
+	mi.Src = []Address{"st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3"}
+	mi.Keep = 0
+	mi.Dst = []Address{"st1qm24876nvtcn83m8jlg7r4jsr223lcepn3g8wt3"}
+	mi.Amts = []Amount{5 * COIN}
+	mi.Fee = 1 * COIN
+	mi.Ext = []byte{}
+	//B -> C
+	tx, err = mi.NewTx(false)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx)
+	if err != nil {
+		panic(err)
+	}
+
+	ds, err = bi.ListCoins("st1qm24876nvtcn83m8jlg7r4jsr223lcepn3g8wt3")
+	if err != nil {
+		panic(err)
+	}
+	log.Println(ds)
+
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
-	log.Println(blk.GetFee(bi))
-	log.Println(blk.CoinbaseFee())
+	err = blk.Check(bi)
+	if err != nil {
+		panic(err)
+	}
+	calcHash(blk)
 	_, err = bi.LinkHeader(blk.Header)
 	if err != nil {
 		panic(err)
@@ -136,7 +172,7 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	ds, err := bi.ListCoins("st1qr9k57te9vvxr7wpy8ua25jj9f02k0kr6vqzl9w")
+	ds, err = bi.ListCoins("st1qm24876nvtcn83m8jlg7r4jsr223lcepn3g8wt3")
 	if err != nil {
 		panic(err)
 	}
@@ -145,6 +181,7 @@ func TestTransfire(t *testing.T) {
 
 func TestUnlinkBlock(t *testing.T) {
 	bi := GetTestBlockIndex()
+	defer bi.Close()
 	err := bi.UnlinkLast()
 	if err != nil {
 		panic(err)

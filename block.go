@@ -473,6 +473,16 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	return nil
 }
 
+//重置所有缓存
+func (blk *BlockInfo) ResetHasher() {
+	//重置hash缓存用来计算merkle
+	blk.merkel.Reset()
+	blk.Header.hasher.Reset()
+	for _, tx := range blk.Txs {
+		tx.ResetAll()
+	}
+}
+
 //完成块数据
 func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	lptr := bi.GetListener()
@@ -490,6 +500,7 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := lptr.OnFinished(blk); err != nil {
 		return err
 	}
+	blk.ResetHasher()
 	return blk.SetMerkle()
 }
 

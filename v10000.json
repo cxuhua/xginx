@@ -5,7 +5,7 @@
   "flags": "xhlm",
   "version":10000,
   "tcp_port": 9333,
-  "tcp_ip": "192.168.31.198",
+  "tcp_ip": "192.168.31.178",
   "max_conn": 50,
   "halving": 210000,
   "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",

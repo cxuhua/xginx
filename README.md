@@ -32,6 +32,8 @@ go build -o main
 ----------------
 1.添加了ReadFull和WriteFull防止网络数据读写不完整
 
+2.修正了存在交易费计算merkle的错误
+
 2019-11-27
 ----------------
 1.加强MsgGetTxPool消息同步两节点的交易池
