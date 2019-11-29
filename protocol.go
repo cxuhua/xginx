@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net"
 	"strconv"
@@ -384,6 +385,8 @@ type INetStream interface {
 }
 
 type NetStream struct {
+	len   int    //收发到的数据总数
+	bytes []byte //最后收到的数据包
 	net.Conn
 }
 
@@ -392,15 +395,42 @@ func NewNetStream(conn net.Conn) *NetStream {
 }
 
 func (c *NetStream) Bytes() []byte {
-	panic(errors.New("netstream not support"))
+	return c.bytes
 }
 
 func (c *NetStream) Reset() {
-	panic(errors.New("netstream not support"))
+	c.len = 0
+	c.bytes = nil
 }
 
 func (c *NetStream) Len() int {
-	panic(errors.New("netstream not support"))
+	return c.len
+}
+
+func (w *NetStream) WriteFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := w.Write(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
+}
+
+func (r *NetStream) ReadFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := r.Read(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
 }
 
 func (c *NetStream) TRead(data interface{}) error {
@@ -417,6 +447,7 @@ func (c *NetStream) ReadMsg() (MsgIO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("type=%d err=%w", pd.Type, err)
 	}
+	c.len += pd.Bytes.Len()
 	return pd.ToMsgIO()
 }
 
@@ -432,6 +463,7 @@ func (c *NetStream) WriteMsg(m MsgIO) error {
 		Type:  m.Type(),
 		Bytes: buf.Bytes(),
 	}
+	c.len += buf.Len()
 	return pd.Encode(c)
 }
 
@@ -451,32 +483,32 @@ type NetPackage struct {
 	Flags [4]byte  //标识
 	Type  uint8    //包类型
 	Bytes VarBytes //数据长度
-	Sum   [4]byte  //sha256 前4字节
+	Sum   uint32
 }
 
 func (v NetPackage) Encode(w IWriter) error {
-	if err := w.TWrite(v.Flags[:]); err != nil {
+	if err := w.WriteFull(v.Flags[:]); err != nil {
 		return err
 	}
-	if err := w.TWrite(v.Type); err != nil {
+	if err := w.WriteByte(v.Type); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(v.Hash()); err != nil {
+	if err := w.TWrite(v.Checksum()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (v *NetPackage) Hash() []byte {
+func (v *NetPackage) Checksum() uint32 {
 	buf := NewWriter()
-	err := buf.TWrite(v.Flags[:])
+	err := buf.WriteFull(v.Flags[:])
 	if err != nil {
 		panic(err)
 	}
-	err = buf.TWrite(v.Type)
+	err = buf.WriteByte(v.Type)
 	if err != nil {
 		panic(err)
 	}
@@ -484,27 +516,27 @@ func (v *NetPackage) Hash() []byte {
 	if err != nil {
 		panic(err)
 	}
-	hv := Sha256(buf.Bytes())
-	return hv[:4]
+	return crc32.Checksum(buf.Bytes(), crc32.IEEETable)
 }
 
 func (v *NetPackage) Decode(r IReader) error {
-	if err := r.TRead(v.Flags[:]); err != nil {
+	var err error
+	if err = r.ReadFull(v.Flags[:]); err != nil {
 		return err
 	}
-	if err := r.TRead(&v.Type); err != nil {
+	if v.Type, err = r.ReadByte(); err != nil {
 		return err
 	}
-	if err := v.Bytes.Decode(r); err != nil {
+	if err = v.Bytes.Decode(r); err != nil {
 		return err
 	}
-	if err := r.TRead(v.Sum[:]); err != nil {
+	if err = r.TRead(&v.Sum); err != nil {
 		return err
 	}
 	if !bytes.Equal(v.Flags[:], []byte(conf.Flags)) {
 		return errors.New("flags not same")
 	}
-	if !bytes.Equal(v.Sum[:], v.Hash()) {
+	if v.Checksum() != v.Sum {
 		return errors.New("check sum error")
 	}
 	return nil
@@ -512,6 +544,19 @@ func (v *NetPackage) Decode(r IReader) error {
 
 type reader struct {
 	*bytes.Reader
+}
+
+func (r *reader) ReadFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := r.Read(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
 }
 
 func (r *reader) TRead(data interface{}) error {
@@ -533,6 +578,19 @@ func (w *writer) Len() int {
 
 func (w *writer) Bytes() []byte {
 	return w.Buffer.Bytes()
+}
+
+func (w *writer) WriteFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := w.Buffer.Write(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
 }
 
 func (w *writer) Reset() {
@@ -565,6 +623,32 @@ func (r *readwriter) TRead(data interface{}) error {
 	return binary.Read(r.Buffer, Endian, data)
 }
 
+func (w *readwriter) WriteFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := w.Buffer.Write(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
+}
+
+func (r *readwriter) ReadFull(dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := r.Buffer.Read(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
+}
+
 func NewReadWriter() IReadWriter {
 	return &readwriter{
 		Buffer: &bytes.Buffer{},
@@ -575,6 +659,7 @@ type IReader interface {
 	io.Reader
 	io.ByteReader
 	TRead(data interface{}) error
+	ReadFull(dp []byte) error
 }
 
 type IWriter interface {
@@ -584,6 +669,7 @@ type IWriter interface {
 	Len() int
 	Bytes() []byte
 	Reset()
+	WriteFull(dp []byte) error
 }
 
 type IReadWriter interface {
@@ -679,7 +765,7 @@ func (v VarBytes) Encode(w IWriter) error {
 	if len(v) == 0 {
 		return nil
 	}
-	if err := w.TWrite(v); err != nil {
+	if err := w.WriteFull(v); err != nil {
 		return err
 	}
 	return nil
@@ -697,7 +783,7 @@ func (v *VarBytes) Decode(r IReader) error {
 		return errors.New("bytes length too long")
 	}
 	*v = make([]byte, l)
-	if err := r.TRead(*v); err != nil {
+	if err := r.ReadFull(*v); err != nil {
 		return err
 	}
 	return nil

@@ -295,6 +295,7 @@ func listBestBlock(c *gin.Context) {
 		Prev   string `json:"prev"`
 		Time   string `json:"time"`
 		Amount string `json:"amount"`
+		Merkle string `json:"merkle"`
 		Size   int    `json:"size"`
 		Height uint32 `json:"height"`
 	}
@@ -326,6 +327,7 @@ func listBestBlock(c *gin.Context) {
 		i.Amount = amount.String()
 		i.Size = ele.Blk.Len.ToInt()
 		i.Height = ele.Height
+		i.Merkle = ele.Merkle.String()
 		res.Items = append(res.Items, i)
 	}
 	c.JSON(http.StatusOK, res)
@@ -334,6 +336,13 @@ func listBestBlock(c *gin.Context) {
 func getBlockInfoApi(c *gin.Context) {
 	bi := GetBlockIndex()
 	ids := c.Param("id")
+	if ids == "" {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  "ids error",
+		})
+		return
+	}
 	iter := bi.NewIter()
 	has := false
 	if len(ids) == 64 {
@@ -810,7 +819,7 @@ func getMinerApi(c *gin.Context) {
 //设置矿工账号
 func setMinerApi(c *gin.Context) {
 	args := struct {
-		Addr string `form:"addr"` //矿工奖励地址
+		Addr Address `form:"addr"` //矿工奖励地址
 	}{}
 	if err := c.ShouldBind(&args); err != nil {
 		c.JSON(http.StatusOK, ApiResult{
@@ -819,20 +828,27 @@ func setMinerApi(c *gin.Context) {
 		})
 		return
 	}
-	db := ApiGetDB(c)
-	wallet := db.lis.GetWallet()
-	acc, err := wallet.GetAccount(Address(args.Addr))
-	if err != nil {
+	if err := args.Addr.Check(); err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 101,
 			Msg:  err.Error(),
 		})
 		return
 	}
-	err = wallet.SetMiner(Address(args.Addr))
+	db := ApiGetDB(c)
+	wallet := db.lis.GetWallet()
+	acc, err := wallet.GetAccount(args.Addr)
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 102,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	err = wallet.SetMiner(args.Addr)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 103,
 			Msg:  err.Error(),
 		})
 		return
@@ -842,7 +858,7 @@ func setMinerApi(c *gin.Context) {
 	}
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
-			Code: 103,
+			Code: 104,
 			Msg:  err.Error(),
 		})
 		return

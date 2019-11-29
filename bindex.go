@@ -692,7 +692,7 @@ func (bi *BlockIndex) checkHeaders(hs []BlockHeader) error {
 }
 
 //合并区块头,
-//返回成功合并的数量，最后合并的高度，最后合并的id
+//返回需要的区块数量
 //如果返回 NeedMoreHeader ，表示需要更多的区块头作为证据,第一个参数是需要的数量
 func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
 	if len(hs) == 0 {
@@ -713,11 +713,11 @@ func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
 			lid = id
 			i++
 		} else if ele, err := bi.LinkHeader(hh); err == nil {
-			ps.Pub(ele, NewLinkHeaderTopic)
 			lid = id
 			i++
 			lc++
-			LogInfo("link block header id =", hh, "height =", bi.LastHeight())
+			LogInfo("link block header success, id =", hh, "height =", ele.Height)
+			ps.Pub(ele, NewLinkHeaderTopic)
 		} else if i == 0 { //第一个就无法链接,向后获取数据
 			return -REQ_MAX_HEADERS_SIZE, lid, NeedMoreHeader
 		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量

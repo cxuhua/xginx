@@ -413,6 +413,11 @@ func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	return out, nil
 }
 
+func (a Address) Check() error {
+	_, err := DecodeAddress(a)
+	return err
+}
+
 func (a Address) GetPkh() (HASH160, error) {
 	return DecodeAddress(a)
 }
