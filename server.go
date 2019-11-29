@@ -563,6 +563,11 @@ func (s *TcpServer) run() {
 	s.dopt <- 1 //load seed ip
 	for {
 		conn, err := s.tcplis.Accept()
+		//是否达到最大连接
+		if s.ConnNum() >= conf.MaxConn {
+			LogError("conn arrive max,ignore", conn)
+			continue
+		}
 		if err == nil {
 			delay = 0
 			c := s.NewClientWithConn(conn)

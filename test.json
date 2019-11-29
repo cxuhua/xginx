@@ -1,6 +1,6 @@
 {
   "data_dir": "/Users/xuhua/testd",
-  "wallet_dir": "/Users/xuhua/wallet",
+  "wallet_dir": "/Users/xuhua/testw",
   "miner_num": 0,
   "flags": "xhlm",
   "version":10000,

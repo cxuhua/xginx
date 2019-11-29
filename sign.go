@@ -49,7 +49,7 @@ func (sr *stdsigner) SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error) {
 	return sb, nil
 }
 
-//签名校验
+//多重签名验证
 func (sr *stdsigner) Verify() error {
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {

@@ -29,7 +29,7 @@ func NewTestBlock(bi *BlockIndex) *BlockInfo {
 	return blk
 }
 
-func getTestBi() *BlockIndex {
+func GetTestBlockIndex() *BlockIndex {
 	conf = LoadConfig("test.json")
 	lis := newListener(conf.WalletDir)
 	InitBlockIndex(lis)
@@ -66,7 +66,7 @@ func makehs(h BlockHeader, n int) []BlockHeader {
 }
 
 func TestMergeChain(t *testing.T) {
-	bi := getTestBi()
+	bi := GetTestBlockIndex()
 	defer bi.Close()
 
 	iter := bi.NewIter()
@@ -78,7 +78,7 @@ func TestMergeChain(t *testing.T) {
 }
 
 func TestBlockChain(t *testing.T) {
-	bi := getTestBi()
+	bi := GetTestBlockIndex()
 	defer bi.Close()
 	testnum := uint32(5)
 	for i := uint32(0); i < testnum; i++ {
@@ -100,7 +100,7 @@ func TestBlockChain(t *testing.T) {
 }
 
 func TestTransfire(t *testing.T) {
-	bi := getTestBi()
+	bi := GetTestBlockIndex()
 	w := bi.lptr.GetWallet()
 	log.Println(w.ListAccount())
 	blk, err := bi.NewBlock(1)
@@ -144,9 +144,7 @@ func TestTransfire(t *testing.T) {
 }
 
 func TestUnlinkBlock(t *testing.T) {
-	conf = LoadConfig("v10000.json")
-	InitBlockIndex(newListener(conf.WalletDir))
-	bi := GetBlockIndex()
+	bi := GetTestBlockIndex()
 	err := bi.UnlinkLast()
 	if err != nil {
 		panic(err)

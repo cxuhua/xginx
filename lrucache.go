@@ -5,8 +5,6 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/spaolacci/murmur3"
-
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
@@ -330,7 +328,7 @@ func (r *IndexCacher) Get(key HASH256, setFunc func() (size int, value Value)) *
 	if r.closed {
 		return nil
 	}
-	hash := murmur3.Sum32WithSeed(key[:], 0xf00)
+	hash := MurmurHash(0xf00, key[:])
 	for {
 		h, b := r.getBucket(hash)
 		done, _, n := b.get(r, h, hash, key, setFunc == nil)
@@ -379,7 +377,7 @@ func (r *IndexCacher) Delete(key HASH256) bool {
 	if r.closed {
 		return false
 	}
-	hash := murmur3.Sum32WithSeed(key[:], 0xf00)
+	hash := MurmurHash(0xf00, key[:])
 	for {
 		h, b := r.getBucket(hash)
 		done, _, n := b.get(r, h, hash, key, true)
@@ -409,7 +407,7 @@ func (r *IndexCacher) Evict(key HASH256) bool {
 		return false
 	}
 
-	hash := murmur3.Sum32WithSeed(key[:], 0xf00)
+	hash := MurmurHash(0xf00, key[:])
 	for {
 		h, b := r.getBucket(hash)
 		done, _, n := b.get(r, h, hash, key, true)

@@ -269,7 +269,7 @@ finished:
 				ptime = smt
 			}
 			ts := time.Unix(int64(blk.Header.Time), 0).Format("2006-01-02 15:04:05")
-			LogInfof("%d times/s, total=%d, bits=%08x time=%s height=%d txs=%d txp=%d cpu=%d", ppv, ptime, blk.Header.Bits, ts, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
+			LogInfof("%d times/s, total=%d, bits=%08x time=%s height=%d txs=%d txp=%d cpu=%d cache=%d", ppv, ptime, blk.Header.Bits, ts, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum, bi.CacheSize())
 			dt.Reset(time.Second * MINER_LOG_SECONDS)
 		case <-mg.exit:
 			if mg.ok {
@@ -296,6 +296,7 @@ finished:
 				LogError("NewBlockHeaderTopic recv error data", bhp)
 				break
 			}
+			//收到的区块头比当前正在处理的小忽略继续
 			if ele.Height < blk.Meta.Height {
 				break
 			}
