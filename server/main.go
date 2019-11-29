@@ -17,7 +17,7 @@ var (
 	cfile  = flag.String("conf", "v10000.json", "config file name")
 	user   = flag.String("user", "", "admin user")
 	pass   = flag.String("pass", "", "admin pass")
-	isinit = flag.Bool("init", false, "init admin info,-init=true -user=*** -pass=***")
+	isinit = flag.Bool("init", false, "init admin info, -conf=*** -init=true -user=*** -pass=***")
 	debug  = flag.Bool("debug", true, "startup mode")
 )
 
@@ -62,7 +62,7 @@ func main() {
 	pubsub := GetPubSub()
 	defer pubsub.Shutdown()
 
-	lis := newListener(conf.WalletDir)
+	lis := newListener(conf)
 
 	bi := InitBlockIndex(lis)
 	defer bi.Close()

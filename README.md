@@ -6,7 +6,7 @@
 cd server
 go build -o main
 
-首先使用: ./main -init=true -user=*** -pass=*** 设置管理员和密码
+首先使用: ./main -conf=/root/v10000.json -init=true -user=*** -pass=*** 设置管理员和密码
 
 修改配置文件:v1000.json
 

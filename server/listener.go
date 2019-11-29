@@ -15,21 +15,27 @@ import (
 type listener struct {
 	mu     sync.RWMutex
 	bi     *BlockIndex
+	conf   *Config
 	wallet IWallet
 }
 
-func newListener(wdir string) IListener {
-	w, err := NewLevelDBWallet(wdir)
+func newListener(conf *Config) IListener {
+	w, err := NewLevelDBWallet(conf.WalletDir)
 	if err != nil {
 		panic(err)
 	}
 	return &listener{
+		conf:   conf,
 		wallet: w,
 	}
 }
 
 func (lis *listener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
+}
+
+func (lis *listener) GetConfig() *Config {
+	return lis.conf
 }
 
 func (lis *listener) OnUpdateHeader(ele *TBEle) {
@@ -66,6 +72,7 @@ func (lis *listener) GetWallet() IWallet {
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(blk *BlockInfo) error {
+	conf := lis.GetConfig()
 	//获取矿工账号
 	acc := Miner.GetMiner()
 	if acc == nil {
@@ -74,7 +81,7 @@ func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	//设置base out script
 	//创建coinbase tx
 	tx := NewTx()
-	txt := time.Now().Format("2006-01-02 15:04:05")
+	txt := time.Now().Format("2006-01-02 15:04:05") + " " + conf.TcpIp
 	//base tx
 	in := &TxIn{}
 	in.Script = blk.CoinbaseScript([]byte(txt))

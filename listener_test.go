@@ -40,6 +40,10 @@ func (lis *testLisener) OnNewTx(tx *TX) error {
 	return nil
 }
 
+func (lis *testLisener) GetConfig() *Config {
+	return conf
+}
+
 func (lis *testLisener) OnUpdateHeader(ele *TBEle) {
 
 }
