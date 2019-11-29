@@ -3,6 +3,7 @@ package xginx
 import (
 	"container/list"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -272,17 +273,18 @@ func (p *TxPool) Has(id HASH256) bool {
 	return has
 }
 
+//获取交易
 func (p *TxPool) Get(id HASH256) (*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
-		tx.pool = true
 		return tx, nil
 	}
-	return nil, errors.New("txpool not found tx")
+	return nil, fmt.Errorf("txpool not found tx = %v", id)
 }
 
+//获取交易池交易数量
 func (p *TxPool) Len() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
