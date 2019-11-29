@@ -503,20 +503,20 @@ func (v NetPackage) Encode(w IWriter) error {
 }
 
 func (v *NetPackage) Checksum() uint32 {
-	buf := NewWriter()
-	err := buf.WriteFull(v.Flags[:])
-	if err != nil {
+	crc := crc32.New(crc32.IEEETable)
+	n, err := crc.Write(v.Flags[:])
+	if err != nil || n != 4 {
 		panic(err)
 	}
-	err = buf.WriteByte(v.Type)
-	if err != nil {
+	n, err = crc.Write([]byte{v.Type})
+	if err != nil || n != 1 {
 		panic(err)
 	}
-	err = v.Bytes.Encode(buf)
-	if err != nil {
+	n, err = crc.Write(v.Bytes)
+	if err != nil || n != len(v.Bytes) {
 		panic(err)
 	}
-	return crc32.Checksum(buf.Bytes(), crc32.IEEETable)
+	return crc.Sum32()
 }
 
 func (v *NetPackage) Decode(r IReader) error {
