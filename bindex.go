@@ -632,7 +632,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
-		err = bp.Check(bi, true)
+		err = bp.Verify(ele, bi)
 		if err != nil {
 			return fmt.Errorf("verify block %v error %w", ele, err)
 		}
@@ -1282,7 +1282,7 @@ func (bi *BlockIndex) updateblk(buf IWriter, blk *BlockInfo) error {
 	if !bv.IsValid() && !conf.IsGenesisId(bid) {
 		return errors.New("genesis blk error")
 	}
-	//不是肯定能连接到上一个
+	//是否能连接到上一个
 	if bv.IsValid() && !blk.Header.Prev.Equal(bv.Id) {
 		return errors.New("prev hash id error,can't update blk")
 	}
@@ -1334,7 +1334,7 @@ func (bi *BlockIndex) UpdateBlk(blk *BlockInfo) error {
 		return err
 	}
 	//检测区块数据
-	err = blk.Check(bi, true)
+	err = blk.Check(bi)
 	if err != nil {
 		return err
 	}
@@ -1418,6 +1418,7 @@ func (bi *BlockIndex) LinkHeader(header BlockHeader) (*TBEle, error) {
 	if bits != meta.Bits {
 		return nil, errors.New("block header bits error")
 	}
+	//检测id是否符合当前难度
 	if !CheckProofOfWork(bid, meta.Bits) {
 		return nil, errors.New("block header bits check error")
 	}

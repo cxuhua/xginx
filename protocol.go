@@ -408,29 +408,11 @@ func (c *NetStream) Len() int {
 }
 
 func (w *NetStream) WriteFull(dp []byte) error {
-	l := len(dp)
-	p := 0
-	for l-p > 0 {
-		b, err := w.Write(dp[p:])
-		if err != nil {
-			return err
-		}
-		p += b
-	}
-	return nil
+	return WriteFull(w, dp)
 }
 
 func (r *NetStream) ReadFull(dp []byte) error {
-	l := len(dp)
-	p := 0
-	for l-p > 0 {
-		b, err := r.Read(dp[p:])
-		if err != nil {
-			return err
-		}
-		p += b
-	}
-	return nil
+	return ReadFull(r, dp)
 }
 
 func (c *NetStream) TRead(data interface{}) error {
@@ -496,13 +478,13 @@ func (v NetPackage) Encode(w IWriter) error {
 	if err := v.Bytes.Encode(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(v.Checksum()); err != nil {
+	if err := w.TWrite(v.Sum32()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (v *NetPackage) Checksum() uint32 {
+func (v *NetPackage) Sum32() uint32 {
 	crc := crc32.New(crc32.IEEETable)
 	n, err := crc.Write(v.Flags[:])
 	if err != nil || n != 4 {
@@ -536,17 +518,26 @@ func (v *NetPackage) Decode(r IReader) error {
 	if !bytes.Equal(v.Flags[:], []byte(conf.Flags)) {
 		return errors.New("flags not same")
 	}
-	if v.Checksum() != v.Sum {
+	if v.Sum32() != v.Sum {
 		return errors.New("check sum error")
 	}
 	return nil
 }
 
-type reader struct {
-	*bytes.Reader
+func WriteFull(w io.Writer, dp []byte) error {
+	l := len(dp)
+	p := 0
+	for l-p > 0 {
+		b, err := w.Write(dp[p:])
+		if err != nil {
+			return err
+		}
+		p += b
+	}
+	return nil
 }
 
-func (r *reader) ReadFull(dp []byte) error {
+func ReadFull(r io.Reader, dp []byte) error {
 	l := len(dp)
 	p := 0
 	for l-p > 0 {
@@ -557,6 +548,14 @@ func (r *reader) ReadFull(dp []byte) error {
 		p += b
 	}
 	return nil
+}
+
+type reader struct {
+	*bytes.Reader
+}
+
+func (r *reader) ReadFull(dp []byte) error {
+	return ReadFull(r, dp)
 }
 
 func (r *reader) TRead(data interface{}) error {
@@ -581,16 +580,7 @@ func (w *writer) Bytes() []byte {
 }
 
 func (w *writer) WriteFull(dp []byte) error {
-	l := len(dp)
-	p := 0
-	for l-p > 0 {
-		b, err := w.Buffer.Write(dp[p:])
-		if err != nil {
-			return err
-		}
-		p += b
-	}
-	return nil
+	return WriteFull(w.Buffer, dp)
 }
 
 func (w *writer) Reset() {
@@ -624,29 +614,11 @@ func (r *readwriter) TRead(data interface{}) error {
 }
 
 func (w *readwriter) WriteFull(dp []byte) error {
-	l := len(dp)
-	p := 0
-	for l-p > 0 {
-		b, err := w.Buffer.Write(dp[p:])
-		if err != nil {
-			return err
-		}
-		p += b
-	}
-	return nil
+	return WriteFull(w.Buffer, dp)
 }
 
 func (r *readwriter) ReadFull(dp []byte) error {
-	l := len(dp)
-	p := 0
-	for l-p > 0 {
-		b, err := r.Buffer.Read(dp[p:])
-		if err != nil {
-			return err
-		}
-		p += b
-	}
-	return nil
+	return ReadFull(r.Buffer, dp)
 }
 
 func NewReadWriter() IReadWriter {

@@ -460,17 +460,31 @@ func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
 	return nil
 }
 
+//验证区块数据
+func (blk *BlockInfo) Verify(ele *TBEle, bi *BlockIndex) error {
+	id, err := blk.ID()
+	if err != nil {
+		return err
+	}
+	eid, err := ele.ID()
+	if err != nil {
+		return err
+	}
+	if !id.Equal(eid) {
+		return errors.New("block id != header id")
+	}
+	if !CheckProofOfWork(id, blk.Meta.Bits) {
+		return errors.New("check pow error")
+	}
+	return blk.Check(bi)
+}
+
 //检查区块数据
-func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
+func (blk *BlockInfo) Check(bi *BlockIndex) error {
 	//检测工作难度
 	bits := bi.calcBits(blk.Meta.Height)
 	if bits != blk.Header.Bits {
 		return errors.New("block header bits error")
-	}
-	if bid, err := blk.ID(); err != nil {
-		return err
-	} else if cpow && !CheckProofOfWork(bid, blk.Header.Bits) {
-		return errors.New("block bits error")
 	}
 	//检查merkle树
 	merkle, err := blk.GetMerkle()
@@ -486,14 +500,6 @@ func (blk *BlockInfo) Check(bi *BlockIndex, cpow bool) error {
 	//检查所有的交易
 	if err := blk.CheckTxs(bi); err != nil {
 		return err
-	}
-	//检查区块大小
-	buf := NewWriter()
-	if err := blk.Encode(buf); err != nil {
-		return err
-	}
-	if buf.Len() > MAX_BLOCK_SIZE {
-		return errors.New("block size > MAX_BLOCK_SIZE")
 	}
 	return nil
 }

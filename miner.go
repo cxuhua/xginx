@@ -243,8 +243,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err := blk.Finish(bi); err != nil {
 		return err
 	}
-	err = blk.Check(bi, false)
-	if err != nil {
+	if err := blk.Check(bi); err != nil {
 		return err
 	}
 	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
@@ -269,7 +268,8 @@ finished:
 				ppv = (smt - ptime) / MINER_LOG_SECONDS
 				ptime = smt
 			}
-			LogInfof("%d times/s, total=%d, bits=%08x time=%08x height=%d txs=%d txp=%d cpu=%d", ppv, ptime, blk.Header.Bits, blk.Header.Time, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
+			ts := time.Unix(int64(blk.Header.Time), 0).Format("2006-01-02 15:04:05")
+			LogInfof("%d times/s, total=%d, bits=%08x time=%s height=%d txs=%d txp=%d cpu=%d", ppv, ptime, blk.Header.Bits, ts, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum)
 			dt.Reset(time.Second * MINER_LOG_SECONDS)
 		case <-mg.exit:
 			if mg.ok {

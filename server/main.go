@@ -84,7 +84,7 @@ func main() {
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	cancel()
-	LogInfo("recv sig :", sig, ",system exited")
+	LogInfo("recv sig :", sig, ",system start exit")
 
 	Server.Stop()
 	LogInfo("wait server stop")
@@ -97,4 +97,5 @@ func main() {
 	Http.Stop()
 	LogInfo("wait http stop")
 	Http.Wait()
+	LogInfo("system exited")
 }
