@@ -476,11 +476,11 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 //重置所有缓存
 func (blk *BlockInfo) ResetHasher() {
 	//重置hash缓存用来计算merkle
-	blk.merkel.Reset()
-	blk.Header.hasher.Reset()
 	for _, tx := range blk.Txs {
 		tx.ResetAll()
 	}
+	blk.merkel.Reset()
+	blk.Header.hasher.Reset()
 }
 
 //完成块数据

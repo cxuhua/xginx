@@ -566,10 +566,8 @@ func getTxInfoApi(c *gin.Context) {
 	ids := c.Param("id")
 	id := NewHASH256(ids)
 	tp, err := bi.LoadTX(id)
-	ispool := false
 	if err != nil {
 		tp, err = bi.GetTxPool().Get(id)
-		ispool = true
 	}
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
@@ -606,7 +604,7 @@ func getTxInfoApi(c *gin.Context) {
 	if err != nil {
 		panic(err)
 	}
-	xv.Pool = ispool
+	xv.Pool = tp.pool
 	xv.Id = tid.String()
 	xv.Coinbase = tp.IsCoinBase()
 	xv.Ins = []txin{}
@@ -616,8 +614,10 @@ func getTxInfoApi(c *gin.Context) {
 	if err == nil {
 		xv.Fee = fee.String()
 	}
-	if !ispool {
+	if !tp.pool {
 		xv.Confirm = bi.GetTxConfirm(tid)
+	} else {
+		xv.Confirm = 0
 	}
 	for _, iv := range tp.Ins {
 		xvi := txin{}

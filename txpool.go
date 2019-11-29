@@ -276,7 +276,9 @@ func (p *TxPool) Get(id HASH256) (*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if ele, has := p.tmap[id]; has {
-		return ele.Value.(*TX), nil
+		tx := ele.Value.(*TX)
+		tx.pool = true
+		return tx, nil
 	}
 	return nil, errors.New("txpool not found tx")
 }
