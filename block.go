@@ -336,6 +336,9 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
+		if err := tx.CheckLockTime(blk); err != nil {
+			return err
+		}
 		if err := blk.checkrefstx(bi, tx); err != nil {
 			return err
 		}
@@ -391,6 +394,9 @@ func (blk *BlockInfo) HasTxs(ids []HASH256) bool {
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	if err := tx.CheckLockTime(blk); err != nil {
+		return err
+	}
 	if err := blk.checkrefstx(bi, tx); err != nil {
 		return err
 	}

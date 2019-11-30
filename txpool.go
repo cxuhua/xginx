@@ -239,6 +239,9 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()
 		tx := cur.Value.(*TX)
+		if err := tx.CheckLockTime(blk); err != nil {
+			continue
+		}
 		err := tx.Check(bi, true)
 		if err != nil {
 			res = append(res, cur)
