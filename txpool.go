@@ -44,9 +44,7 @@ func (p *TxPool) Del(id HASH256) *TX {
 	defer p.mu.Unlock()
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
-		p.setMemIdx(tx, false)
-		p.tlis.Remove(ele)
-		delete(p.tmap, id)
+		p.removeEle(ele)
 		return tx
 	}
 	return nil
@@ -55,8 +53,8 @@ func (p *TxPool) Del(id HASH256) *TX {
 //加入其他节点过来的多个交易数据
 func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 	bl := p.Len()
-	for _, v := range msg.Txs {
-		id, err := v.Tx.ID()
+	for _, tx := range msg.Txs {
+		id, err := tx.ID()
 		if err != nil {
 			continue
 		}
@@ -64,11 +62,11 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 		if _, err := bi.LoadTxValue(id); err == nil {
 			continue
 		}
-		if err := v.Tx.Check(bi, true); err != nil {
+		if err := tx.Check(bi, true); err != nil {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
 		}
-		_ = p.PushTx(bi, v.Tx)
+		_ = p.PushTx(bi, tx)
 	}
 	if p.Len() > bl {
 		LogInfof("tx pool new add %d tx", p.Len()-bl)
@@ -154,6 +152,51 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 	}
 }
 
+//移除引用了此交易的交易
+func (p *TxPool) removeRefs(id HASH256, ele *list.Element) {
+	ids := map[HASH256]bool{}
+	for _, ref := range p.tmap {
+		//忽略自己
+		if ref == ele {
+			continue
+		}
+		tx := ref.Value.(*TX)
+		tid, err := tx.ID()
+		if err != nil {
+			panic(err)
+		}
+		for _, in := range tx.Ins {
+			if !in.OutHash.Equal(id) {
+				continue
+			}
+			ids[tid] = true
+		}
+	}
+	for key, _ := range ids {
+		ele, has := p.tmap[key]
+		if !has {
+			continue
+		}
+		p.removeEle(ele)
+	}
+	ids = nil
+}
+
+//移除一个元素
+func (p *TxPool) removeEle(ele *list.Element) {
+	tx := ele.Value.(*TX)
+	id, err := tx.ID()
+	if err != nil {
+		panic(err)
+	}
+	//引用了此交易的交易也应该被删除
+	p.removeRefs(id, ele)
+	//移除自己
+	p.setMemIdx(tx, false)
+	p.tlis.Remove(ele)
+	delete(p.tmap, id)
+}
+
 //移除多个交易
 func (p *TxPool) DelTxs(txs []*TX) {
 	p.mu.Lock()
@@ -167,9 +210,7 @@ func (p *TxPool) DelTxs(txs []*TX) {
 		if !has {
 			continue
 		}
-		p.setMemIdx(tx, false)
-		p.tlis.Remove(ele)
-		delete(p.tmap, id)
+		p.removeEle(ele)
 	}
 }
 
@@ -186,29 +227,26 @@ func (p *TxPool) AllTxs() []*TX {
 	return txs
 }
 
-//取出交易，大小不能超过限制
-func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
+//获取需要打包的交易并返回需要移除的交易
+func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	txs := []*TX{}
 	size := 0
 	buf := NewWriter()
+	res := []*list.Element{}
 	//获取用来打包区块的交易
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()
 		tx := cur.Value.(*TX)
-		//未到达时间不获取
-		err := tx.CheckLockTime(blk)
+		err := tx.Check(bi, true)
 		if err != nil {
-			continue
-		}
-		err = tx.Check(bi, true)
-		if err != nil {
+			res = append(res, cur)
 			continue
 		}
 		err = tx.Encode(buf)
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 		size += buf.Len()
 		if size > MAX_BLOCK_SIZE {
@@ -216,6 +254,22 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 		}
 		txs = append(txs, tx)
 	}
+	return txs, res, nil
+}
+
+//取出符合区块blk的交易，大小不能超过限制
+func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
+	//获取交易
+	txs, res, err := p.gettxs(bi, blk)
+	if err != nil {
+		return nil, err
+	}
+	//移除检测失败的
+	p.mu.Lock()
+	for _, ele := range res {
+		p.removeEle(ele)
+	}
+	p.mu.Unlock()
 	return txs, nil
 }
 
@@ -296,11 +350,11 @@ func (p *TxPool) Len() int {
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := bi.lptr.OnTxPool(tx); err != nil {
-		return err
-	}
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
 		return errors.New("tx pool full,ignore push back")
+	}
+	if err := bi.lptr.OnTxPool(tx); err != nil {
+		return err
 	}
 	id, err := tx.ID()
 	if err != nil {

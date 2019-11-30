@@ -6,8 +6,6 @@
 cd server
 go build -o main
 
-首先使用: ./main -conf=/root/v10000.json -init=true -user=*** -pass=*** 设置管理员和密码
-
 修改配置文件:v1000.json
 
 "data_dir": "数据存储目录",
@@ -22,12 +20,16 @@ go build -o main
 
 "seeds":["seed.xginx.com"],//种子节点域名服务
 
-其他参数无需修改，修改后节点之间的数据验证将会失败
+首先使用: ./main -conf=/root/v10000.json -init=true -user=*** -pass=*** 设置管理员和密码
 
 启动: ./main -conf=配置文件路径 -debug=true|false(是否处于开发模式)
 
 更新日志
 =====================================
+2019-11-30
+----------------
+1.交易池中检测失败的将会被移除
+
 2019-11-29
 ----------------
 1.添加了ReadFull和WriteFull防止网络数据读写不完整

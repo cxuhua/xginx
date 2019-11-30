@@ -304,49 +304,8 @@ func (m *MsgGetTxPool) Decode(r IReader) error {
 
 //NT_TXPOOL
 
-type TxItem struct {
-	Tx *TX
-}
-
-func (m TxItem) Encode(w IWriter) error {
-	if err := m.Tx.Encode(w); err != nil {
-		return err
-	}
-	if err := VarUInt(len(m.Tx.Refs)).Encode(w); err != nil {
-		return err
-	}
-	for _, ref := range m.Tx.Refs {
-		err := ref.Encode(w)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (m *TxItem) Decode(r IReader) error {
-	m.Tx = &TX{}
-	if err := m.Tx.Decode(r); err != nil {
-		return err
-	}
-	num := VarUInt(0)
-	if err := num.Decode(r); err != nil {
-		return err
-	}
-	m.Tx.Refs = make([]HASH256, num.ToInt())
-	for i, _ := range m.Tx.Refs {
-		id := HASH256{}
-		err := id.Decode(r)
-		if err != nil {
-			return err
-		}
-		m.Tx.Refs[i] = id
-	}
-	return nil
-}
-
 type MsgTxPool struct {
-	Txs []TxItem
+	Txs []*TX
 }
 
 func (m MsgTxPool) Type() uint8 {
@@ -354,7 +313,7 @@ func (m MsgTxPool) Type() uint8 {
 }
 
 func (m *MsgTxPool) Add(tx *TX) {
-	m.Txs = append(m.Txs, TxItem{Tx: tx})
+	m.Txs = append(m.Txs, tx)
 }
 
 func (m MsgTxPool) Encode(w IWriter) error {
@@ -375,9 +334,9 @@ func (m *MsgTxPool) Decode(r IReader) error {
 	if err := num.Decode(r); err != nil {
 		return err
 	}
-	m.Txs = make([]TxItem, num.ToInt())
+	m.Txs = make([]*TX, num.ToInt())
 	for i, _ := range m.Txs {
-		tx := TxItem{}
+		tx := &TX{}
 		err := tx.Decode(r)
 		if err != nil {
 			return err

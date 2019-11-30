@@ -306,16 +306,37 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
+//检查引用的tx
+func (blk *BlockInfo) checkrefstx(bi *BlockIndex, tx *TX) error {
+	tp := bi.GetTxPool()
+	for _, in := range tx.Ins {
+		//获取引用的交易
+		rtx, err := bi.LoadTX(in.OutHash)
+		if err != nil {
+			rtx, err = tp.Get(in.OutHash)
+		}
+		if err != nil {
+			return fmt.Errorf("out tx miss %w", err)
+		}
+		rid, err := rtx.ID()
+		if err != nil {
+			return err
+		}
+		//如果是来自交易池，必须存在区块中
+		if rtx.pool && !blk.HasTx(rid) {
+			return errors.New("refs tx pool miss")
+		}
+	}
+	return nil
+}
+
 //添加多个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
-		if !blk.HasTxs(tx.Refs) {
-			return fmt.Errorf("ref tx miss")
-		}
-		if err := tx.CheckLockTime(blk); err != nil {
+		if err := blk.checkrefstx(bi, tx); err != nil {
 			return err
 		}
 		if err := tx.Check(bi, true); err != nil {
@@ -329,6 +350,20 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 		return err
 	}
 	return nil
+}
+
+//查找区块内的单个交易
+func (blk *BlockInfo) HasTx(id HASH256) bool {
+	for _, tx := range blk.Txs {
+		tid, err := tx.ID()
+		if err != nil {
+			return false
+		}
+		if tid.Equal(id) {
+			return true
+		}
+	}
+	return false
 }
 
 //查找区块内的交易
@@ -356,11 +391,7 @@ func (blk *BlockInfo) HasTxs(ids []HASH256) bool {
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
-	//引用的交易必须在区块中
-	if !blk.HasTxs(tx.Refs) {
-		return fmt.Errorf("ref tx miss")
-	}
-	if err := tx.CheckLockTime(blk); err != nil {
+	if err := blk.checkrefstx(bi, tx); err != nil {
 		return err
 	}
 	otxs := blk.Txs
@@ -435,14 +466,10 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	}
 	//检测所有交易
 	for i, tx := range blk.Txs {
-		err := tx.CheckLockTime(blk)
-		if err != nil {
-			return err
-		}
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err = tx.Check(bi, false)
+		err := tx.Check(bi, false)
 		if err != nil {
 			return err
 		}
@@ -746,13 +773,16 @@ func (v *TxOut) Decode(r IReader) error {
 	return nil
 }
 
+//交易撤销证书
+type TxCert struct {
+}
+
 //交易
 type TX struct {
 	Ver      VarUInt    //版本
 	Ins      []*TxIn    //输入
 	Outs     []*TxOut   //输出
 	LockTime uint32     //锁定时间或者区块
-	Refs     []HASH256  //引用到的交易id,来自交易池
 	cacher   HashCacher //hash缓存
 	outs     HashCacher //签名hash缓存
 	pres     HashCacher //签名hash缓存
@@ -765,7 +795,6 @@ func NewTx() *TX {
 	tx.Outs = []*TxOut{}
 	tx.Ins = []*TxIn{}
 	tx.LockTime = 0
-	tx.Refs = []HASH256{}
 	return tx
 }
 
@@ -923,6 +952,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
+		//对每个输入签名
 		err = NewSigner(tx, out, in).Sign(acc)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)

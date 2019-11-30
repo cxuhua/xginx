@@ -75,10 +75,6 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		//获取需要消耗的输出
 		for _, cv := range ds {
-			//如果来自内存池，保存引用到的交易，之后检测时，引用到的交易必须存在当前区块中
-			if cv.pool {
-				tx.Refs = append(tx.Refs, cv.TxId)
-			}
 			//生成待签名的输入
 			in, err := cv.NewTxIn(acc)
 			if err != nil {

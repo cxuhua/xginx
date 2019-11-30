@@ -393,7 +393,7 @@ func (ss WitnessScript) Check() error {
 	if len(ss.Pks) != int(ss.Num) {
 		return errors.New("pks num error")
 	}
-	if ss.IsEnableArb() && len(ss.Sig) < 0 {
+	if ss.IsEnableArb() && len(ss.Sig) < 1 {
 		return errors.New("arb sig num error")
 	} else if !ss.IsEnableArb() && len(ss.Sig) < int(ss.Less) {
 		return errors.New("sig num error")

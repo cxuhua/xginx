@@ -333,7 +333,6 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 		}
 	case OptStopGenBlock:
 		m.sch <- true
-		LogInfo("recv stop current gen block")
 	case OptGenBlock:
 		ver, ok := opt.Arg.(uint32)
 		if !ok {
