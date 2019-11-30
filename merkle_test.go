@@ -1,11 +1,8 @@
 package xginx
 
 import (
-	"bytes"
 	"log"
 	"testing"
-
-	"github.com/willf/bitset"
 )
 
 var (
@@ -23,22 +20,13 @@ func TestByteMap(t *testing.T) {
 	log.Println(amap[HASH256{0}], amap[HASH256{1}])
 }
 
-func TestNewBitSet(t *testing.T) {
-	d := []byte{1, 2, 3, 4, 5}
-	bs := NewBitSet(d)
-	v := FromBitSet(bs)
-	if !bytes.Equal(d, v) {
-		t.Errorf("test newbitset failed")
-	}
-}
-
 func TestMerkleArray(t *testing.T) {
 	a := []HASH256{}
 	for i := 0; i < 7; i++ {
 		tmp := HASH256{byte(i)}
 		a = append(a, tmp)
 	}
-	bs := bitset.New(uint(len(a)))
+	bs := NewBitSet(len(a))
 	bs.Set(6)
 
 	tree := NewMerkleTree(len(a))

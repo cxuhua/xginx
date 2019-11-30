@@ -7,8 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/willf/bitset"
-
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
@@ -282,14 +280,14 @@ func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
 		return nil, err
 	}
 	ids := []HASH256{}
-	bs := bitset.New(uint(len(blk.Txs)))
+	bs := NewBitSet(len(blk.Txs))
 	for i, tx := range blk.Txs {
 		tid, err := tx.ID()
 		if err != nil {
 			return nil, err
 		}
 		if id.Equal(tid) {
-			bs.Set(uint(i))
+			bs.Set(i)
 		}
 		ids = append(ids, tid)
 	}
@@ -302,7 +300,7 @@ func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
 	msg.TxId = id
 	msg.Hashs = tree.Hashs()
 	msg.Trans = VarInt(tree.Trans())
-	msg.Bits = FromBitSet(tree.Bits())
+	msg.Bits = tree.Bits().Bytes()
 	return msg, nil
 }
 

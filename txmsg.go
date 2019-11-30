@@ -32,7 +32,7 @@ func (m MsgTxMerkle) Type() uint8 {
 }
 
 func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
-	bits := NewBitSet(m.Bits)
+	bits := BitSetFrom(m.Bits)
 	nt := GetMerkleTree(m.Trans.ToInt(), m.Hashs, bits)
 	merkle, hashs, idx := nt.Extract()
 	if len(idx) != 1 || !hashs[0].Equal(m.TxId) {

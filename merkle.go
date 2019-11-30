@@ -2,8 +2,6 @@ package xginx
 
 import (
 	"errors"
-
-	"github.com/willf/bitset"
 )
 
 type MerkleNode []byte
@@ -24,13 +22,13 @@ func NewMerkleTree(num int) *MerkleTree {
 	return v
 }
 
-func GetMerkleTree(num int, hashs []HASH256, bits *bitset.BitSet) *MerkleTree {
+func GetMerkleTree(num int, hashs []HASH256, vb *BitSet) *MerkleTree {
 	v := &MerkleTree{}
 	v.trans = num
 	v.vhash = hashs
 	v.bits = []bool{}
-	for i := uint(0); i < bits.Len(); i++ {
-		v.bits = append(v.bits, bits.Test(i))
+	for i := 0; i < vb.Len(); i++ {
+		v.bits = append(v.bits, vb.Test(i))
 	}
 	v.bad = false
 	return v
@@ -44,10 +42,10 @@ func (tree *MerkleTree) Hashs() []HASH256 {
 	return tree.vhash
 }
 
-func (tree *MerkleTree) Bits() *bitset.BitSet {
-	ret := bitset.New(uint(len(tree.bits)))
+func (tree *MerkleTree) Bits() *BitSet {
+	ret := NewBitSet(len(tree.bits))
 	for i, v := range tree.bits {
-		ret.SetTo(uint(i), v)
+		ret.SetTo(i, v)
 	}
 	return ret
 }
@@ -69,7 +67,7 @@ func (tree *MerkleTree) Height() int {
 func BuildMerkleTree(ids []HASH256) *MerkleTree {
 	num := len(ids)
 	tree := NewMerkleTree(num)
-	vb := bitset.New(uint(num))
+	vb := NewBitSet(num)
 	h := tree.Height()
 	tree.build(h, 0, ids, vb)
 	return tree
@@ -79,7 +77,7 @@ func (tree MerkleTree) IsBad() bool {
 	return tree.bad
 }
 
-func (tree *MerkleTree) Build(ids []HASH256, vb *bitset.BitSet) *MerkleTree {
+func (tree *MerkleTree) Build(ids []HASH256, vb *BitSet) *MerkleTree {
 	tree.bad = false
 	tree.vhash = []HASH256{}
 	tree.bits = []bool{}
@@ -88,10 +86,10 @@ func (tree *MerkleTree) Build(ids []HASH256, vb *bitset.BitSet) *MerkleTree {
 	return tree
 }
 
-func (tree *MerkleTree) build(h int, pos int, ids []HASH256, vb *bitset.BitSet) {
+func (tree *MerkleTree) build(h int, pos int, ids []HASH256, vb *BitSet) {
 	match := false
 	for p := pos << h; p < (pos+1)<<h && p < tree.trans; p++ {
-		if vb.Test(uint(p)) {
+		if vb.Test(p) {
 			match = true
 		}
 	}
@@ -215,32 +213,4 @@ func (tree *MerkleTree) CalcHash(h int, pos int, ids []HASH256) HASH256 {
 		right = left
 	}
 	return tree.Hash(left, right)
-}
-
-func init() {
-	bitset.LittleEndian()
-}
-
-func NewBitSet(d []byte) *bitset.BitSet {
-	bl := uint(len(d) * 8)
-	bits := bitset.New(bl)
-	w := NewReadWriter()
-	_ = w.TWrite(uint64(bl))
-	nl := ((len(d) + 7) / 8) * 8
-	nb := make([]byte, nl)
-	copy(nb, d)
-	_ = w.TWrite(nb)
-	_, _ = bits.ReadFrom(w)
-	return bits
-}
-
-func FromBitSet(bs *bitset.BitSet) []byte {
-	buf := NewReadWriter()
-	_, _ = bs.WriteTo(buf)
-	bl := uint64(0)
-	_ = buf.TRead(&bl)
-	bl = (bl + 7) / 8
-	bb := make([]byte, bl)
-	_ = buf.TRead(bb)
-	return bb
 }
