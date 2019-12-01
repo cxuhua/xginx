@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"context"
-	"crypto/md5"
 	"errors"
 	"fmt"
 	"net"
@@ -414,21 +413,10 @@ func (c *Client) loop() {
 }
 
 func (c *Client) BroadMsg(m MsgIO) {
-	//缓存发送数据
-	buf := NewWriter()
-	err := buf.WriteFull([]byte(conf.Flags))
+	id, err := m.Id()
 	if err != nil {
 		panic(err)
 	}
-	err = buf.WriteByte(m.Type())
-	if err != nil {
-		panic(err)
-	}
-	err = m.Encode(buf)
-	if err != nil {
-		panic(err)
-	}
-	id := md5.Sum(buf.Bytes())
 	key := "S" + string(id[:])
 	c.ss.SetPkg(key, m)
 	//发送广播包头

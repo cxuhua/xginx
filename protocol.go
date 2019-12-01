@@ -56,7 +56,7 @@ const (
 )
 
 type MsgBroadAck struct {
-	Id [16]byte //md5
+	Id MsgId
 }
 
 func (e MsgBroadAck) Type() uint8 {
@@ -72,7 +72,7 @@ func (e *MsgBroadAck) Decode(r IReader) error {
 }
 
 type MsgBroadHead struct {
-	Id [16]byte //md5
+	Id MsgId //md5
 }
 
 func (e MsgBroadHead) Type() uint8 {
@@ -89,21 +89,25 @@ func (e *MsgBroadHead) Decode(r IReader) error {
 
 var (
 	NotIdErr = errors.New("msg not id,can't broad")
+	ErrMsgId = MsgId{}
 )
+
+//使用md5
+type MsgId [16]byte
 
 //协议消息
 type MsgIO interface {
+	Id() (MsgId, error) //实现了此方法的包才能进行广播，负责返回 NotIdErr
 	Type() uint8
 	Encode(w IWriter) error
 	Decode(r IReader) error
-	Id() ([]byte, error) //实现了此方法的包才能进行广播，负责返回
 }
 
 type MsgEmpty struct {
 }
 
-func (e MsgEmpty) Id() ([]byte, error) {
-	return nil, NotIdErr
+func (e MsgEmpty) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (e MsgEmpty) Type() uint8 {

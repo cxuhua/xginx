@@ -89,6 +89,10 @@ func NewMsgAlert(msg string, sig *SigValue) *MsgAlert {
 	return m
 }
 
+func (m MsgAlert) Id() ([16]byte, error) {
+
+}
+
 //验证消息来源
 func (m MsgAlert) Verify(pub *PublicKey) error {
 	hv := Hash256(m.Msg)
