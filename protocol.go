@@ -87,14 +87,23 @@ func (e *MsgBroadHead) Decode(r IReader) error {
 	return r.ReadFull(e.Id[:])
 }
 
+var (
+	NotIdErr = errors.New("msg not id,can't broad")
+)
+
 //协议消息
 type MsgIO interface {
 	Type() uint8
 	Encode(w IWriter) error
 	Decode(r IReader) error
+	Id() ([]byte, error) //实现了此方法的包才能进行广播，负责返回
 }
 
 type MsgEmpty struct {
+}
+
+func (e MsgEmpty) Id() ([]byte, error) {
+	return nil, NotIdErr
 }
 
 func (e MsgEmpty) Type() uint8 {
