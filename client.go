@@ -176,13 +176,13 @@ func (c *Client) processMsg(m MsgIO) error {
 		c.pkgs.Set(key, time.Now(), time.Minute*10)
 		rsg := &MsgBroadAck{Id: msg.Id}
 		c.SendMsg(rsg)
-		LogInfo("recv broad head", hex.EncodeToString(msg.Id[:]), " send broad ack")
+		LogInfo("recv broad head", hex.EncodeToString(msg.Id[:]), " send broad ack", c.Addr)
 	case NT_BROAD_ACK:
 		msg := m.(*MsgBroadAck)
 		key := "S" + string(msg.Id[:])
 		if m, ok := c.pkgs.Get(key); ok {
 			rsg := m.(MsgIO)
-			LogInfo("recv broad ack send msg type=", rsg.Type())
+			LogInfo("recv broad ack send msg type=", rsg.Type(), c.Addr)
 			c.SendMsg(rsg)
 		}
 	case NT_GET_TXPOOL:
