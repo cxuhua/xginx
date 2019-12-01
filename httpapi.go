@@ -12,7 +12,7 @@ import (
 
 func cancelTxApi(c *gin.Context) {
 	args := struct {
-		Id string `form:"id"` //数据hex编码
+		Id string `form:"id"`
 	}{}
 	if err := c.ShouldBind(&args); err != nil {
 		c.JSON(http.StatusOK, ApiResult{
@@ -36,7 +36,7 @@ func cancelTxApi(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 102,
-			Msg:  "miner not running",
+			Msg:  err.Error(),
 		})
 		return
 	}

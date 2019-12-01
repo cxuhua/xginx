@@ -103,6 +103,7 @@ type TcpServer struct {
 	dopt    chan int //获取线程做一些操作
 	dt      *time.Timer
 	pt      *time.Timer
+	pkgs    *cache.Cache //包数据缓存
 }
 
 func (s *TcpServer) DoOpt(opt int) {
@@ -236,7 +237,6 @@ func (s *TcpServer) NewClient() *Client {
 	c.pt = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
 	c.vt = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	c.vmap = &sync.Map{}
-	c.pkgs = cache.New(time.Minute*10, time.Hour)
 	return c
 }
 
@@ -622,6 +622,35 @@ func (s *TcpServer) run() {
 	}
 }
 
+//获取广播数据包
+func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	msg, has := s.pkgs.Get(id)
+	if !has {
+		return nil, false
+	}
+	return msg.(MsgIO), true
+}
+
+//保存广播数据包
+func (s *TcpServer) SetPkg(id string, m MsgIO) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pkgs.Set(id, m, time.Minute*10)
+}
+
+//是否有广播数据包
+func (s *TcpServer) HasPkg(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, has := s.pkgs.Get(id)
+	if !has {
+		s.pkgs.Set(id, time.Now(), time.Minute*10)
+	}
+	return has
+}
+
 func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
 	s.lptr = lptr
 	s.ctx, s.cancel = context.WithCancel(ctx)
@@ -641,5 +670,6 @@ func NewTcpServer() IServer {
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
+	s.pkgs = cache.New(time.Minute*10, time.Hour)
 	return s
 }

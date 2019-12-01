@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/patrickmn/go-cache"
-
 	"github.com/gin-gonic/gin"
 )
 
@@ -50,12 +48,11 @@ type Client struct {
 	ping    int
 	pt      *time.Timer
 	vt      *time.Timer
-	isopen  bool         //收到msgversion算打开成功
-	Ver     uint32       //节点版本
-	Service uint32       //节点提供的服务
-	Height  BHeight      //节点区块高度
-	vmap    *sync.Map    //属性存储器
-	pkgs    *cache.Cache //包数据缓存
+	isopen  bool      //收到msgversion算打开成功
+	Ver     uint32    //节点版本
+	Service uint32    //节点提供的服务
+	Height  BHeight   //节点区块高度
+	vmap    *sync.Map //属性存储器
 }
 
 //添加过滤数据
@@ -170,18 +167,16 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_BROAD_HEAD:
 		msg := m.(*MsgBroadHead)
 		key := "R" + string(msg.Id[:])
-		if _, has := c.pkgs.Get(key); has {
+		if c.ss.HasPkg(key) {
 			break
 		}
-		c.pkgs.Set(key, time.Now(), time.Minute*10)
 		rsg := &MsgBroadAck{Id: msg.Id}
 		c.SendMsg(rsg)
 		LogInfo("recv broad head", hex.EncodeToString(msg.Id[:]), " send broad ack", c.Addr)
 	case NT_BROAD_ACK:
 		msg := m.(*MsgBroadAck)
 		key := "S" + string(msg.Id[:])
-		if m, ok := c.pkgs.Get(key); ok {
-			rsg := m.(MsgIO)
+		if rsg, ok := c.ss.GetPkg(key); ok {
 			LogInfo("recv broad ack send msg type=", rsg.Type(), c.Addr)
 			c.SendMsg(rsg)
 		}
@@ -437,7 +432,8 @@ func (c *Client) BroadMsg(m MsgIO) {
 		panic(err)
 	}
 	id := md5.Sum(buf.Bytes())
-	c.pkgs.Set("S"+string(id[:]), m, time.Minute*10)
+	key := "R" + string(id[:])
+	c.ss.SetPkg(key, m)
 	//发送广播包头
 	msg := &MsgBroadHead{Id: id}
 	c.wc <- msg
