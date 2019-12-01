@@ -108,23 +108,21 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
+	if err := tx.Sign(m.bi); err != nil {
+		return nil, err
+	}
+	if err := tx.Check(m.bi, true); err != nil {
+		return nil, err
+	}
+	if err := m.bi.txp.PushTx(m.bi, tx); err != nil {
+		return nil, err
+	}
 	return tx, nil
-}
-
-//放入交易池
-func (m *MulTransInfo) PushTx(tx *TX) error {
-	return m.bi.txp.PushTx(m.bi, tx)
 }
 
 func (m *MulTransInfo) BroadTx(tx *TX) {
 	ps := GetPubSub()
 	ps.Pub(tx, NewTxTopic)
-}
-
-// 签名交易并加入交易池
-func (m *MulTransInfo) Sign(tx *TX) error {
-	//开始签名
-	return tx.Sign(m.bi)
 }
 
 func (bi *BlockIndex) EmptyMulTransInfo() *MulTransInfo {

@@ -233,6 +233,16 @@ type WitnessScript struct {
 	Sig  []SigBytes //签名
 }
 
+//获取脚本hash包括签名数据，用来生成交易取消hash
+func (ss WitnessScript) GetCancelTxHash() ([]byte, error) {
+	buf := NewWriter()
+	err := ss.Encode(buf)
+	if err != nil {
+		return nil, err
+	}
+	return Hash256(buf.Bytes()), nil
+}
+
 //是否启用仲裁
 func (ss WitnessScript) IsEnableArb() bool {
 	return ss.Arb != InvalidArb
@@ -371,7 +381,7 @@ func (ss WitnessScript) ToScript() (Script, error) {
 }
 
 //csp=true 检查签名证书数量
-func (ss WitnessScript) Check() error {
+func (ss WitnessScript) CheckSigs(sigs []SigBytes) error {
 	if ss.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("type errpor")
 	}
@@ -393,10 +403,15 @@ func (ss WitnessScript) Check() error {
 	if len(ss.Pks) != int(ss.Num) {
 		return errors.New("pks num error")
 	}
-	if ss.IsEnableArb() && len(ss.Sig) < 1 {
+	if ss.IsEnableArb() && len(sigs) < 1 {
 		return errors.New("arb sig num error")
-	} else if !ss.IsEnableArb() && len(ss.Sig) < int(ss.Less) {
+	} else if !ss.IsEnableArb() && len(sigs) < int(ss.Less) {
 		return errors.New("sig num error")
 	}
 	return nil
+}
+
+//csp=true 检查签名证书数量
+func (ss WitnessScript) Check() error {
+	return ss.CheckSigs(ss.Sig)
 }

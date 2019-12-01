@@ -48,6 +48,8 @@ const (
 	//获取内存交易池
 	NT_GET_TXPOOL = uint8(19)
 	NT_TXPOOL     = uint8(20)
+	//取消交易池交易
+	NT_CANCEL_TX = uint8(21)
 )
 
 //协议消息
@@ -78,6 +80,7 @@ const (
 	ErrCodeFilterMiss = 100003
 	ErrCodeFilterLoad = 100004
 	ErrCodeTxMerkle   = 100005
+	ErrCodeCancelTx   = 100006
 )
 
 type MsgError struct {

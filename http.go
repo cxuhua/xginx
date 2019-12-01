@@ -167,6 +167,8 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	mgr.GET("/get/header", getHeaderApi)
 	//设置区块头数据
 	mgr.POST("/set/header", setHeaderApi)
+	//取消交易池交易
+	mgr.POST("/cancel/tx", cancelTxApi)
 
 	//数据浏览接口
 	v1 := m.Group("v1")

@@ -287,6 +287,23 @@ func (s *TcpServer) recoverError() {
 	}
 }
 
+func (s *TcpServer) recvMsgCancelTx(c *Client, msg *MsgCanclTx) error {
+	bi := GetBlockIndex()
+	tp := bi.GetTxPool()
+	tx, err := tp.Get(msg.Id)
+	if err != nil {
+		return fmt.Errorf("tx %v not found", msg.Id)
+	}
+	err = tx.VerifyCancel(bi, msg.Sigs)
+	if err != nil {
+		return fmt.Errorf("verify cancel error %w", err)
+	}
+	tp.Del(msg.Id)
+	//继续广播出去
+	s.BroadMsg(msg, c)
+	return nil
+}
+
 func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	bi := GetBlockIndex()
 	rsg := &MsgTx{}
@@ -505,6 +522,11 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
+				}
+			} else if msg, ok := m.m.(*MsgCanclTx); ok {
+				err := s.recvMsgCancelTx(m.c, msg)
+				if err != nil {
+					m.c.SendMsg(NewMsgError(ErrCodeCancelTx, err))
 				}
 			}
 			if msg, ok := m.m.(MsgIO); ok {

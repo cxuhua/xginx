@@ -2,6 +2,67 @@ package xginx
 
 import "errors"
 
+type MsgCanclTx struct {
+	Id   HASH256
+	Sigs [][]SigBytes
+}
+
+func (m MsgCanclTx) Type() uint8 {
+	return NT_CANCEL_TX
+}
+
+func (m MsgCanclTx) Encode(w IWriter) error {
+	if err := m.Id.Encode(w); err != nil {
+		return err
+	}
+	err := VarUInt(len(m.Sigs)).Encode(w)
+	if err != nil {
+		return err
+	}
+	for _, vs := range m.Sigs {
+		err := VarUInt(len(vs)).Encode(w)
+		if err != nil {
+			return err
+		}
+		for _, v := range vs {
+			err := v.Encode(w)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *MsgCanclTx) Decode(r IReader) error {
+	if err := m.Id.Decode(r); err != nil {
+		return err
+	}
+	num := VarUInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	m.Sigs = make([][]SigBytes, num)
+	for i, _ := range m.Sigs {
+		num := VarUInt(0)
+		err := num.Decode(r)
+		if err != nil {
+			return err
+		}
+		vv := make([]SigBytes, num)
+		for j, _ := range vv {
+			sv := SigBytes{}
+			err := sv.Decode(r)
+			if err != nil {
+				return err
+			}
+			vv[j] = sv
+		}
+		m.Sigs[i] = vv
+	}
+	return nil
+}
+
 //获取交易验证merkle树
 type MsgGetMerkle struct {
 	TxId HASH256 //交易id

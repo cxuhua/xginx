@@ -17,6 +17,8 @@ const (
 	NewLinkHeaderTopic = "NewLinkHeader"
 	//更新了一个区块数据 BlockInfo
 	NewUpdateBlockTopic = "NewUpdateBlock"
+	//当一个交易被取消时
+	CancelPoolTxTopic = "CancelPoolTx"
 )
 
 const (
@@ -257,7 +259,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
-	hbc := ps.Sub(NewLinkHeaderTopic)
+	hbc := ps.Sub(NewLinkHeaderTopic, CancelPoolTxTopic)
 	defer ps.Unsub(hbc)
 finished:
 	for !genok {
@@ -295,14 +297,20 @@ finished:
 			mg.StopAndWait()
 			return m.ctx.Err()
 		case bhp := <-hbc:
-			ele, ok := bhp.(*TBEle)
-			if !ok {
-				LogError("NewBlockHeaderTopic recv error data", bhp)
-				break
-			}
-			//收到的区块头比当前正在处理的小忽略继续
-			if ele.Height < blk.Meta.Height {
-				break
+			if ele, ok := bhp.(*TBEle); ok {
+				//收到的区块头比当前正在处理的小忽略继续
+				if ele.Height < blk.Meta.Height {
+					break
+				}
+			} else if tx, ok := bhp.(*TX); ok {
+				id, err := tx.ID()
+				if err != nil {
+					break
+				}
+				if !blk.HasTx(id) {
+					break
+				}
+				//如果包含取消的交易重新开始
 			}
 			mg.StopAndWait()
 			return errors.New("recv new block header ,ignore gen block")

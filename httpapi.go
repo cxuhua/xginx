@@ -10,6 +10,41 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func cancelTxApi(c *gin.Context) {
+	args := struct {
+		Id string `form:"id"` //数据hex编码
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	id := NewHASH256(args.Id)
+	bi := GetBlockIndex()
+	tp := bi.GetTxPool()
+	tx, err := tp.Get(id)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 101,
+			Msg:  "miner not running",
+		})
+		return
+	}
+	msg, err := tx.NewMsgCancelTx(bi)
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 102,
+			Msg:  "miner not running",
+		})
+		return
+	}
+	tp.Del(id)
+	//广播消息
+	Server.BroadMsg(msg)
+}
+
 func setHeaderApi(c *gin.Context) {
 	args := struct {
 		Hex string `form:"hex"` //数据hex编码
@@ -293,22 +328,6 @@ func transferFee(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 106,
-			Msg:  err.Error(),
-		})
-		return
-	}
-	//自动签名
-	if err := mi.Sign(tx); err != nil {
-		c.JSON(http.StatusOK, ApiResult{
-			Code: 107,
-			Msg:  err.Error(),
-		})
-		return
-	}
-	//加入交易池
-	if err := mi.PushTx(tx); err != nil {
-		c.JSON(http.StatusOK, ApiResult{
-			Code: 108,
 			Msg:  err.Error(),
 		})
 		return

@@ -103,6 +103,14 @@ func TestBlockChain(t *testing.T) {
 	}
 }
 
+func getacc(bi *BlockIndex, addr Address) *Account {
+	acc, err := bi.lptr.GetWallet().GetAccount(addr)
+	if err != nil {
+		panic(err)
+	}
+	return acc
+}
+
 func TestTransfire(t *testing.T) {
 	bi := GetTestBlockIndex()
 	defer bi.Close()
@@ -111,7 +119,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	mi := bi.EmptyMulTransInfo()
-	mi.Src = []Address{"st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q"}
+	mi.Acts = []*Account{getacc(bi, "st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")}
 	mi.Keep = 0
 	mi.Dst = []Address{"st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3"}
 	mi.Amts = []Amount{15 * COIN}
@@ -119,6 +127,14 @@ func TestTransfire(t *testing.T) {
 	mi.Ext = []byte{}
 	//A -> B
 	tx, err := mi.NewTx(false)
+	if err != nil {
+		panic(err)
+	}
+	msg, err := tx.NewMsgCancelTx(bi)
+	if err != nil {
+		panic(err)
+	}
+	err = tx.VerifyCancel(bi, msg.Sigs)
 	if err != nil {
 		panic(err)
 	}
@@ -134,17 +150,18 @@ func TestTransfire(t *testing.T) {
 	log.Println(ds)
 
 	mi = bi.EmptyMulTransInfo()
-	mi.Src = []Address{"st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3"}
+	mi.Acts = []*Account{getacc(bi, "st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")}
 	mi.Keep = 0
 	mi.Dst = []Address{"st1qm24876nvtcn83m8jlg7r4jsr223lcepn3g8wt3"}
 	mi.Amts = []Amount{5 * COIN}
 	mi.Fee = 1 * COIN
 	mi.Ext = []byte{}
 	//B -> C
-	tx, err = mi.NewTx(false)
+	tx, err = mi.NewTx(true)
 	if err != nil {
 		panic(err)
 	}
+
 	err = blk.AddTx(bi, tx)
 	if err != nil {
 		panic(err)
