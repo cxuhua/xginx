@@ -50,7 +50,42 @@ const (
 	NT_TXPOOL     = uint8(20)
 	//取消交易池交易
 	NT_CANCEL_TX = uint8(21)
+	//广播包头和响应
+	NT_BROAD_HEAD = uint8(0xf0)
+	NT_BROAD_ACK  = uint8(0xf1)
 )
+
+type MsgBroadAck struct {
+	Id [16]byte //md5
+}
+
+func (e MsgBroadAck) Type() uint8 {
+	return NT_BROAD_ACK
+}
+
+func (e MsgBroadAck) Encode(w IWriter) error {
+	return w.WriteFull(e.Id[:])
+}
+
+func (e *MsgBroadAck) Decode(r IReader) error {
+	return r.ReadFull(e.Id[:])
+}
+
+type MsgBroadHead struct {
+	Id [16]byte //md5
+}
+
+func (e MsgBroadHead) Type() uint8 {
+	return NT_BROAD_HEAD
+}
+
+func (e MsgBroadHead) Encode(w IWriter) error {
+	return w.WriteFull(e.Id[:])
+}
+
+func (e *MsgBroadHead) Decode(r IReader) error {
+	return r.ReadFull(e.Id[:])
+}
 
 //协议消息
 type MsgIO interface {

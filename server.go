@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/patrickmn/go-cache"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -169,7 +171,7 @@ func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 		if skipf(c) {
 			continue
 		}
-		c.SendMsg(m)
+		c.BroadMsg(m)
 	}
 }
 
@@ -234,6 +236,7 @@ func (s *TcpServer) NewClient() *Client {
 	c.pt = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
 	c.vt = time.NewTimer(time.Second * 10) //10秒内不应答MsgVersion将关闭
 	c.vmap = &sync.Map{}
+	c.pkgs = cache.New(time.Minute*10, time.Hour)
 	return c
 }
 

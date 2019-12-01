@@ -2,11 +2,15 @@ package xginx
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/patrickmn/go-cache"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,11 +50,12 @@ type Client struct {
 	ping    int
 	pt      *time.Timer
 	vt      *time.Timer
-	isopen  bool      //收到msgversion算打开成功
-	Ver     uint32    //节点版本
-	Service uint32    //节点提供的服务
-	Height  BHeight   //节点区块高度
-	vmap    *sync.Map //属性存储器
+	isopen  bool         //收到msgversion算打开成功
+	Ver     uint32       //节点版本
+	Service uint32       //节点提供的服务
+	Height  BHeight      //节点区块高度
+	vmap    *sync.Map    //属性存储器
+	pkgs    *cache.Cache //包数据缓存
 }
 
 //添加过滤数据
@@ -162,6 +167,24 @@ func (c *Client) processMsg(m MsgIO) error {
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
+	case NT_BROAD_HEAD:
+		msg := m.(*MsgBroadHead)
+		key := "R" + string(msg.Id[:])
+		if _, has := c.pkgs.Get(key); has {
+			break
+		}
+		c.pkgs.Set(key, time.Now(), time.Minute*10)
+		rsg := &MsgBroadAck{Id: msg.Id}
+		c.SendMsg(rsg)
+		LogInfo("recv broad head", hex.EncodeToString(msg.Id[:]), " send broad ack")
+	case NT_BROAD_ACK:
+		msg := m.(*MsgBroadAck)
+		key := "S" + string(msg.Id[:])
+		if m, ok := c.pkgs.Get(key); ok {
+			rsg := m.(MsgIO)
+			LogInfo("recv broad ack send msg type=", rsg.Type())
+			c.SendMsg(rsg)
+		}
 	case NT_GET_TXPOOL:
 		msg := m.(*MsgGetTxPool)
 		tp := bi.GetTxPool()
@@ -396,6 +419,28 @@ func (c *Client) loop() {
 			return
 		}
 	}
+}
+
+func (c *Client) BroadMsg(m MsgIO) {
+	//缓存发送数据
+	buf := NewWriter()
+	err := buf.WriteFull([]byte(conf.Flags))
+	if err != nil {
+		panic(err)
+	}
+	err = buf.WriteByte(m.Type())
+	if err != nil {
+		panic(err)
+	}
+	err = m.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	id := md5.Sum(buf.Bytes())
+	c.pkgs.Set("S"+string(id[:]), m, time.Minute*10)
+	//发送广播包头
+	msg := &MsgBroadHead{Id: id}
+	c.wc <- msg
 }
 
 func (c *Client) SendMsg(m MsgIO) {
