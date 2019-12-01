@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"errors"
+	"fmt"
 )
 
 //获取签名数据接口
@@ -12,19 +13,21 @@ type IGetSigBytes interface {
 //签名验证接口
 type ISigner interface {
 	//签名校验
-	Verify() error
+	Verify(bi *BlockIndex) error
 	//签名生成解锁脚本
-	Sign(acc *Account) error
+	Sign(bi *BlockIndex, acc *Account) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取输出地址
 	GetOutAddress() (Address, error)
 	//使用私钥签名指定msg数据，返回签名数据
 	SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error)
+	//获取签名对象 当前交易，当前输入，输入引用的输出
+	GetObjs() (*TX, *TxIn, *TxOut)
 }
 
-//标准签名器
-type stdsigner struct {
+//多重签名器
+type mulsigner struct {
 	tx  *TX    //当前交易
 	out *TxOut //输入引用的输出
 	in  *TxIn  //当前签名验证的输入
@@ -32,14 +35,19 @@ type stdsigner struct {
 
 //新建标准签名
 func NewSigner(tx *TX, out *TxOut, in *TxIn) ISigner {
-	return &stdsigner{
+	return &mulsigner{
 		tx:  tx,
 		out: out,
 		in:  in,
 	}
 }
 
-func (sr *stdsigner) SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error) {
+//获取签名对象
+func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut) {
+	return sr.tx, sr.in, sr.out
+}
+
+func (sr *mulsigner) SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error) {
 	sb := SigBytes{}
 	sv, err := pri.Sign(msg)
 	if err != nil {
@@ -50,7 +58,7 @@ func (sr *stdsigner) SignMsg(msg []byte, pri *PrivateKey) (SigBytes, error) {
 }
 
 //多重签名验证
-func (sr *stdsigner) Verify() error {
+func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
 		return err
@@ -58,12 +66,12 @@ func (sr *stdsigner) Verify() error {
 	if err := wits.Check(); err != nil {
 		return err
 	}
-	if hash, err := wits.Hash(); err != nil {
+	pkh, err := sr.out.Script.GetPkh()
+	if err != nil {
 		return err
-	} else if pkh, err := sr.out.Script.GetPkh(); err != nil {
-		return err
-	} else if !hash.Equal(pkh) {
-		return errors.New("hash equal errort")
+	}
+	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
+		return fmt.Errorf("hash equal error %w", err)
 	}
 	//至少需要签名正确的数量
 	less := int(wits.Less)
@@ -108,7 +116,7 @@ func (sr *stdsigner) Verify() error {
 	return nil
 }
 
-func (sp *stdsigner) OutputsHash() HASH256 {
+func (sp *mulsigner) OutputsHash() HASH256 {
 	if hash, set := sp.tx.outs.IsSet(); set {
 		return hash
 	}
@@ -122,7 +130,7 @@ func (sp *stdsigner) OutputsHash() HASH256 {
 	return sp.tx.outs.Hash(buf.Bytes())
 }
 
-func (sp *stdsigner) PrevoutHash() HASH256 {
+func (sp *mulsigner) PrevoutHash() HASH256 {
 	if hash, set := sp.tx.pres.IsSet(); set {
 		return hash
 	}
@@ -142,7 +150,7 @@ func (sp *stdsigner) PrevoutHash() HASH256 {
 
 //获取输入签名数据
 //out 当前输入对应的上一个输出,idx 当前输入的索引位置
-func (sr *stdsigner) GetSigHash() ([]byte, error) {
+func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	buf := NewWriter()
 	if err := sr.tx.Ver.Encode(buf); err != nil {
 		return nil, err
@@ -175,43 +183,45 @@ func (sr *stdsigner) GetSigHash() ([]byte, error) {
 }
 
 //获取输出地址
-func (sr *stdsigner) GetOutAddress() (Address, error) {
+func (sr *mulsigner) GetOutAddress() (Address, error) {
 	return sr.out.Script.GetAddress()
 }
 
 //获取输出hash
-func (sr *stdsigner) GetOutHash() (HASH160, error) {
+func (sr *mulsigner) GetOutHash() (HASH160, error) {
 	return sr.out.Script.GetPkh()
 }
 
 //签名生成解锁脚本
-func (sr *stdsigner) Sign(acc *Account) error {
+func (sr *mulsigner) Sign(bi *BlockIndex, acc *Account) error {
 	if err := acc.Check(); err != nil {
 		return err
 	}
-	if !acc.HasPrivate() {
-		return errors.New("account miss private key,can't sign tx")
-	}
-	//检测是否是给此账号的金额
-	wits := acc.NewWitnessScript()
-	if hash, err := wits.Hash(); err != nil {
-		return err
-	} else if pkh, err := sr.GetOutHash(); err != nil {
-		return err
-	} else if !hash.Equal(pkh) {
-		return errors.New("hash equal errort")
-	}
-	sigh, err := sr.GetSigHash()
+	pkh, err := sr.GetOutHash()
 	if err != nil {
 		return err
 	}
-	//向acc请求签名
-	for i := 0; i < len(acc.pubs); i++ {
-		sigs, err := acc.Sign(i, sigh)
+	wits := acc.NewWitnessScript()
+	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
+		return fmt.Errorf("witness hash or pkh error %w", err)
+	}
+	if acc.HasPrivate() {
+		sigh, err := sr.GetSigHash()
 		if err != nil {
-			continue
+			return err
 		}
-		wits.Sig = append(wits.Sig, sigs)
+		for i := 0; i < len(acc.pubs); i++ {
+			sigb, err := acc.Sign(i, sigh)
+			if err != nil {
+				continue
+			}
+			wits.Sig = append(wits.Sig, sigb)
+		}
+	} else {
+		err := bi.lptr.OnSignTx(sr, wits)
+		if err != nil {
+			return err
+		}
 	}
 	if err := wits.Check(); err != nil {
 		return err

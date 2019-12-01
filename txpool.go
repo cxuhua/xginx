@@ -269,10 +269,10 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	}
 	//移除检测失败的
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	for _, ele := range res {
 		p.removeEle(ele)
 	}
-	p.mu.Unlock()
 	return txs, nil
 }
 
@@ -303,6 +303,7 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 			return nil, err
 		}
 		tk.pool = true
+		//过滤已经被交易池消费的
 		if p.mdb.Contains(tk.SpentKey()) {
 			continue
 		}
@@ -357,6 +358,10 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 		return errors.New("tx pool full,ignore push back")
 	}
 	if err := bi.lptr.OnTxPool(tx); err != nil {
+		return err
+	}
+	//检测交易是否正确
+	if err := tx.Check(bi, true); err != nil {
 		return err
 	}
 	id, err := tx.ID()

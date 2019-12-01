@@ -219,10 +219,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if conf.MinerNum == 0 {
 		return errors.New("miner_num = 0,disable miner calc")
 	}
-	ps := GetPubSub()
-	hbc := ps.Sub(NewLinkHeaderTopic)
-	defer ps.Unsub(hbc)
 	bi := GetBlockIndex()
+	hh := bi.GetNodeHeight()
+	if hh.HH != hh.BH {
+		return errors.New("first download best block data")
+	}
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
 		return err
@@ -255,6 +256,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	dt := time.NewTimer(time.Second * MINER_LOG_SECONDS)
 	genok := false
 	ptime := uint64(0)
+	ps := GetPubSub()
+	hbc := ps.Sub(NewLinkHeaderTopic)
+	defer ps.Unsub(hbc)
 finished:
 	for !genok {
 		select {
@@ -390,7 +394,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 				LogError("gen new block error", err)
 			}
 			if conf.MinerNum > 0 {
-				dt.Reset(time.Second * 10)
+				dt.Reset(time.Second * 30)
 			}
 		case <-m.ctx.Done():
 			return
@@ -404,8 +408,8 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
-	//每隔10秒开始自动创建区块
-	dt := time.NewTimer(time.Second * 10)
+	//每隔30秒开始自动创建区块
+	dt := time.NewTimer(time.Second * 30)
 	for i := 0; i < 4; i++ {
 		go m.loop(i, ch, dt)
 	}

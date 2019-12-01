@@ -904,7 +904,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		err = NewSigner(tx, out, in).Verify()
+		err = NewSigner(tx, out, in).Verify(bi)
 		if err != nil {
 			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
@@ -959,7 +959,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 			return err
 		}
 		//对每个输入签名
-		err = NewSigner(tx, out, in).Sign(acc)
+		err = NewSigner(tx, out, in).Sign(bi, acc)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

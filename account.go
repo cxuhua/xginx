@@ -27,7 +27,7 @@ type Account struct {
 	less uint8                   //至少需要签名的数量
 	arb  uint8                   //仲裁，当less  < num时可启用，必须是最后一个公钥
 	pubs []*PublicKey            //所有的密钥公钥
-	pris map[HASH160]*PrivateKey //私钥可能在多个地方
+	pris map[HASH160]*PrivateKey //公钥对应的私钥
 }
 
 func LoadAccount(s string) (*Account, error) {
@@ -101,6 +101,15 @@ func (ap Account) String() string {
 	}
 }
 
+func (ap *Account) hasPub(pub *PublicKey) bool {
+	for _, v := range ap.pubs {
+		if v.Equal(pub.Encode()) {
+			return true
+		}
+	}
+	return false
+}
+
 //加载账号信息
 func (ap *Account) Load(s string) error {
 	data, err := B58Decode(s, BitcoinAlphabet)
@@ -133,6 +142,10 @@ func (ap *Account) Load(s string) error {
 		pri, err := LoadPrivateKey(ss)
 		if err != nil {
 			return err
+		}
+		pub := pri.PublicKey()
+		if !ap.hasPub(pub) {
+			return errors.New("pri'pubkey not in account")
 		}
 		ap.pris[pri.PublicKey().Hash()] = pri
 	}
@@ -224,6 +237,7 @@ func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account
 }
 
 //创建num个证书的账号,至少需要less个签名
+//arb是否启用仲裁
 func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
 	ap := &Account{
 		num:  num,

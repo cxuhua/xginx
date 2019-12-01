@@ -192,13 +192,13 @@ func listCoins(c *gin.Context) {
 	type coin struct {
 		Tx    string `json:"tx"`
 		Idx   int    `json:"idx"`
-		Value string `json:"value"`
+		Value Amount `json:"value"`
 		Pool  bool   `json:"pool"`
 	}
 	type result struct {
 		Code   int    `json:"code"`
 		Coins  []coin `json:"coins"`
-		Amount string `json:"amount"`
+		Amount Amount `json:"amount"`
 	}
 	res := result{}
 	total := Amount(0)
@@ -206,12 +206,12 @@ func listCoins(c *gin.Context) {
 		i := coin{}
 		i.Tx = v.TxId.String()
 		i.Idx = v.Index.ToInt()
-		i.Value = v.Value.String()
+		i.Value = v.Value
 		i.Pool = v.pool
 		res.Coins = append(res.Coins, i)
 		total += v.Value
 	}
-	res.Amount = total.String()
+	res.Amount = total
 	c.JSON(http.StatusOK, res)
 }
 
@@ -219,6 +219,7 @@ func listCoins(c *gin.Context) {
 func transferFee(c *gin.Context) {
 	args := struct {
 		Src    Address `form:"src"`    //从src地址
+		Keep   int     `form:"keep"`   //找零地址索引
 		Dst    Address `form:"dst"`    //转到dst地址
 		Amount string  `form:"amount"` //转账金额 单位:1.2 30.2
 		Fee    string  `form:"fee"`    //交易费
@@ -256,14 +257,15 @@ func transferFee(c *gin.Context) {
 		})
 		return
 	}
-	mi := bi.EmptyMulTransInfo()
-	mi.Src = []Address{args.Src}
-	mi.Keep = 0
-	mi.Dst = []Address{args.Dst}
-	mi.Amts = []Amount{amt}
-	mi.Fee = fee
-	mi.Ext = ext
-	tx, err := mi.NewTx(true)
+	if len(ext) > MAX_EXT_SIZE {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 103,
+			Msg:  "ext too big",
+		})
+		return
+	}
+	db := ApiGetDB(c)
+	acc, err := db.lis.GetWallet().GetAccount(args.Src)
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 104,
@@ -271,7 +273,15 @@ func transferFee(c *gin.Context) {
 		})
 		return
 	}
-	id, err := tx.ID()
+	mi := bi.EmptyMulTransInfo()
+	mi.Acts = []*Account{acc}
+	mi.Keep = args.Keep
+	mi.Dst = []Address{args.Dst}
+	mi.Amts = []Amount{amt}
+	mi.Fee = fee
+	mi.Ext = ext
+	//创建未签名的交易
+	tx, err := mi.NewTx(true)
 	if err != nil {
 		c.JSON(http.StatusOK, ApiResult{
 			Code: 105,
@@ -279,13 +289,36 @@ func transferFee(c *gin.Context) {
 		})
 		return
 	}
+	id, err := tx.ID()
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 106,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	//自动签名
+	if err := mi.Sign(tx); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 107,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	//加入交易池
+	if err := mi.PushTx(tx); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 108,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	//广播交易
+	mi.BroadTx(tx)
 	c.JSON(http.StatusOK, ApiResult{
 		Code: 0,
 		Msg:  id.String(),
 	})
-	//发布广播有新交易并进入了交易池
-	GetPubSub().Pub(tx, NewTxTopic)
-	return
 }
 
 //获取最后生成的10个区块
@@ -378,12 +411,12 @@ func getBlockInfoApi(c *gin.Context) {
 		OutTx  string `json:"otx"`
 		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
-		Amount string `json:"amount,omitempty"`
+		Amount Amount `json:"amount,omitempty"`
 		Script string `json:"script,omitempty"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
-		Amount string `json:"amount"`
+		Amount Amount `json:"amount"`
 		Script string `json:"script"`
 	}
 	type tx struct {
@@ -393,7 +426,7 @@ func getBlockInfoApi(c *gin.Context) {
 		Coinbase bool    `json:"coinbase"`
 		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
-		Fee      string  `json:"fee"`
+		Fee      Amount  `json:"fee"`
 	}
 	type block struct {
 		Id      string `json:"id"`
@@ -407,7 +440,7 @@ func getBlockInfoApi(c *gin.Context) {
 		Time    string `json:"time"`
 		Merkle  string `json:"merkle"`
 		Confirm int    `json:"confirm"`
-		Income  string `json:"income"`
+		Income  Amount `json:"income"`
 		Txs     []tx   `json:"txs"`
 	}
 	b := block{}
@@ -420,7 +453,7 @@ func getBlockInfoApi(c *gin.Context) {
 	b.Nonce = fmt.Sprintf("0x%08x", ele.Nonce)
 	b.Time = time.Unix(int64(ele.Time), 0).Format("2006-01-02 15:04:05")
 	b.Merkle = ele.Merkle.String()
-	b.Income = income.String()
+	b.Income = income
 	b.Confirm = bi.GetBlockConfirm(iter.ID())
 	for _, v := range blk.Txs {
 		xv := tx{}
@@ -436,7 +469,7 @@ func getBlockInfoApi(c *gin.Context) {
 		xv.LockTime = v.LockTime
 		fee, err := v.GetTransFee(bi)
 		if err == nil {
-			xv.Fee = fee.String()
+			xv.Fee = fee
 		}
 		for _, iv := range v.Ins {
 			xvi := txin{}
@@ -451,7 +484,7 @@ func getBlockInfoApi(c *gin.Context) {
 			if err != nil {
 				panic(err)
 			}
-			xvi.Amount = ov.Value.String()
+			xvi.Amount = ov.Value
 			addr, err := ov.Script.GetAddress()
 			if err != nil {
 				panic(err)
@@ -461,7 +494,7 @@ func getBlockInfoApi(c *gin.Context) {
 		}
 		for _, ov := range v.Outs {
 			xvo := txout{}
-			xvo.Amount = ov.Value.String()
+			xvo.Amount = ov.Value
 			addr, err := ov.Script.GetAddress()
 			if err != nil {
 				panic(err)
@@ -487,12 +520,12 @@ func listTxPoolApi(c *gin.Context) {
 		OutTx  string `json:"otx"`
 		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
-		Amount string `json:"amount,omitempty"`
+		Amount Amount `json:"amount"`
 		Script string `json:"script,omitempty"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
-		Amount string `json:"amount"`
+		Amount Amount `json:"amount"`
 		Script string `json:"script"`
 	}
 	type tx struct {
@@ -501,7 +534,7 @@ func listTxPoolApi(c *gin.Context) {
 		Outs     []txout `json:"outs"`
 		Coinbase bool    `json:"coinbase"`
 		LockTime uint32  `json:"lock_time"`
-		Fee      string  `json:"fee"`
+		Fee      Amount  `json:"fee"`
 	}
 	type result struct {
 		Code int  `json:"code"`
@@ -522,7 +555,7 @@ func listTxPoolApi(c *gin.Context) {
 		xv.LockTime = tv.LockTime
 		fee, err := tv.GetTransFee(bi)
 		if err == nil {
-			xv.Fee = fee.String()
+			xv.Fee = fee
 		}
 		for _, iv := range tv.Ins {
 			xvi := txin{}
@@ -537,7 +570,7 @@ func listTxPoolApi(c *gin.Context) {
 			if err != nil {
 				panic(err)
 			}
-			xvi.Amount = ov.Value.String()
+			xvi.Amount = ov.Value
 			addr, err := ov.Script.GetAddress()
 			if err != nil {
 				panic(err)
@@ -547,7 +580,7 @@ func listTxPoolApi(c *gin.Context) {
 		}
 		for _, ov := range tv.Outs {
 			xvo := txout{}
-			xvo.Amount = ov.Value.String()
+			xvo.Amount = ov.Value
 			addr, err := ov.Script.GetAddress()
 			if err != nil {
 				panic(err)
@@ -580,12 +613,12 @@ func getTxInfoApi(c *gin.Context) {
 		OutTx  string `json:"otx"`
 		OutIdx int    `json:"oidx"`
 		Addr   string `json:"addr,omitempty"`
-		Amount string `json:"amount,omitempty"`
+		Amount Amount `json:"amount,omitempty"`
 		Script string `json:"script,omitempty"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
-		Amount string `json:"amount"`
+		Amount Amount `json:"amount"`
 		Script string `json:"script"`
 	}
 	type tx struct {
@@ -597,7 +630,7 @@ func getTxInfoApi(c *gin.Context) {
 		Pool     bool    `json:"pool"`
 		LockTime uint32  `json:"lock_time"`
 		Confirm  int     `json:"confirm"`
-		Fee      string  `json:"fee"`
+		Fee      Amount  `json:"fee"`
 	}
 	xv := tx{}
 	tid, err := tp.ID()
@@ -612,7 +645,7 @@ func getTxInfoApi(c *gin.Context) {
 	xv.LockTime = tp.LockTime
 	fee, err := tp.GetTransFee(bi)
 	if err == nil {
-		xv.Fee = fee.String()
+		xv.Fee = fee
 	}
 	if !tp.pool {
 		xv.Confirm = bi.GetTxConfirm(tid)
@@ -632,7 +665,7 @@ func getTxInfoApi(c *gin.Context) {
 		if err != nil {
 			panic(err)
 		}
-		xvi.Amount = ov.Value.String()
+		xvi.Amount = ov.Value
 		addr, err := ov.Script.GetAddress()
 		if err != nil {
 			panic(err)
@@ -642,7 +675,7 @@ func getTxInfoApi(c *gin.Context) {
 	}
 	for _, ov := range tp.Outs {
 		xvo := txout{}
-		xvo.Amount = ov.Value.String()
+		xvo.Amount = ov.Value
 		addr, err := ov.Script.GetAddress()
 		if err != nil {
 			panic(err)

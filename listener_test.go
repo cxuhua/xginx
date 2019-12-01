@@ -32,6 +32,10 @@ func (lis *testLisener) OnTxPool(tx *TX) error {
 	return nil
 }
 
+func (lis *testLisener) OnSignTx(singer ISigner, wits *WitnessScript) error {
+	return errors.New("not imp OnSignTx")
+}
+
 func (lis *testLisener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
 }

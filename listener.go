@@ -30,4 +30,6 @@ type IListener interface {
 	OnInitHttp(m *gin.Engine)
 	//当交易进入交易池之前
 	OnTxPool(tx *TX) error
+	//当账户没有私钥签名时调用此方法
+	OnSignTx(singer ISigner, wits *WitnessScript) error
 }

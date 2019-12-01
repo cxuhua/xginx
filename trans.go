@@ -5,19 +5,19 @@ import "errors"
 //交易数据结构
 type MulTransInfo struct {
 	bi   *BlockIndex
-	Src  []Address //原地址
-	Keep int       //找零到这个索引对应的src地址
-	Dst  []Address //目标地址
-	Amts []Amount  //目标金额 大小与dst对应
-	Fee  Amount    //交易费
-	Ext  []byte    //扩展信息
+	Acts []*Account //原账号
+	Keep int        //找零到这个索引对应的src地址
+	Dst  []Address  //目标地址
+	Amts []Amount   //目标金额 大小与dst对应
+	Fee  Amount     //交易费
+	Ext  []byte     //扩展信息
 }
 
 func (m *MulTransInfo) Check() error {
-	if len(m.Src) == 0 || len(m.Dst) == 0 || len(m.Dst) != len(m.Amts) {
+	if len(m.Acts) == 0 || len(m.Dst) == 0 || len(m.Dst) != len(m.Amts) {
 		return errors.New("src dst amts num error")
 	}
-	if m.Keep < 0 || m.Keep >= len(m.Src) {
+	if m.Keep < 0 || m.Keep >= len(m.Acts) {
 		return errors.New("keep index out bound")
 	}
 	if !m.Fee.IsRange() {
@@ -34,20 +34,16 @@ func (m *MulTransInfo) Check() error {
 }
 
 //获取地址对应的账户和金额列表
-func (m *MulTransInfo) getAddressInfo(addr Address) (*Account, Coins, error) {
-	spkh, err := addr.GetPkh()
+func (m *MulTransInfo) getAddressCoins(acc *Account) (Coins, error) {
+	spkh, err := acc.GetPkh()
 	if err != nil {
-		return nil, nil, err
-	}
-	acc, err := m.bi.lptr.GetWallet().GetAccountWithPkh(spkh)
-	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	ds, err := m.bi.ListCoinsWithID(spkh)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return acc, ds, nil
+	return ds, nil
 }
 
 //生成交易
@@ -63,9 +59,9 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		sum += v
 	}
 	//计算使用哪些输入
-	for _, src := range m.Src {
+	for _, acc := range m.Acts {
 		//获取转出账号信息
-		acc, ds, err := m.getAddressInfo(src)
+		ds, err := m.getAddressCoins(acc)
 		if err != nil {
 			return nil, err
 		}
@@ -89,7 +85,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//没有减完，余额不足
 	if sum > 0 {
-		return nil, errors.New("insufficient balance")
+		return nil, errors.New("insufficient balance or miss private key")
 	}
 	//转出到其他账号的输出
 	for i, v := range m.Amts {
@@ -102,27 +98,39 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//多减的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
-		out, err := m.Src[m.Keep].NewTxOut(amt)
+		keep, err := m.Acts[m.Keep].GetAddress()
+		if err != nil {
+			return nil, err
+		}
+		out, err := keep.NewTxOut(amt)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
-	//开始签名
-	if err := tx.Sign(m.bi); err != nil {
-		return nil, err
-	}
-	//放入交易池
-	if err := m.bi.txp.PushTx(m.bi, tx); err != nil {
-		return nil, err
-	}
 	return tx, nil
+}
+
+//放入交易池
+func (m *MulTransInfo) PushTx(tx *TX) error {
+	return m.bi.txp.PushTx(m.bi, tx)
+}
+
+func (m *MulTransInfo) BroadTx(tx *TX) {
+	ps := GetPubSub()
+	ps.Pub(tx, NewTxTopic)
+}
+
+// 签名交易并加入交易池
+func (m *MulTransInfo) Sign(tx *TX) error {
+	//开始签名
+	return tx.Sign(m.bi)
 }
 
 func (bi *BlockIndex) EmptyMulTransInfo() *MulTransInfo {
 	return &MulTransInfo{
 		bi:   bi,
-		Src:  []Address{},
+		Acts: []*Account{},
 		Keep: 0,
 		Dst:  []Address{},
 		Amts: []Amount{},

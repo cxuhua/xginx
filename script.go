@@ -334,10 +334,10 @@ func (ss WitnessScript) Hash() (HASH160, error) {
 
 //hash公钥。地址也将由这个方法生成
 func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
-	if int(num) != len(pks) {
-		panic(errors.New("pub num error"))
-	}
 	id := HASH160{}
+	if int(num) != len(pks) {
+		return id, errors.New("pub num error")
+	}
 	w := NewWriter()
 	err := w.TWrite(num)
 	if err != nil {
@@ -352,7 +352,7 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 		return id, err
 	}
 	for _, pk := range pks {
-		_, err := w.Write(pk[:])
+		err := w.TWrite(pk[:])
 		if err != nil {
 			return id, err
 		}
