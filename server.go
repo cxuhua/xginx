@@ -624,8 +624,6 @@ func (s *TcpServer) run() {
 
 //获取广播数据包
 func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 	msg, has := s.pkgs.Get(id)
 	if !has {
 		return nil, false
@@ -635,15 +633,11 @@ func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
 
 //保存广播数据包
 func (s *TcpServer) SetPkg(id string, m MsgIO) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.pkgs.Set(id, m, time.Minute*10)
 }
 
 //是否有广播数据包
 func (s *TcpServer) HasPkg(id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	_, has := s.pkgs.Get(id)
 	if !has {
 		s.pkgs.Set(id, time.Now(), time.Minute*10)
