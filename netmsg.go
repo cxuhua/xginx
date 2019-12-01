@@ -49,6 +49,8 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgGetTxPool{}
 	case NT_TXPOOL:
 		m = &MsgTxPool{}
+	case NT_CANCEL_TX:
+		m = &MsgCanclTx{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)

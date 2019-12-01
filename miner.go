@@ -313,7 +313,7 @@ finished:
 				//如果包含取消的交易重新开始
 			}
 			mg.StopAndWait()
-			return errors.New("recv new block header ,ignore gen block")
+			return errors.New("recv new block header or tx cancel,ignore gen block")
 		}
 	}
 	if !genok {
