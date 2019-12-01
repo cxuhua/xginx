@@ -432,7 +432,7 @@ func (c *Client) BroadMsg(m MsgIO) {
 		panic(err)
 	}
 	id := md5.Sum(buf.Bytes())
-	key := "R" + string(id[:])
+	key := "S" + string(id[:])
 	c.ss.SetPkg(key, m)
 	//发送广播包头
 	msg := &MsgBroadHead{Id: id}
