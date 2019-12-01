@@ -97,8 +97,8 @@ func (p *TxPool) NewMsgTxPool(m *MsgGetTxPool) *MsgTxPool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	msg := &MsgTxPool{}
-	for _, ele := range p.tmap {
-		tx := ele.Value.(*TX)
+	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
+		tx := cur.Value.(*TX)
 		id, err := tx.ID()
 		if err != nil {
 			panic(err)
