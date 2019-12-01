@@ -3,7 +3,6 @@ package xginx
 import (
 	"context"
 	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -172,12 +171,10 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 		rsg := &MsgBroadAck{Id: msg.Id}
 		c.SendMsg(rsg)
-		LogInfo("recv broad head", hex.EncodeToString(msg.Id[:]), " send broad ack", c.Addr)
 	case NT_BROAD_ACK:
 		msg := m.(*MsgBroadAck)
 		key := "S" + string(msg.Id[:])
 		if rsg, ok := c.ss.GetPkg(key); ok {
-			LogInfo("recv broad ack send msg type=", rsg.Type(), c.Addr)
 			c.SendMsg(rsg)
 		}
 	case NT_GET_TXPOOL:
