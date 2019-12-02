@@ -271,7 +271,6 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	if err != nil {
 		return err
 	}
-	//TXP_PREFIX + pkh + txid -> txvalue
 	for idx, tx := range blk.Txs {
 		id, err := tx.ID()
 		if err != nil {
@@ -291,6 +290,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			return err
 		}
 	}
+	//TXP_PREFIX + pkh + txid -> txvalue
 	for idx, tx := range blk.Txs {
 		id, err := tx.ID()
 		if err != nil {
