@@ -51,7 +51,7 @@ func (m MsgBlock) Id() (MsgId, error) {
 	if err != nil {
 		return ErrMsgId, err
 	}
-	return md5.Sum(bid[:]), NotIdErr
+	return md5.Sum(bid[:]), nil
 }
 
 func (m MsgBlock) Type() uint8 {

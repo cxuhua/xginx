@@ -33,10 +33,6 @@ const (
 	NT_BLOCK = uint8(9)
 	//获取区块按高度
 	NT_GET_BLOCK = uint8(10)
-	//获取区块头
-	//NT_GET_HEADERS = uint8(10)
-	//返回区块头，最多200个
-	//NT_HEADERS = uint8(11)
 	//返回一个错误信息
 	NT_ERROR = uint8(12)
 	//消息通知
