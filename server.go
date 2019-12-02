@@ -562,14 +562,14 @@ func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
 
 //保存广播数据包
 func (s *TcpServer) SetPkg(id string, m MsgIO) {
-	s.pkgs.Set(id, m, time.Minute*10)
+	s.pkgs.Set(id, m, time.Minute*5)
 }
 
 //是否有广播数据包
 func (s *TcpServer) HasPkg(id string) bool {
 	_, has := s.pkgs.Get(id)
 	if !has {
-		s.pkgs.Set(id, time.Now(), time.Minute*10)
+		s.pkgs.Set(id, time.Now(), time.Minute*5)
 	}
 	return has
 }
@@ -593,6 +593,6 @@ func NewTcpServer() IServer {
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
-	s.pkgs = cache.New(time.Minute*10, time.Hour)
+	s.pkgs = cache.New(time.Minute*5, time.Minute*15)
 	return s
 }

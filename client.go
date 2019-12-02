@@ -133,6 +133,12 @@ func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 		return
 	}
 	ele := iter.Curr()
+	id := ele.MustID()
+	if !id.Equal(msg.BlkId) {
+		rsg := NewMsgError(ErrCodeBlockMiss, errors.New("height block id error"))
+		c.SendMsg(rsg)
+		return
+	}
 	b, err := bi.ReadBlock(ele.MustID())
 	if err != nil {
 		rsg := NewMsgError(ErrCodeBlockMiss, err)
