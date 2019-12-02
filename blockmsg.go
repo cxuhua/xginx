@@ -7,8 +7,8 @@ import (
 
 //NT_GET_BLOCK
 type MsgGetBlock struct {
-	BlkId  HASH256
-	Height uint32
+	Last HASH256
+	Next uint32
 }
 
 func (m MsgGetBlock) Id() (MsgId, error) {
@@ -20,20 +20,20 @@ func (m MsgGetBlock) Type() uint8 {
 }
 
 func (m MsgGetBlock) Encode(w IWriter) error {
-	if err := m.BlkId.Encode(w); err != nil {
+	if err := m.Last.Encode(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(m.Height); err != nil {
+	if err := w.TWrite(m.Next); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (m *MsgGetBlock) Decode(r IReader) error {
-	if err := m.BlkId.Decode(r); err != nil {
+	if err := m.Last.Decode(r); err != nil {
 		return err
 	}
-	if err := r.TRead(&m.Height); err != nil {
+	if err := r.TRead(&m.Next); err != nil {
 		return err
 	}
 	return nil
@@ -51,8 +51,10 @@ func (bi *BlockIndex) GetMsgBlock(id HASH256) (*MsgBlock, error) {
 const (
 	//如果是新出的区块设置此标记并广播
 	MsgBlockNewFlags = 1 << 0
+	//使用字节传输
 	MsgBlockUseBytes = 1 << 1
-	MsgBlockUseBlk   = 1 << 2
+	//使用对象传输
+	MsgBlockUseBlk = 1 << 2
 )
 
 type MsgBlock struct {

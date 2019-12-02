@@ -127,26 +127,32 @@ func (c *Client) IsOut() bool {
 func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 	bi := GetBlockIndex()
 	iter := bi.NewIter()
-	if !iter.SeekHeight(msg.Height) {
-		rsg := NewMsgError(ErrCodeBlockMiss, errors.New("block not found"))
+	if !iter.SeekHeight(msg.Next) {
+		rsg := NewMsgError(ErrCodeBlockMiss, fmt.Errorf("seek to next %d failed", msg.Next))
 		c.SendMsg(rsg)
 		return
 	}
-	ele := iter.Curr()
-	id := ele.MustID()
-	if !id.Equal(msg.BlkId) {
-		rsg := NewMsgError(ErrCodeBlockMiss, errors.New("height block id error"))
+	nextid := iter.Curr().MustID()
+	//如果是第一个区块直接发送
+	if conf.IsGenesisId(nextid) {
+		rsg := bi.NewMsgGetBlock(nextid)
 		c.SendMsg(rsg)
 		return
 	}
-	b, err := bi.ReadBlock(ele.MustID())
-	if err != nil {
-		rsg := NewMsgError(ErrCodeBlockMiss, err)
+	//否则它的上一个区块应该就是msg.Last
+	if !iter.Prev() || !iter.Prev() {
+		rsg := NewMsgError(ErrCodeBlockMiss, fmt.Errorf("next height %d prev miss", msg.Next))
 		c.SendMsg(rsg)
 		return
 	}
-	//发送区块过去
-	c.SendMsg(NewMsgBlockBytes(b))
+	previd := iter.Curr().MustID()
+	if !previd.Equal(msg.Last) {
+		rsg := NewMsgError(ErrCodeBlockMiss, fmt.Errorf("next height %d prev id %v error", msg.Next, previd))
+		c.SendMsg(rsg)
+		return
+	}
+	rsg := bi.NewMsgGetBlock(nextid)
+	c.SendMsg(rsg)
 }
 
 func (c *Client) processMsg(m MsgIO) error {

@@ -816,6 +816,16 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	return vv, err
 }
 
+func (bi *BlockIndex) NewMsgGetBlock(id HASH256) MsgIO {
+	//从磁盘读取区块数据
+	bb, err := bi.ReadBlock(id)
+	if err != nil {
+		return NewMsgError(ErrCodeBlockMiss, err)
+	}
+	//发送区块数据过去
+	return NewMsgBlockBytes(bb)
+}
+
 //读取区块数据
 func (bi *BlockIndex) ReadBlock(id HASH256) ([]byte, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])

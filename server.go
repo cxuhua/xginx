@@ -380,8 +380,8 @@ func (s *TcpServer) reqMsgGetBlock() {
 	c := s.findBlockClient(next)
 	if c != nil {
 		msg := &MsgGetBlock{
-			Height: next,
-			BlkId:  last,
+			Next: next,
+			Last: last,
 		}
 		c.SendMsg(msg)
 	}

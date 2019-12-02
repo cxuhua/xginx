@@ -326,7 +326,7 @@ func listBestBlock(c *gin.Context) {
 		Id     string `json:"id"`
 		Prev   string `json:"prev"`
 		Time   string `json:"time"`
-		Amount string `json:"amount"`
+		Amount Amount `json:"amount"`
 		Merkle string `json:"merkle"`
 		Size   int    `json:"size"`
 		Height uint32 `json:"height"`
@@ -356,7 +356,7 @@ func listBestBlock(c *gin.Context) {
 		if err != nil {
 			panic(err)
 		}
-		i.Amount = amount.String()
+		i.Amount = amount
 		i.Size = ele.Blk.Len.ToInt()
 		i.Height = ele.Height
 		i.Merkle = ele.Merkle.String()
