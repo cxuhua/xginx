@@ -308,7 +308,7 @@ finished:
 	//广播更新了区块数据
 	ps.Pub(blk, NewLinkBlockTopic)
 	//广播区块
-	Server.BroadMsg(&MsgBlock{Blk: blk})
+	Server.BroadMsg(&MsgBlock{Blk: blk, Flags: MsgBlockNewFlags})
 	return nil
 }
 

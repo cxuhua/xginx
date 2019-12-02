@@ -345,19 +345,22 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 }
 
 //收到块数据
-func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) error {
+func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock, dt *time.Timer) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	//尝试更新区块数据
-	if err := bi.LinkBlk(blk); err != nil {
+	if err := bi.LinkBlk(msg.Blk); err != nil {
 		LogError("update block error", err)
 		return err
 	}
 	ps := GetPubSub()
-	ps.Pub(blk, NewRecvBlockTopic)
-	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
+	ps.Pub(msg.Blk, NewRecvBlockTopic)
+	LogInfo("update block to chain success, blk =", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
 	dt.Reset(time.Microsecond * 300)
+	if msg.IsBroad() {
+		s.BroadMsg(msg, c)
+	}
 	return nil
 }
 
