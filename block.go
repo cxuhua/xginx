@@ -811,58 +811,6 @@ func (tx *TX) ResetAll() {
 	tx.pres.Reset()
 }
 
-//验证成功后取消交易操作
-func (tx *TX) VerifyCancel(bi *BlockIndex, sigss [][]SigBytes) error {
-	if len(tx.Ins) != len(sigss) {
-		return errors.New("txin and sigs count error")
-	}
-	for idx, in := range tx.Ins {
-		out, err := in.LoadTxOut(bi)
-		if err != nil {
-			return err
-		}
-		sigs := sigss[idx]
-		err = NewSigner(tx, out, in).VerifyCancelSigs(sigs)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (tx *TX) NewMsgCancelTx(bi *BlockIndex) (*MsgCanclTx, error) {
-	msg := &MsgCanclTx{}
-	if tx.IsCoinBase() {
-		return nil, errors.New("coinbase tx can't cancel")
-	}
-	id, err := tx.ID()
-	if err != nil {
-		return nil, err
-	}
-	msg.Id = id
-	for idx, in := range tx.Ins {
-		out, err := in.LoadTxOut(bi)
-		if err != nil {
-			return nil, err
-		}
-		pkh, err := out.Script.GetPkh()
-		if err != nil {
-			return nil, err
-		}
-		acc, err := bi.lptr.GetWallet().GetAccountWithPkh(pkh)
-		if err != nil {
-			return nil, err
-		}
-		//对每个输入签名
-		sigs, err := NewSigner(tx, out, in).GetCancelSigs(acc)
-		if err != nil {
-			return nil, fmt.Errorf("get cancel sigs in %d error %w", idx, err)
-		}
-		msg.Sigs = append(msg.Sigs, sigs)
-	}
-	return msg, nil
-}
-
 func (tx TX) String() string {
 	id, err := tx.ID()
 	if err != nil {

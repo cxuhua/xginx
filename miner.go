@@ -13,12 +13,8 @@ import (
 const (
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
-	//链上新连接了区块 BlockHeader
-	NewLinkHeaderTopic = "NewLinkHeader"
 	//更新了一个区块数据 BlockInfo
-	NewUpdateBlockTopic = "NewUpdateBlock"
-	//当一个交易被取消时
-	CancelPoolTxTopic = "CancelPoolTx"
+	NewLinkBlockTopic = "NewLinkBlock"
 )
 
 const (
@@ -222,10 +218,6 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return errors.New("miner_num = 0,disable miner calc")
 	}
 	bi := GetBlockIndex()
-	hh := bi.GetNodeHeight()
-	if hh.HH != hh.BH {
-		return errors.New("first download best block data")
-	}
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
 		return err
@@ -259,8 +251,6 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
-	hbc := ps.Sub(NewLinkHeaderTopic, CancelPoolTxTopic)
-	defer ps.Unsub(hbc)
 finished:
 	for !genok {
 		select {
@@ -296,43 +286,20 @@ finished:
 		case <-m.ctx.Done():
 			mg.StopAndWait()
 			return m.ctx.Err()
-		case bhp := <-hbc:
-			if ele, ok := bhp.(*TBEle); ok {
-				//收到的区块头比当前正在处理的小忽略继续
-				if ele.Height < blk.Meta.Height {
-					break
-				}
-			} else if tx, ok := bhp.(*TX); ok {
-				id, err := tx.ID()
-				if err != nil {
-					break
-				}
-				if !blk.HasTx(id) {
-					break
-				}
-				//如果包含取消的交易重新开始
-			}
-			mg.StopAndWait()
-			return errors.New("recv new block header or tx cancel,ignore gen block")
 		}
 	}
 	if !genok {
 		return errors.New("miner gen block failed")
 	}
 	LogInfo("gen new block success, id = ", blk)
-	if _, err := bi.LinkHeader(blk.Header); err != nil {
-		LogError("link new block header error", err)
-		return err
-	}
-	if err = bi.UpdateBlk(blk); err != nil {
+	if err = bi.LinkBlk(blk); err != nil {
 		LogError("update new block error unlink", err)
 		return bi.UnlinkLast()
 	}
 	//广播更新了区块数据
-	ps.Pub(blk, NewUpdateBlockTopic)
-	//广播区块头
-	msg := bi.NewMsgHeaders(blk.Header)
-	Server.BroadMsg(msg)
+	ps.Pub(blk, NewLinkBlockTopic)
+	//广播区块
+	Server.BroadMsg(&MsgBlock{Blk: blk})
 	return nil
 }
 

@@ -42,11 +42,9 @@ func (p *TxPool) Close() {
 func (p *TxPool) Del(id HASH256) *TX {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	ps := GetPubSub()
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
 		p.removeEle(ele)
-		ps.Pub(tx, CancelPoolTxTopic)
 		LogInfo("del txpool tx=", id, " pool size =", p.tlis.Len())
 		return tx
 	}

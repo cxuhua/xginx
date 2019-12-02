@@ -12,6 +12,10 @@ func (m MsgFilterLoad) Type() uint8 {
 	return NT_FILTER_LOAD
 }
 
+func (m MsgFilterLoad) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (m MsgFilterLoad) Encode(w IWriter) error {
 	if err := w.TWrite(m.Funcs); err != nil {
 		return err
@@ -48,6 +52,10 @@ func (m MsgFilterAdd) Type() uint8 {
 	return NT_FILTER_ADD
 }
 
+func (m MsgFilterAdd) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (m MsgFilterAdd) Encode(w IWriter) error {
 	return m.Key.Encode(w)
 }
@@ -59,6 +67,10 @@ func (m *MsgFilterAdd) Decode(r IReader) error {
 //清除过滤器
 
 type MsgFilterClear struct {
+}
+
+func (m MsgFilterClear) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (m MsgFilterClear) Type() uint8 {

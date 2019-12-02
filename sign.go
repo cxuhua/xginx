@@ -12,10 +12,6 @@ type IGetSigBytes interface {
 
 //签名验证接口
 type ISigner interface {
-	//获取消息签名hash
-	GetCancelSigs(acc *Account) ([]SigBytes, error)
-	//是否通过签名可取消交易
-	VerifyCancelSigs(sigs []SigBytes) error
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
@@ -88,30 +84,6 @@ func (sr *mulsigner) verify(msg []byte, wits WitnessScript, sigs []SigBytes) err
 		return errors.New("sig verify error")
 	}
 	return nil
-}
-
-//验证脚本hash签名，验证成功后可以取消交易，只能取消未打包进区块的交易
-//会尽可能广播取消签名，有可能无法取消
-func (sr *mulsigner) VerifyCancelSigs(sigs []SigBytes) error {
-	wits, err := sr.in.Script.ToWitness()
-	if err != nil {
-		return err
-	}
-	if err := wits.CheckSigs(sigs); err != nil {
-		return err
-	}
-	pkh, err := sr.out.Script.GetPkh()
-	if err != nil {
-		return err
-	}
-	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
-		return fmt.Errorf("hash equal error %w", err)
-	}
-	sigh, err := wits.GetCancelTxHash()
-	if err != nil {
-		return err
-	}
-	return sr.verify(sigh, wits, sigs)
 }
 
 //多重签名验证
@@ -211,30 +183,6 @@ func (sr *mulsigner) GetOutAddress() (Address, error) {
 //获取输出hash
 func (sr *mulsigner) GetOutHash() (HASH160, error) {
 	return sr.out.Script.GetPkh()
-}
-
-//获取取消签名
-func (sr *mulsigner) GetCancelSigs(acc *Account) ([]SigBytes, error) {
-	if err := sr.Verify(); err != nil {
-		return nil, err
-	}
-	wits, err := sr.in.Script.ToWitness()
-	if err != nil {
-		return nil, err
-	}
-	sigh, err := wits.GetCancelTxHash()
-	if err != nil {
-		return nil, err
-	}
-	sigs := []SigBytes{}
-	for i := 0; i < len(acc.pubs); i++ {
-		sigb, err := acc.Sign(i, sigh)
-		if err != nil {
-			continue
-		}
-		sigs = append(sigs, sigb)
-	}
-	return sigs, nil
 }
 
 //签名生成解锁脚本

@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -30,10 +31,12 @@ const (
 	NT_TX = uint8(8)
 	//获取区块的返回
 	NT_BLOCK = uint8(9)
+	//获取区块按高度
+	NT_GET_BLOCK = uint8(10)
 	//获取区块头
-	NT_GET_HEADERS = uint8(10)
+	//NT_GET_HEADERS = uint8(10)
 	//返回区块头，最多200个
-	NT_HEADERS = uint8(11)
+	//NT_HEADERS = uint8(11)
 	//返回一个错误信息
 	NT_ERROR = uint8(12)
 	//消息通知
@@ -48,43 +51,49 @@ const (
 	//获取内存交易池
 	NT_GET_TXPOOL = uint8(19)
 	NT_TXPOOL     = uint8(20)
-	//取消交易池交易
-	NT_CANCEL_TX = uint8(21)
 	//广播包头和响应
-	NT_BROAD_HEAD = uint8(0xf0)
-	NT_BROAD_ACK  = uint8(0xf1)
+	NT_BROAD_PKG = uint8(0xf0)
+	NT_BROAD_ACK = uint8(0xf1)
 )
 
 type MsgBroadAck struct {
-	Id MsgId
+	MsgId MsgId
 }
 
 func (e MsgBroadAck) Type() uint8 {
 	return NT_BROAD_ACK
 }
 
+func (m MsgBroadAck) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (e MsgBroadAck) Encode(w IWriter) error {
-	return w.WriteFull(e.Id[:])
+	return w.WriteFull(e.MsgId[:])
 }
 
 func (e *MsgBroadAck) Decode(r IReader) error {
-	return r.ReadFull(e.Id[:])
+	return r.ReadFull(e.MsgId[:])
 }
 
-type MsgBroadHead struct {
-	Id MsgId //md5
+type MsgBroadPkg struct {
+	MsgId MsgId //md5
 }
 
-func (e MsgBroadHead) Type() uint8 {
-	return NT_BROAD_HEAD
+func (m MsgBroadPkg) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
-func (e MsgBroadHead) Encode(w IWriter) error {
-	return w.WriteFull(e.Id[:])
+func (e MsgBroadPkg) Type() uint8 {
+	return NT_BROAD_PKG
 }
 
-func (e *MsgBroadHead) Decode(r IReader) error {
-	return r.ReadFull(e.Id[:])
+func (e MsgBroadPkg) Encode(w IWriter) error {
+	return w.WriteFull(e.MsgId[:])
+}
+
+func (e *MsgBroadPkg) Decode(r IReader) error {
+	return r.ReadFull(e.MsgId[:])
 }
 
 var (
@@ -93,7 +102,15 @@ var (
 )
 
 //使用md5
-type MsgId [16]byte
+type MsgId [md5.Size]byte
+
+func (m MsgId) SendKey() string {
+	return "S" + string(m[:])
+}
+
+func (m MsgId) RecvKey() string {
+	return "R" + string(m[:])
+}
 
 //协议消息
 type MsgIO interface {
@@ -103,38 +120,23 @@ type MsgIO interface {
 	Decode(r IReader) error
 }
 
-type MsgEmpty struct {
-}
-
-func (e MsgEmpty) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
-}
-
-func (e MsgEmpty) Type() uint8 {
-	return 0
-}
-
-func (e MsgEmpty) Encode(w IWriter) error {
-	return nil
-}
-
-func (e *MsgEmpty) Decode(r IReader) error {
-	return nil
-}
-
 const (
 	ErrCodeRecvBlock  = 100001
 	ErrCodeRecvTx     = 100002
 	ErrCodeFilterMiss = 100003
 	ErrCodeFilterLoad = 100004
 	ErrCodeTxMerkle   = 100005
-	ErrCodeCancelTx   = 100006
+	ErrCodeBlockMiss  = 100006
 )
 
 type MsgError struct {
 	Code  int32    //错误代码
 	Error VarBytes //错误信息
 	Ext   VarBytes //扩展信息
+}
+
+func (m MsgError) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func NewMsgError(code int, err error) *MsgError {
@@ -256,14 +258,18 @@ func (v *NetAddr) Decode(r IReader) error {
 
 type MsgPing struct {
 	Time   int64
-	Height BHeight //发送我的最新高度
+	Height uint32 //发送我的最新高度
+}
+
+func (v MsgPing) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (v MsgPing) Type() uint8 {
 	return NT_PING
 }
 
-func (v MsgPing) NewPong(h BHeight) *MsgPong {
+func (v MsgPing) NewPong(h uint32) *MsgPong {
 	msg := &MsgPong{Time: v.Time}
 	msg.Height = h
 	return msg
@@ -289,7 +295,7 @@ func (v *MsgPing) Decode(r IReader) error {
 	return nil
 }
 
-func NewMsgPing(h BHeight) *MsgPing {
+func NewMsgPing(h uint32) *MsgPing {
 	msg := &MsgPing{Time: time.Now().UnixNano()}
 	msg.Height = h
 	return msg
@@ -297,11 +303,15 @@ func NewMsgPing(h BHeight) *MsgPing {
 
 type MsgPong struct {
 	Time   int64
-	Height BHeight //获取对方的高度
+	Height uint32 //获取对方的高度
 }
 
 func (v MsgPong) Type() uint8 {
 	return NT_PONG
+}
+
+func (v MsgPong) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (v MsgPong) Ping() int {
@@ -333,37 +343,12 @@ const (
 	SERVICE_NODE = 1 << 0
 )
 
-type BHeight struct {
-	BH uint32 //数据高度
-	HH uint32 //头高度
-}
-
-func (v BHeight) Encode(w IWriter) error {
-	if err := w.TWrite(v.BH); err != nil {
-		return err
-	}
-	if err := w.TWrite(v.HH); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *BHeight) Decode(r IReader) error {
-	if err := r.TRead(&v.BH); err != nil {
-		return err
-	}
-	if err := r.TRead(&v.HH); err != nil {
-		return err
-	}
-	return nil
-}
-
 //版本消息包
 type MsgVersion struct {
 	Ver     uint32  //版本
 	Service uint32  //服务
 	Addr    NetAddr //节点外网地址
-	Height  BHeight //节点区块高度
+	Height  uint32  //节点区块高度
 	NodeID  uint64  //节点随机id
 	Tps     VarUInt //交易池数量
 }
@@ -373,11 +358,15 @@ func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m := &MsgVersion{}
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
-	m.Height = bi.GetNodeHeight()
+	m.Height = bi.BestHeight()
 	m.Service = SERVICE_NODE
 	m.NodeID = conf.nodeid
 	m.Tps = VarUInt(bi.txp.Len())
 	return m
+}
+
+func (v MsgVersion) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (v MsgVersion) Type() uint8 {
@@ -394,7 +383,7 @@ func (v MsgVersion) Encode(w IWriter) error {
 	if err := v.Addr.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Height.Encode(w); err != nil {
+	if err := w.TWrite(v.Height); err != nil {
 		return err
 	}
 	if err := w.TWrite(v.NodeID); err != nil {
@@ -416,7 +405,7 @@ func (v *MsgVersion) Decode(r IReader) error {
 	if err := v.Addr.Decode(r); err != nil {
 		return err
 	}
-	if err := v.Height.Decode(r); err != nil {
+	if err := r.TRead(&v.Height); err != nil {
 		return err
 	}
 	if err := r.TRead(&v.NodeID); err != nil {

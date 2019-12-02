@@ -1,67 +1,9 @@
 package xginx
 
-import "errors"
-
-type MsgCanclTx struct {
-	Id   HASH256
-	Sigs [][]SigBytes
-}
-
-func (m MsgCanclTx) Type() uint8 {
-	return NT_CANCEL_TX
-}
-
-func (m MsgCanclTx) Encode(w IWriter) error {
-	if err := m.Id.Encode(w); err != nil {
-		return err
-	}
-	err := VarUInt(len(m.Sigs)).Encode(w)
-	if err != nil {
-		return err
-	}
-	for _, vs := range m.Sigs {
-		err := VarUInt(len(vs)).Encode(w)
-		if err != nil {
-			return err
-		}
-		for _, v := range vs {
-			err := v.Encode(w)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (m *MsgCanclTx) Decode(r IReader) error {
-	if err := m.Id.Decode(r); err != nil {
-		return err
-	}
-	num := VarUInt(0)
-	if err := num.Decode(r); err != nil {
-		return err
-	}
-	m.Sigs = make([][]SigBytes, num)
-	for i, _ := range m.Sigs {
-		num := VarUInt(0)
-		err := num.Decode(r)
-		if err != nil {
-			return err
-		}
-		vv := make([]SigBytes, num)
-		for j, _ := range vv {
-			sv := SigBytes{}
-			err := sv.Decode(r)
-			if err != nil {
-				return err
-			}
-			vv[j] = sv
-		}
-		m.Sigs[i] = vv
-	}
-	return nil
-}
+import (
+	"crypto/md5"
+	"errors"
+)
 
 //获取交易验证merkle树
 type MsgGetMerkle struct {
@@ -70,6 +12,11 @@ type MsgGetMerkle struct {
 
 func (m MsgGetMerkle) Type() uint8 {
 	return NT_GET_MERKLE
+
+}
+
+func (m MsgGetMerkle) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (m MsgGetMerkle) Encode(w IWriter) error {
@@ -90,6 +37,10 @@ type MsgTxMerkle struct {
 
 func (m MsgTxMerkle) Type() uint8 {
 	return NT_TX_MERKLE
+}
+
+func (m MsgTxMerkle) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
@@ -228,6 +179,10 @@ func (m MsgGetInv) Type() uint8 {
 	return NT_GET_INV
 }
 
+func (m MsgGetInv) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (m *MsgGetInv) AddInv(typ uint8, id HASH256) {
 	m.Invs = append(m.Invs, Inventory{
 		Typ: typ,
@@ -272,6 +227,10 @@ type MsgInv struct {
 
 func (m MsgInv) Type() uint8 {
 	return NT_INV
+}
+
+func (m MsgInv) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (m *MsgInv) AddInv(typ uint8, id HASH256) {
@@ -324,6 +283,10 @@ func (m *MsgGetTxPool) Add(id HASH256) {
 	m.Skip = append(m.Skip, id)
 }
 
+func (m MsgGetTxPool) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (m MsgGetTxPool) Has(id HASH256) bool {
 	for _, v := range m.Skip {
 		if v.Equal(id) {
@@ -373,6 +336,10 @@ func (m MsgTxPool) Type() uint8 {
 	return NT_TXPOOL
 }
 
+func (m MsgTxPool) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
 func (m *MsgTxPool) Add(tx *TX) {
 	m.Txs = append(m.Txs, tx)
 }
@@ -414,6 +381,20 @@ type MsgTx struct {
 
 func NewMsgTx(tx *TX) *MsgTx {
 	return &MsgTx{Txs: []*TX{tx}}
+}
+
+func (m MsgTx) Id() (MsgId, error) {
+	sum := md5.New()
+	for _, v := range m.Txs {
+		id, err := v.ID()
+		if err != nil {
+			return ErrMsgId, err
+		}
+		sum.Write(id[:])
+	}
+	id := MsgId{}
+	copy(id[:], sum.Sum(nil))
+	return id, nil
 }
 
 func (m MsgTx) Type() uint8 {

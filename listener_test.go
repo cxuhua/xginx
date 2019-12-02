@@ -48,11 +48,7 @@ func (lis *testLisener) GetConfig() *Config {
 	return conf
 }
 
-func (lis *testLisener) OnUpdateHeader(ele *TBEle) {
-
-}
-
-func (lis *testLisener) OnUpdateBlock(blk *BlockInfo) {
+func (lis *testLisener) OnLinkBlock(blk *BlockInfo) {
 
 }
 

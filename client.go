@@ -49,7 +49,7 @@ type Client struct {
 	isopen  bool      //收到msgversion算打开成功
 	Ver     uint32    //节点版本
 	Service uint32    //节点提供的服务
-	Height  BHeight   //节点区块高度
+	Height  uint32    //节点区块高度
 	vmap    *sync.Map //属性存储器
 }
 
@@ -125,57 +125,76 @@ func (c *Client) IsOut() bool {
 }
 
 //请求对方区块头
-func (c *Client) ReqBlockHeaders(bi *BlockIndex, hh uint32) {
-	lh := bi.LastHeight()
-	if lh == InvalidHeight && hh == InvalidHeight {
-		return
-	}
-	//本地无区块头，请求远程的
-	if lh == InvalidHeight && hh != InvalidHeight {
-		rsg := bi.ReqMsgHeaders()
-		c.SendMsg(rsg)
-		return
-	}
-	//远程无区块头，发送本地的
-	if lh != InvalidHeight && hh == InvalidHeight {
-		rsg := bi.GetMsgHeadersUseHeight(hh)
-		c.SendMsg(rsg)
-		return
-	}
-	//本地比远程多,发送本地的过去
-	if lh > hh {
-		rsg := bi.GetMsgHeadersUseHeight(hh)
-		c.SendMsg(rsg)
-		return
-	}
-	//远程比本地多，请求远程的
-	if hh > lh {
-		rsg := bi.ReqMsgHeaders()
-		c.SendMsg(rsg)
-		return
-	}
-	//两边一样多
-}
+//func (c *Client) ReqBlockHeaders(bi *BlockIndex, hh uint32) {
+//	lh := bi.BestHeight()
+//	if lh == InvalidHeight && hh == InvalidHeight {
+//		return
+//	}
+//	//本地无区块头，请求远程的
+//	if lh == InvalidHeight && hh != InvalidHeight {
+//		rsg := bi.ReqMsgHeaders()
+//		c.SendMsg(rsg)
+//		return
+//	}
+//	//远程无区块头，发送本地的
+//	if lh != InvalidHeight && hh == InvalidHeight {
+//		rsg := bi.GetMsgHeadersUseHeight(hh)
+//		c.SendMsg(rsg)
+//		return
+//	}
+//	//本地比远程多,发送本地的过去
+//	if lh > hh {
+//		rsg := bi.GetMsgHeadersUseHeight(hh)
+//		c.SendMsg(rsg)
+//		return
+//	}
+//	//远程比本地多，请求远程的
+//	if hh > lh {
+//		rsg := bi.ReqMsgHeaders()
+//		c.SendMsg(rsg)
+//		return
+//	}
+//	//两边一样多
+//}
 
 func (c *Client) processMsg(m MsgIO) error {
 	ps := GetPubSub()
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
-	case NT_BROAD_HEAD:
-		msg := m.(*MsgBroadHead)
-		key := "R" + string(msg.Id[:])
-		if c.ss.HasPkg(key) {
+	case NT_BROAD_PKG:
+		msg := m.(*MsgBroadPkg)
+		if c.ss.HasPkg(msg.MsgId.RecvKey()) {
 			break
 		}
-		rsg := &MsgBroadAck{Id: msg.Id}
+		//只向最先到达的头发送数据应答
+		rsg := &MsgBroadAck{MsgId: msg.MsgId}
 		c.SendMsg(rsg)
 	case NT_BROAD_ACK:
 		msg := m.(*MsgBroadAck)
-		key := "S" + string(msg.Id[:])
-		if rsg, ok := c.ss.GetPkg(key); ok {
+		//收到应答，有数据就发送回去
+		if rsg, ok := c.ss.GetPkg(msg.MsgId.SendKey()); ok {
 			c.SendMsg(rsg)
 		}
+	case NT_GET_BLOCK:
+		msg := m.(*MsgGetBlock)
+		iter := bi.NewIter()
+		LogInfo("NT_GET_BLOCK", msg.Height)
+		if !iter.SeekHeight(msg.Height) {
+			rsg := NewMsgError(ErrCodeBlockMiss, errors.New("block not found"))
+			c.SendMsg(rsg)
+			break
+		}
+		ele := iter.Curr()
+		blk, err := bi.LoadBlock(ele.MustID())
+		if err != nil {
+			rsg := NewMsgError(ErrCodeBlockMiss, err)
+			c.SendMsg(rsg)
+			break
+		}
+		LogInfo("NT_GET_BLOCK SEND", msg.Height)
+		//发送区块过去
+		c.SendMsg(NewMsgBlock(blk))
 	case NT_GET_TXPOOL:
 		msg := m.(*MsgGetTxPool)
 		tp := bi.GetTxPool()
@@ -221,13 +240,13 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_ERROR:
 		msg := m.(*MsgError)
 		LogError("recv error msg code =", msg.Code, "error =", msg.Error, c.id)
-	case NT_HEADERS:
-		msg := m.(*MsgHeaders)
-		c.Height = msg.Height
-	case NT_GET_HEADERS:
-		msg := m.(*MsgGetHeaders)
-		rsg := bi.GetMsgHeaders(msg)
-		c.SendMsg(rsg)
+	//case NT_HEADERS:
+	//	msg := m.(*MsgHeaders)
+	//	c.Height = msg.Height
+	//case NT_GET_HEADERS:
+	//	msg := m.(*MsgGetHeaders)
+	//	rsg := bi.GetMsgHeaders(msg)
+	//	c.SendMsg(rsg)
 	case NT_GET_INV:
 		msg := m.(*MsgGetInv)
 		if len(msg.Invs) == 0 {
@@ -247,7 +266,7 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_PING:
 		msg := m.(*MsgPing)
 		c.Height = msg.Height
-		rsg := msg.NewPong(bi.GetNodeHeight())
+		rsg := msg.NewPong(bi.BestHeight())
 		c.SendMsg(rsg)
 	case NT_VERSION:
 		msg := m.(*MsgVersion)
@@ -272,7 +291,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 		//连出的判断区块高度
 		if c.IsOut() {
-			c.ReqBlockHeaders(bi, msg.Height.HH)
+			//c.ReqBlockHeaders(bi, msg.Height)
 		}
 	}
 	//发布消息
@@ -403,7 +422,7 @@ func (c *Client) loop() {
 				break
 			}
 			bi := GetBlockIndex()
-			msg := NewMsgPing(bi.GetNodeHeight())
+			msg := NewMsgPing(bi.BestHeight())
 			c.SendMsg(msg)
 			c.pt.Reset(time.Second * time.Duration(Rand(40, 60)))
 		case <-c.ctx.Done():
@@ -417,10 +436,9 @@ func (c *Client) BroadMsg(m MsgIO) {
 	if err != nil {
 		panic(err)
 	}
-	key := "S" + string(id[:])
-	c.ss.SetPkg(key, m)
+	c.ss.SetPkg(id.SendKey(), m)
 	//发送广播包头
-	msg := &MsgBroadHead{Id: id}
+	msg := &MsgBroadPkg{MsgId: id}
 	c.wc <- msg
 }
 

@@ -10,41 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func cancelTxApi(c *gin.Context) {
-	args := struct {
-		Id string `form:"id"`
-	}{}
-	if err := c.ShouldBind(&args); err != nil {
-		c.JSON(http.StatusOK, ApiResult{
-			Code: 100,
-			Msg:  err.Error(),
-		})
-		return
-	}
-	id := NewHASH256(args.Id)
-	bi := GetBlockIndex()
-	tp := bi.GetTxPool()
-	tx, err := tp.Get(id)
-	if err != nil {
-		c.JSON(http.StatusOK, ApiResult{
-			Code: 101,
-			Msg:  "miner not running",
-		})
-		return
-	}
-	msg, err := tx.NewMsgCancelTx(bi)
-	if err != nil {
-		c.JSON(http.StatusOK, ApiResult{
-			Code: 102,
-			Msg:  err.Error(),
-		})
-		return
-	}
-	tp.Del(id)
-	//广播消息
-	Server.BroadMsg(msg)
-}
-
 func setHeaderApi(c *gin.Context) {
 	args := struct {
 		Hex string `form:"hex"` //数据hex编码
@@ -735,8 +700,7 @@ func listClients(c *gin.Context) {
 		Ping    int    `json:"ping"`
 		Id      string `json:"id"`
 		Type    int    `json:"type"`
-		BH      uint32 `json:"bh"`
-		HH      uint32 `json:"hh"`
+		Height  uint32 `json:"height"`
 	}
 	type result struct {
 		Code int    `json:"code"`
@@ -753,35 +717,10 @@ func listClients(c *gin.Context) {
 		i.Ping = v.ping
 		i.Id = fmt.Sprintf("%x", v.id)
 		i.Type = v.typ
-		i.BH = v.Height.BH
-		i.HH = v.Height.HH
+		i.Height = v.Height
 		res.Ips = append(res.Ips, i)
 	}
 	c.JSON(http.StatusOK, res)
-}
-
-//获取区块状态
-func getStatusApi(c *gin.Context) {
-	type state struct {
-		Code  int    `json:"code"`
-		BI    string `json:"bi"`    //最高块id
-		BH    uint32 `json:"bh"`    //区块高度
-		LI    string `json:"li"`    //最新块头
-		HH    uint32 `json:"hh"`    //区块头高度
-		Cache int    `json:"cache"` //缓存使用大小
-		Tps   int    `json:"tps"`   //交易池子交易数量
-	}
-	s := state{}
-	bi := GetBlockIndex()
-	bv := bi.GetBestValue()
-	lv := bi.GetLastValue()
-	s.BI = bv.Id.String()
-	s.BH = bv.Height
-	s.LI = lv.Id.String()
-	s.HH = lv.Height
-	s.Cache = bi.lru.Size()
-	s.Tps = bi.GetTxPool().Len()
-	c.JSON(http.StatusOK, s)
 }
 
 //停止当前创建的区块

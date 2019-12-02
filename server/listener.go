@@ -38,15 +38,11 @@ func (lis *listener) GetConfig() *Config {
 	return lis.conf
 }
 
-func (lis *listener) OnUpdateHeader(ele *TBEle) {
-
-}
-
 func (lis *listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
-func (lis *listener) OnUpdateBlock(blk *BlockInfo) {
+func (lis *listener) OnLinkBlock(blk *BlockInfo) {
 
 }
 

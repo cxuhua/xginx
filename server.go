@@ -290,23 +290,6 @@ func (s *TcpServer) recoverError() {
 	}
 }
 
-func (s *TcpServer) recvMsgCancelTx(c *Client, msg *MsgCanclTx) error {
-	bi := GetBlockIndex()
-	tp := bi.GetTxPool()
-	tx, err := tp.Get(msg.Id)
-	if err != nil {
-		return fmt.Errorf("tx %v not found", msg.Id)
-	}
-	err = tx.VerifyCancel(bi, msg.Sigs)
-	if err != nil {
-		return fmt.Errorf("verify cancel error %w", err)
-	}
-	tp.Del(msg.Id)
-	//继续广播出去
-	s.BroadMsg(msg, c)
-	return nil
-}
-
 func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	bi := GetBlockIndex()
 	rsg := &MsgTx{}
@@ -343,19 +326,6 @@ func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	return nil
 }
 
-//获取一个可以获取此区块头数据的连接
-func (s *TcpServer) findHeaderClient(h uint32) *Client {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, c := range s.clients {
-		if c.Height.HH < h {
-			continue
-		}
-		return c
-	}
-	return nil
-}
-
 //获取一个可以获取此区块数据的连接
 func (s *TcpServer) findBlockClient(h uint32) *Client {
 	s.mu.RLock()
@@ -364,7 +334,7 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 		if c.Service&SERVICE_NODE == 0 {
 			continue
 		}
-		if c.Height.BH < h {
+		if c.Height < h {
 			continue
 		}
 		return c
@@ -376,14 +346,12 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) error {
 	s.single.Lock()
 	defer s.single.Unlock()
-	ps := GetPubSub()
 	bi := GetBlockIndex()
 	//尝试更新区块数据
-	if err := bi.UpdateBlk(blk); err != nil {
+	if err := bi.LinkBlk(blk); err != nil {
 		LogError("update block error", err)
 		return err
 	}
-	ps.Pub(blk, NewUpdateBlockTopic)
 	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
 	dt.Reset(time.Microsecond * 300)
 	return nil
@@ -396,54 +364,13 @@ func (s *TcpServer) reqMsgGetBlock() error {
 	bi := GetBlockIndex()
 	if bi.Len() == 0 {
 		return nil
-	} else if ele, err := bi.GetNextSync(); err != nil {
-		return err
-	} else if c := s.findBlockClient(ele.Height); c == nil {
+	} else if h := bi.GetNextHeight(); h == InvalidHeight {
+		return errors.New("next height invalid")
+	} else if c := s.findBlockClient(h); c == nil {
 		return errors.New("find client error")
 	} else {
-		msg := &MsgGetInv{}
-		msg.AddInv(InvTypeBlock, ele.MustID())
+		msg := &MsgGetBlock{Height: h}
 		c.SendMsg(msg)
-	}
-	return nil
-}
-
-//需要更多的证明
-func (s *TcpServer) reqMoreHeaders(c *Client, id HASH256, cnt int) error {
-	msg := &MsgGetHeaders{}
-	msg.Start = id
-	msg.Limit = VarInt(cnt)
-	if conf.IsGenesisId(id) {
-		msg.Skip = 0
-	} else {
-		msg.Skip = 1
-	}
-	c.SendMsg(msg)
-	return nil
-}
-
-//下载区块头
-//无法连接并存在最后一个,回退到最后存在的那个继续连接
-//需要提供证明比我的区块长的列表,后续连接的区块数量比我回退的多
-func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
-	s.single.Lock()
-	defer s.single.Unlock()
-	//更新节点区块高度
-	bi := GetBlockIndex()
-	//返回合并信息
-	cnt, lid, err := bi.MergeHead(msg.Headers)
-	if err == NeedMoreHeader {
-		return s.reqMoreHeaders(c, lid, cnt)
-	} else if err != nil {
-		return err
-	}
-	//请求下一批区块头
-	if cc := s.findHeaderClient(msg.Height.HH); cc != nil {
-		cc.ReqBlockHeaders(bi, msg.Height.HH)
-	}
-	//立即请求数据区块
-	if cnt > 0 {
-		s.dt.Reset(time.Millisecond * 300)
 	}
 	return nil
 }
@@ -511,11 +438,6 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				if err != nil {
 					LogError(err)
 				}
-			} else if msg, ok := m.m.(*MsgHeaders); ok && len(msg.Headers) > 0 {
-				err := s.recvMsgHeaders(m.c, msg)
-				if err != nil {
-					LogError(err)
-				}
 			} else if msg, ok := m.m.(*MsgBlock); ok {
 				err := s.recvMsgBlock(m.c, msg.Blk, s.dt)
 				if err != nil {
@@ -525,11 +447,6 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
-				}
-			} else if msg, ok := m.m.(*MsgCanclTx); ok {
-				err := s.recvMsgCancelTx(m.c, msg)
-				if err != nil {
-					m.c.SendMsg(NewMsgError(ErrCodeCancelTx, err))
 				}
 			}
 			if msg, ok := m.m.(MsgIO); ok {

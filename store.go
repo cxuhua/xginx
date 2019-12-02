@@ -200,9 +200,8 @@ func (tk CoinKeyValue) GetKey() []byte {
 }
 
 var (
-	BestBlockKey  = []byte("BestBlockKey")  //最后区块数据
-	LastHeaderKey = []byte("LastHeaderKey") //最后区块头
-	InvalidBest   = NewInvalidBest()        //无效的状态
+	BestBlockKey = []byte("BestBlockKey") //最后区块数据
+	InvalidBest  = NewInvalidBest()       //无效的状态
 )
 
 type BestValue struct {

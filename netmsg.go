@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"crypto/md5"
 	"errors"
 	"fmt"
 )
@@ -27,10 +28,12 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgBlock{}
 	case NT_GET_INV:
 		m = &MsgGetInv{}
-	case NT_GET_HEADERS:
-		m = &MsgGetHeaders{}
-	case NT_HEADERS:
-		m = &MsgHeaders{}
+	case NT_GET_BLOCK:
+		m = &MsgGetBlock{}
+	//case NT_GET_HEADERS:
+	//	m = &MsgGetHeaders{}
+	//case NT_HEADERS:
+	//	m = &MsgHeaders{}
 	case NT_ERROR:
 		m = &MsgError{}
 	case NT_ALERT:
@@ -49,12 +52,10 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgGetTxPool{}
 	case NT_TXPOOL:
 		m = &MsgTxPool{}
-	case NT_CANCEL_TX:
-		m = &MsgCanclTx{}
 	case NT_BROAD_ACK:
 		m = &MsgBroadAck{}
-	case NT_BROAD_HEAD:
-		m = &MsgBroadHead{}
+	case NT_BROAD_PKG:
+		m = &MsgBroadPkg{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
@@ -66,7 +67,18 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 }
 
 type MsgGetAddrs struct {
-	MsgEmpty
+}
+
+func (e MsgGetAddrs) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
+func (e MsgGetAddrs) Encode(w IWriter) error {
+	return nil
+}
+
+func (e *MsgGetAddrs) Decode(r IReader) error {
+	return nil
 }
 
 func (m MsgGetAddrs) Type() uint8 {
@@ -89,8 +101,8 @@ func NewMsgAlert(msg string, sig *SigValue) *MsgAlert {
 	return m
 }
 
-func (m MsgAlert) Id() ([16]byte, error) {
-
+func (m MsgAlert) Id() (MsgId, error) {
+	return md5.Sum(m.Msg), nil
 }
 
 //验证消息来源
@@ -140,6 +152,10 @@ type MsgAddrs struct {
 
 func (m MsgAddrs) Type() uint8 {
 	return NT_ADDRS
+}
+
+func (m MsgAddrs) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
 }
 
 func (m MsgAddrs) Encode(w IWriter) error {
