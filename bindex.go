@@ -509,31 +509,31 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 }
 
 //断开最后一个内存中的头
-func (bi *BlockIndex) unlinkback() error {
+func (bi *BlockIndex) unlinkback() {
 	le := bi.lis.Back()
 	if le == nil {
-		return nil
+		return
 	}
 	tv := le.Value.(*TBEle)
 	delete(bi.hmap, tv.Height)
 	id, err := tv.ID()
 	if err != nil {
-		return err
+		panic(err)
 	}
 	delete(bi.imap, id)
 	bi.lis.Remove(le)
-	return nil
 }
 
-func (bi *BlockIndex) linkback(e *TBEle) error {
+func (bi *BlockIndex) LinkBack(e *TBEle) {
+	bi.rwm.Lock()
+	defer bi.rwm.Unlock()
 	ele := bi.lis.PushBack(e)
 	bi.hmap[e.Height] = ele
 	if id, err := e.ID(); err != nil {
-		return err
+		panic(err)
 	} else {
 		bi.imap[id] = ele
 	}
-	return nil
 }
 
 func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
@@ -876,10 +876,6 @@ func (bi *BlockIndex) unlinkLast() error {
 	if err != nil {
 		return err
 	}
-	//如果没有下载区块数据直接断开区块头
-	if !last.Blk.HasData() {
-		return bi.unlinkback()
-	}
 	blk, err := bi.LoadBlock(id)
 	if err != nil {
 		return err
@@ -927,11 +923,13 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	//删除区块头
 	bt.Del(BLOCK_PREFIX, id[:])
 	//恢复数据
-	if err := bi.db.Index().Write(bt); err != nil {
+	err = bi.db.Index().Write(bt)
+	if err != nil {
 		return err
 	}
 	//断开链接
-	return bi.unlinkback()
+	bi.unlinkback()
+	return nil
 }
 
 //获取下个需要同步的区块 id
@@ -1094,6 +1092,7 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	rt := bt.NewRev()
 	//写入最好区块数据信息
 	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
+	//还原写入
 	if bv := bi.GetBestValue(); bv.IsValid() {
 		rt.Put(BestBlockKey, bv.Bytes())
 	}
@@ -1121,23 +1120,16 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 		return err
 	}
 	bt.Put(BLOCK_PREFIX, bid[:], hbs)
-	//连接
-	bi.rwm.Lock()
-	err = bi.linkback(blk.Meta)
-	bi.rwm.Unlock()
-	if err != nil {
-		return err
-	}
 	//写入索引数据
 	err = bi.db.Index().Write(bt)
 	if err != nil {
-		bi.rwm.Lock()
-		err = bi.unlinkback()
-		bi.rwm.Unlock()
 		return err
 	}
+	//连接必定不能出错
+	bi.LinkBack(blk.Meta)
 	//删除交易池中存在这个区块中的交易
 	bi.txp.DelTxs(blk.Txs)
+	//事件通知
 	bi.lptr.OnLinkBlock(blk)
 	return nil
 }

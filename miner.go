@@ -308,13 +308,15 @@ finished:
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if err = bi.LinkBlk(blk); err != nil {
-		LogError("update new block error unlink", err)
-		return bi.UnlinkLast()
+		LogError("link new block error", err)
+		return err
 	}
 	//广播更新了区块数据
 	ps.Pub(blk, NewLinkBlockTopic)
-	//广播区块
-	Server.BroadMsg(&MsgBlock{Blk: blk, Flags: MsgBlockNewFlags})
+	Server.BroadMsg(&MsgBlock{
+		Blk:   blk,
+		Flags: MsgBlockNewFlags,
+	})
 	return nil
 }
 

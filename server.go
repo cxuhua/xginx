@@ -351,7 +351,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock, dt *time.Timer) error
 	bi := GetBlockIndex()
 	//尝试更新区块数据
 	if err := bi.LinkBlk(msg.Blk); err != nil {
-		LogError("update block error", err)
+		LogError("link block error", err)
 		return err
 	}
 	ps := GetPubSub()

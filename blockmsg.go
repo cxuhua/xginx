@@ -1,6 +1,9 @@
 package xginx
 
-import "crypto/md5"
+import (
+	"crypto/md5"
+	"errors"
+)
 
 //NT_GET_BLOCK
 type MsgGetBlock struct {
@@ -63,16 +66,26 @@ func (m MsgBlock) IsBroad() bool {
 }
 
 func (m MsgBlock) Encode(w IWriter) error {
+	if m.Blk == nil {
+		return errors.New("blk nil")
+	}
 	if err := w.TWrite(m.Flags); err != nil {
 		return err
 	}
-	return m.Blk.Encode(w)
+	if err := m.Blk.Encode(w); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *MsgBlock) Decode(r IReader) error {
 	if err := r.TRead(&m.Flags); err != nil {
 		return err
 	}
-	m.Blk = &BlockInfo{}
-	return m.Blk.Decode(r)
+	blk := &BlockInfo{}
+	if err := blk.Decode(r); err != nil {
+		return err
+	}
+	m.Blk = blk
+	return nil
 }
