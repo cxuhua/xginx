@@ -27,11 +27,11 @@ var (
 )
 
 type xhttp struct {
-	tmu    sync.RWMutex
-	shttp  *http.Server
-	ctx    context.Context
-	cancel context.CancelFunc
-	cache  *cache.Cache
+	tmu   sync.RWMutex
+	shttp *http.Server
+	cctx  context.Context
+	cfun  context.CancelFunc
+	cache *cache.Cache
 }
 
 const (
@@ -191,7 +191,7 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 }
 
 func (h *xhttp) Start(ctx context.Context, lis IListener) {
-	h.ctx, h.cancel = context.WithCancel(ctx)
+	h.cctx, h.cfun = context.WithCancel(ctx)
 	addr := fmt.Sprintf(":%d", conf.HttpPort)
 	m := gin.Default()
 	h.init(m, lis)
@@ -199,7 +199,7 @@ func (h *xhttp) Start(ctx context.Context, lis IListener) {
 		Addr:    addr,
 		Handler: m,
 		BaseContext: func(listener net.Listener) context.Context {
-			return h.ctx
+			return h.cctx
 		},
 	}
 	go func() {
@@ -212,13 +212,13 @@ func (h *xhttp) Start(ctx context.Context, lis IListener) {
 }
 
 func (h *xhttp) Stop() {
-	h.cancel()
-	_ = h.shttp.Shutdown(h.ctx)
+	h.cfun()
+	_ = h.shttp.Shutdown(h.cctx)
 }
 
 func (h *xhttp) Wait() {
 	select {
-	case <-h.ctx.Done():
+	case <-h.cctx.Done():
 		LogInfo("stop http done")
 	}
 }

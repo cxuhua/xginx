@@ -130,14 +130,6 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	msg, err := tx.NewMsgCancelTx(bi)
-	if err != nil {
-		panic(err)
-	}
-	err = tx.VerifyCancel(bi, msg.Sigs)
-	if err != nil {
-		panic(err)
-	}
 	err = blk.AddTx(bi, tx)
 	if err != nil {
 		panic(err)

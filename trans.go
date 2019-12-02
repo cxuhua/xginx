@@ -60,7 +60,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	}
 	//计算使用哪些输入
 	for _, acc := range m.Acts {
-		//获取转出账号信息
+		//获取转出账号金额信息
 		ds, err := m.getAddressCoins(acc)
 		if err != nil {
 			return nil, err

@@ -13,7 +13,7 @@ const (
 	MAX_LOG_SIZE = 1024 * 1024 * 2
 	//最大扩展数据
 	MAX_EXT_SIZE = 4 * 1024
-	//
+	//锁定时间分界值
 	LOCKTIME_THRESHOLD = uint32(500000000)
 )
 
@@ -306,7 +306,7 @@ func (v *BlockInfo) SetMerkle() error {
 	return nil
 }
 
-//检查引用的tx
+//检查引用的tx是否存在区块中
 func (blk *BlockInfo) checkrefstx(bi *BlockIndex, tx *TX) error {
 	tp := bi.GetTxPool()
 	for _, in := range tx.Ins {
@@ -355,7 +355,7 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	return nil
 }
 
-//查找区块内的单个交易
+//查找区块内的单个交易是否存在
 func (blk *BlockInfo) HasTx(id HASH256) bool {
 	for _, tx := range blk.Txs {
 		tid, err := tx.ID()
@@ -367,28 +367,6 @@ func (blk *BlockInfo) HasTx(id HASH256) bool {
 		}
 	}
 	return false
-}
-
-//查找区块内的交易
-func (blk *BlockInfo) HasTxs(ids []HASH256) bool {
-	if len(ids) == 0 {
-		return true
-	}
-	imap := map[HASH256]bool{}
-	for _, tx := range blk.Txs {
-		tid, err := tx.ID()
-		if err != nil {
-			return false
-		}
-		imap[tid] = true
-	}
-	for _, id := range ids {
-		_, has := imap[id]
-		if !has {
-			return false
-		}
-	}
-	return true
 }
 
 //添加单个交易

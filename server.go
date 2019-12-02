@@ -38,6 +38,7 @@ func (node AddrNode) IsNeedConn() bool {
 	return false
 }
 
+//地址表
 type AddrMap struct {
 	mu    sync.RWMutex
 	addrs map[string]*AddrNode
@@ -88,27 +89,29 @@ var (
 )
 
 type TcpServer struct {
-	lptr    IListener
-	tcplis  net.Listener
-	addr    *net.TCPAddr
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.RWMutex
-	err     interface{}
-	wg      sync.WaitGroup
-	clients map[uint64]*Client //连接的所有client
-	addrs   *AddrMap
-	single  sync.Mutex
-	dopt    chan int //获取线程做一些操作
-	dt      *time.Timer
-	pt      *time.Timer
-	pkgs    *cache.Cache //包数据缓存
+	lptr   IListener
+	tcplis net.Listener
+	addr   *net.TCPAddr
+	cctx   context.Context
+	cfun   context.CancelFunc
+	mu     sync.RWMutex
+	err    interface{}
+	wg     sync.WaitGroup
+	cls    map[uint64]*Client //连接的所有client
+	addrs  *AddrMap
+	single sync.Mutex
+	dopt   chan int //获取线程做一些操作
+	dt     *time.Timer
+	pt     *time.Timer
+	pkgs   *cache.Cache //包数据缓存
 }
 
+//操作通道
 func (s *TcpServer) DoOpt(opt int) {
 	s.dopt <- opt
 }
 
+//获取节点保留的地址
 func (s *TcpServer) Addrs() []*AddrNode {
 	s.addrs.mu.RLock()
 	defer s.addrs.mu.RUnlock()
@@ -119,11 +122,12 @@ func (s *TcpServer) Addrs() []*AddrNode {
 	return ds
 }
 
+//获取连接的客户端
 func (s *TcpServer) Clients() []*Client {
 	cs := []*Client{}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, v := range s.clients {
+	for _, v := range s.cls {
 		cs = append(cs, v)
 	}
 	return cs
@@ -133,7 +137,7 @@ func (s *TcpServer) Clients() []*Client {
 func (s *TcpServer) IsOpen(id uint64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	_, has := s.clients[id]
+	_, has := s.cls[id]
 	return has
 }
 
@@ -167,7 +171,7 @@ func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 		return false
 	}
 	//一般不会发送给接收到数据的节点
-	for _, c := range s.clients {
+	for _, c := range s.cls {
 		if skipf(c) {
 			continue
 		}
@@ -179,7 +183,7 @@ func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 func (s *TcpServer) IsAddrOpen(addr NetAddr) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, v := range s.clients {
+	for _, v := range s.cls {
 		if v.Addr.Equal(addr) {
 			return true
 		}
@@ -190,10 +194,10 @@ func (s *TcpServer) IsAddrOpen(addr NetAddr) bool {
 func (s *TcpServer) HasClient(id uint64, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.clients[id]
+	_, ok := s.cls[id]
 	if !ok {
 		c.id = id
-		s.clients[id] = c
+		s.cls[id] = c
 	}
 	return ok
 }
@@ -201,17 +205,17 @@ func (s *TcpServer) HasClient(id uint64, c *Client) bool {
 func (s *TcpServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.clients, id)
+	delete(s.cls, id)
 }
 
 func (s *TcpServer) AddClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.clients[id] = c
+	s.cls[id] = c
 }
 
 func (s *TcpServer) Stop() {
-	s.cancel()
+	s.cfun()
 }
 
 func (s *TcpServer) Run() {
@@ -230,7 +234,7 @@ func (s *TcpServer) NewClientWithConn(conn net.Conn) *Client {
 
 func (s *TcpServer) NewClient() *Client {
 	c := &Client{ss: s}
-	c.ctx, c.cancel = context.WithCancel(s.ctx)
+	c.cctx, c.cfun = context.WithCancel(s.cctx)
 	c.wc = make(chan MsgIO, 4)
 	c.rc = make(chan MsgIO, 4)
 	c.pt = time.NewTimer(time.Second * time.Duration(Rand(40, 60)))
@@ -242,7 +246,7 @@ func (s *TcpServer) NewClient() *Client {
 func (s *TcpServer) ConnNum() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.clients)
+	return len(s.cls)
 }
 
 //开始连接一个地址
@@ -280,12 +284,12 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 
 func (s *TcpServer) recoverError() {
 	if gin.Mode() == gin.DebugMode {
-		s.cancel()
+		s.cfun()
 	} else if err := recover(); err != nil {
 		s.err = err
-		s.cancel()
+		s.cfun()
 	} else {
-		s.cancel()
+		s.cfun()
 	}
 }
 
@@ -329,7 +333,7 @@ func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 func (s *TcpServer) findBlockClient(h uint32) *Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	for _, c := range s.clients {
+	for _, c := range s.cls {
 		if c.Service&SERVICE_NODE == 0 {
 			continue
 		}
@@ -377,6 +381,7 @@ func (s *TcpServer) reqMsgGetBlock() {
 		next = bv.Height + 1
 		last = bv.Id
 	}
+	//查询拥有这个高度的客户端
 	c := s.findBlockClient(next)
 	if c != nil {
 		msg := &MsgGetBlock{
@@ -433,7 +438,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 			case 2:
 				LogInfo(opt)
 			}
-		case <-s.ctx.Done():
+		case <-s.cctx.Done():
 			_ = s.tcplis.Close()
 			return
 		case cv := <-ch:
@@ -545,7 +550,7 @@ func (s *TcpServer) run() {
 			continue
 		} else {
 			s.err = err
-			s.cancel()
+			s.cfun()
 			break
 		}
 	}
@@ -576,7 +581,7 @@ func (s *TcpServer) HasPkg(id string) bool {
 
 func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
 	s.lptr = lptr
-	s.ctx, s.cancel = context.WithCancel(ctx)
+	s.cctx, s.cfun = context.WithCancel(ctx)
 	s.addr = conf.GetTcpListenAddr().ToTcpAddr()
 	tcplis, err := net.ListenTCP(s.addr.Network(), s.addr)
 	if err != nil {
@@ -588,7 +593,7 @@ func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
 
 func NewTcpServer() IServer {
 	s := &TcpServer{}
-	s.clients = map[uint64]*Client{}
+	s.cls = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)

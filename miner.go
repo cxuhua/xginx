@@ -137,15 +137,15 @@ var (
 )
 
 type minerEngine struct {
-	wg     sync.WaitGroup     //
-	ctx    context.Context    //
-	cancel context.CancelFunc //
-	acc    *Account
-	mu     sync.RWMutex
-	ogb    ONCE
-	sch    chan bool        //停止当前正在创建的区块
-	mbv    HeaderBytes      //正在处理的区块头数据
-	mch    chan HeaderBytes //接收一个区块头数据进行验证
+	wg   sync.WaitGroup     //
+	cctx context.Context    //
+	cfun context.CancelFunc //
+	acc  *Account
+	mu   sync.RWMutex
+	ogb  ONCE
+	sch  chan bool        //停止当前正在创建的区块
+	mbv  HeaderBytes      //正在处理的区块头数据
+	mch  chan HeaderBytes //接收一个区块头数据进行验证
 }
 
 func newMinerEngine() IMiner {
@@ -298,9 +298,9 @@ finished:
 		case <-m.sch:
 			mg.StopAndWait()
 			return errors.New("force stop current gen block")
-		case <-m.ctx.Done():
+		case <-m.cctx.Done():
 			mg.StopAndWait()
-			return m.ctx.Err()
+			return m.cctx.Err()
 		}
 	}
 	if !genok {
@@ -388,7 +388,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			if conf.MinerNum > 0 {
 				dt.Reset(time.Second * 30)
 			}
-		case <-m.ctx.Done():
+		case <-m.cctx.Done():
 			return
 		}
 	}
@@ -397,7 +397,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 //开始工作
 func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	ps := GetPubSub()
-	m.ctx, m.cancel = context.WithCancel(ctx)
+	m.cctx, m.cfun = context.WithCancel(ctx)
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
 	//每隔30秒开始自动创建区块
@@ -409,7 +409,7 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 
 //停止
 func (m *minerEngine) Stop() {
-	m.cancel()
+	m.cfun()
 }
 
 //等待停止

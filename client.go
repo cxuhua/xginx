@@ -35,8 +35,8 @@ const (
 type Client struct {
 	*NetStream
 	typ     int
-	ctx     context.Context
-	cancel  context.CancelFunc
+	cctx    context.Context
+	cfun    context.CancelFunc
 	wc      chan MsgIO
 	rc      chan MsgIO
 	Addr    NetAddr
@@ -124,6 +124,7 @@ func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
 }
 
+//发送区块到远程节点
 func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 	bi := GetBlockIndex()
 	iter := bi.NewIter()
@@ -272,12 +273,12 @@ func (c *Client) processMsg(m MsgIO) error {
 
 func (c *Client) recoverError() {
 	if gin.Mode() == gin.DebugMode {
-		c.cancel()
+		c.cfun()
 		return
 	}
 	if err := recover(); err != nil {
 		c.err = err
-		c.cancel()
+		c.cfun()
 	}
 }
 
@@ -352,7 +353,7 @@ func (c *Client) loop() {
 			m, err := c.ReadMsg()
 			if err != nil {
 				c.err = err
-				c.cancel()
+				c.cfun()
 				break
 			}
 			c.rc <- m
@@ -363,7 +364,7 @@ func (c *Client) loop() {
 		case wp := <-c.wc:
 			if err := c.WriteMsg(wp); err != nil {
 				c.err = fmt.Errorf("write msg error %v", err)
-				c.cancel()
+				c.cfun()
 				return
 			}
 		case rp := <-c.rc:
@@ -396,7 +397,7 @@ func (c *Client) loop() {
 			msg := NewMsgPing(bi.BestHeight())
 			c.SendMsg(msg)
 			c.pt.Reset(time.Second * time.Duration(Rand(40, 60)))
-		case <-c.ctx.Done():
+		case <-c.cctx.Done():
 			return
 		}
 	}
@@ -418,5 +419,5 @@ func (c *Client) SendMsg(m MsgIO) {
 }
 
 func (c *Client) Close() {
-	c.cancel()
+	c.cfun()
 }
