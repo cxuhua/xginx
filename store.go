@@ -65,7 +65,7 @@ func getDBKey(ks ...[]byte) []byte {
 	return k
 }
 
-//事物接口
+//事务接口
 type TRImp interface {
 	Has(ks ...[]byte) (bool, error)
 	Put(ks ...[]byte) error
@@ -96,7 +96,8 @@ type DBImp interface {
 var (
 	BLOCK_PREFIX = []byte{1} //块头信息前缀 ->blkmeta
 	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
-	COIN_PREFIX  = []byte{3} //积分相关存储 pkh_txid_idx -> amount
+	COIN_PREFIX  = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
+	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_txid -> blkid+txidx
 )
 
 //金额记录

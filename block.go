@@ -19,8 +19,8 @@ const (
 
 //存储交易索引值
 type TxValue struct {
-	BlkId  HASH256 //块hash
-	TxsIdx VarUInt //txs 索引
+	BlkId HASH256 //块hash
+	TxIdx VarUInt //txs 索引
 }
 
 func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
@@ -28,7 +28,7 @@ func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
 	if err != nil {
 		return nil, err
 	}
-	uidx := v.TxsIdx.ToInt()
+	uidx := v.TxIdx.ToInt()
 	if uidx < 0 || uidx >= len(blk.Txs) {
 		return nil, errors.New("txsidx out of bound")
 	}
@@ -39,7 +39,7 @@ func (v TxValue) Encode(w IWriter) error {
 	if err := v.BlkId.Encode(w); err != nil {
 		return err
 	}
-	if err := v.TxsIdx.Encode(w); err != nil {
+	if err := v.TxIdx.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -49,7 +49,7 @@ func (v *TxValue) Decode(r IReader) error {
 	if err := v.BlkId.Decode(r); err != nil {
 		return err
 	}
-	if err := v.TxsIdx.Decode(r); err != nil {
+	if err := v.TxIdx.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -266,11 +266,71 @@ func (v *BlockInfo) CheckCoinbase() error {
 }
 
 //写入交易索引
-func (v *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
-	for i, tx := range v.Txs {
-		err := tx.Write(bi, v, i, bt)
+func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
+	bid, err := blk.ID()
+	if err != nil {
+		return err
+	}
+	//TXP_PREFIX + pkh + txid -> txvalue
+	for idx, tx := range blk.Txs {
+		id, err := tx.ID()
 		if err != nil {
 			return err
+		}
+		vval := TxValue{
+			TxIdx: VarUInt(idx),
+			BlkId: bid,
+		}
+		vbys, err := vval.Bytes()
+		if err != nil {
+			return err
+		}
+		bt.Put(TXS_PREFIX, id[:], vbys)
+		err = tx.writetx(bi, bt)
+		if err != nil {
+			return err
+		}
+	}
+	for idx, tx := range blk.Txs {
+		id, err := tx.ID()
+		if err != nil {
+			return err
+		}
+		vval := TxValue{
+			TxIdx: VarUInt(idx),
+			BlkId: bid,
+		}
+		vbys, err := vval.Bytes()
+		if err != nil {
+			return err
+		}
+		//交易中有哪些账户
+		vps := map[HASH160]bool{}
+		for _, in := range tx.Ins {
+			if in.IsCoinBase() {
+				continue
+			}
+			out, err := in.LoadTxOut(bi)
+			if err != nil {
+				return err
+			}
+			pkh, err := out.Script.GetPkh()
+			if err != nil {
+				return err
+			}
+			vps[pkh] = true
+		}
+		for _, out := range tx.Outs {
+			pkh, err := out.Script.GetPkh()
+			if err != nil {
+				return err
+			}
+			vps[pkh] = true
+		}
+		for pkh, _ := range vps {
+			key := append([]byte{}, pkh[:]...)
+			key = append(key, id[:]...)
+			bt.Put(TXP_PREFIX, key, vbys)
 		}
 	}
 	return nil
@@ -806,28 +866,11 @@ func (tx *TX) IsCoinBase() bool {
 }
 
 //写入交易信息索引和回退索引
-func (tx *TX) Write(bi *BlockIndex, blk *BlockInfo, idx int, bt *Batch) error {
+func (tx *TX) writetx(bi *BlockIndex, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
-	id, err := tx.ID()
-	if err != nil {
-		return err
-	}
-	vval := TxValue{
-		TxsIdx: VarUInt(idx),
-	}
-	if bid, err := blk.ID(); err != nil {
-		return err
-	} else {
-		vval.BlkId = bid
-	}
-	vbys, err := vval.Bytes()
-	if err != nil {
-		return err
-	}
-	bt.Put(TXS_PREFIX, id[:], vbys)
 	//输入coin
 	for _, in := range tx.Ins {
 		if in.IsCoinBase() {

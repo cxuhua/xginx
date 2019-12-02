@@ -113,7 +113,6 @@ func (lis *listener) OnStartup() {
 
 //当账户没有私钥时调用此方法签名
 //singer 签名器
-//acc 账户
 //wits 脚本对象
 func (lis *listener) OnSignTx(singer ISigner, wits *WitnessScript) error {
 	return errors.New("not imp OnSignTx")
@@ -122,7 +121,7 @@ func (lis *listener) OnSignTx(singer ISigner, wits *WitnessScript) error {
 //完成区块
 func (lis *listener) OnFinished(blk *BlockInfo) error {
 	if len(blk.Txs) == 0 {
-		return errors.New("txs miss")
+		return errors.New("coinbase tx miss")
 	}
 	tx := blk.Txs[0]
 	if !tx.IsCoinBase() {
