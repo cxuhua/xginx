@@ -49,7 +49,7 @@ func GetTestBlockIndex() *BlockIndex {
 func TestBlockChain(t *testing.T) {
 	bi := GetTestBlockIndex()
 	defer bi.Close()
-	testnum := uint32(5)
+	testnum := uint32(2017)
 	for i := uint32(0); i < testnum; i++ {
 		time.Sleep(time.Second)
 		cb := NewTestBlock(bi)

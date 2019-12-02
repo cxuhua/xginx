@@ -333,6 +333,9 @@ func (blk *BlockInfo) checkrefstx(bi *BlockIndex, tx *TX) error {
 //添加多个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
+	if len(txs) == 0 {
+		return errors.New("txs empty")
+	}
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
