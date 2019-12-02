@@ -240,6 +240,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()
 		tx := cur.Value.(*TX)
+		//未到时间的交易忽略
 		if err := tx.CheckLockTime(blk); err != nil {
 			continue
 		}
