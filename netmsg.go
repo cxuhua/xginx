@@ -30,10 +30,6 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgGetInv{}
 	case NT_GET_BLOCK:
 		m = &MsgGetBlock{}
-	//case NT_GET_HEADERS:
-	//	m = &MsgGetHeaders{}
-	//case NT_HEADERS:
-	//	m = &MsgHeaders{}
 	case NT_ERROR:
 		m = &MsgError{}
 	case NT_ALERT:
