@@ -442,7 +442,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 					LogError(err)
 				}
 			} else if msg, ok := m.m.(*MsgBlock); ok {
-				err := s.recvMsgBlock(m.c, msg.Blk, s.dt)
+				err := s.recvMsgBlock(m.c, msg, s.dt)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
