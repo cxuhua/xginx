@@ -13,50 +13,101 @@ import (
 	"time"
 )
 
+type NTType uint8
+
+func (t NTType) String() string {
+	switch t {
+	case NT_VERSION:
+		return "NT_VERSION"
+	case NT_PING:
+		return "NT_PING"
+	case NT_PONG:
+		return "NT_PONG"
+	case NT_GET_ADDRS:
+		return "NT_GET_ADDRS"
+	case NT_ADDRS:
+		return "NT_ADDRS"
+	case NT_INV:
+		return "NT_INV"
+	case NT_GET_INV:
+		return "NT_GET_INV"
+	case NT_TX:
+		return "NT_TX"
+	case NT_BLOCK:
+		return "NT_BLOCK"
+	case NT_GET_BLOCK:
+		return "NT_GET_BLOCK"
+	case NT_ERROR:
+		return "NT_ERROR"
+	case NT_ALERT:
+		return "NT_ALERT"
+	case NT_FILTER_LOAD:
+		return "NT_FILTER_LOAD"
+	case NT_FILTER_ADD:
+		return "NT_FILTER_ADD"
+	case NT_FILTER_CLEAR:
+		return "NT_FILTER_CLEAR"
+	case NT_GET_MERKLE:
+		return "NT_GET_MERKLE"
+	case NT_TX_MERKLE:
+		return "NT_TX_MERKLE"
+	case NT_GET_TXPOOL:
+		return "NT_GET_TXPOOL"
+	case NT_TXPOOL:
+		return "NT_TXPOOL"
+	case NT_BROAD_PKG:
+		return "NT_BROAD_PKG"
+	case NT_BROAD_ACK:
+		return "NT_BROAD_ACK"
+	default:
+		return "NT_UNKNOW"
+	}
+}
+
 //协议包标识
 const (
-	NT_VERSION = uint8(1)
+	NT_VERSION = NTType(1)
 	//ping/pong
-	NT_PING = uint8(2)
-	NT_PONG = uint8(3)
+	NT_PING = NTType(2)
+	NT_PONG = NTType(3)
 	//获取节点连接的其他地址
-	NT_GET_ADDRS = uint8(4)
-	NT_ADDRS     = uint8(5)
+	NT_GET_ADDRS = NTType(4)
+	NT_ADDRS     = NTType(5)
 	//inv 交易或者区块通报
 	//当有新的交易或者区块生成通报给周边的节点
-	NT_INV = uint8(6)
+	NT_INV = NTType(6)
 	//获取交易或者区块
-	NT_GET_INV = uint8(7)
+	NT_GET_INV = NTType(7)
 	//获取交易的返回
-	NT_TX = uint8(8)
+	NT_TX = NTType(8)
 	//获取区块的返回
-	NT_BLOCK = uint8(9)
+	NT_BLOCK = NTType(9)
 	//获取区块按高度
-	NT_GET_BLOCK = uint8(10)
+	NT_GET_BLOCK = NTType(10)
 	//返回一个错误信息
-	NT_ERROR = uint8(12)
+	NT_ERROR = NTType(12)
 	//消息通知
-	NT_ALERT = uint8(13)
+	NT_ALERT = NTType(13)
 	//过滤器 加载 添加 清除
-	NT_FILTER_LOAD  = uint8(14)
-	NT_FILTER_ADD   = uint8(15)
-	NT_FILTER_CLEAR = uint8(16)
+	NT_FILTER_LOAD  = NTType(14)
+	NT_FILTER_ADD   = NTType(15)
+	NT_FILTER_CLEAR = NTType(16)
 	//交易merkle树
-	NT_GET_MERKLE = uint8(17)
-	NT_TX_MERKLE  = uint8(18)
+	NT_GET_MERKLE = NTType(17)
+	NT_TX_MERKLE  = NTType(18)
 	//获取内存交易池
-	NT_GET_TXPOOL = uint8(19)
-	NT_TXPOOL     = uint8(20)
+	NT_GET_TXPOOL = NTType(19)
+	NT_TXPOOL     = NTType(20)
 	//广播包头和响应
-	NT_BROAD_PKG = uint8(0xf0)
-	NT_BROAD_ACK = uint8(0xf1)
+	NT_BROAD_PKG = NTType(0xf0)
+	NT_BROAD_ACK = NTType(0xf1)
 )
 
 type MsgBroadAck struct {
 	MsgId MsgId
 }
 
-func (e MsgBroadAck) Type() uint8 {
+func (e MsgBroadAck) Type() NTType {
 	return NT_BROAD_ACK
 }
 
@@ -80,7 +131,7 @@ func (m MsgBroadPkg) Id() (MsgId, error) {
 	return ErrMsgId, NotIdErr
 }
 
-func (e MsgBroadPkg) Type() uint8 {
+func (e MsgBroadPkg) Type() NTType {
 	return NT_BROAD_PKG
 }
 
@@ -111,7 +162,7 @@ func (m MsgId) RecvKey() string {
 //协议消息
 type MsgIO interface {
 	Id() (MsgId, error) //实现了此方法的包才能进行广播，负责返回 NotIdErr
-	Type() uint8
+	Type() NTType
 	Encode(w IWriter) error
 	Decode(r IReader) error
 }
@@ -142,7 +193,7 @@ func NewMsgError(code int, err error) *MsgError {
 	}
 }
 
-func (e MsgError) Type() uint8 {
+func (e MsgError) Type() NTType {
 	return NT_ERROR
 }
 
@@ -261,7 +312,7 @@ func (v MsgPing) Id() (MsgId, error) {
 	return ErrMsgId, NotIdErr
 }
 
-func (v MsgPing) Type() uint8 {
+func (v MsgPing) Type() NTType {
 	return NT_PING
 }
 
@@ -302,7 +353,7 @@ type MsgPong struct {
 	Height uint32 //获取对方的高度
 }
 
-func (v MsgPong) Type() uint8 {
+func (v MsgPong) Type() NTType {
 	return NT_PONG
 }
 
@@ -365,7 +416,7 @@ func (v MsgVersion) Id() (MsgId, error) {
 	return ErrMsgId, NotIdErr
 }
 
-func (v MsgVersion) Type() uint8 {
+func (v MsgVersion) Type() NTType {
 	return NT_VERSION
 }
 
@@ -499,7 +550,7 @@ func (c *NetStream) WriteByte(b byte) error {
 
 type NetPackage struct {
 	Flags [4]byte  //标识
-	Type  uint8    //包类型
+	Type  NTType   //包类型
 	Bytes VarBytes //数据长度
 	Sum   uint32
 }
@@ -508,7 +559,7 @@ func (v NetPackage) Encode(w IWriter) error {
 	if err := w.WriteFull(v.Flags[:]); err != nil {
 		return err
 	}
-	if err := w.WriteByte(v.Type); err != nil {
+	if err := w.WriteByte(uint8(v.Type)); err != nil {
 		return err
 	}
 	if err := v.Bytes.Encode(w); err != nil {
@@ -526,7 +577,7 @@ func (v *NetPackage) Sum32() uint32 {
 	if err != nil || n != 4 {
 		panic(err)
 	}
-	n, err = crc.Write([]byte{v.Type})
+	n, err = crc.Write([]byte{uint8(v.Type)})
 	if err != nil || n != 1 {
 		panic(err)
 	}
@@ -542,8 +593,10 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err = r.ReadFull(v.Flags[:]); err != nil {
 		return err
 	}
-	if v.Type, err = r.ReadByte(); err != nil {
+	if typ, err := r.ReadByte(); err != nil {
 		return err
+	} else {
+		v.Type = NTType(typ)
 	}
 	if err = v.Bytes.Decode(r); err != nil {
 		return err

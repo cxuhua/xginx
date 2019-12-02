@@ -160,6 +160,7 @@ func (c *Client) processMsg(m MsgIO) error {
 	ps := GetPubSub()
 	bi := GetBlockIndex()
 	typ := m.Type()
+	LogInfo("recv message type=", typ)
 	switch typ {
 	case NT_BROAD_PKG:
 		msg := m.(*MsgBroadPkg)

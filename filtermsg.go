@@ -8,7 +8,7 @@ type MsgFilterLoad struct {
 	Filter VarBytes
 }
 
-func (m MsgFilterLoad) Type() uint8 {
+func (m MsgFilterLoad) Type() NTType {
 	return NT_FILTER_LOAD
 }
 
@@ -48,7 +48,7 @@ type MsgFilterAdd struct {
 	Key VarBytes
 }
 
-func (m MsgFilterAdd) Type() uint8 {
+func (m MsgFilterAdd) Type() NTType {
 	return NT_FILTER_ADD
 }
 
@@ -73,7 +73,7 @@ func (m MsgFilterClear) Id() (MsgId, error) {
 	return ErrMsgId, NotIdErr
 }
 
-func (m MsgFilterClear) Type() uint8 {
+func (m MsgFilterClear) Type() NTType {
 	return NT_FILTER_CLEAR
 }
 

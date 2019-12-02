@@ -77,7 +77,7 @@ func (e *MsgGetAddrs) Decode(r IReader) error {
 	return nil
 }
 
-func (m MsgGetAddrs) Type() uint8 {
+func (m MsgGetAddrs) Type() NTType {
 	return NT_GET_ADDRS
 }
 
@@ -117,7 +117,7 @@ func (m MsgAlert) Verify(pub *PublicKey) error {
 	return nil
 }
 
-func (m MsgAlert) Type() uint8 {
+func (m MsgAlert) Type() NTType {
 	return NT_ALERT
 }
 
@@ -146,7 +146,7 @@ type MsgAddrs struct {
 	Addrs []NetAddr
 }
 
-func (m MsgAddrs) Type() uint8 {
+func (m MsgAddrs) Type() NTType {
 	return NT_ADDRS
 }
 

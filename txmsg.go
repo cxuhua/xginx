@@ -10,7 +10,7 @@ type MsgGetMerkle struct {
 	TxId HASH256 //交易id
 }
 
-func (m MsgGetMerkle) Type() uint8 {
+func (m MsgGetMerkle) Type() NTType {
 	return NT_GET_MERKLE
 
 }
@@ -35,7 +35,7 @@ type MsgTxMerkle struct {
 	Bits  VarBytes  //
 }
 
-func (m MsgTxMerkle) Type() uint8 {
+func (m MsgTxMerkle) Type() NTType {
 	return NT_TX_MERKLE
 }
 
@@ -175,7 +175,7 @@ type MsgGetInv struct {
 	Invs []Inventory
 }
 
-func (m MsgGetInv) Type() uint8 {
+func (m MsgGetInv) Type() NTType {
 	return NT_GET_INV
 }
 
@@ -225,7 +225,7 @@ type MsgInv struct {
 	Invs []Inventory
 }
 
-func (m MsgInv) Type() uint8 {
+func (m MsgInv) Type() NTType {
 	return NT_INV
 }
 
@@ -275,7 +275,7 @@ type MsgGetTxPool struct {
 	Skip []HASH256 //忽略的交易id
 }
 
-func (m MsgGetTxPool) Type() uint8 {
+func (m MsgGetTxPool) Type() NTType {
 	return NT_GET_TXPOOL
 }
 
@@ -332,7 +332,7 @@ type MsgTxPool struct {
 	Txs []*TX
 }
 
-func (m MsgTxPool) Type() uint8 {
+func (m MsgTxPool) Type() NTType {
 	return NT_TXPOOL
 }
 
@@ -397,7 +397,7 @@ func (m MsgTx) Id() (MsgId, error) {
 	return id, nil
 }
 
-func (m MsgTx) Type() uint8 {
+func (m MsgTx) Type() NTType {
 	return NT_TX
 }
 

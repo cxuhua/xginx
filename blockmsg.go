@@ -15,7 +15,7 @@ func (m MsgGetBlock) Id() (MsgId, error) {
 	return ErrMsgId, NotIdErr
 }
 
-func (m MsgGetBlock) Type() uint8 {
+func (m MsgGetBlock) Type() NTType {
 	return NT_GET_BLOCK
 }
 
@@ -87,7 +87,7 @@ func (m *MsgBlock) AddFlags(f uint8) {
 	m.Flags |= f
 }
 
-func (m MsgBlock) Type() uint8 {
+func (m MsgBlock) Type() NTType {
 	return NT_BLOCK
 }
 

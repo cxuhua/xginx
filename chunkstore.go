@@ -201,6 +201,7 @@ var (
 	nextFileErr = errors.New("next file")
 )
 
+//获取文件头标识和版本
 func sfileHeaderBytes() []byte {
 	flags := []byte(conf.Flags)
 	w := NewWriter()
@@ -215,8 +216,9 @@ func sfileHeaderBytes() []byte {
 	return w.Bytes()
 }
 
+//存储文件
 type sfile struct {
-	mu sync.Mutex
+	rwm sync.Mutex
 	*os.File
 	size   int64
 	flags  []byte
@@ -226,8 +228,8 @@ type sfile struct {
 }
 
 func (s *sfile) close() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.rwm.Lock()
+	defer s.rwm.Unlock()
 	if s.locker != nil {
 		_ = s.locker.Release()
 	}
@@ -238,15 +240,15 @@ func (s *sfile) close() {
 
 //读取数据
 func (s *sfile) read(off uint32, b []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.rwm.Lock()
+	defer s.rwm.Unlock()
 	if len(b) == 0 {
 		return errors.New("buf args nil")
 	}
-	rl := uint32(len(b))
-	pl := uint32(0)
+	rl := len(b)
+	pl := 0
 	for pl < rl {
-		_, err := s.Seek(int64(off+pl), io.SeekStart)
+		_, err := s.Seek(int64(int(off)+pl), io.SeekStart)
 		if err != nil {
 			return err
 		}
@@ -254,15 +256,15 @@ func (s *sfile) read(off uint32, b []byte) error {
 		if err != nil {
 			return err
 		}
-		pl += uint32(cl)
+		pl += cl
 	}
 	return nil
 }
 
 //写入数据，返回数据偏移
 func (f *sfile) write(b []byte) (uint32, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	f.rwm.Lock()
+	defer f.rwm.Unlock()
 	if len(b) == 0 {
 		return 0, errors.New("b args nil")
 	}
