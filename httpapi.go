@@ -10,6 +10,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func alertMsgApi(c *gin.Context) {
+	args := struct {
+		Msg string `form:"msg"` //数据hex编码
+	}{}
+	if err := c.ShouldBind(&args); err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	msg := NewMsgAlert(args.Msg, nil)
+	Server.BroadMsg(msg)
+}
+
 func setHeaderApi(c *gin.Context) {
 	args := struct {
 		Hex string `form:"hex"` //数据hex编码
