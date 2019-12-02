@@ -287,9 +287,14 @@ finished:
 		case chv := <-bch:
 			//收到新区块停止
 			rlk, ok := chv.(*BlockInfo)
-			if ok && rlk.Meta.Height >= blk.Meta.Height {
-				mg.StopAndWait()
+			if !ok {
+				break
 			}
+			if rlk.Meta.Height < blk.Meta.Height {
+				break
+			}
+			mg.StopAndWait()
+			return errors.New("new block recv,stop gen block")
 		case <-m.sch:
 			mg.StopAndWait()
 			return errors.New("force stop current gen block")
