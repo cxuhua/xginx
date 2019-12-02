@@ -15,6 +15,8 @@ const (
 	NewMinerActTopic = "NewMinerAct"
 	//更新了一个区块数据 BlockInfo
 	NewLinkBlockTopic = "NewLinkBlock"
+	//接收的广播区块
+	NewRecvBlockTopic = "NewRecvBlock"
 )
 
 const (
@@ -251,6 +253,8 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
+	bch := ps.Sub(NewRecvBlockTopic)
+	defer ps.Unsub(bch)
 finished:
 	for !genok {
 		select {
@@ -279,6 +283,11 @@ finished:
 				blk.Header = mbv.Header()
 				genok = true
 				break finished
+			}
+		case chv := <-bch:
+			//收到新区块停止
+			if rlk, ok := chv.(*BlockInfo); ok && rlk.Meta.Height > blk.Meta.Height {
+				mg.StopAndWait()
 			}
 		case <-m.sch:
 			mg.StopAndWait()

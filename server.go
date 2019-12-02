@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -334,6 +333,9 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 		if c.Service&SERVICE_NODE == 0 {
 			continue
 		}
+		if c.Height == InvalidHeight {
+			continue
+		}
 		if c.Height < h {
 			continue
 		}
@@ -352,27 +354,25 @@ func (s *TcpServer) recvMsgBlock(c *Client, blk *BlockInfo, dt *time.Timer) erro
 		LogError("update block error", err)
 		return err
 	}
+	ps := GetPubSub()
+	ps.Pub(blk, NewRecvBlockTopic)
 	LogInfo("update block to chain success, blk =", blk, "height =", blk.Meta.Height, "cache =", bi.CacheSize())
 	dt.Reset(time.Microsecond * 300)
 	return nil
 }
 
 //下载块数据
-func (s *TcpServer) reqMsgGetBlock() error {
+func (s *TcpServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
-	if bi.Len() == 0 {
-		return nil
-	} else if h := bi.GetNextHeight(); h == InvalidHeight {
-		return errors.New("next height invalid")
-	} else if c := s.findBlockClient(h); c == nil {
-		return errors.New("find client error")
-	} else {
+	//获取下个高度的区块
+	h := bi.GetNextHeight()
+	c := s.findBlockClient(h)
+	if c != nil {
 		msg := &MsgGetBlock{Height: h}
 		c.SendMsg(msg)
 	}
-	return nil
 }
 
 //尝试重新连接其他地址
@@ -453,7 +453,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				s.lptr.OnClientMsg(m.c, msg)
 			}
 		case <-s.dt.C:
-			_ = s.reqMsgGetBlock()
+			s.reqMsgGetBlock()
 			s.dt.Reset(time.Second * 5)
 		case <-s.pt.C:
 			if s.ConnNum() < conf.MaxConn {

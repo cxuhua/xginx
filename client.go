@@ -179,7 +179,6 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_GET_BLOCK:
 		msg := m.(*MsgGetBlock)
 		iter := bi.NewIter()
-		LogInfo("NT_GET_BLOCK", msg.Height)
 		if !iter.SeekHeight(msg.Height) {
 			rsg := NewMsgError(ErrCodeBlockMiss, errors.New("block not found"))
 			c.SendMsg(rsg)
@@ -192,7 +191,6 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.SendMsg(rsg)
 			break
 		}
-		LogInfo("NT_GET_BLOCK SEND", msg.Height)
 		//发送区块过去
 		c.SendMsg(NewMsgBlock(blk))
 	case NT_GET_TXPOOL:
@@ -240,13 +238,6 @@ func (c *Client) processMsg(m MsgIO) error {
 	case NT_ERROR:
 		msg := m.(*MsgError)
 		LogError("recv error msg code =", msg.Code, "error =", msg.Error, c.id)
-	//case NT_HEADERS:
-	//	msg := m.(*MsgHeaders)
-	//	c.Height = msg.Height
-	//case NT_GET_HEADERS:
-	//	msg := m.(*MsgGetHeaders)
-	//	rsg := bi.GetMsgHeaders(msg)
-	//	c.SendMsg(rsg)
 	case NT_GET_INV:
 		msg := m.(*MsgGetInv)
 		if len(msg.Invs) == 0 {
@@ -288,10 +279,6 @@ func (c *Client) processMsg(m MsgIO) error {
 		if c.IsIn() {
 			rsg := bi.NewMsgVersion()
 			c.SendMsg(rsg)
-		}
-		//连出的判断区块高度
-		if c.IsOut() {
-			//c.ReqBlockHeaders(bi, msg.Height)
 		}
 	}
 	//发布消息
