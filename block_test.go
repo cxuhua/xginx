@@ -46,41 +46,6 @@ func GetTestBlockIndex() *BlockIndex {
 	return bi
 }
 
-//从h开始生成n个区块头
-func makehs(h BlockHeader, n int) []BlockHeader {
-	hs := []BlockHeader{h}
-	for i := 0; i < n; i++ {
-		time.Sleep(time.Second)
-		v := h
-		v.Time = uint32(time.Now().Unix())
-		v.Prev, _ = h.ID()
-		b := v.Bytes()
-		for i := uint32(0); ; i++ {
-			b.SetNonce(i)
-			id := b.Hash()
-			if CheckProofOfWork(id, v.Bits) {
-				v = b.Header()
-				break
-			}
-		}
-		hs = append(hs, v)
-		h = v
-	}
-	return hs
-}
-
-func TestMergeChain(t *testing.T) {
-	bi := GetTestBlockIndex()
-	defer bi.Close()
-
-	iter := bi.NewIter()
-	iter.SeekHeight(3)
-
-	vvs := makehs(iter.Curr().BlockHeader, 3)
-
-	log.Println(bi.MergeHead(vvs[1:]))
-}
-
 func TestBlockChain(t *testing.T) {
 	bi := GetTestBlockIndex()
 	defer bi.Close()
@@ -88,11 +53,7 @@ func TestBlockChain(t *testing.T) {
 	for i := uint32(0); i < testnum; i++ {
 		time.Sleep(time.Second)
 		cb := NewTestBlock(bi)
-		_, err := bi.LinkHeader(cb.Header)
-		if err != nil {
-			panic(err)
-		}
-		err = bi.UpdateBlk(cb)
+		err := bi.LinkBlk(cb)
 		if err != nil {
 			t.Error(err)
 			t.FailNow()
@@ -173,11 +134,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	calcHash(blk)
-	_, err = bi.LinkHeader(blk.Header)
-	if err != nil {
-		panic(err)
-	}
-	err = bi.UpdateBlk(blk)
+	err = bi.LinkBlk(blk)
 	if err != nil {
 		panic(err)
 	}
