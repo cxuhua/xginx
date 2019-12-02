@@ -286,7 +286,7 @@ finished:
 			}
 		case chv := <-bch:
 			//收到新区块停止
-			if _, ok := chv.(*BlockInfo); ok {
+			if rlk, ok := chv.(*BlockInfo); ok && rlk.Meta.Height >= blk.Meta.Height {
 				mg.StopAndWait()
 			}
 		case <-m.sch:
