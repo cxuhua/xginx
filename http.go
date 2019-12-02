@@ -186,6 +186,8 @@ func (h *xhttp) init(m *gin.Engine, lis IListener) {
 	v1.GET("/list/block", listBestBlock)
 	//获取某地址的余额
 	v1.GET("/coins/:addr", listCoins)
+	//获取地址相关的交易信息
+	v1.GET("/list/txs/:addr", listAddrTxs)
 
 	lis.OnInitHttp(m)
 }

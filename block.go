@@ -17,6 +17,14 @@ const (
 	LOCKTIME_THRESHOLD = uint32(500000000)
 )
 
+//用户交易索引
+type TxIndex struct {
+	TxId  HASH256
+	Value TxValue
+}
+
+type TxIndexs []*TxIndex
+
 //存储交易索引值
 type TxValue struct {
 	BlkId HASH256 //块hash

@@ -192,6 +192,37 @@ func updateUserPass(c *gin.Context) {
 	})
 }
 
+func listAddrTxs(c *gin.Context) {
+	addr := c.Param("addr")
+	bi := GetBlockIndex()
+	ds, err := bi.ListTxs(Address(addr))
+	if err != nil {
+		c.JSON(http.StatusOK, ApiResult{
+			Code: 100,
+			Msg:  err.Error(),
+		})
+		return
+	}
+	type index struct {
+		Tx  string `json:"tx"`
+		Blk string `json:"blk"`
+		Idx int    `json:"idx"`
+	}
+	type result struct {
+		Code int     `json:"code"`
+		Idxs []index `json:"idxs"`
+	}
+	res := result{}
+	for _, v := range ds {
+		i := index{}
+		i.Tx = v.TxId.String()
+		i.Idx = v.Value.TxIdx.ToInt()
+		i.Blk = v.Value.BlkId.String()
+		res.Idxs = append(res.Idxs, i)
+	}
+	c.JSON(http.StatusOK, res)
+}
+
 //获取一个地址的余额
 func listCoins(c *gin.Context) {
 	addr := c.Param("addr")

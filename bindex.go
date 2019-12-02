@@ -973,6 +973,35 @@ func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (Coins, error) {
 	return bi.ListCoinsWithID(pkh, limit...)
 }
 
+func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
+	pkh, err := addr.GetPkh()
+	if err != nil {
+		return nil, err
+	}
+	return bi.ListTxsWithID(pkh)
+}
+
+//获取用户交易
+func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
+	prefix := getDBKey(TXP_PREFIX, id[:])
+	idxs := TxIndexs{}
+	off := 1 + len(id)
+	//获取区块链中历史可用金额
+	iter := bi.db.Index().Iterator(NewPrefix(prefix))
+	defer iter.Close()
+	for iter.Next() {
+		key := iter.Key()
+		iv := &TxIndex{}
+		copy(iv.TxId[:], key[off:off+len(ZERO)])
+		err := iv.Value.Decode(NewReader(iter.Value()))
+		if err != nil {
+			return nil, err
+		}
+		idxs = append(idxs, iv)
+	}
+	return idxs, nil
+}
+
 //获取某个id的所有余额
 func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error) {
 	prefix := getDBKey(COIN_PREFIX, id[:])
