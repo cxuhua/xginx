@@ -21,10 +21,6 @@ var (
 	ArriveFirstBlock = errors.New("arrive first block")
 	//空链
 	EmptyBlockChain = errors.New("this is empty chain")
-	//Block数据未下载
-	BlockDataEmpty = errors.New("block data empty,not download")
-	//需要更多的区块头
-	NeedMoreHeader = errors.New("need more block header evidence")
 )
 
 //索引头
@@ -489,10 +485,6 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 			rerr = err
 			return 0, nil
 		}
-		if !lmeta.Blk.HasData() {
-			rerr = BlockDataEmpty
-			return 0, nil
-		}
 		if !lmeta.Hash().Equal(smeta.Hash()) {
 			return 0, nil
 		}
@@ -824,6 +816,24 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	return vv, err
 }
 
+//读取区块数据
+func (bi *BlockIndex) ReadBlock(id HASH256) ([]byte, error) {
+	bk := GetDBKey(BLOCK_PREFIX, id[:])
+	meta := &TBMeta{}
+	hb, err := bi.db.Index().Get(bk)
+	if err != nil {
+		return nil, err
+	}
+	buf := NewReader(hb)
+	if err := meta.Decode(buf); err != nil {
+		return nil, err
+	}
+	if !meta.HasBlk() {
+		return nil, errors.New("block data miss")
+	}
+	return bi.db.Blk().Read(meta.Blk)
+}
+
 //加载块数据
 func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 	bk := GetDBKey(BLOCK_PREFIX, id[:])
@@ -837,7 +847,7 @@ func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 		return nil, err
 	}
 	if !meta.HasBlk() {
-		return nil, BlockDataEmpty
+		return nil, errors.New("block data miss")
 	}
 	bb, err := bi.db.Blk().Read(meta.Blk)
 	if err != nil {
@@ -930,16 +940,6 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	//断开链接
 	bi.unlinkback()
 	return nil
-}
-
-//获取下个需要同步的区块 id
-func (bi *BlockIndex) GetNextHeight() uint32 {
-	bv := bi.GetBestValue()
-	if !bv.IsValid() {
-		return 0
-	} else {
-		return bv.Height + 1
-	}
 }
 
 //获取最高块信息

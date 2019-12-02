@@ -313,10 +313,10 @@ finished:
 	}
 	//广播更新了区块数据
 	ps.Pub(blk, NewLinkBlockTopic)
-	Server.BroadMsg(&MsgBlock{
-		Blk:   blk,
-		Flags: MsgBlockNewFlags,
-	})
+
+	msg := NewMsgBlock(blk)
+	msg.AddFlags(MsgBlockNewFlags)
+	Server.BroadMsg(msg)
 	return nil
 }
 

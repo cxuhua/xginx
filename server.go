@@ -370,10 +370,19 @@ func (s *TcpServer) reqMsgGetBlock() {
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	//获取下个高度的区块
-	h := bi.GetNextHeight()
-	c := s.findBlockClient(h)
+	bv := bi.GetBestValue()
+	next := uint32(0)
+	last := conf.genesis
+	if bv.IsValid() {
+		next = bv.Height + 1
+		last = bv.Id
+	}
+	c := s.findBlockClient(next)
 	if c != nil {
-		msg := &MsgGetBlock{Height: h}
+		msg := &MsgGetBlock{
+			Height: next,
+			BlkId:  last,
+		}
 		c.SendMsg(msg)
 	}
 }

@@ -124,38 +124,24 @@ func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
 }
 
-//请求对方区块头
-//func (c *Client) ReqBlockHeaders(bi *BlockIndex, hh uint32) {
-//	lh := bi.BestHeight()
-//	if lh == InvalidHeight && hh == InvalidHeight {
-//		return
-//	}
-//	//本地无区块头，请求远程的
-//	if lh == InvalidHeight && hh != InvalidHeight {
-//		rsg := bi.ReqMsgHeaders()
-//		c.SendMsg(rsg)
-//		return
-//	}
-//	//远程无区块头，发送本地的
-//	if lh != InvalidHeight && hh == InvalidHeight {
-//		rsg := bi.GetMsgHeadersUseHeight(hh)
-//		c.SendMsg(rsg)
-//		return
-//	}
-//	//本地比远程多,发送本地的过去
-//	if lh > hh {
-//		rsg := bi.GetMsgHeadersUseHeight(hh)
-//		c.SendMsg(rsg)
-//		return
-//	}
-//	//远程比本地多，请求远程的
-//	if hh > lh {
-//		rsg := bi.ReqMsgHeaders()
-//		c.SendMsg(rsg)
-//		return
-//	}
-//	//两边一样多
-//}
+func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
+	bi := GetBlockIndex()
+	iter := bi.NewIter()
+	if !iter.SeekHeight(msg.Height) {
+		rsg := NewMsgError(ErrCodeBlockMiss, errors.New("block not found"))
+		c.SendMsg(rsg)
+		return
+	}
+	ele := iter.Curr()
+	b, err := bi.ReadBlock(ele.MustID())
+	if err != nil {
+		rsg := NewMsgError(ErrCodeBlockMiss, err)
+		c.SendMsg(rsg)
+		return
+	}
+	//发送区块过去
+	c.SendMsg(NewMsgBlockBytes(b))
+}
 
 func (c *Client) processMsg(m MsgIO) error {
 	ps := GetPubSub()
@@ -178,21 +164,7 @@ func (c *Client) processMsg(m MsgIO) error {
 		}
 	case NT_GET_BLOCK:
 		msg := m.(*MsgGetBlock)
-		iter := bi.NewIter()
-		if !iter.SeekHeight(msg.Height) {
-			rsg := NewMsgError(ErrCodeBlockMiss, errors.New("block not found"))
-			c.SendMsg(rsg)
-			break
-		}
-		ele := iter.Curr()
-		blk, err := bi.LoadBlock(ele.MustID())
-		if err != nil {
-			rsg := NewMsgError(ErrCodeBlockMiss, err)
-			c.SendMsg(rsg)
-			break
-		}
-		//发送区块过去
-		c.SendMsg(NewMsgBlock(blk))
+		c.reqMsgBlock(msg)
 	case NT_GET_TXPOOL:
 		msg := m.(*MsgGetTxPool)
 		tp := bi.GetTxPool()
