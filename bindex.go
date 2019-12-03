@@ -577,7 +577,6 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	if bi.Len() == 0 {
 		return nil
 	}
-
 	//验证最后6个块
 	lnum := 6
 	if lnum > bi.Len() {
@@ -605,7 +604,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 		LogInfof("verify block success id = %v height = %d #%d", iter.ID(), iter.Height(), lnum-i)
 	}
 	bv := bi.GetBestValue()
-	LogInfo("load finished block count = ", bi.Len(), ",best height =", bv.Height)
+	LogInfof("load finished block , best height=%d,best id=%v", bv.Height, bv.Id)
 	return nil
 }
 
@@ -733,37 +732,43 @@ func (bi *BlockIndex) loadtbele(id HASH256) (*TBEle, error) {
 
 //向前加载一个区块数据头
 func (bi *BlockIndex) loadPrev() (*TBEle, error) {
-	fe := bi.lis.Front()
+	first := bi.lis.Front()
+	var fele *TBEle = nil
 	id := HASH256{}
 	ih := uint32(0)
-	if fe != nil {
-		id = fe.Value.(*TBEle).Prev
+	if first != nil {
+		fele = first.Value.(*TBEle)
+		id = fele.Prev
 	} else if bv := bi.GetBestValue(); !bv.IsValid() {
 		return nil, EmptyBlockChain
 	} else {
 		id = bv.Id
 		ih = bv.Height
 	}
-	ele, err := bi.loadtbele(id)
+	cele, err := bi.loadtbele(id)
 	if err != nil {
 		return nil, err
 	}
-	if ele.Prev.IsZero() {
+	//第一个必须是配置的
+	if cele.Prev.IsZero() && !conf.IsGenesisId(id) {
+		return nil, errors.New("genesis block miss")
+	}
+	if conf.IsGenesisId(id) {
 		//到达第一个
-		ele.Height = 0
-	} else if fe != nil {
-		ele.Height = fe.Value.(*TBEle).Height - 1
+		cele.Height = 0
+	} else if fele != nil {
+		cele.Height = fele.Height - 1
 	} else {
 		//最后一个
-		ele.Height = ih
+		cele.Height = ih
 	}
-	if _, err := bi.pushfront(ele); err != nil {
+	if _, err := bi.pushfront(cele); err != nil {
 		return nil, err
 	}
-	if ele.Height == 0 {
-		return ele, ArriveFirstBlock
+	if cele.Height == 0 {
+		return cele, ArriveFirstBlock
 	} else {
-		return ele, nil
+		return cele, nil
 	}
 }
 
@@ -883,9 +888,10 @@ func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 func (bi *BlockIndex) cleancache(b *BlockInfo) {
 	for _, tv := range b.Txs {
 		id, err := tv.ID()
-		if err == nil {
-			bi.lru.Delete(id)
+		if err != nil {
+			panic(err)
 		}
+		bi.lru.Delete(id)
 	}
 	if id, err := b.ID(); err == nil {
 		bi.lru.Delete(id)
@@ -1271,15 +1277,14 @@ func (bi *BlockIndex) SetTx(tx *TX) error {
 	return serr
 }
 
-func NewBlockIndex(lptr IListener) *BlockIndex {
-	bi := &BlockIndex{
+func NewBlockIndex(lis IListener) *BlockIndex {
+	return &BlockIndex{
 		txp:  NewTxPool(),
-		lptr: lptr,
+		lptr: lis,
 		lis:  list.New(),
 		hmap: map[uint32]*list.Element{},
 		imap: map[HASH256]*list.Element{},
 		db:   NewLevelDBStore(conf.DataDir),
 		lru:  NewIndexCacher(256 * opt.MiB),
 	}
-	return bi
 }

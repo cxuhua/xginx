@@ -6,11 +6,10 @@ import (
 )
 
 const (
-	InvalidArb = ^uint8(0) //无效的仲裁
-
-	SCRIPT_COINBASE_TYPE = uint8(0) //coinbase script
-	SCRIPT_LOCKED_TYPE   = uint8(1) //标准锁定脚本
-	SCRIPT_WITNESS_TYPE  = uint8(2) //witness script
+	InvalidArb           = ^uint8(0) //无效的仲裁
+	SCRIPT_COINBASE_TYPE = uint8(0)  //coinbase script
+	SCRIPT_LOCKED_TYPE   = uint8(1)  //标准锁定脚本
+	SCRIPT_WITNESS_TYPE  = uint8(2)  //隔离见证多重签名脚本
 )
 
 type Script []byte

@@ -124,7 +124,7 @@ type CoinKeyValue struct {
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	buf := NewReader(k)
 	pf := []byte{0}
-	if _, err := buf.Read(pf); err != nil {
+	if err := buf.ReadFull(pf); err != nil {
 		return err
 	}
 	if !bytes.Equal(pf, COIN_PREFIX) {
@@ -163,7 +163,7 @@ func (tk CoinKeyValue) GetValue() []byte {
 //消费key,用来记录输入对应的输出是否已经别消费
 func (tk CoinKeyValue) SpentKey() []byte {
 	buf := NewWriter()
-	_, err := buf.Write(COIN_PREFIX)
+	err := buf.WriteFull(COIN_PREFIX)
 	if err != nil {
 		panic(err)
 	}
@@ -181,7 +181,7 @@ func (tk CoinKeyValue) SpentKey() []byte {
 //用来存储pkh拥有的可消费的金额
 func (tk CoinKeyValue) GetKey() []byte {
 	buf := NewWriter()
-	_, err := buf.Write(COIN_PREFIX)
+	err := buf.WriteFull(COIN_PREFIX)
 	if err != nil {
 		panic(err)
 	}
@@ -233,6 +233,7 @@ func NextHeight(h uint32) uint32 {
 
 func NewInvalidBest() BestValue {
 	return BestValue{
+		Id:     ZERO,
 		Height: InvalidHeight,
 	}
 }
@@ -251,14 +252,20 @@ func (v BestValue) IsValid() bool {
 
 func (v BestValue) Bytes() []byte {
 	w := NewWriter()
-	_, _ = w.Write(v.Id[:])
-	_ = w.TWrite(v.Height)
+	err := v.Id.Encode(w)
+	if err != nil {
+		panic(err)
+	}
+	err = w.TWrite(v.Height)
+	if err != nil {
+		panic(err)
+	}
 	return w.Bytes()
 }
 
 func (v *BestValue) From(b []byte) error {
 	r := NewReader(b)
-	if _, err := r.Read(v.Id[:]); err != nil {
+	if err := v.Id.Decode(r); err != nil {
 		return err
 	}
 	if err := r.TRead(&v.Height); err != nil {

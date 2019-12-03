@@ -4,8 +4,6 @@ import (
 	"errors"
 )
 
-type MerkleNode []byte
-
 type MerkleTree struct {
 	trans int
 	vhash []HASH256

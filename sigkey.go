@@ -121,11 +121,23 @@ func (pk *PrivateKey) Decode(data []byte) error {
 func (pk *PrivateKey) Encode() []byte {
 	pb := pk.D.Bytes()
 	buf := NewWriter()
-	buf.Write(PREFIX_SECRET_KEY)
-	buf.Write(pb)
-	buf.WriteByte(1)
+	err := buf.TWrite(PREFIX_SECRET_KEY)
+	if err != nil {
+		panic(err)
+	}
+	err = buf.TWrite(pb)
+	if err != nil {
+		panic(err)
+	}
+	err = buf.WriteByte(1)
+	if err != nil {
+		panic(err)
+	}
 	hv := Hash256(buf.Bytes())
-	buf.Write(hv[:4])
+	err = buf.TWrite(hv[:4])
+	if err != nil {
+		panic(err)
+	}
 	return buf.Bytes()
 }
 

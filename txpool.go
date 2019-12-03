@@ -154,7 +154,7 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 }
 
 //移除引用了此交易的交易
-func (p *TxPool) removeRefs(id HASH256, ele *list.Element) {
+func (p *TxPool) removeRefsTxs(id HASH256, ele *list.Element) {
 	ids := map[HASH256]bool{}
 	for _, ref := range p.tmap {
 		//忽略自己
@@ -191,7 +191,7 @@ func (p *TxPool) removeEle(ele *list.Element) {
 		panic(err)
 	}
 	//引用了此交易的交易也应该被删除
-	p.removeRefs(id, ele)
+	p.removeRefsTxs(id, ele)
 	//移除自己
 	p.setMemIdx(tx, false)
 	p.tlis.Remove(ele)
