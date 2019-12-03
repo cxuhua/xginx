@@ -11,10 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var (
-	flags = [4]byte{'x', 'h', 'l', 'm'}
-)
-
 func LoadPrivateKeys(file string) []*PrivateKey {
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -108,7 +104,7 @@ func (c *Config) GenUInt64() uint64 {
 }
 
 func (c *Config) Init() *Config {
-	c.Flags = flags
+	c.Flags = [4]byte{'x', 'h', 'l', 'm'}
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {

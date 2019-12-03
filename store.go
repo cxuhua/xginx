@@ -212,10 +212,19 @@ type BestValue struct {
 
 //获取当前高度
 func (bv BestValue) Curr() uint32 {
-	if bv.Height == InvalidHeight {
+	if !bv.IsValid() {
 		return 0
+	} else {
+		return bv.Height
 	}
-	return bv.Height
+}
+
+func (bv BestValue) LastID() HASH256 {
+	if bv.IsValid() {
+		return bv.Id
+	} else {
+		return conf.genesis
+	}
 }
 
 //获取下一个高度
@@ -274,10 +283,10 @@ func (v *BestValue) From(b []byte) error {
 	return nil
 }
 
-func GetDBKey(p []byte, id ...[]byte) []byte {
+func GetDBKey(p []byte, ids ...[]byte) []byte {
 	tk := []byte{}
 	tk = append(tk, p...)
-	for _, v := range id {
+	for _, v := range ids {
 		tk = append(tk, v...)
 	}
 	return tk
