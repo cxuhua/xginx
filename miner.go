@@ -67,7 +67,7 @@ func (g *MinerGroup) single(cb HeaderBytes) {
 			break
 		}
 		if i >= ^uint32(0) {
-			cb.SetTime(time.Now())
+			cb.SetTime(Miner.TimeNow())
 			i = UR32()
 		}
 	}
@@ -130,6 +130,8 @@ type IMiner interface {
 	SetHeader(b []byte) error
 	//重新开始计算区块
 	ResetMiner() error
+	//当前时间戳
+	TimeNow() uint32
 }
 
 var (
@@ -146,6 +148,7 @@ type minerEngine struct {
 	sch  chan bool        //停止当前正在创建的区块
 	mbv  HeaderBytes      //正在处理的区块头数据
 	mch  chan HeaderBytes //接收一个区块头数据进行验证
+	lptr IListener
 }
 
 func newMinerEngine() IMiner {
@@ -159,6 +162,10 @@ func (m *minerEngine) GetMiner() *Account {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.acc
+}
+
+func (m *minerEngine) TimeNow() uint32 {
+	return m.lptr.TimeNow()
 }
 
 //获取区块头
@@ -396,6 +403,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 
 //开始工作
 func (m *minerEngine) Start(ctx context.Context, lis IListener) {
+	m.lptr = lis
 	ps := GetPubSub()
 	m.cctx, m.cfun = context.WithCancel(ctx)
 	//订阅矿工操作

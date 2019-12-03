@@ -59,8 +59,8 @@ func main() {
 		initdb(conf)
 		return
 	}
-	pubsub := GetPubSub()
-	defer pubsub.Shutdown()
+	ps := GetPubSub()
+	defer ps.Shutdown()
 
 	lis := newListener(conf)
 
@@ -83,6 +83,7 @@ func main() {
 
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
+
 	cancel()
 	LogInfo("recv sig :", sig, ",system start exit")
 

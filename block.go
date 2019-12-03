@@ -3,7 +3,6 @@ package xginx
 import (
 	"errors"
 	"fmt"
-	"time"
 )
 
 const (
@@ -88,9 +87,9 @@ func (b *HeaderBytes) SetNonce(v uint32) {
 	Endian.PutUint32((*b)[l-4:], v)
 }
 
-func (b *HeaderBytes) SetTime(v time.Time) {
+func (b *HeaderBytes) SetTime(v uint32) {
 	l := len(*b)
-	Endian.PutUint32((*b)[l-12:], uint32(v.Unix()))
+	Endian.PutUint32((*b)[l-12:], v)
 }
 
 func (b *HeaderBytes) Hash() HASH256 {
@@ -418,6 +417,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			if in.IsCoinBase() {
 				continue
 			}
+			//消费的输出
 			out, err := in.LoadTxOut(bi)
 			if err != nil {
 				return err
@@ -428,6 +428,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			}
 			vps[pkh] = true
 		}
+		//输出
 		for _, out := range tx.Outs {
 			pkh, err := out.Script.GetPkh()
 			if err != nil {
@@ -448,11 +449,10 @@ func (v *BlockInfo) GetMerkle() (HASH256, error) {
 	if h, b := v.merkel.IsSet(); b {
 		return h, nil
 	}
-	root := HASH256{}
 	ids := []HASH256{}
 	for _, tv := range v.Txs {
 		if vid, err := tv.ID(); err != nil {
-			return root, err
+			return ZERO, err
 		} else {
 			ids = append(ids, vid)
 		}
@@ -475,23 +475,19 @@ func (v *BlockInfo) SetMerkle() error {
 }
 
 //检查引用的tx是否存在区块中
-func (blk *BlockInfo) checkrefstx(bi *BlockIndex, tx *TX) error {
-	tp := bi.GetTxPool()
+func (blk *BlockInfo) CheckRefsTx(bi *BlockIndex, tx *TX) error {
 	for _, in := range tx.Ins {
-		//获取引用的交易
-		rtx, err := bi.LoadTX(in.OutHash)
-		if err != nil {
-			rtx, err = tp.Get(in.OutHash)
+		//不检测coinbase交易
+		if in.IsCoinBase() {
+			continue
 		}
+		//获取引用的输出
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return fmt.Errorf("out tx miss %w", err)
 		}
-		rid, err := rtx.ID()
-		if err != nil {
-			return err
-		}
-		//如果是来自交易池，必须存在区块中
-		if rtx.pool && !blk.HasTx(rid) {
+		//如果是来自交易池，交易必须存在区块中
+		if out.pool && !blk.HasTx(in.OutHash) {
 			return errors.New("refs tx pool miss")
 		}
 	}
@@ -504,13 +500,14 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	if len(txs) == 0 {
 		return errors.New("txs empty")
 	}
+	//保存旧的交易列表
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
 		if err := tx.CheckLockTime(blk); err != nil {
 			return err
 		}
-		if err := blk.checkrefstx(bi, tx); err != nil {
+		if err := blk.CheckRefsTx(bi, tx); err != nil {
 			return err
 		}
 		if err := tx.Check(bi, true); err != nil {
@@ -519,7 +516,7 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 		blk.Txs = append(blk.Txs, tx)
 	}
 	//不允许重复消费同一个输出
-	if err := blk.CheckMulCostTxOut(bi); err != nil {
+	if err := blk.CheckRepCostTxOut(bi); err != nil {
 		blk.Txs = otxs
 		return err
 	}
@@ -546,9 +543,10 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	if err := tx.CheckLockTime(blk); err != nil {
 		return err
 	}
-	if err := blk.checkrefstx(bi, tx); err != nil {
+	if err := blk.CheckRefsTx(bi, tx); err != nil {
 		return err
 	}
+	//保存旧的交易列表
 	otxs := blk.Txs
 	//检测交易是否可进行
 	if err := tx.Check(bi, true); err != nil {
@@ -556,7 +554,7 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	}
 	blk.Txs = append(blk.Txs, tx)
 	//不允许重复消费同一个输出
-	if err := blk.CheckMulCostTxOut(bi); err != nil {
+	if err := blk.CheckRepCostTxOut(bi); err != nil {
 		blk.Txs = otxs
 		return err
 	}
@@ -655,7 +653,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	return nil
 }
 
-//重置所有缓存
+//重置所有hash缓存
 func (blk *BlockInfo) ResetHasher() {
 	//重置hash缓存用来计算merkle
 	for _, tx := range blk.Txs {
@@ -682,13 +680,14 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := lptr.OnFinished(blk); err != nil {
 		return err
 	}
+	//重置缓存设置merkle
 	blk.ResetHasher()
 	return blk.SetMerkle()
 }
 
 //检查是否有多个输入消费同一个输出
-func (blk *BlockInfo) CheckMulCostTxOut(bi *BlockIndex) error {
-	imap := map[HASH160]bool{}
+func (blk *BlockInfo) CheckRepCostTxOut(bi *BlockIndex) error {
+	imap := map[HASH256]bool{}
 	for _, tx := range blk.Txs {
 		for _, in := range tx.Ins {
 			key := in.OutKey()
@@ -724,7 +723,7 @@ func (blk *BlockInfo) Verify(ele *TBEle, bi *BlockIndex) error {
 //检查区块数据
 func (blk *BlockInfo) Check(bi *BlockIndex) error {
 	//检测工作难度
-	bits := bi.calcBits(blk.Meta.Height)
+	bits := bi.CalcBits(blk.Meta.Height)
 	if bits != blk.Header.Bits {
 		return errors.New("block header bits error")
 	}
@@ -736,14 +735,12 @@ func (blk *BlockInfo) Check(bi *BlockIndex) error {
 	if !merkle.Equal(blk.Header.Merkle) {
 		return errors.New("txs merkle hash error")
 	}
-	if err := blk.CheckMulCostTxOut(bi); err != nil {
+	//检查重复消费
+	if err := blk.CheckRepCostTxOut(bi); err != nil {
 		return err
 	}
 	//检查所有的交易
-	if err := blk.CheckTxs(bi); err != nil {
-		return err
-	}
-	return nil
+	return blk.CheckTxs(bi)
 }
 
 func (v *BlockInfo) Encode(w IWriter) error {
@@ -765,11 +762,11 @@ func (v *BlockInfo) Decode(r IReader) error {
 	if err := v.Header.Decode(r); err != nil {
 		return err
 	}
-	tnum := VarUInt(0)
-	if err := tnum.Decode(r); err != nil {
+	txn := VarUInt(0)
+	if err := txn.Decode(r); err != nil {
 		return err
 	}
-	v.Txs = make([]*TX, tnum)
+	v.Txs = make([]*TX, txn)
 	for i, _ := range v.Txs {
 		tx := &TX{}
 		if err := tx.Decode(r); err != nil {
@@ -788,34 +785,34 @@ type TxIn struct {
 }
 
 //获取输入引用key
-func (v TxIn) OutKey() HASH160 {
+func (in TxIn) OutKey() HASH256 {
 	buf := NewWriter()
-	err := v.OutHash.Encode(buf)
+	err := in.OutHash.Encode(buf)
 	if err != nil {
 		panic(err)
 	}
-	err = v.OutIndex.Encode(buf)
+	err = in.OutIndex.Encode(buf)
 	if err != nil {
 		panic(err)
 	}
-	return Hash160From(buf.Bytes())
+	return Hash256From(buf.Bytes())
 }
 
-//获取对应的输出
-func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
-	if v.OutHash.IsZero() {
+//获取输入引用的输出
+func (in *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
+	if in.OutHash.IsZero() {
 		return nil, errors.New("zero hash id")
 	}
 	tp := bi.GetTxPool()
-	otx, err := bi.LoadTX(v.OutHash)
+	otx, err := bi.LoadTX(in.OutHash)
 	if err != nil {
 		//如果在交易池中
-		otx, err = tp.Get(v.OutHash)
+		otx, err = tp.Get(in.OutHash)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("txin outtx miss %w", err)
 	}
-	oidx := v.OutIndex.ToInt()
+	oidx := in.OutIndex.ToInt()
 	if oidx < 0 || oidx >= len(otx.Outs) {
 		return nil, fmt.Errorf("outindex out of bound")
 	}
@@ -824,57 +821,57 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	return out, nil
 }
 
-func (v *TxIn) Check(bi *BlockIndex) error {
-	if v.IsCoinBase() {
+func (in *TxIn) Check(bi *BlockIndex) error {
+	if in.IsCoinBase() {
 		return nil
-	} else if v.Script.IsWitness() {
+	} else if in.Script.IsWitness() {
 		return nil
 	} else {
 		return errors.New("txin unlock script type error")
 	}
 }
 
-//计算id用到的数据
-func (v *TxIn) ForID(w IWriter) error {
-	if err := v.OutHash.Encode(w); err != nil {
+//计算交易id用到的数据
+func (in *TxIn) ForID(w IWriter) error {
+	if err := in.OutHash.Encode(w); err != nil {
 		return err
 	}
-	if err := v.OutIndex.Encode(w); err != nil {
+	if err := in.OutIndex.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Script.ForID(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *TxIn) Encode(w IWriter) error {
-	if err := v.OutHash.Encode(w); err != nil {
-		return err
-	}
-	if err := v.OutIndex.Encode(w); err != nil {
-		return err
-	}
-	if err := v.Script.Encode(w); err != nil {
+	if err := in.Script.ForID(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (v *TxIn) Decode(r IReader) error {
-	if err := v.OutHash.Decode(r); err != nil {
+func (in *TxIn) Encode(w IWriter) error {
+	if err := in.OutHash.Encode(w); err != nil {
 		return err
 	}
-	if err := v.OutIndex.Decode(r); err != nil {
+	if err := in.OutIndex.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Script.Decode(r); err != nil {
+	if err := in.Script.Encode(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-//是否基本单元，txs的第一个一定是base类型
+func (in *TxIn) Decode(r IReader) error {
+	if err := in.OutHash.Decode(r); err != nil {
+		return err
+	}
+	if err := in.OutIndex.Decode(r); err != nil {
+		return err
+	}
+	if err := in.Script.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+//txs的第一个一定是coinbase类型
 func (in *TxIn) IsCoinBase() bool {
 	return in.OutHash.IsZero() && in.OutIndex == 0 && in.Script.IsCoinBase()
 }
@@ -886,53 +883,53 @@ type TxOut struct {
 	pool   bool   //是否来自交易池中的交易
 }
 
-//输出是否可以被in消费
-func (v *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
+//引用的输出是否已经被in消费
+func (out *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
 	db := bi.GetStoreDB()
 	tp := bi.GetTxPool()
 	tk := &CoinKeyValue{}
-	tk.Value = v.Value
-	if pkh, err := v.Script.GetPkh(); err != nil {
-		return true
-	} else {
-		tk.CPkh = pkh
+	tk.Value = out.Value
+	pkh, err := out.Script.GetPkh()
+	if err != nil {
+		panic(fmt.Errorf("get pkh error %w", err))
 	}
+	tk.CPkh = pkh
 	tk.Index = in.OutIndex
 	tk.TxId = in.OutHash
-	key := tk.GetKey()
 	//从索引和交易池中查询是否有可用的金额，都不存在肯定已经被消费
-	return !db.Index().Has(key) && !tp.HasCoin(tk)
+	//如果输出来自交易池，从交易池查询
+	if key := tk.GetKey(); out.pool {
+		return !tp.HasCoin(tk)
+	} else {
+		return !db.Index().Has(key)
+	}
 }
 
-func (v *TxOut) Check(bi *BlockIndex) error {
-	if v.Script.IsLocked() {
+func (out *TxOut) Check(bi *BlockIndex) error {
+	if out.Script.IsLocked() {
 		return nil
 	}
 	return errors.New("unknow script type")
 }
 
-func (v *TxOut) Encode(w IWriter) error {
-	if err := v.Value.Encode(w); err != nil {
+func (out *TxOut) Encode(w IWriter) error {
+	if err := out.Value.Encode(w); err != nil {
 		return err
 	}
-	if err := v.Script.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *TxOut) Decode(r IReader) error {
-	if err := v.Value.Decode(r); err != nil {
-		return err
-	}
-	if err := v.Script.Decode(r); err != nil {
+	if err := out.Script.Encode(w); err != nil {
 		return err
 	}
 	return nil
 }
 
-//交易撤销证书
-type TxCert struct {
+func (out *TxOut) Decode(r IReader) error {
+	if err := out.Value.Decode(r); err != nil {
+		return err
+	}
+	if err := out.Script.Decode(r); err != nil {
+		return err
+	}
+	return nil
 }
 
 //交易
@@ -941,7 +938,7 @@ type TX struct {
 	Ins      []*TxIn    //输入
 	Outs     []*TxOut   //输出
 	LockTime uint32     //锁定时间或者区块
-	cacher   HashCacher //hash缓存
+	idcs     HashCacher //hash缓存
 	outs     HashCacher //签名hash缓存
 	pres     HashCacher //签名hash缓存
 	pool     bool       //是否来自内存池
@@ -958,7 +955,7 @@ func NewTx() *TX {
 
 //重置缓存
 func (tx *TX) ResetAll() {
-	tx.cacher.Reset()
+	tx.idcs.Reset()
 	tx.outs.Reset()
 	tx.pres.Reset()
 }
@@ -1106,7 +1103,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 
 //交易id计算,不包括见证数据
 func (tx *TX) ID() (HASH256, error) {
-	if hash, ok := tx.cacher.IsSet(); ok {
+	if hash, ok := tx.idcs.IsSet(); ok {
 		return hash, nil
 	}
 	id := HASH256{}
@@ -1143,7 +1140,7 @@ func (tx *TX) ID() (HASH256, error) {
 	if err := buf.TWrite(tx.LockTime); err != nil {
 		return id, err
 	}
-	return tx.cacher.Hash(buf.Bytes()), nil
+	return tx.idcs.Hash(buf.Bytes()), nil
 }
 
 //获取coinse out fee sum

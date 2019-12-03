@@ -89,6 +89,7 @@ func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	//
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
+	//锁定到矿工账号
 	if script, err := acc.NewLockedScript(); err != nil {
 		return err
 	} else {
@@ -124,6 +125,7 @@ func (lis *listener) OnSignTx(singer ISigner, wits *WitnessScript) error {
 
 //完成区块
 func (lis *listener) OnFinished(blk *BlockInfo) error {
+	//处理交易费用
 	if len(blk.Txs) == 0 {
 		return errors.New("coinbase tx miss")
 	}
@@ -136,9 +138,8 @@ func (lis *listener) OnFinished(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	if fee == 0 {
-		return nil
+	if fee > 0 {
+		tx.Outs[0].Value += fee
 	}
-	tx.Outs[0].Value += fee
 	return blk.CheckTxs(lis.bi)
 }
