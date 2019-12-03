@@ -528,10 +528,8 @@ func (c *NetStream) WriteMsg(m MsgIO) error {
 	if err := m.Encode(buf); err != nil {
 		return err
 	}
-	flags := [4]byte{}
-	copy(flags[:], conf.Flags)
 	pd := &NetPackage{
-		Flags: flags,
+		Flags: conf.Flags,
 		Type:  m.Type(),
 		Bytes: buf.Bytes(),
 	}
@@ -607,7 +605,7 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err = r.TRead(&v.Sum); err != nil {
 		return err
 	}
-	if !bytes.Equal(v.Flags[:], []byte(conf.Flags)) {
+	if !bytes.Equal(v.Flags[:], conf.Flags[:]) {
 		return errors.New("flags not same")
 	}
 	if v.Sum32() != v.Sum {

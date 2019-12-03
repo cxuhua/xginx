@@ -11,6 +11,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	flags = [4]byte{'x', 'h', 'l', 'm'}
+)
+
 func LoadPrivateKeys(file string) []*PrivateKey {
 	data, err := ioutil.ReadFile(file)
 	if err != nil {
@@ -46,14 +50,14 @@ type Config struct {
 	PowLimit   string   `json:"pow_limit"`   //最小难度设置
 	PowSpan    uint32   `json:"pow_span"`    //难度计算间隔 2016
 	Halving    int      `json:"halving"`     //210000
-	Flags      string   `json:"flags"`       //协议头标记
 	Ver        uint32   `json:"version"`     //节点版本
 	TcpPort    int      `json:"tcp_port"`    //服务端口和ip
 	TcpIp      string   `json:"tcp_ip"`      //节点远程连接ip
-	logFile    *os.File `json:"-"`           //日志文件
-	genesis    HASH256  `json:"-"`           //第一个区块id
-	LimitHash  UINT256  `json:"-"`           //最小工作难度
-	nodeid     uint64   `json:"-"`           //节点随机id
+	Flags      [4]byte
+	logFile    *os.File `json:"-"` //日志文件
+	genesis    HASH256  `json:"-"` //第一个区块id
+	LimitHash  UINT256  `json:"-"` //最小工作难度
+	nodeid     uint64   `json:"-"` //节点随机id
 }
 
 func (c *Config) GetTcpListenAddr() NetAddr {
@@ -104,6 +108,7 @@ func (c *Config) GenUInt64() uint64 {
 }
 
 func (c *Config) Init() *Config {
+	c.Flags = flags
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {

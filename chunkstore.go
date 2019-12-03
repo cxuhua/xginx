@@ -201,9 +201,8 @@ var (
 
 //获取文件头标识和版本
 func sfileHeaderBytes() []byte {
-	flags := []byte(conf.Flags)
 	w := NewWriter()
-	err := w.TWrite(flags[:4])
+	err := w.TWrite(conf.Flags[:])
 	if err != nil {
 		panic(err)
 	}
@@ -332,7 +331,7 @@ func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
 		_ = sf.Close()
 		return nil, err
 	}
-	if !bytes.Equal(sf.flags, []byte(conf.Flags)) {
+	if !bytes.Equal(sf.flags, conf.Flags[:]) {
 		_ = sf.Close()
 		return nil, errors.New("file meta error")
 	}
