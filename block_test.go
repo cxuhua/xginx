@@ -100,7 +100,7 @@ func TestUnlik1(t *testing.T) {
 	if !iter.SeekHeight(3) {
 		panic(errors.New("3 miss"))
 	}
-	//说有区块头不在链中测试
+	//所有区块头不在链中测试
 	hs := NewTestHeaders(bi, false, 4, iter.Curr().MustID())
 	err := bi.Unlink(hs)
 	if err == nil {

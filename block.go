@@ -173,15 +173,19 @@ func (v *BlockHeader) MustID() HASH256 {
 	return id
 }
 
+func (v *BlockHeader) ResetID() (HASH256, error) {
+	v.hasher.Reset()
+	return v.ID()
+}
+
 func (v *BlockHeader) ID() (HASH256, error) {
 	if h, has := v.hasher.IsSet(); has {
 		return h, nil
 	}
-	id := HASH256{}
 	buf := NewWriter()
 	err := v.Encode(buf)
 	if err != nil {
-		return id, err
+		return ZERO, err
 	}
 	return v.hasher.Hash(buf.Bytes()), nil
 }
@@ -275,20 +279,19 @@ func (hs *Headers) Reverse() {
 	*hs = vs
 }
 
+//检测区块头
+//主要检测难度和merkle,id
 func (hs Headers) check(h uint32, bh BlockHeader, bi *BlockIndex) error {
 	if bh.Merkle.IsZero() {
 		return errors.New("merkle id error")
 	}
-	bh.hasher.Reset()
-	bits := bi.CalcBits(h)
-	if bh.Bits != bits {
+	if bh.Bits != bi.CalcBits(h) {
 		return errors.New("height bits error")
 	}
-	id, err := bh.ID()
-	if err != nil {
+	//重新计算id，id必须符合当前难度
+	if id, err := bh.ResetID(); err != nil {
 		return err
-	}
-	if !CheckProofOfWork(id, bh.Bits) {
+	} else if !CheckProofOfWork(id, bh.Bits) {
 		return errors.New("header bits error")
 	}
 	return nil
@@ -300,22 +303,22 @@ func (hs Headers) Check(height uint32, bi *BlockIndex) error {
 		return errors.New("empty headers")
 	}
 	nexth := NextHeight(height)
-	first := hs[0]
-	if err := hs.check(nexth, first, bi); err != nil {
+	prev := hs[0]
+	if err := hs.check(nexth, prev, bi); err != nil {
 		return err
 	}
 	for i := 1; i < len(hs); i++ {
 		curr := hs[i]
-		if !curr.Prev.Equal(first.MustID()) {
+		if !curr.Prev.Equal(prev.MustID()) {
 			return errors.New("prev hash != prev id")
 		}
-		if curr.Time <= first.Time {
+		if curr.Time <= prev.Time {
 			return errors.New("time error")
 		}
 		if err := hs.check(nexth+uint32(i), curr, bi); err != nil {
 			return err
 		}
-		first = curr
+		prev = curr
 	}
 	return nil
 }

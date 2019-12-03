@@ -163,7 +163,7 @@ func (m MsgId) RecvKey() string {
 
 //协议消息
 type MsgIO interface {
-	Id() (MsgId, error) //实现了此方法的包才能进行广播，负责返回 NotIdErr
+	Id() (MsgId, error) //广播id获取
 	Type() NTType
 	Encode(w IWriter) error
 	Decode(r IReader) error
@@ -295,7 +295,7 @@ func (v NetAddr) Encode(w IWriter) error {
 }
 
 func (v *NetAddr) Decode(r IReader) error {
-	ip6 := make([]byte, 16)
+	ip6 := make([]byte, net.IPv6len)
 	if _, err := r.Read(ip6); err != nil {
 		return err
 	}

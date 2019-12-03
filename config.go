@@ -1,12 +1,12 @@
 package xginx
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
-	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -80,12 +80,30 @@ func (c *Config) IsGenesisId(id HASH256) bool {
 	return c.genesis.Equal(id)
 }
 
-func (c *Config) Init() error {
+func (c *Config) GenUInt64() uint64 {
 	//生成节点随机id
-	sid := uint16(0)
-	SetRandInt(&sid)
-	c.nodeid = uint64(time.Now().UnixNano()) | uint64(sid)
-	LogInfo("gen new node id", c.nodeid)
+	kb0 := make([]byte, 8)
+	_, err := rand.Read(kb0)
+	if err != nil {
+		panic(err)
+	}
+	kb1 := make([]byte, 8)
+	_, err = rand.Read(kb1)
+	if err != nil {
+		panic(err)
+	}
+	buf := NewWriter()
+	addr := c.GetNetAddr()
+	err = addr.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	k0 := Endian.Uint64(kb0)
+	k1 := Endian.Uint64(kb1)
+	return SipHash(k0, k1, buf.Bytes())
+}
+
+func (c *Config) Init() *Config {
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {
@@ -101,10 +119,13 @@ func (c *Config) Init() error {
 	gin.DefaultWriter = c.logFile
 	gin.DefaultErrorWriter = c.logFile
 	log.SetFlags(logflags)
+	//
+	c.nodeid = c.GenUInt64()
+	LogInfof("gen new node id %x", c.nodeid)
 	//设置第一个区块id
 	c.genesis = NewHASH256(c.Genesis)
 	c.LimitHash = NewUINT256(c.PowLimit)
-	return nil
+	return c
 }
 
 var (
@@ -125,8 +146,5 @@ func LoadConfig(f string) *Config {
 	if err := json.Unmarshal(d, sconf); err != nil {
 		panic(err)
 	}
-	if err := sconf.Init(); err != nil {
-		panic(err)
-	}
-	return sconf
+	return sconf.Init()
 }
