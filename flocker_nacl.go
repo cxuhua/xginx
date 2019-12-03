@@ -6,7 +6,7 @@
 
 // +build nacl
 
-package flocker
+package xginx
 
 import (
 	"syscall"

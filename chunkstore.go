@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/cxuhua/xginx/flocker"
 )
 
 //文件数据状态
@@ -224,7 +222,7 @@ type sfile struct {
 	flags  []byte
 	ver    uint32
 	path   string
-	locker flocker.FLocker
+	locker FLocker
 }
 
 func (s *sfile) close() {
@@ -291,7 +289,7 @@ func (f *sfile) write(b []byte) (uint32, error) {
 
 func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 	spath := s.fileIdPath(id)
-	locker := flocker.NewFLocker(spath+".lck", false)
+	locker := NewFLocker(spath+".lck", false)
 	if err := locker.Lock(); err != nil {
 		return nil, err
 	}

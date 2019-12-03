@@ -4,9 +4,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// +build darwin dragonfly freebsd linux netbsd openbsd
+// +build solaris
 
-package flocker
+package xginx
 
 import (
 	"os"
@@ -38,9 +38,9 @@ func (fl *unixFileLock) Lock() error {
 		f, err = os.OpenFile(fl.path, flag|os.O_CREATE, 0644)
 	}
 	if err != nil {
-		return err
+		return
 	}
-	err = setFileLock(f, fl.readOnly, true)
+	err = setFileLock(f, readOnly, true)
 	if err != nil {
 		f.Close()
 	}
@@ -55,13 +55,18 @@ func NewFLocker(path string, readOnly bool) FLocker {
 }
 
 func setFileLock(f *os.File, readOnly, lock bool) error {
-	how := syscall.LOCK_UN
+	flock := syscall.Flock_t{
+		Type:   syscall.F_UNLCK,
+		Start:  0,
+		Len:    0,
+		Whence: 1,
+	}
 	if lock {
 		if readOnly {
-			how = syscall.LOCK_SH
+			flock.Type = syscall.F_RDLCK
 		} else {
-			how = syscall.LOCK_EX
+			flock.Type = syscall.F_WRLCK
 		}
 	}
-	return syscall.Flock(int(f.Fd()), how|syscall.LOCK_NB)
+	return syscall.FcntlFlock(f.Fd(), syscall.F_SETLK, &flock)
 }

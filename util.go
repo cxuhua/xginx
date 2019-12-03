@@ -8,10 +8,6 @@ import (
 	"sync/atomic"
 )
 
-var (
-	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
-)
-
 //防止被多个线程同时执行
 
 type ONCE int32
@@ -37,55 +33,6 @@ func UR32() uint32 {
 	v := uint32(0)
 	SetRandInt(&v)
 	return v
-}
-
-//max : 60 bits
-func CompressUInt(n uint64) uint64 {
-	if n > MAX_COMPRESS_UINT {
-		panic(VarSizeErr)
-	}
-	if n == 0 {
-		return 0
-	}
-	e := uint64(0)
-	for ((n % 10) == 0) && e < 9 {
-		n /= 10
-		e++
-	}
-	if e < 9 {
-		d := (n % 10)
-		n /= 10
-		n = 1 + (n*9+d-1)*10 + e
-	} else {
-		n = 1 + (n-1)*10 + 9
-	}
-	return n
-}
-
-//max : 60 bits
-func DecompressUInt(x uint64) uint64 {
-	if x == 0 {
-		return 0
-	}
-	x--
-	e := x % 10
-	x /= 10
-	n := uint64(0)
-	if e < 9 {
-		d := (x % 9) + 1
-		x /= 9
-		n = x*10 + d
-	} else {
-		n = x + 1
-	}
-	for e != 0 {
-		n *= 10
-		e--
-	}
-	if n > MAX_COMPRESS_UINT {
-		panic(VarSizeErr)
-	}
-	return n
 }
 
 func Sha256(b []byte) []byte {
@@ -152,6 +99,7 @@ func HexDecode(s string) []byte {
 	return d
 }
 
+//获取以0结束的字符串，\0截断,不包括\0之后的
 func String(b []byte) string {
 	for idx, c := range b {
 		if c == 0 {

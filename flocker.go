@@ -1,4 +1,4 @@
-package flocker
+package xginx
 
 //文件锁多平台实现
 type FLocker interface {
