@@ -50,6 +50,10 @@ func (lis *listener) OnClientMsg(c *Client, msg MsgIO) {
 
 }
 
+func (lis *listener) TimeNow() uint32 {
+	return uint32(time.Now().Unix())
+}
+
 func (lis *listener) OnInitHttp(m *gin.Engine) {
 
 }

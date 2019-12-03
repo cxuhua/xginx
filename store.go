@@ -210,6 +210,27 @@ type BestValue struct {
 	Height uint32
 }
 
+//获取当前高度
+func (bv BestValue) Curr() uint32 {
+	if bv.Height == InvalidHeight {
+		return 0
+	}
+	return bv.Height
+}
+
+//获取下一个高度
+func (bv BestValue) Next() uint32 {
+	return NextHeight(bv.Height)
+}
+
+func NextHeight(h uint32) uint32 {
+	if h == InvalidHeight {
+		return 0
+	} else {
+		return h + 1
+	}
+}
+
 func NewInvalidBest() BestValue {
 	return BestValue{
 		Height: InvalidHeight,

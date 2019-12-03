@@ -84,6 +84,8 @@ const (
 	NT_BLOCK = NTType(9)
 	//获取区块按高度
 	NT_GET_BLOCK = NTType(10)
+	//返回区块头列表
+	NT_HEADERS = NTType(11)
 	//返回一个错误信息
 	NT_ERROR = NTType(12)
 	//消息通知
@@ -174,6 +176,7 @@ const (
 	ErrCodeFilterLoad = 100004
 	ErrCodeTxMerkle   = 100005
 	ErrCodeBlockMiss  = 100006
+	ErrCodeHeaders    = 100007
 )
 
 type MsgError struct {

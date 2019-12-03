@@ -114,6 +114,10 @@ func NewHASH160(v interface{}) HASH160 {
 	return hash
 }
 
+func (v HASH160) String() string {
+	return hex.EncodeToString(v[:])
+}
+
 func (v *HASH160) SetPK(pk *PublicKey) {
 	*v = pk.Hash()
 }

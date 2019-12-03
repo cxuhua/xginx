@@ -23,6 +23,11 @@ type TxIndex struct {
 	Value TxValue
 }
 
+//是否来自内存
+func (ti TxIndex) IsPool() bool {
+	return ti.Value.BlkId.IsZero()
+}
+
 type TxIndexs []*TxIndex
 
 //存储交易索引值
@@ -225,6 +230,96 @@ func (v *BlockHeader) Decode(r IReader) error {
 	return nil
 }
 
+type Headers []BlockHeader
+
+func (hs Headers) Encode(w IWriter) error {
+	if err := VarUInt(len(hs)).Encode(w); err != nil {
+		return err
+	}
+	for _, v := range hs {
+		err := v.Encode(w)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (hs *Headers) Decode(r IReader) error {
+	num := VarUInt(0)
+	if err := num.Decode(r); err != nil {
+		return err
+	}
+	vs := make([]BlockHeader, num)
+	for i, _ := range vs {
+		v := BlockHeader{}
+		err := v.Decode(r)
+		if err != nil {
+			return err
+		}
+		vs[i] = v
+	}
+	*hs = vs
+	return nil
+}
+
+func (hs *Headers) Add(h BlockHeader) {
+	*hs = append(*hs, h)
+}
+
+func (hs *Headers) Reverse() {
+	vs := Headers{}
+	for i := len(*hs) - 1; i >= 0; i-- {
+		vs.Add((*hs)[i])
+	}
+	*hs = vs
+}
+
+func (hs Headers) check(h uint32, bh BlockHeader, bi *BlockIndex) error {
+	if bh.Merkle.IsZero() {
+		return errors.New("merkle id error")
+	}
+	bh.hasher.Reset()
+	bits := bi.CalcBits(h)
+	if bh.Bits != bits {
+		return errors.New("height bits error")
+	}
+	id, err := bh.ID()
+	if err != nil {
+		return err
+	}
+	if !CheckProofOfWork(id, bh.Bits) {
+		return errors.New("header bits error")
+	}
+	return nil
+}
+
+//检测区块头列表高度从height开始
+func (hs Headers) Check(height uint32, bi *BlockIndex) error {
+	if len(hs) == 0 {
+		return errors.New("empty headers")
+	}
+	nexth := NextHeight(height)
+	first := hs[0]
+	if err := hs.check(nexth, first, bi); err != nil {
+		return err
+	}
+	for i := 1; i < len(hs); i++ {
+		curr := hs[i]
+		if !curr.Prev.Equal(first.MustID()) {
+			return errors.New("prev hash != prev id")
+		}
+		if curr.Time <= first.Time {
+			return errors.New("time error")
+		}
+		if err := hs.check(nexth+uint32(i), curr, bi); err != nil {
+			return err
+		}
+		first = curr
+	}
+	return nil
+}
+
 //txs交易部分和比特币类似
 //块大小限制为4M大小
 type BlockInfo struct {
@@ -279,6 +374,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	if err != nil {
 		return err
 	}
+	//交易所在的区块信息和金额信息索引
 	for idx, tx := range blk.Txs {
 		id, err := tx.ID()
 		if err != nil {
@@ -298,6 +394,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			return err
 		}
 	}
+	//写入账户相关的交易信息索引
 	//TXP_PREFIX + pkh + txid -> txvalue
 	for idx, tx := range blk.Txs {
 		id, err := tx.ID()
@@ -719,7 +816,9 @@ func (v *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	if oidx < 0 || oidx >= len(otx.Outs) {
 		return nil, fmt.Errorf("outindex out of bound")
 	}
-	return otx.Outs[oidx], nil
+	out := otx.Outs[oidx]
+	out.pool = otx.pool
+	return out, nil
 }
 
 func (v *TxIn) Check(bi *BlockIndex) error {
@@ -781,6 +880,7 @@ func (in *TxIn) IsCoinBase() bool {
 type TxOut struct {
 	Value  Amount //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
 	Script Script //锁定脚本
+	pool   bool   //是否来自交易池中的交易
 }
 
 //输出是否可以被in消费
@@ -901,8 +1001,10 @@ func (tx *TX) writetx(bi *BlockIndex, bt *Batch) error {
 		key := tk.GetKey()
 		//被消费删除
 		bt.Del(key)
-		//添加回退日志
-		rt.Put(key, out.Value.Bytes())
+		//添加回退日志用来恢复,如果是引用本区块的忽略
+		if !out.pool {
+			rt.Put(key, out.Value.Bytes())
+		}
 	}
 	//输出coin
 	for idx, out := range tx.Outs {

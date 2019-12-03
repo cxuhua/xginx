@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
@@ -355,7 +354,7 @@ func (bi *BlockIndex) CalcBits(height uint32) uint32 {
 func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	blk := &BlockInfo{}
 	blk.Header.Ver = ver
-	blk.Header.Time = uint32(time.Now().Unix())
+	blk.Header.Time = bi.lptr.TimeNow()
 	nexth := InvalidHeight
 	//设置当前难度
 	if last := bi.Last(); last == nil {
@@ -578,6 +577,7 @@ func (bi *BlockIndex) LoadAll(fn func(pv uint)) error {
 	if bi.Len() == 0 {
 		return nil
 	}
+
 	//验证最后6个块
 	lnum := 6
 	if lnum > bi.Len() {
@@ -657,45 +657,57 @@ func (bi *BlockIndex) checkHeaders(hs []BlockHeader) error {
 	return nil
 }
 
-//合并区块头,
-//返回需要的区块数量
-//如果返回 NeedMoreHeader ，表示需要更多的区块头作为证据,第一个参数是需要的数量
-//func (bi *BlockIndex) MergeHead(hs []BlockHeader) (int, HASH256, error) {
-//	if len(hs) == 0 {
-//		return 0, ZERO, errors.New("hs empty")
-//	}
-//	if err := bi.checkHeaders(hs); err != nil {
-//		return 0, ZERO, err
-//	}
-//	if bi.Len() == 0 && !hs[0].IsGenesis() {
-//		return REQ_MAX_HEADERS_SIZE, conf.genesis, NeedMoreHeader
-//	}
-//	lc := 0
-//	for i, lid, hl := 0, hs[0].MustID(), len(hs); i < hl; {
-//		hh := hs[i]
-//		id := hh.MustID()
-//		if _, has := bi.HasBlock(id); has {
-//			lid = id
-//			i++
-//		} else if ele, err := bi.LinkHeader(hh); err == nil {
-//			lid = id
-//			i++
-//			lc++
-//			LogInfo("link block header success, id =", hh, "height =", ele.Height)
-//		} else if i == 0 { //第一个就无法链接,向后获取数据
-//			return -REQ_MAX_HEADERS_SIZE, lid, NeedMoreHeader
-//		} else if num, err := bi.UnlinkCount(lid); err != nil { //计算需要断开的区块数量
-//			return 0, lid, err
-//		} else if hl-i <= int(num) { //是否存在比更多的区块头作为证据
-//			return int(num + 1), lid, NeedMoreHeader
-//		} else if err = bi.UnlinkTo(lid); err != nil {
-//			return 0, lid, err
-//		}
-//	}
-//	return lc, ZERO, nil
-//}
+//根据证据区块链修正本地链,回退到一个指定id重新链接
+func (bi *BlockIndex) Unlink(hds Headers) error {
+	if len(hds) == 0 {
+		return errors.New("empty headers")
+	}
+	iter := bi.NewIter()
+	//最后匹配的高度和id
+	lh := InvalidHeight
+	li := ZERO
+	//产生分叉后剩余的区块
+	ls := Headers{}
+	for i, v := range hds {
+		id, err := v.ID()
+		if err != nil {
+			return err
+		}
+		//无法定位找到了分叉点
+		if !iter.SeekID(id) {
+			ls = hds[i:]
+			break
+		}
+		lh = iter.Curr().Height
+		li = id
+	}
+	//所有的区块头都不在链中
+	if lh == InvalidHeight || li.IsZero() {
+		return errors.New("all hds not in scope")
+	}
+	//所有区块头都在链中
+	if len(ls) == 0 {
+		return nil
+	}
+	//检测见证区块头
+	err := ls.Check(lh, bi)
+	if err != nil {
+		return err
+	}
+	//获取需要回退到id的数量
+	num, err := bi.UnlinkCount(li)
+	if err != nil {
+		return err
+	}
+	//如果证据区块头不足
+	if num >= uint32(len(ls)) {
+		return errors.New("headers too low")
+	}
+	//回退到指定的id
+	return bi.UnlinkTo(li)
+}
 
-//回退到指定id
+//必须从最后开始断开，回退到指定id,不包括id
 func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
@@ -952,6 +964,36 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	return nil
 }
 
+//返回证据区块头信息
+func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
+	iter := bi.NewIter()
+	rsg := &MsgHeaders{}
+	num := 10
+	//向前移动10个
+	if !iter.SeekHeight(msg.Next, -num) {
+		return rsg
+	}
+	//获取最多10个返回
+	for i := num; iter.Next() && i > 0; i-- {
+		rsg.Headers.Add(iter.Curr().BlockHeader)
+	}
+	return rsg
+}
+
+//获取最后的多少个区块头
+func (bi *BlockIndex) LastHeaders(limit int) Headers {
+	iter := bi.NewIter()
+	hs := Headers{}
+	if !iter.Last() {
+		return hs
+	}
+	for i := 0; i < limit && iter.Prev(); i++ {
+		hs.Add(iter.Curr().BlockHeader)
+	}
+	hs.Reverse()
+	return hs
+}
+
 //获取最高块信息
 func (bi *BlockIndex) GetBestValue() BestValue {
 	bv := BestValue{}
@@ -998,6 +1040,13 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 			return nil, err
 		}
 		idxs = append(idxs, iv)
+	}
+	cvs, err := bi.txp.ListTxsWithID(bi, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, tv := range cvs {
+		idxs = append(idxs, tv)
 	}
 	return idxs, nil
 }
@@ -1050,6 +1099,12 @@ func (bi *BlockIndex) HasBlock(id HASH256) (uint32, bool) {
 		bh = ele.Value.(*TBEle).Height
 	}
 	return bh, has
+}
+
+func (bi *BlockIndex) GetEle(id HASH256) (*TBEle, error) {
+	bi.rwm.RLock()
+	defer bi.rwm.RUnlock()
+	return bi.getEle(id)
 }
 
 func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {

@@ -146,9 +146,10 @@ func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 		c.SendMsg(rsg)
 		return
 	}
+	//如果id不匹配，返回区块头作为更长区块链的证据
 	previd := iter.Curr().MustID()
 	if !previd.Equal(msg.Last) {
-		rsg := NewMsgError(ErrCodeBlockMiss, fmt.Errorf("next height %d prev id %v error", msg.Next, previd))
+		rsg := bi.NewMsgHeaders(msg)
 		c.SendMsg(rsg)
 		return
 	}

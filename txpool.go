@@ -285,6 +285,58 @@ func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 	return p.mdb.Contains(coin.GetKey())
 }
 
+//获取spkh相关的交易
+func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	idxs := TxIndexs{}
+	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
+		tx := cur.Value.(*TX)
+		id, err := tx.ID()
+		if err != nil {
+			return nil, err
+		}
+		vval := TxValue{
+			TxIdx: VarUInt(0),
+			BlkId: ZERO, //引用自内存中的交易
+		}
+		//交易中有哪些账户
+		ids := map[HASH256]bool{}
+		for _, in := range tx.Ins {
+			if in.IsCoinBase() {
+				continue
+			}
+			out, err := in.LoadTxOut(bi)
+			if err != nil {
+				return nil, err
+			}
+			pkh, err := out.Script.GetPkh()
+			if err != nil {
+				return nil, err
+			}
+			if pkh.Equal(spkh) {
+				ids[id] = true
+			}
+		}
+		for _, out := range tx.Outs {
+			pkh, err := out.Script.GetPkh()
+			if err != nil {
+				return nil, err
+			}
+			if pkh.Equal(spkh) {
+				ids[id] = true
+			}
+		}
+		for tid, _ := range ids {
+			vv := &TxIndex{}
+			vv.TxId = tid
+			vv.Value = vval
+			idxs = append(idxs, vv)
+		}
+	}
+	return idxs, nil
+}
+
 //获取pkh在交易池中可用的金额
 func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	p.mu.RLock()

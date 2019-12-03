@@ -4,6 +4,8 @@ import "github.com/gin-gonic/gin"
 
 //所有回调可能来自不同的协程
 type IListener interface {
+	//时间戳发生器
+	TimeNow() uint32
 	//获取当前配置
 	GetConfig() *Config
 	//设置当前使用的链

@@ -348,8 +348,16 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 	return nil
 }
 
+//收到区块头列表
+func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
+	s.single.Lock()
+	defer s.single.Unlock()
+	bi := GetBlockIndex()
+	return bi.Unlink(msg.Headers)
+}
+
 //收到块数据
-func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock, dt *time.Timer) error {
+func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
@@ -361,7 +369,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock, dt *time.Timer) error
 	ps := GetPubSub()
 	ps.Pub(msg.Blk, NewRecvBlockTopic)
 	LogInfo("update block to chain success, blk =", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
-	dt.Reset(time.Microsecond * 300)
+	s.dt.Reset(time.Microsecond * 300)
 	if msg.IsBroad() {
 		s.BroadMsg(msg, c)
 	}
@@ -456,7 +464,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 					LogError(err)
 				}
 			} else if msg, ok := m.m.(*MsgBlock); ok {
-				err := s.recvMsgBlock(m.c, msg, s.dt)
+				err := s.recvMsgBlock(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
@@ -464,6 +472,11 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
+				}
+			} else if msg, ok := m.m.(*MsgHeaders); ok {
+				err := s.recvMsgHeaders(m.c, msg)
+				if err != nil {
+					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))
 				}
 			}
 			if msg, ok := m.m.(MsgIO); ok {

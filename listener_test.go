@@ -12,6 +12,7 @@ import (
 type testLisener struct {
 	bi     *BlockIndex
 	wallet IWallet
+	st     uint32
 }
 
 func newListener(wdir string) IListener {
@@ -21,6 +22,7 @@ func newListener(wdir string) IListener {
 	}
 	return &testLisener{
 		wallet: w,
+		st:     uint32(time.Now().Unix()),
 	}
 }
 
@@ -50,6 +52,11 @@ func (lis *testLisener) GetConfig() *Config {
 
 func (lis *testLisener) OnLinkBlock(blk *BlockInfo) {
 
+}
+
+func (lis *testLisener) TimeNow() uint32 {
+	lis.st++
+	return lis.st
 }
 
 func (lis *testLisener) OnClientMsg(c *Client, msg MsgIO) {

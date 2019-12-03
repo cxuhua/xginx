@@ -5,6 +5,26 @@ import (
 	"errors"
 )
 
+type MsgHeaders struct {
+	Headers Headers
+}
+
+func (m MsgHeaders) Id() (MsgId, error) {
+	return ErrMsgId, NotIdErr
+}
+
+func (m MsgHeaders) Type() NTType {
+	return NT_HEADERS
+}
+
+func (m MsgHeaders) Encode(w IWriter) error {
+	return m.Headers.Encode(w)
+}
+
+func (m *MsgHeaders) Decode(r IReader) error {
+	return m.Headers.Decode(r)
+}
+
 //NT_GET_BLOCK
 type MsgGetBlock struct {
 	Last HASH256
