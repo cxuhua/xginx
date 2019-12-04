@@ -46,7 +46,7 @@ func CalcBloomFilterSize(elements int, fprate float64) (uint32, uint32) {
 }
 
 func NewBloomFilter(funcs uint32, tweak uint32, filter []byte) (*BloomFilter, error) {
-	if len(filter) > MAX_BLOOM_FILTER_SIZE/8 {
+	if len(filter) > MAX_BLOOM_FILTER_SIZE {
 		return nil, errors.New("filter size too big")
 	}
 	if funcs > MAX_HASH_FUNCS {

@@ -82,10 +82,20 @@ func (s Script) GetAddress() (Address, error) {
 //coinbase交易没有pkh
 func (s Script) GetPkh() (HASH160, error) {
 	pkh := HASH160{}
-	if ss, err := s.ToLocked(); err != nil {
-		return pkh, err
-	} else {
+	if s.IsLocked() {
+		ss, err := s.ToLocked()
+		if err != nil {
+			return pkh, err
+		}
 		return ss.Pkh, nil
+	} else if s.IsWitness() {
+		ws, err := s.ToWitness()
+		if err != nil {
+			return pkh, err
+		}
+		return ws.Hash()
+	} else {
+		return pkh, errors.New("script typ not pkh")
 	}
 }
 
@@ -150,7 +160,7 @@ func (s Script) ToWitness() (WitnessScript, error) {
 func NewCoinbaseScript(h uint32, bs ...[]byte) Script {
 	s := Script{SCRIPT_COINBASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
-	//当前块高度
+	//当前块高度必须存在
 	Endian.PutUint32(hb, h)
 	s = append(s, hb...)
 	//加当前时间戳
@@ -222,7 +232,7 @@ func NewLockedScript(pkh HASH160, vbs ...[]byte) (Script, error) {
 	return buf.Bytes(), nil
 }
 
-//隔离见证
+//隔离见证脚本
 type WitnessScript struct {
 	Type uint8      //SCRIPT_WITNESS_TYPE
 	Num  uint8      //签名数量
@@ -230,16 +240,6 @@ type WitnessScript struct {
 	Arb  uint8      //是否启用仲裁
 	Pks  []PKBytes  //公钥
 	Sig  []SigBytes //签名
-}
-
-//获取脚本hash包括签名数据，用来生成交易取消hash
-func (ss WitnessScript) GetCancelTxHash() ([]byte, error) {
-	buf := NewWriter()
-	err := ss.Encode(buf)
-	if err != nil {
-		return nil, err
-	}
-	return Hash256(buf.Bytes()), nil
 }
 
 //是否启用仲裁
@@ -278,6 +278,7 @@ func (ss WitnessScript) Encode(w IWriter) error {
 	if err := w.TWrite(ss.Arb); err != nil {
 		return err
 	}
+	//公钥数量和公钥
 	if err := w.TWrite(uint8(len(ss.Pks))); err != nil {
 		return err
 	}
@@ -286,6 +287,7 @@ func (ss WitnessScript) Encode(w IWriter) error {
 			return err
 		}
 	}
+	//签名数量和签名
 	if err := w.TWrite(uint8(len(ss.Sig))); err != nil {
 		return err
 	}
@@ -341,7 +343,7 @@ func (ss WitnessScript) Hash() (HASH160, error) {
 	return HashPks(ss.Num, ss.Less, ss.Arb, ss.Pks)
 }
 
-//hash公钥。地址也将由这个方法生成
+//hash公钥。地址hash也将由这个方法生成
 func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	id := HASH160{}
 	if int(num) != len(pks) {
@@ -366,7 +368,7 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 			return id, err
 		}
 	}
-	copy(id[:], Hash160(w.Bytes()))
+	id = Hash160From(w.Bytes())
 	return id, nil
 }
 
@@ -379,7 +381,7 @@ func (ss WitnessScript) ToScript() (Script, error) {
 	return buf.Bytes(), nil
 }
 
-//csp=true 检查签名证书数量
+//检查指定的签名
 func (ss WitnessScript) CheckSigs(sigs []SigBytes) error {
 	if ss.Type != SCRIPT_WITNESS_TYPE {
 		return errors.New("type errpor")

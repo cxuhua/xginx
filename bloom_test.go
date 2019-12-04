@@ -6,7 +6,7 @@ import (
 )
 
 func TestCalcBloomFilterSize(t *testing.T) {
-	a, b := CalcBloomFilterSize(1000, 0.01)
+	a, b := CalcBloomFilterSize(10, 0.000001)
 	log.Println(a, b)
 }
 

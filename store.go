@@ -201,7 +201,7 @@ func (tk CoinKeyValue) GetKey() []byte {
 }
 
 var (
-	BestBlockKey = []byte("BestBlockKey") //最后区块数据
+	BestBlockKey = []byte("BestBlockKey") //最高区块数据保存key
 	InvalidBest  = NewInvalidBest()       //无效的状态
 )
 

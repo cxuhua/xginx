@@ -39,16 +39,13 @@ func (p *TxPool) Close() {
 }
 
 //返回非空是移除的交易
-func (p *TxPool) Del(id HASH256) *TX {
+func (p *TxPool) Del(id HASH256) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if ele, has := p.tmap[id]; has {
-		tx := ele.Value.(*TX)
 		p.removeEle(ele)
 		LogInfo("del txpool tx=", id, " pool size =", p.tlis.Len())
-		return tx
 	}
-	return nil
 }
 
 //加入其他节点过来的多个交易数据
@@ -67,7 +64,10 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 			LogError("check tx error,skip push to txpoool,", err)
 			continue
 		}
-		_ = p.PushTx(bi, tx)
+		err = p.PushTx(bi, tx)
+		if err != nil {
+			LogError("push tx to pool error", err)
+		}
 	}
 	if p.Len() > bl {
 		LogInfof("tx pool new add %d tx", p.Len()-bl)
@@ -119,33 +119,33 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 	tx.pool = add
 	//存储已经消费的输出
 	for _, in := range tx.Ins {
-		tk := &CoinKeyValue{}
-		tk.Index = in.OutIndex
-		tk.TxId = in.OutHash
+		ckv := &CoinKeyValue{}
+		ckv.Index = in.OutIndex
+		ckv.TxId = in.OutHash
 		if add {
-			err = p.mdb.Put(tk.SpentKey(), tid[:])
+			err = p.mdb.Put(ckv.SpentKey(), tid[:])
 		} else {
-			err = p.mdb.Delete(tk.SpentKey())
+			err = p.mdb.Delete(ckv.SpentKey())
 		}
 		if err != nil {
 			panic(err)
 		}
 	}
-	//存储可用的金额
+	//存储内存池中可用的金额
 	for idx, out := range tx.Outs {
-		tk := &CoinKeyValue{}
+		ckv := &CoinKeyValue{}
 		pkh, err := out.Script.GetPkh()
 		if err != nil {
 			panic(err)
 		}
-		tk.Value = out.Value
-		tk.CPkh = pkh
-		tk.Index = VarUInt(idx)
-		tk.TxId = tid
+		ckv.Value = out.Value
+		ckv.CPkh = pkh
+		ckv.Index = VarUInt(idx)
+		ckv.TxId = tid
 		if add {
-			err = p.mdb.Put(tk.GetKey(), tk.GetValue())
+			err = p.mdb.Put(ckv.GetKey(), ckv.GetValue())
 		} else {
-			err = p.mdb.Delete(tk.GetKey())
+			err = p.mdb.Delete(ckv.GetKey())
 		}
 		if err != nil {
 			panic(err)
@@ -245,6 +245,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 			continue
 		}
 		err := tx.Check(bi, true)
+		//检测失败的将会被删除
 		if err != nil {
 			res = append(res, cur)
 			continue

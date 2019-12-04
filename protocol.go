@@ -105,6 +105,7 @@ const (
 	NT_BROAD_ACK = NTType(0xf1)
 )
 
+//广播应答
 type MsgBroadAck struct {
 	MsgId MsgId
 }
@@ -125,6 +126,7 @@ func (e *MsgBroadAck) Decode(r IReader) error {
 	return r.ReadFull(e.MsgId[:])
 }
 
+//广播头
 type MsgBroadPkg struct {
 	MsgId MsgId //md5
 }

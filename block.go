@@ -466,6 +466,14 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	otxs := blk.Txs
 	//加入多个交易到区块中
 	for _, tx := range txs {
+		id, err := tx.ID()
+		if err != nil {
+			return err
+		}
+		//如果已经存在忽略
+		if blk.HasTx(id) {
+			continue
+		}
 		if err := tx.CheckLockTime(blk); err != nil {
 			return err
 		}
@@ -490,7 +498,7 @@ func (blk *BlockInfo) HasTx(id HASH256) bool {
 	for _, tx := range blk.Txs {
 		tid, err := tx.ID()
 		if err != nil {
-			return false
+			panic(err)
 		}
 		if tid.Equal(id) {
 			return true
@@ -502,6 +510,13 @@ func (blk *BlockInfo) HasTx(id HASH256) bool {
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
+	id, err := tx.ID()
+	if err != nil {
+		return err
+	}
+	if blk.HasTx(id) {
+		return nil
+	}
 	if err := tx.CheckLockTime(blk); err != nil {
 		return err
 	}
@@ -559,6 +574,7 @@ func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 	return fee, nil
 }
 
+//获取区块收益
 func (blk *BlockInfo) GetIncome(bi *BlockIndex) (Amount, error) {
 	rfee := GetCoinbaseReward(blk.Meta.Height)
 	fee, err := blk.GetFee(bi)
@@ -868,6 +884,9 @@ func (out *TxOut) IsSpent(in *TxIn, bi *BlockIndex) bool {
 }
 
 func (out *TxOut) Check(bi *BlockIndex) error {
+	if !out.Value.IsRange() {
+		return errors.New("txout value error")
+	}
 	if out.Script.IsLocked() {
 		return nil
 	}

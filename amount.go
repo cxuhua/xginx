@@ -7,6 +7,7 @@ import (
 	"strconv"
 )
 
+// MAX_MONEY < MAX_COMPRESS_UINT
 const (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
 	COIN              = Amount(100_000_000)

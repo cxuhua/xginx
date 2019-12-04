@@ -20,12 +20,11 @@ func TestMsgVersion(t *testing.T) {
 	}
 	bb := buf.Bytes()
 	log.Println(hex.EncodeToString(bb))
-	flags := []byte(conf.Flags)
 	pd := &NetPackage{
+		Flags: conf.Flags,
 		Type:  msg.Type(),
 		Bytes: bb,
 	}
-	copy(pd.Flags[:], flags)
 	buf = NewWriter()
 	err := pd.Encode(buf)
 	if err != nil {

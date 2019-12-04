@@ -103,7 +103,7 @@ func (tree *MerkleTree) build(h int, pos int, ids []HASH256, vb *BitSet) {
 }
 
 func (tree *MerkleTree) ExtractRoot() (HASH256, error) {
-	root := HASH256{}
+	root := ZERO
 	ids := make([]HASH256, 0)
 	idx := make([]int, 0)
 	tree.bad = false
@@ -132,7 +132,7 @@ func (tree *MerkleTree) ExtractRoot() (HASH256, error) {
 }
 
 func (tree *MerkleTree) Extract() (HASH256, []HASH256, []int) {
-	hash := HASH256{}
+	hash := ZERO
 	ids := make([]HASH256, 0)
 	idx := make([]int, 0)
 	tree.bad = false

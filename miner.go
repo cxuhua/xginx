@@ -52,7 +52,7 @@ func (g *MinerGroup) Times() uint64 {
 	return atomic.LoadUint64(&g.times)
 }
 
-func (g *MinerGroup) single(cb HeaderBytes) {
+func (g *MinerGroup) docalc(cb HeaderBytes) {
 	defer g.wg.Done()
 	for i := UR32(); ; i++ {
 		if g.stop {
@@ -87,7 +87,7 @@ func (g *MinerGroup) Run() {
 	for i := 0; i < g.num; i++ {
 		g.wg.Add(1)
 		cb := g.hb.Clone()
-		go g.single(cb)
+		go g.docalc(cb)
 	}
 	go func() {
 		g.wg.Wait()
@@ -292,7 +292,7 @@ finished:
 				break finished
 			}
 		case chv := <-bch:
-			//收到新区块停止
+			//收到新区块停止当前
 			rlk, ok := chv.(*BlockInfo)
 			if !ok {
 				break
@@ -366,9 +366,11 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 
 func (m *minerEngine) recoverError() {
 	if gin.Mode() == gin.DebugMode {
+		m.cfun()
 		return
 	}
 	if err := recover(); err != nil {
+		m.cfun()
 		LogError(err)
 	}
 }
