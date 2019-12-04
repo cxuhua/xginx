@@ -96,7 +96,7 @@ type DBImp interface {
 var (
 	BLOCK_PREFIX = []byte{1} //块头信息前缀 ->blkmeta
 	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
-	COIN_PREFIX  = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
+	COINS_PREFIX = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
 	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_txid -> blkid+txidx
 )
 
@@ -127,7 +127,7 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	if err := buf.ReadFull(pf); err != nil {
 		return err
 	}
-	if !bytes.Equal(pf, COIN_PREFIX) {
+	if !bytes.Equal(pf, COINS_PREFIX) {
 		return errors.New("key prefix error")
 	}
 	if err := tk.CPkh.Decode(buf); err != nil {
@@ -163,7 +163,7 @@ func (tk CoinKeyValue) GetValue() []byte {
 //消费key,用来记录输入对应的输出是否已经别消费
 func (tk CoinKeyValue) SpentKey() []byte {
 	buf := NewWriter()
-	err := buf.WriteFull(COIN_PREFIX)
+	err := buf.WriteFull(COINS_PREFIX)
 	if err != nil {
 		panic(err)
 	}
@@ -181,7 +181,7 @@ func (tk CoinKeyValue) SpentKey() []byte {
 //用来存储pkh拥有的可消费的金额
 func (tk CoinKeyValue) GetKey() []byte {
 	buf := NewWriter()
-	err := buf.WriteFull(COIN_PREFIX)
+	err := buf.WriteFull(COINS_PREFIX)
 	if err != nil {
 		panic(err)
 	}

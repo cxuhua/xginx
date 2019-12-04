@@ -1059,7 +1059,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 
 //获取某个id的所有余额
 func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error) {
-	prefix := getDBKey(COIN_PREFIX, id[:])
+	prefix := getDBKey(COINS_PREFIX, id[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))

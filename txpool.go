@@ -345,8 +345,7 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	if len(limit) > 0 && limit[0] <= 0 {
 		return coins, nil
 	}
-	key := append([]byte{}, COIN_PREFIX...)
-	key = append(key, spkh[:]...)
+	key := getDBKey(COINS_PREFIX, spkh[:])
 	iter := p.mdb.NewIterator(util.BytesPrefix(key))
 	defer iter.Release()
 	sum := Amount(0)

@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	// 最大块大小
+	//最大块大小
 	MAX_BLOCK_SIZE = 1024 * 1024 * 4
-	//最大索引数据大小
+	//最大日志大小
 	MAX_LOG_SIZE = 1024 * 1024 * 2
 	//最大扩展数据
 	MAX_EXT_SIZE = 4 * 1024
@@ -143,7 +143,10 @@ func (v BlockHeader) Check() error {
 }
 
 func (v BlockHeader) String() string {
-	id, _ := v.ID()
+	id, err := v.ID()
+	if err != nil {
+		panic(err)
+	}
 	return id.String()
 }
 
@@ -391,55 +394,14 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 			return err
 		}
 		bt.Put(TXS_PREFIX, id[:], vbys)
-		err = tx.writetx(bi, bt)
-		if err != nil {
-			return err
-		}
-	}
-	//写入账户相关的交易信息索引
-	//TXP_PREFIX + pkh + txid -> txvalue
-	for idx, tx := range blk.Txs {
-		id, err := tx.ID()
-		if err != nil {
-			return err
-		}
-		vval := TxValue{
-			TxIdx: VarUInt(idx),
-			BlkId: bid,
-		}
-		vbys, err := vval.Bytes()
-		if err != nil {
-			return err
-		}
-		//交易中有哪些账户
 		vps := map[HASH160]bool{}
-		for _, in := range tx.Ins {
-			if in.IsCoinBase() {
-				continue
-			}
-			//消费的输出
-			out, err := in.LoadTxOut(bi)
-			if err != nil {
-				return err
-			}
-			pkh, err := out.Script.GetPkh()
-			if err != nil {
-				return err
-			}
-			vps[pkh] = true
+		err = tx.writetx(bi, vps, bt)
+		if err != nil {
+			return err
 		}
-		//输出
-		for _, out := range tx.Outs {
-			pkh, err := out.Script.GetPkh()
-			if err != nil {
-				return err
-			}
-			vps[pkh] = true
-		}
+		//写入账户相关的交易
 		for pkh, _ := range vps {
-			key := append([]byte{}, pkh[:]...)
-			key = append(key, id[:]...)
-			bt.Put(TXP_PREFIX, key, vbys)
+			bt.Put(TXP_PREFIX, pkh[:], id[:], vbys)
 		}
 	}
 	return nil
@@ -974,7 +936,7 @@ func (tx *TX) IsCoinBase() bool {
 }
 
 //写入交易信息索引和回退索引
-func (tx *TX) writetx(bi *BlockIndex, bt *Batch) error {
+func (tx *TX) writetx(bi *BlockIndex, vps map[HASH160]bool, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
@@ -995,6 +957,7 @@ func (tx *TX) writetx(bi *BlockIndex, bt *Batch) error {
 			return err
 		} else {
 			tk.CPkh = pkh
+			vps[pkh] = true //交易相关的pkh
 		}
 		tk.Index = in.OutIndex
 		tk.TxId = in.OutHash
@@ -1014,6 +977,7 @@ func (tx *TX) writetx(bi *BlockIndex, bt *Batch) error {
 			return err
 		} else {
 			tk.CPkh = pkh
+			vps[pkh] = true //交易相关的pkh
 		}
 		tk.Index = VarUInt(idx)
 		if tid, err := tx.ID(); err != nil {
