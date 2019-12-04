@@ -26,6 +26,10 @@ func newListener(wdir string) IListener {
 	}
 }
 
+func (lis *testLisener) OnTxRep(tx *TX) {
+
+}
+
 func (lis *testLisener) OnUnlinkBlock(blk *BlockInfo) {
 
 }
@@ -89,7 +93,7 @@ func (lis *testLisener) OnNewBlock(blk *BlockInfo) error {
 
 	txt := time.Now().Format("2006-01-02 15:04:05")
 	//base tx
-	in := &TxIn{}
+	in := NewTxIn()
 	in.Script = blk.CoinbaseScript([]byte(txt))
 	tx.Ins = []*TxIn{in}
 	//

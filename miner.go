@@ -17,6 +17,8 @@ const (
 	NewLinkBlockTopic = "NewLinkBlock"
 	//接收的广播区块
 	NewRecvBlockTopic = "NewRecvBlock"
+	//当交易池中的交易被移除时 txid
+	TxPoolDelTxTopic = "TxPoolDelTx"
 )
 
 const (
@@ -260,7 +262,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
-	bch := ps.Sub(NewRecvBlockTopic)
+	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
 finished:
 	for !genok {
@@ -292,16 +294,14 @@ finished:
 				break finished
 			}
 		case chv := <-bch:
-			//收到新区块停止当前
-			rlk, ok := chv.(*BlockInfo)
-			if !ok {
-				break
+			//如果交易池中的交易被删除，或者收到新的区块检测是否停止区块生成
+			if rlk, ok := chv.(*BlockInfo); ok && rlk.Meta.Height >= blk.Meta.Height {
+				mg.StopAndWait()
+				return errors.New("new block recv,stop gen block")
+			} else if tid, ok := chv.(HASH256); ok && blk.HasTx(tid) {
+				mg.StopAndWait()
+				return errors.New("tx pool removed,stop gen block")
 			}
-			if rlk.Meta.Height < blk.Meta.Height {
-				break
-			}
-			mg.StopAndWait()
-			return errors.New("new block recv,stop gen block")
 		case <-m.sch:
 			mg.StopAndWait()
 			return errors.New("force stop current gen block")

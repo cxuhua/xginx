@@ -119,6 +119,7 @@ type CoinKeyValue struct {
 	Index VarUInt //txout idx
 	Value Amount  //list时设置不包含在key中
 	pool  bool    //是否来自内存池
+	spent bool    //是否被消费了
 }
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
@@ -145,7 +146,7 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 
 //创建一个消费输入
 func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
-	in := &TxIn{}
+	in := NewTxIn()
 	in.OutHash = tk.TxId
 	in.OutIndex = tk.Index
 	if script, err := acc.NewWitnessScript().ToScript(); err != nil {

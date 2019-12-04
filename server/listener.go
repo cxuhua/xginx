@@ -42,6 +42,10 @@ func (lis *listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
+func (lis *listener) OnTxRep(tx *TX) {
+
+}
+
 func (lis *listener) OnLinkBlock(blk *BlockInfo) {
 
 }
@@ -83,7 +87,7 @@ func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	tx := NewTx()
 	txt := time.Now().Format("2006-01-02 15:04:05") + " " + conf.TcpIp
 	//base tx
-	in := &TxIn{}
+	in := NewTxIn()
 	in.Script = blk.CoinbaseScript([]byte(txt))
 	tx.Ins = []*TxIn{in}
 	//

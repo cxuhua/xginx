@@ -1058,7 +1058,9 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 }
 
 //获取某个id的所有余额
+//已经消费在内存中的不列出
 func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error) {
+	tp := bi.GetTxPool()
 	prefix := getDBKey(COINS_PREFIX, id[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
@@ -1066,17 +1068,17 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error
 	defer iter.Close()
 	sum := Amount(0)
 	for iter.Next() {
-		tk := &CoinKeyValue{}
-		err := tk.From(iter.Key(), iter.Value())
+		ckv := &CoinKeyValue{}
+		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		//如果已经在内存中被消费了，不列出
-		if bi.txp.IsSpentCoin(tk) {
+		ckv.spent = tp.IsSpentCoin(ckv)
+		if ckv.spent {
 			continue
 		}
-		sum += tk.Value
-		kvs = append(kvs, tk)
+		sum += ckv.Value
+		kvs = append(kvs, ckv)
 		if len(limit) > 0 && sum >= limit[0] {
 			return kvs, nil
 		}
@@ -1085,12 +1087,15 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error
 		limit[0] -= sum
 	}
 	//获取交易池中的用于id的金额
-	cvs, err := bi.txp.ListCoins(id, limit...)
+	cvs, err := tp.ListCoins(id, limit...)
 	if err != nil {
 		return nil, err
 	}
-	for _, tk := range cvs {
-		kvs = append(kvs, tk)
+	for _, ckv := range cvs {
+		if ckv.spent {
+			continue
+		}
+		kvs = append(kvs, ckv)
 	}
 	return kvs, nil
 }

@@ -3,6 +3,7 @@ package xginx
 import (
 	"errors"
 	"fmt"
+	"log"
 	"testing"
 )
 
@@ -238,6 +239,144 @@ func TestBitsCalc(t *testing.T) {
 	removeAll(bi)
 }
 
+func createtx(bi *BlockIndex, blk *BlockInfo, a Address, b Address, fee Amount, coin *CoinKeyValue, lt uint32, seq uint32) *TX {
+	tx := NewTx()
+	acc, err := bi.lptr.GetWallet().GetAccount(a)
+	if err != nil {
+		panic(err)
+	}
+	in, err := coin.NewTxIn(acc)
+	if err != nil {
+		panic(err)
+	}
+	in.Sequence = seq
+	tx.Ins = append(tx.Ins, in)
+	out, err := b.NewTxOut(fee)
+	if err != nil {
+		panic(err)
+	}
+	tx.Outs = append(tx.Outs, out)
+	keep, err := a.NewTxOut(coin.Value - fee)
+	if err != nil {
+		panic(err)
+	}
+	tx.Outs = append(tx.Outs, keep)
+	tx.LockTime = lt
+	err = tx.Sign(bi)
+	if err != nil {
+		panic(err)
+	}
+	if err := tx.Check(bi, true); err != nil {
+		panic(err)
+	}
+	if err := bi.txp.PushTx(bi, tx); err != nil {
+		panic(err)
+	}
+	return tx
+}
+
+func TestLockTimeTx(t *testing.T) {
+	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
+	b := Address("st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")
+	bi := GetTestBlockIndex()
+	defer bi.Close()
+	removeAll(bi)
+	defer removeAll(bi)
+	createBlock(bi, 1)
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	//获取可用的金额
+	ds, err := bi.ListCoins(a)
+	if err != nil {
+		panic(err)
+	}
+	if len(ds) == 0 {
+		panic(errors.New("not coins"))
+	}
+
+	tp := bi.GetTxPool()
+
+	tx1 := createtx(bi, blk, a, b, 10*COIN, ds[0], 5, 0)
+	log.Println("create tx1", tx1)
+	if tp.Len() != 1 {
+		panic("tx pool size error")
+	}
+	err = checkBalance(bi, a, 40*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 10*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx1)
+	if err == nil {
+		panic("locktime error")
+	}
+	tx2 := createtx(bi, blk, a, b, 15*COIN, ds[0], 5, 1)
+	log.Println("create tx2", tx2)
+	if tp.Len() != 1 {
+		panic("tx pool size error")
+	}
+	err = checkBalance(bi, a, 35*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 15*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx2)
+	if err == nil {
+		panic("locktime error")
+	}
+	tx3 := createtx(bi, blk, a, b, 20*COIN, ds[0], 5, SEQUENCE_FINAL)
+	log.Println("create tx3", tx2)
+	if tp.Len() != 1 {
+		panic("tx pool size error")
+	}
+	err = checkBalance(bi, a, 30*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 20*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx3)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := blk.Finish(bi); err != nil {
+		panic(err)
+	}
+	calcHash(blk)
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, a, 30*COIN+50*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 20*COIN)
+	if err != nil {
+		panic(err)
+	}
+	removeAll(bi)
+	err = checkBalance(bi, a, 0)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 0)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestTransfire(t *testing.T) {
 	var err error
 	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
@@ -246,6 +385,7 @@ func TestTransfire(t *testing.T) {
 	bi := GetTestBlockIndex()
 	defer bi.Close()
 	removeAll(bi)
+	defer removeAll(bi)
 	//开始余额应该全是0
 	err = checkBalance(bi, a, 0)
 	if err != nil {

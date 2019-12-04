@@ -185,6 +185,7 @@ func (p *TxPool) removeRefsTxs(id HASH256, ele *list.Element) {
 
 //移除一个元素
 func (p *TxPool) removeEle(ele *list.Element) {
+	ps := GetPubSub()
 	tx := ele.Value.(*TX)
 	id, err := tx.ID()
 	if err != nil {
@@ -196,6 +197,8 @@ func (p *TxPool) removeEle(ele *list.Element) {
 	p.setMemIdx(tx, false)
 	p.tlis.Remove(ele)
 	delete(p.tmap, id)
+	ps.Pub(id, TxPoolDelTxTopic)
+	LogInfo("txpool remove tx", id)
 }
 
 //移除多个交易
@@ -241,7 +244,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		buf.Reset()
 		tx := cur.Value.(*TX)
 		//未到时间的交易忽略
-		if err := tx.CheckLockTime(blk); err != nil {
+		if !tx.IsFinal(blk) {
 			continue
 		}
 		err := tx.Check(bi, true)
@@ -351,18 +354,15 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	defer iter.Release()
 	sum := Amount(0)
 	for iter.Next() {
-		tk := &CoinKeyValue{}
-		err := tk.From(iter.Key(), iter.Value())
+		ckv := &CoinKeyValue{}
+		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		tk.pool = true
-		//过滤已经被交易池消费的
-		if p.mdb.Contains(tk.SpentKey()) {
-			continue
-		}
-		coins = append(coins, tk)
-		sum += tk.Value
+		ckv.pool = true
+		ckv.spent = p.mdb.Contains(ckv.SpentKey())
+		coins = append(coins, ckv)
+		sum += ckv.Value
 		if len(limit) > 0 && sum >= limit[0] {
 			return coins, nil
 		}
@@ -371,10 +371,15 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 }
 
 //一笔钱是否已经在内存交易池中某个交易消费
-func (p *TxPool) IsSpentCoin(coin *CoinKeyValue) bool {
+func (p *TxPool) IsSpent(skey []byte) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.mdb.Contains(coin.SpentKey())
+	return p.mdb.Contains(skey)
+}
+
+//一笔钱是否已经在内存交易池中某个交易消费
+func (p *TxPool) IsSpentCoin(coin *CoinKeyValue) bool {
+	return p.IsSpent(coin.SpentKey())
 }
 
 //交易池是否存在某个交易
@@ -403,6 +408,38 @@ func (p *TxPool) Len() int {
 	return p.tlis.Len()
 }
 
+//查询有相同输入的交易
+func (p *TxPool) findTxIn(in *TxIn) (*list.Element, *TxIn) {
+	for _, ele := range p.tmap {
+		tx := ele.Value.(*TX)
+		for _, iv := range tx.Ins {
+			if iv.Equal(in) {
+				return ele, iv
+			}
+		}
+	}
+	return nil, nil
+}
+
+//如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
+func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
+	for _, in := range tx.Ins {
+		ele, vin := p.findTxIn(in)
+		//不存在忽略，只要有一个存在就需要移除旧的交易
+		if vin == nil || ele == nil {
+			continue
+		}
+		//seq比之前大可以覆盖交易
+		if tx := ele.Value.(*TX); in.Sequence > vin.Sequence {
+			bi.lptr.OnTxRep(tx)
+			p.removeEle(ele)
+			return nil
+		}
+		return errors.New("sequence error")
+	}
+	return nil
+}
+
 //添加进去一笔交易放入最后
 //交易必须是校验过的
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
@@ -410,6 +447,9 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	defer p.mu.Unlock()
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
 		return errors.New("tx pool full,ignore push back")
+	}
+	if err := p.replaceTx(bi, tx); err != nil {
+		return err
 	}
 	if err := bi.lptr.OnTxPool(tx); err != nil {
 		return err

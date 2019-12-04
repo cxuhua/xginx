@@ -166,6 +166,9 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	if err := sr.out.Value.Encode(buf); err != nil {
 		return nil, err
 	}
+	if err := buf.TWrite(sr.in.Sequence); err != nil {
+		return nil, err
+	}
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}

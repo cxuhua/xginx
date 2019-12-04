@@ -32,4 +32,6 @@ type IListener interface {
 	OnTxPool(tx *TX) error
 	//当账户没有私钥签名时调用此方法
 	OnSignTx(singer ISigner, wits *WitnessScript) error
+	//当交易池的交易以为seq设置被替换时
+	OnTxRep(tx *TX)
 }
