@@ -233,6 +233,10 @@ type NetAddr struct {
 	port uint16
 }
 
+func (c NetAddr) IP() []byte {
+	return c.ip.To16()
+}
+
 func NetAddrForm(s string) NetAddr {
 	n := NetAddr{}
 	_ = n.From(s)

@@ -30,6 +30,10 @@ func newListener(conf *Config) IListener {
 	}
 }
 
+func (lis *listener) IsTest() bool {
+	return false
+}
+
 func (lis *listener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
 }
@@ -85,10 +89,11 @@ func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	//设置base out script
 	//创建coinbase tx
 	tx := NewTx()
-	txt := time.Now().Format("2006-01-02 15:04:05") + " " + conf.TcpIp
+	txt := time.Now().Format("2006-01-02 15:04:05")
+	addr := conf.GetNetAddr()
 	//base tx
 	in := NewTxIn()
-	in.Script = blk.CoinbaseScript([]byte(txt))
+	in.Script = blk.CoinbaseScript(addr.IP(), []byte(txt))
 	tx.Ins = []*TxIn{in}
 	//
 	out := &TxOut{}

@@ -79,6 +79,10 @@ func (lis *testLisener) GetWallet() IWallet {
 	return lis.wallet
 }
 
+func (lis *testLisener) IsTest() bool {
+	return true
+}
+
 //当块创建完毕
 func (lis *testLisener) OnNewBlock(blk *BlockInfo) error {
 	//获取矿工账号

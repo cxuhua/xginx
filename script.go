@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"errors"
-	"time"
 )
 
 const (
@@ -157,20 +156,14 @@ func (s Script) ToWitness() (WitnessScript, error) {
 	return wit, nil
 }
 
-func NewCoinbaseScript(h uint32, bs ...[]byte) Script {
+func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
 	s := Script{SCRIPT_COINBASE_TYPE}
 	hb := []byte{0, 0, 0, 0}
 	//当前块高度必须存在
 	Endian.PutUint32(hb, h)
 	s = append(s, hb...)
-	//加当前时间戳
-	Endian.PutUint32(hb, uint32(time.Now().Unix()))
-	s = append(s, hb...)
-	//加点随机值
-	rv := uint32(0)
-	SetRandInt(&rv)
-	Endian.PutUint32(hb, rv)
-	s = append(s, hb...)
+	//加入ip地址
+	s = append(s, ip...)
 	//自定义数据
 	for _, v := range bs {
 		s = append(s, v...)

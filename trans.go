@@ -4,13 +4,14 @@ import "errors"
 
 //交易数据结构
 type MulTransInfo struct {
-	bi   *BlockIndex
-	Acts []*Account //原账号
-	Keep int        //找零到这个索引对应的src地址
-	Dst  []Address  //目标地址
-	Amts []Amount   //目标金额 大小与dst对应
-	Fee  Amount     //交易费
-	Ext  []byte     //扩展信息
+	bi    *BlockIndex
+	Acts  []*Account //原账号
+	Spent uint32     //消费区块高度
+	Keep  int        //找零到这个索引对应的src地址
+	Dst   []Address  //目标地址
+	Amts  []Amount   //目标金额 大小与dst对应
+	Fee   Amount     //交易费
+	Ext   []byte     //扩展信息
 }
 
 func (m *MulTransInfo) Check() error {
@@ -52,6 +53,9 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
+	if m.Spent < m.bi.NextHeight() {
+		return nil, errors.New("spent error,must >= best height")
+	}
 	tx := NewTx()
 	//输出总计
 	sum := m.Fee
@@ -71,6 +75,9 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		//获取需要消耗的输出
 		for _, cv := range ds {
+			if !cv.IsMatured(m.Spent) {
+				continue
+			}
 			//生成待签名的输入
 			in, err := cv.NewTxIn(acc)
 			if err != nil {

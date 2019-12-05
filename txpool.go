@@ -17,12 +17,18 @@ const (
 	MAX_TX_POOL_SIZE = 4096 * 4
 )
 
+type txpoolin struct {
+	tx  *TX
+	idx int
+}
+
 //交易池，存放签名成功，未确认的交易
 //当区块连接后需要把区块中的交易从这个池子删除
 type TxPool struct {
 	mu   sync.RWMutex
 	tlis *list.List
 	tmap map[HASH256]*list.Element
+	imap map[HASH256]txpoolin //txin -> tx 索引
 	mdb  *memdb.DB
 }
 
@@ -30,6 +36,7 @@ func NewTxPool() *TxPool {
 	return &TxPool{
 		tlis: list.New(),
 		tmap: map[HASH256]*list.Element{},
+		imap: map[HASH256]txpoolin{},
 		mdb:  memdb.New(comparer.DefaultComparer, 1024*4),
 	}
 }
@@ -38,14 +45,26 @@ func (p *TxPool) Close() {
 	p.mdb.Reset()
 }
 
-//返回非空是移除的交易
-func (p *TxPool) Del(id HASH256) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *TxPool) deltx(tx *TX) {
+	id, err := tx.ID()
+	if err != nil {
+		panic(err)
+	}
+	p.del(id)
+}
+
+func (p *TxPool) del(id HASH256) {
 	if ele, has := p.tmap[id]; has {
 		p.removeEle(ele)
 		LogInfo("del txpool tx=", id, " pool size =", p.tlis.Len())
 	}
+}
+
+//返回非空是移除的交易
+func (p *TxPool) Del(id HASH256) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.del(id)
 }
 
 //加入其他节点过来的多个交易数据
@@ -118,13 +137,17 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 	}
 	tx.pool = add
 	//存储已经消费的输出
-	for _, in := range tx.Ins {
+	for idx, in := range tx.Ins {
 		ckv := &CoinKeyValue{}
 		ckv.Index = in.OutIndex
 		ckv.TxId = in.OutHash
 		if add {
+			//存放in对应的tx和位置
+			p.imap[in.OutKey()] = txpoolin{tx: tx, idx: idx}
+			//存放消耗的金额
 			err = p.mdb.Put(ckv.SpentKey(), tid[:])
 		} else {
+			delete(p.imap, in.OutKey())
 			err = p.mdb.Delete(ckv.SpentKey())
 		}
 		if err != nil {
@@ -142,6 +165,8 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 		ckv.CPkh = pkh
 		ckv.Index = VarUInt(idx)
 		ckv.TxId = tid
+		ckv.Coinbase = 0
+		ckv.Height = 0
 		if add {
 			err = p.mdb.Put(ckv.GetKey(), ckv.GetValue())
 		} else {
@@ -244,7 +269,12 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		buf.Reset()
 		tx := cur.Value.(*TX)
 		//未到时间的交易忽略
-		if !tx.IsFinal(blk) {
+		if !blk.IsFinal(tx) {
+			continue
+		}
+		//引用了未成熟的交易删除
+		if !tx.IsMatured(blk.Meta.Height, bi) {
+			res = append(res, cur)
 			continue
 		}
 		err := tx.Check(bi, true)
@@ -341,6 +371,17 @@ func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
 	return idxs, nil
 }
 
+func (p *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
+	key := getDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	val, err := p.mdb.Get(key)
+	if err != nil {
+		return nil, fmt.Errorf("get coin from txpool error %w", err)
+	}
+	ckv := &CoinKeyValue{pool: true}
+	err = ckv.From(key, val)
+	return ckv, err
+}
+
 //获取pkh在交易池中可用的金额
 func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	p.mu.RLock()
@@ -354,12 +395,11 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	defer iter.Release()
 	sum := Amount(0)
 	for iter.Next() {
-		ckv := &CoinKeyValue{}
+		ckv := &CoinKeyValue{pool: true}
 		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		ckv.pool = true
 		ckv.spent = p.mdb.Contains(ckv.SpentKey())
 		coins = append(coins, ckv)
 		sum += ckv.Value
@@ -423,16 +463,21 @@ func (p *TxPool) findTxIn(in *TxIn) (*list.Element, *TxIn) {
 
 //如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
+	//如果tx已经可打包，忽略覆盖操作
 	for _, in := range tx.Ins {
-		ele, vin := p.findTxIn(in)
-		//不存在忽略，只要有一个存在就需要移除旧的交易
-		if vin == nil || ele == nil {
+		val, has := p.imap[in.OutKey()]
+		if !has {
 			continue
 		}
+		//忽略已经完成的交易
+		if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
+			continue
+		}
+		vin := val.tx.Ins[val.idx]
 		//seq比之前大可以覆盖交易
-		if tx := ele.Value.(*TX); in.Sequence > vin.Sequence {
+		if in.Sequence > vin.Sequence {
 			bi.lptr.OnTxRep(tx)
-			p.removeEle(ele)
+			p.deltx(val.tx)
 			return nil
 		}
 		return errors.New("sequence error")

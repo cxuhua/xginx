@@ -202,14 +202,12 @@ func TestUnlik5(t *testing.T) {
 func GetTestBlockIndex() *BlockIndex {
 	conf = LoadConfig("test.json")
 	lis := newListener(conf.WalletDir)
-	InitBlockIndex(lis)
+	bi := InitBlockIndex(lis)
 	lis.OnStartup()
-
-	bi := GetBlockIndex()
 	if bi.Len() > 0 {
-		conf.genesis, _ = bi.First().ID()
+		conf.genesis = bi.First().MustID()
 	}
-	return bi
+	return GetBlockIndex()
 }
 
 func getacc(bi *BlockIndex, addr Address) *Account {
@@ -282,7 +280,7 @@ func TestLockTimeTx(t *testing.T) {
 	defer bi.Close()
 	removeAll(bi)
 	defer removeAll(bi)
-	createBlock(bi, 1)
+	createBlock(bi, 101)
 	blk, err := bi.NewBlock(1)
 	if err != nil {
 		panic(err)
@@ -295,15 +293,26 @@ func TestLockTimeTx(t *testing.T) {
 	if len(ds) == 0 {
 		panic(errors.New("not coins"))
 	}
+	//获取一笔可用的金额
+	var coin *CoinKeyValue
+	for _, v := range ds {
+		if v.IsMatured(blk.Meta.Height) {
+			coin = v
+			break
+		}
+	}
+	if coin == nil {
+		panic(errors.New("not coin"))
+	}
 
 	tp := bi.GetTxPool()
 
-	tx1 := createtx(bi, blk, a, b, 10*COIN, ds[0], 5, 0)
+	tx1 := createtx(bi, blk, a, b, 10*COIN, coin, 120, 0)
 	log.Println("create tx1", tx1)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
-	err = checkBalance(bi, a, 40*COIN)
+	err = checkBalance(bi, a, 101*50*COIN-10*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -311,16 +320,13 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = blk.AddTx(bi, tx1)
-	if err == nil {
-		panic("locktime error")
-	}
-	tx2 := createtx(bi, blk, a, b, 15*COIN, ds[0], 5, 1)
+
+	tx2 := createtx(bi, blk, a, b, 15*COIN, coin, 120, 1)
 	log.Println("create tx2", tx2)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
-	err = checkBalance(bi, a, 35*COIN)
+	err = checkBalance(bi, a, 101*50*COIN-15*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -328,16 +334,13 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = blk.AddTx(bi, tx2)
-	if err == nil {
-		panic("locktime error")
-	}
-	tx3 := createtx(bi, blk, a, b, 20*COIN, ds[0], 5, SEQUENCE_FINAL)
-	log.Println("create tx3", tx2)
+
+	tx3 := createtx(bi, blk, a, b, 20*COIN, coin, 5, SEQUENCE_FINAL)
+	log.Println("create tx3", tx3)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
-	err = checkBalance(bi, a, 30*COIN)
+	err = checkBalance(bi, a, 101*50*COIN-20*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -345,11 +348,11 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = blk.AddTx(bi, tx3)
+
+	err = blk.LoadTxs(bi)
 	if err != nil {
 		panic(err)
 	}
-
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
@@ -358,7 +361,7 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = checkBalance(bi, a, 30*COIN+50*COIN)
+	err = checkBalance(bi, a, 30*COIN+101*50*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -422,9 +425,9 @@ func TestTransfire(t *testing.T) {
 		t.Error("c txs error")
 	}
 	//生成5个区块
-	createBlock(bi, 5)
-	//生成5个区块后应该有250个
-	err = checkBalance(bi, a, 5*50*COIN)
+	createBlock(bi, 100)
+
+	err = checkBalance(bi, a, 100*50*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -445,6 +448,7 @@ func TestTransfire(t *testing.T) {
 	mi := bi.EmptyMulTransInfo()
 	mi.Acts = []*Account{getacc(bi, a)}
 	mi.Keep = 0
+	mi.Spent = blk.Meta.Height
 	mi.Dst = []Address{b}
 	mi.Amts = []Amount{15 * COIN}
 	mi.Fee = 1 * COIN
@@ -458,7 +462,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//A转给B15个后剩余，加上扣除的交易费
-	err = checkBalance(bi, a, 5*50*COIN-15*COIN-1*COIN)
+	err = checkBalance(bi, a, 100*50*COIN-15*COIN-1*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -477,10 +481,10 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//5个coinbase+一个交易
-	if len(txs) != 6 {
+	if len(txs) != 101 {
 		t.Error("a txs error")
 	}
-	if !txs[5].IsPool() {
+	if !txs[100].IsPool() {
 		t.Error("5 must is pool")
 	}
 	txs, err = bi.ListTxs(b)
@@ -505,6 +509,7 @@ func TestTransfire(t *testing.T) {
 	mi = bi.EmptyMulTransInfo()
 	mi.Acts = []*Account{getacc(bi, b)}
 	mi.Keep = 0
+	mi.Spent = blk.Meta.Height
 	mi.Dst = []Address{c}
 	mi.Amts = []Amount{5 * COIN}
 	mi.Fee = 1 * COIN
@@ -519,7 +524,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//a剩余
-	err = checkBalance(bi, a, 5*50*COIN-15*COIN-1*COIN)
+	err = checkBalance(bi, a, 100*50*COIN-15*COIN-1*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -537,10 +542,10 @@ func TestTransfire(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if len(txs) != 6 {
+	if len(txs) != 101 {
 		t.Error("a txs error")
 	}
-	if !txs[5].IsPool() {
+	if !txs[100].IsPool() {
 		t.Error("5 must is pool")
 	}
 	txs, err = bi.ListTxs(b)
@@ -580,7 +585,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//打包后检查a 新块奖励50+交易费2
-	err = checkBalance(bi, a, 5*50*COIN-15*COIN-1*COIN+50*COIN+2*COIN)
+	err = checkBalance(bi, a, 100*50*COIN-15*COIN-1*COIN+50*COIN+2*COIN)
 	if err != nil {
 		panic(err)
 	}
@@ -598,7 +603,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//a新增了coinbasetx
-	if len(txs) != 7 {
+	if len(txs) != 102 {
 		t.Error("a txs error")
 	}
 	if txs[6].IsPool() {

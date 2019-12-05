@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -57,10 +58,11 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	return nil
 }
 
-func EmptyTBEle(h uint32, bi *BlockIndex) *TBEle {
+func EmptyTBEle(h uint32, bh BlockHeader, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		Height: h,
 		bi:     bi,
+		TBMeta: TBMeta{BlockHeader: bh},
 	}
 }
 
@@ -236,6 +238,10 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 	}
 	monce.Do(func() {
 		bi := NewBlockIndex(lis)
+		//写入第一个区块
+		if bv := bi.GetBestValue(); !lis.IsTest() && !bv.IsValid() {
+			bi.WriteGenesis()
+		}
 		err := bi.LoadAll(func(pv uint) {
 			LogInfof("load block main chian progress = %d%%", pv)
 		})
@@ -355,25 +361,20 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	blk := &BlockInfo{}
 	blk.Header.Ver = ver
 	blk.Header.Time = bi.lptr.TimeNow()
-	nexth := InvalidHeight
+	bv := bi.GetBestValue()
 	//设置当前难度
-	if last := bi.Last(); last == nil {
+	if !bv.IsValid() {
+		blk.Header.Prev = ZERO
 		blk.Header.Bits = GetMinPowBits()
-		nexth = 0
-	} else if lid, err := last.ID(); err != nil {
-		return nil, err
 	} else {
-		nexth = last.Height + 1
-		blk.Header.Prev = lid
-		blk.Header.Bits = bi.CalcBits(nexth)
+		blk.Header.Prev = bv.Id
+		blk.Header.Bits = bi.CalcBits(bv.Next())
 	}
 	if !CheckProofOfWorkBits(blk.Header.Bits) {
 		return nil, errors.New("block bits check error")
 	}
 	SetRandInt(&blk.Header.Nonce)
-	ele := EmptyTBEle(nexth, bi)
-	ele.TBMeta.BlockHeader = blk.Header
-	blk.Meta = ele
+	blk.Meta = EmptyTBEle(bv.Next(), blk.Header, bi)
 	if err := bi.lptr.OnNewBlock(blk); err != nil {
 		return nil, err
 	}
@@ -394,6 +395,11 @@ func (bi *BlockIndex) First() *TBEle {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
 	return bi.first()
+}
+
+func (bi *BlockIndex) NextHeight() uint32 {
+	bv := bi.GetBestValue()
+	return bv.Next()
 }
 
 func (bi *BlockIndex) BestHeight() uint32 {
@@ -1013,6 +1019,39 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 	return bv
 }
 
+//获取一笔金额
+func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
+	key := getDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	coin := &CoinKeyValue{}
+	val, err := bi.db.Index().Get(key)
+	if err != nil {
+		coin, err = bi.txp.GetCoin(pkh, txid, idx)
+	} else {
+		err = coin.From(key, val)
+	}
+	return coin, err
+}
+
+//加载第一个区块
+func (bi *BlockIndex) WriteGenesis() {
+	dat, err := ioutil.ReadFile("genesis.blk")
+	if err != nil {
+		panic(err)
+	}
+	buf := NewReader(dat)
+	blk := &BlockInfo{}
+	err = blk.Decode(buf)
+	if err != nil {
+		panic(err)
+	}
+	blk.Meta = EmptyTBEle(0, blk.Header, bi)
+	err = blk.Write(bi)
+	if err != nil {
+		panic(err)
+	}
+	LogInfof("write genesis block %v success", blk)
+}
+
 func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (Coins, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
@@ -1059,9 +1098,9 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 
 //获取某个id的所有余额
 //已经消费在内存中的不列出
-func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error) {
+func (bi *BlockIndex) ListCoinsWithID(pkh HASH160, limit ...Amount) (Coins, error) {
 	tp := bi.GetTxPool()
-	prefix := getDBKey(COINS_PREFIX, id[:])
+	prefix := getDBKey(COINS_PREFIX, pkh[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
@@ -1087,7 +1126,7 @@ func (bi *BlockIndex) ListCoinsWithID(id HASH160, limit ...Amount) (Coins, error
 		limit[0] -= sum
 	}
 	//获取交易池中的用于id的金额
-	cvs, err := tp.ListCoins(id, limit...)
+	cvs, err := tp.ListCoins(pkh, limit...)
 	if err != nil {
 		return nil, err
 	}
@@ -1126,7 +1165,7 @@ func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {
 	return eptr.Value.(*TBEle), nil
 }
 
-func (bi *BlockIndex) linkblk(buf IWriter, blk *BlockInfo) error {
+func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
 	meta := &TBMeta{
@@ -1160,13 +1199,6 @@ func (bi *BlockIndex) linkblk(buf IWriter, blk *BlockInfo) error {
 		return errors.New("block header bits check error")
 	}
 	ele := NewTBEle(meta, nexth, bi)
-	//强制检测区块大小
-	if err := blk.Encode(buf); err != nil {
-		return err
-	}
-	if buf.Len() > MAX_BLOCK_SIZE {
-		return errors.New("block size too big")
-	}
 	blk.Meta = ele
 	//设置交易数量
 	blk.Meta.Txs = VarUInt(len(blk.Txs))
@@ -1175,8 +1207,7 @@ func (bi *BlockIndex) linkblk(buf IWriter, blk *BlockInfo) error {
 
 //更新区块数据(需要区块头先链接好
 func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
-	buf := NewWriter()
-	err := bi.linkblk(buf, blk)
+	err := bi.linkblk(blk)
 	if err != nil {
 		return err
 	}
@@ -1185,48 +1216,12 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
+	//检测coinbase
 	if err := blk.CheckCoinbase(); err != nil {
 		return err
 	}
-	bid, err := blk.ID()
-	if err != nil {
-		return err
-	}
-	//写入索引数据
-	bt := bi.db.Index().NewBatch()
-	rt := bt.NewRev()
-	//写入最好区块数据信息
-	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
-	//还原写入
-	if bv := bi.GetBestValue(); bv.IsValid() {
-		rt.Put(BestBlockKey, bv.Bytes())
-	}
-	//写入交易信息
-	if err := blk.WriteTxsIdx(bi, bt); err != nil {
-		return err
-	}
-	//检测日志文件
-	if bt.Len() > MAX_LOG_SIZE || rt.Len() > MAX_LOG_SIZE {
-		return errors.New("opts state logs too big > MAX_LOG_SIZE")
-	}
-	//保存回退日志
-	blk.Meta.Rev, err = bi.db.Rev().Write(rt.Dump())
-	if err != nil {
-		return err
-	}
-	//保存区块数据
-	blk.Meta.Blk, err = bi.db.Blk().Write(buf.Bytes())
-	if err != nil {
-		return err
-	}
-	//保存区块头数据
-	hbs, err := blk.Meta.Bytes()
-	if err != nil {
-		return err
-	}
-	bt.Put(BLOCK_PREFIX, bid[:], hbs)
-	//写入索引数据
-	err = bi.db.Index().Write(bt)
+	//写入数据库
+	err = blk.Write(bi)
 	if err != nil {
 		return err
 	}

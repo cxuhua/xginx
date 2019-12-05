@@ -114,12 +114,14 @@ func (c Coins) Balance() Amount {
 
 //积分key
 type CoinKeyValue struct {
-	CPkh  HASH160 //cli hash
-	TxId  HASH256 //tx id
-	Index VarUInt //txout idx
-	Value Amount  //list时设置不包含在key中
-	pool  bool    //是否来自内存池
-	spent bool    //是否被消费了
+	CPkh     HASH160 //cli hash
+	TxId     HASH256 //tx id
+	Index    VarUInt //txout idx
+	Value    Amount  //list时设置不包含在key中
+	Coinbase VarUInt //是否属于coinbase o or 1
+	Height   VarUInt //所在区块高度
+	pool     bool    //是否来自内存池
+	spent    bool    //是否在内存池被消费了
 }
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
@@ -140,7 +142,16 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	if err := tk.Index.Decode(buf); err != nil {
 		return err
 	}
-	tk.Value.From(v)
+	buf = NewReader(v)
+	if err := tk.Value.Decode(buf); err != nil {
+		return err
+	}
+	if err := tk.Coinbase.Decode(buf); err != nil {
+		return err
+	}
+	if err := tk.Height.Decode(buf); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -158,7 +169,22 @@ func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
 }
 
 func (tk CoinKeyValue) GetValue() []byte {
-	return tk.Value.Bytes()
+	buf := NewWriter()
+	if err := tk.Value.Encode(buf); err != nil {
+		panic(err)
+	}
+	if err := tk.Coinbase.Encode(buf); err != nil {
+		panic(err)
+	}
+	if err := tk.Height.Encode(buf); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+//是否成熟可用
+func (tk CoinKeyValue) IsMatured(spent uint32) bool {
+	return tk.Coinbase == 0 || (spent-tk.Height.ToUInt32() >= COINBASE_MATURITY)
 }
 
 //消费key,用来记录输入对应的输出是否已经别消费

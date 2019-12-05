@@ -3,6 +3,7 @@ package xginx
 import (
 	"context"
 	"errors"
+	"io/ioutil"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -312,6 +313,12 @@ finished:
 	}
 	if !genok {
 		return errors.New("miner gen block failed")
+	}
+	if bi.Len() == 0 {
+		buf := NewWriter()
+		_ = blk.Encode(buf)
+		ioutil.WriteFile("genesis.blk", buf.Bytes(), 0644)
+		LogInfo("save first block")
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if err = bi.LinkBlk(blk); err != nil {

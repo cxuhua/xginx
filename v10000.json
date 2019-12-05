@@ -13,5 +13,5 @@
   "http_port": 9334,
   "addr_prefix": "st",
   "seeds":["seed.xginx.com"],
-  "genesis": "00000000e9888ed3bfa40ba6a0f254ea8e2eca071c60854dcdc9b2046abf5f15"
+  "genesis": "00000000218cc232bd8b0ca407f25b297d4af7c6158012904f4b62cf01cf2355"
 }

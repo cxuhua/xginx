@@ -16,6 +16,8 @@ const (
 	LOCKTIME_THRESHOLD = uint32(500000000)
 	//Sequence
 	SEQUENCE_FINAL = 0xffffffff
+	//coinbase输出只能在当前区块高度100之后使用
+	COINBASE_MATURITY = 100
 )
 
 //用户交易索引
@@ -46,7 +48,8 @@ func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
 	if uidx < 0 || uidx >= len(blk.Txs) {
 		return nil, errors.New("txsidx out of bound")
 	}
-	return blk.Txs[uidx], nil
+	tx := blk.Txs[uidx]
+	return tx, nil
 }
 
 func (v TxValue) Encode(w IWriter) error {
@@ -336,6 +339,55 @@ type BlockInfo struct {
 	merkel HashCacher  //merkel hash 缓存
 }
 
+func (blk *BlockInfo) Write(bi *BlockIndex) error {
+	bid, err := blk.ID()
+	if err != nil {
+		return err
+	}
+	buf := NewWriter()
+	if err := blk.Encode(buf); err != nil {
+		return err
+	}
+	if buf.Len() > MAX_BLOCK_SIZE {
+		return fmt.Errorf("block %v too big", bid)
+	}
+	//写入索引数据
+	bt := bi.db.Index().NewBatch()
+	rt := bt.NewRev()
+	//写入最好区块数据信息
+	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
+	//还原写入
+	if bv := bi.GetBestValue(); bv.IsValid() {
+		rt.Put(BestBlockKey, bv.Bytes())
+	}
+	//写入交易信息
+	if err := blk.WriteTxsIdx(bi, bt); err != nil {
+		return err
+	}
+	//检测日志文件
+	if bt.Len() > MAX_LOG_SIZE || rt.Len() > MAX_LOG_SIZE {
+		return errors.New("opts state logs too big > MAX_LOG_SIZE")
+	}
+	//保存回退日志
+	blk.Meta.Rev, err = bi.db.Rev().Write(rt.Dump())
+	if err != nil {
+		return err
+	}
+	//保存区块数据
+	blk.Meta.Blk, err = bi.db.Blk().Write(buf.Bytes())
+	if err != nil {
+		return err
+	}
+	//保存区块头数据
+	hbs, err := blk.Meta.Bytes()
+	if err != nil {
+		return err
+	}
+	bt.Put(BLOCK_PREFIX, bid[:], hbs)
+	//写入索引数据
+	return bi.db.Index().Write(bt)
+}
+
 func (blk BlockInfo) String() string {
 	id, err := blk.ID()
 	if err != nil {
@@ -344,9 +396,13 @@ func (blk BlockInfo) String() string {
 	return id.String()
 }
 
+func (blk *BlockInfo) IsFinal(tx *TX) bool {
+	return tx.IsFinal(blk.Meta.Height, blk.Meta.Time)
+}
+
 //创建Cosinbase 脚本
-func (blk *BlockInfo) CoinbaseScript(bs ...[]byte) Script {
-	return NewCoinbaseScript(blk.Meta.Height, bs...)
+func (blk *BlockInfo) CoinbaseScript(ip []byte, bs ...[]byte) Script {
+	return NewCoinbaseScript(blk.Meta.Height, ip, bs...)
 }
 
 //获取区块奖励
@@ -397,7 +453,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 		}
 		bt.Put(TXS_PREFIX, id[:], vbys)
 		vps := map[HASH160]bool{}
-		err = tx.writetx(bi, vps, bt)
+		err = tx.writetx(bi, blk, vps, bt)
 		if err != nil {
 			return err
 		}
@@ -476,7 +532,7 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 		if blk.HasTx(id) {
 			continue
 		}
-		if !tx.IsFinal(blk) {
+		if !blk.IsFinal(tx) {
 			continue
 		}
 		if err := blk.CheckRefsTx(bi, tx); err != nil {
@@ -509,6 +565,15 @@ func (blk *BlockInfo) HasTx(id HASH256) bool {
 	return false
 }
 
+//从交易池加载可用的交易
+func (blk *BlockInfo) LoadTxs(bi *BlockIndex) error {
+	txs, err := bi.txp.GetTxs(bi, blk)
+	if err != nil {
+		return err
+	}
+	return blk.AddTxs(bi, txs)
+}
+
 //添加单个交易
 //有重复消费输出将会失败
 func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
@@ -520,7 +585,7 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	if blk.HasTx(id) {
 		return nil
 	}
-	if !tx.IsFinal(blk) {
+	if !blk.IsFinal(tx) {
 		return errors.New("not final tx")
 	}
 	//检测引用的交易是否存在
@@ -603,6 +668,10 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 	for i, tx := range blk.Txs {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
+		}
+		//如果引用了coinbase检查是否成熟
+		if !tx.IsMatured(blk.Meta.Height, bi) {
+			return fmt.Errorf("tx not marured %v in %d", tx, blk.Meta.Height)
 		}
 		err := tx.Check(bi, false)
 		if err != nil {
@@ -984,18 +1053,50 @@ func (tx *TX) FindTxIn(hash HASH256, idx VarUInt) *TxIn {
 	return nil
 }
 
+//检查所有
+//spent消费高度
+func (tx *TX) IsMatured(spent uint32, bi *BlockIndex) bool {
+	tp := bi.GetTxPool()
+	for _, in := range tx.Ins {
+		if in.IsCoinBase() {
+			continue
+		}
+		//如果在内存交易池
+		if _, err := tp.Get(in.OutHash); err == nil {
+			continue
+		}
+		//获取交易所在的区块
+		txv, err := bi.LoadTxValue(in.OutHash)
+		if err != nil {
+			panic(err)
+		}
+		blk, err := bi.LoadBlock(txv.BlkId)
+		if err != nil {
+			panic(err)
+		}
+		ref := blk.Txs[txv.TxIdx.ToInt()]
+		if !ref.IsCoinBase() {
+			continue
+		}
+		if spent-blk.Meta.Height < COINBASE_MATURITY {
+			return false
+		}
+	}
+	return true
+}
+
 //当locktime ！=0 时，如果所有输入 Sequence==SEQUENCE_FINAL 交易及时生效
 //否则要达到自定高度或者时间交易才能生效
 //未生效前，输入可以被替换，也就是输入对应的输出可以被消费，这时原先的交易将被移除
-func (tx *TX) IsFinal(blk *BlockInfo) bool {
+func (tx *TX) IsFinal(hv uint32, tv uint32) bool {
 	if tx.LockTime == 0 {
 		return true
 	}
 	lt := uint32(0)
 	if tx.LockTime < LOCKTIME_THRESHOLD {
-		lt = blk.Meta.Height
+		lt = hv
 	} else {
-		lt = blk.Meta.Time
+		lt = tv
 	}
 	if tx.LockTime < lt {
 		return true
@@ -1029,11 +1130,12 @@ func (tx *TX) IsCoinBase() bool {
 }
 
 //写入交易信息索引和回退索引
-func (tx *TX) writetx(bi *BlockIndex, vps map[HASH160]bool, bt *Batch) error {
+func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
+	coinbase := tx.IsCoinBase()
 	//输入coin
 	for _, in := range tx.Ins {
 		if in.IsCoinBase() {
@@ -1044,22 +1146,21 @@ func (tx *TX) writetx(bi *BlockIndex, vps map[HASH160]bool, bt *Batch) error {
 		if err != nil {
 			return err
 		}
-		tk := CoinKeyValue{}
-		tk.Value = out.Value
-		if pkh, err := out.Script.GetPkh(); err != nil {
+		pkh, err := out.Script.GetPkh()
+		if err != nil {
 			return err
-		} else {
-			tk.CPkh = pkh
-			vps[pkh] = true //交易相关的pkh
 		}
-		tk.Index = in.OutIndex
-		tk.TxId = in.OutHash
-		key := tk.GetKey()
+		vps[pkh] = true //交易相关的pkh
+		//引用的金额
+		coin, err := bi.GetCoin(pkh, in.OutHash, in.OutIndex)
+		if err != nil {
+			return err
+		}
 		//被消费删除
-		bt.Del(key)
+		bt.Del(coin.GetKey())
 		//添加回退日志用来恢复,如果是引用本区块的忽略
-		if !out.pool {
-			rt.Put(key, out.Value.Bytes())
+		if !coin.pool {
+			rt.Put(coin.GetKey(), coin.GetValue())
 		}
 	}
 	//输出coin
@@ -1078,8 +1179,13 @@ func (tx *TX) writetx(bi *BlockIndex, vps map[HASH160]bool, bt *Batch) error {
 		} else {
 			tk.TxId = tid
 		}
-		key := tk.GetKey()
-		bt.Put(key, tk.GetValue())
+		if coinbase {
+			tk.Coinbase = 1
+		} else {
+			tk.Coinbase = 0
+		}
+		tk.Height = VarUInt(blk.Meta.Height)
+		bt.Put(tk.GetKey(), tk.GetValue())
 	}
 	return nil
 }
@@ -1249,6 +1355,7 @@ func (tx *TX) HasRepTxIn() bool {
 
 //检测除coinbase交易外的交易金额
 //csp是否检测输出金额是否已经被消费
+//spent 消费高度
 func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	//检测输入是否重复引用了相同的输出
 	if tx.HasRepTxIn() {

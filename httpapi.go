@@ -236,10 +236,12 @@ func listCoins(c *gin.Context) {
 		return
 	}
 	type coin struct {
-		Tx    string `json:"tx"`
-		Idx   int    `json:"idx"`
-		Value Amount `json:"value"`
-		Pool  bool   `json:"pool"`
+		Tx       string `json:"tx"`
+		Idx      int    `json:"idx"`
+		Value    Amount `json:"value"`
+		Pool     bool   `json:"pool"`
+		Coinbase bool   `json:"coinbase"`
+		Height   uint32 `json:"height"`
 	}
 	type result struct {
 		Code   int    `json:"code"`
@@ -254,6 +256,8 @@ func listCoins(c *gin.Context) {
 		i.Idx = v.Index.ToInt()
 		i.Value = v.Value
 		i.Pool = v.pool
+		i.Coinbase = v.Coinbase == 1
+		i.Height = v.Height.ToUInt32()
 		res.Coins = append(res.Coins, i)
 		total += v.Value
 	}
@@ -321,6 +325,7 @@ func transferFee(c *gin.Context) {
 	}
 	mi := bi.EmptyMulTransInfo()
 	mi.Acts = []*Account{acc}
+	mi.Spent = bi.NextHeight()
 	mi.Keep = args.Keep
 	mi.Dst = []Address{args.Dst}
 	mi.Amts = []Amount{amt}
