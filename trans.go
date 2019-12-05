@@ -35,7 +35,7 @@ func (m *MulTransInfo) Check() error {
 }
 
 //获取地址对应的账户和金额列表
-func (m *MulTransInfo) getAddressCoins(acc *Account) (Coins, error) {
+func (m *MulTransInfo) GetAccountCoins(acc *Account) (Coins, error) {
 	spkh, err := acc.GetPkh()
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	//计算使用哪些输入
 	for _, acc := range m.Acts {
 		//获取转出账号金额信息
-		ds, err := m.getAddressCoins(acc)
+		ds, err := m.GetAccountCoins(acc)
 		if err != nil {
 			return nil, err
 		}

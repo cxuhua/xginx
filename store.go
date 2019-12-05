@@ -3,6 +3,7 @@ package xginx
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 )
 
@@ -100,8 +101,36 @@ var (
 	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_txid -> blkid+txidx
 )
 
+//金额状态
+type CoinsState struct {
+	Pool    Amount //内存中可用的
+	Index   Amount //db记录的
+	Matured Amount //未成熟的
+	Sum     Amount //总和
+}
+
+func (s CoinsState) String() string {
+	return fmt.Sprintf("pool = %d,index = %d, matured = %d, sum = %d", s.Pool, s.Index, s.Matured, s.Sum)
+}
+
 //金额记录
 type Coins []*CoinKeyValue
+
+//假设当前消费高度为 spent 获取金额状态
+func (c Coins) State(spent uint32) CoinsState {
+	s := CoinsState{}
+	for _, v := range c {
+		if v.IsMatured(spent) {
+			s.Matured += v.Value
+		} else if v.pool {
+			s.Pool += v.Value
+		} else {
+			s.Index += v.Value
+		}
+		s.Sum += v.Value
+	}
+	return s
+}
 
 //获取总金额
 func (c Coins) Balance() Amount {

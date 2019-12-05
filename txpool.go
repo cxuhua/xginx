@@ -223,7 +223,7 @@ func (p *TxPool) removeEle(ele *list.Element) {
 	p.tlis.Remove(ele)
 	delete(p.tmap, id)
 	ps.Pub(id, TxPoolDelTxTopic)
-	LogInfo("txpool remove tx", id)
+	LogInfof("remove tx %v success from txpool", id)
 }
 
 //移除多个交易

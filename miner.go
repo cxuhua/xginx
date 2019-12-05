@@ -230,19 +230,12 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		return errors.New("miner_num = 0,disable miner calc")
 	}
 	bi := GetBlockIndex()
+	txp := bi.GetTxPool()
 	blk, err := bi.NewBlock(ver)
 	if err != nil {
 		return err
 	}
-	txp := bi.GetTxPool()
-	//添加交易
-	txs, err := txp.GetTxs(bi, blk)
-	if err != nil {
-		return err
-	}
-	if len(txs) > 0 {
-		err = blk.AddTxs(bi, txs)
-	}
+	err = blk.LoadTxs(bi)
 	if err != nil {
 		return err
 	}
@@ -250,10 +243,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err := blk.Finish(bi); err != nil {
 		return err
 	}
-	if err := blk.Check(bi); err != nil {
-		return err
-	}
-	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(txs), blk.Meta.Prev, conf.MinerNum)
+	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(blk.Txs), blk.Meta.Prev, conf.MinerNum)
 	m.mbv = blk.Header.Bytes()
 	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
 	defer mg.Stop()
@@ -279,7 +269,16 @@ finished:
 				ptime = smt
 			}
 			ts := time.Unix(int64(blk.Header.Time), 0).Format("2006-01-02 15:04:05")
-			LogInfof("%d times/s, total=%d, bits=%08x time=%s height=%d txs=%d txp=%d cpu=%d cache=%d", ppv, ptime, blk.Header.Bits, ts, blk.Meta.Height, len(txs), txp.Len(), conf.MinerNum, bi.CacheSize())
+			LogInfof("%d times/s, total=%d, bits=%08x time=%s height=%d txs=%d txp=%d cpu=%d cache=%d",
+				ppv,
+				ptime,
+				blk.Header.Bits,
+				ts, blk.Meta.Height,
+				len(blk.Txs),
+				txp.Len(),
+				conf.MinerNum,
+				bi.CacheSize(),
+			)
 			dt.Reset(time.Second * MINER_LOG_SECONDS)
 		case <-mg.exit:
 			if mg.ok {

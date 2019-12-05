@@ -571,6 +571,9 @@ func (blk *BlockInfo) LoadTxs(bi *BlockIndex) error {
 	if err != nil {
 		return err
 	}
+	if len(txs) == 0 {
+		return nil
+	}
 	return blk.AddTxs(bi, txs)
 }
 
@@ -733,7 +736,10 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	}
 	//重置缓存设置merkle
 	blk.ResetHasher()
-	return blk.SetMerkle()
+	if err := blk.SetMerkle(); err != nil {
+		return err
+	}
+	return blk.Check(bi)
 }
 
 //检查是否有多个输入消费同一个输出
@@ -1065,7 +1071,7 @@ func (tx *TX) IsMatured(spent uint32, bi *BlockIndex) bool {
 		if _, err := tp.Get(in.OutHash); err == nil {
 			continue
 		}
-		//获取交易所在的区块
+		//获取交易所在的区块id
 		txv, err := bi.LoadTxValue(in.OutHash)
 		if err != nil {
 			panic(err)

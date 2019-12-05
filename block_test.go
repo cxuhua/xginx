@@ -575,10 +575,6 @@ func TestTransfire(t *testing.T) {
 	if err := blk.Finish(bi); err != nil {
 		panic(err)
 	}
-	err = blk.Check(bi)
-	if err != nil {
-		panic(err)
-	}
 	calcHash(blk)
 	err = bi.LinkBlk(blk)
 	if err != nil {
