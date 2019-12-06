@@ -92,8 +92,7 @@ func (lis *testLisener) OnNewBlock(blk *BlockInfo) error {
 	}
 	//设置base out script
 	//创建coinbase tx
-	tx := &TX{}
-	tx.Ver = 1
+	tx := NewTx()
 
 	txt := time.Now().Format("2006-01-02 15:04:05")
 	//base tx
