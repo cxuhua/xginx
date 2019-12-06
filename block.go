@@ -16,6 +16,14 @@ const (
 	LOCKTIME_THRESHOLD = uint32(500000000)
 	//Sequence
 	SEQUENCE_FINAL = 0xffffffff
+	//是否禁止sequencel规则
+	SEQUENCE_LOCKTIME_DISABLE_FLAG = uint32(1 << 31)
+	//设置此位表示相对时间，时间粒度为512
+	SEQUENCE_LOCKTIME_TYPE_FLAG = uint32(1 << 22)
+	//相对时间mask
+	SEQUENCE_LOCKTIME_MASK = 0x0000ffff
+	//粒度 2^9=512
+	SEQUENCE_LOCKTIME_GRANULARITY = 9
 	//coinbase输出只能在当前区块高度100之后使用
 	COINBASE_MATURITY = 100
 )
@@ -685,6 +693,13 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
+		lck, err := tx.CheckSeqLocks(bi, blk.Meta.Height)
+		if err != nil {
+			return err
+		}
+		if lck {
+			return fmt.Errorf("tx seq locked %v in %d", tx, blk.Meta.Height)
+		}
 		//如果引用了coinbase检查是否成熟
 		mat, err := tx.IsMatured(blk.Meta.Height, bi)
 		if err != nil {
@@ -856,7 +871,7 @@ type TxIn struct {
 	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //签名后填充脚本
-	Sequence uint32  //序列，如果输入序列全为0xFFFFFFFF 则忽略locktime字段
+	Sequence uint32  //阻止后续交易入块，当前序交易达到某个块高度，或者到达某个相对时间，当前交易才能进区块
 }
 
 func NewTxIn() *TxIn {
@@ -1079,6 +1094,49 @@ func NewTx() *TX {
 	tx.Ins = []*TxIn{}
 	tx.LockTime = 0
 	return tx
+}
+
+//检测seqlock
+//spent消费高度
+func (tx *TX) CheckSeqLocks(bi *BlockIndex, spent uint32) (bool, error) {
+	minh, mint := int64(-1), int64(-1)
+	//每个输入的上一个高度
+	hs := make([]uint32, len(tx.Ins))
+	for idx, in := range tx.Ins {
+		coin, err := in.GetCoin(bi)
+		if err != nil {
+			return false, err
+		}
+		if coin.pool {
+			hs[idx] = spent
+		} else {
+			hs[idx] = coin.Height.ToUInt32()
+		}
+	}
+	for idx, in := range tx.Ins {
+		if in.Sequence&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
+			hs[idx] = 0
+			continue
+		}
+		coinheight := hs[idx]
+		if in.Sequence&SEQUENCE_LOCKTIME_TYPE_FLAG != 0 {
+			cointime := bi.GetMedianTime(coinheight - 1) //计算中间时间
+			seqtime := int64(cointime) + int64(in.Sequence&SEQUENCE_LOCKTIME_MASK)<<SEQUENCE_LOCKTIME_GRANULARITY - 1
+			if seqtime > mint {
+				mint = seqtime
+			}
+		} else {
+			seqheight := int64(coinheight) + int64(in.Sequence&SEQUENCE_LOCKTIME_MASK) - 1
+			if seqheight > minh {
+				minh = seqheight
+			}
+		}
+	}
+	blocktime := bi.GetMedianTime(spent)
+	if minh >= int64(spent) || mint >= int64(blocktime) {
+		return false, nil
+	}
+	return true, nil
 }
 
 //查找消费金额的输入

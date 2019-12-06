@@ -348,6 +348,12 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 			res = append(res, cur)
 			continue
 		}
+		//被seq锁定的交易不获取,出错直接删除
+		if cok, err := tx.CheckSeqLocks(bi, blk.Meta.Height); err != nil {
+			res = append(res, cur)
+		} else if !cok {
+			continue
+		}
 		//引用了未成熟的交易删除
 		if !mat {
 			res = append(res, cur)
@@ -521,13 +527,6 @@ func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 		}
 		//如果当前交易完成直接覆盖
 		if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
-			bi.lptr.OnTxRep(tx)
-			p.deltx(bi, val.tx)
-			return nil
-		}
-		vin := val.tx.Ins[val.idx]
-		//seq比之前大可以覆盖交易
-		if in.Sequence > vin.Sequence {
 			bi.lptr.OnTxRep(tx)
 			p.deltx(bi, val.tx)
 			return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"sort"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -268,6 +269,22 @@ type BlockIndex struct {
 	imap map[HASH256]*list.Element //按id缓存
 	lru  *IndexCacher              //lru缓存
 	db   IBlkStore                 //存储和索引
+}
+
+//获取中间时间
+func (bi *BlockIndex) GetMedianTime(h uint32) uint32 {
+	iter := bi.NewIter()
+	if !iter.SeekHeight(h) {
+		panic(errors.New("h block miss"))
+	}
+	ts := []uint32{}
+	for i := 0; iter.Prev() && i < 11; i++ {
+		ts = append(ts, iter.Curr().Time)
+	}
+	sort.Slice(ts, func(i, j int) bool {
+		return ts[i] < ts[j]
+	})
+	return ts[len(ts)/2]
 }
 
 //返回某个交易的merkle验证树

@@ -313,15 +313,6 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = checkBalance(bi, b, 10*COIN)
-	if err != nil {
-		panic(err)
-	}
-	//locktime=120 seq=1
-	createtx(bi, blk, a, b, 15*COIN, coin, 120, 1)
-	if tp.Len() != 1 {
-		panic("tx pool size error")
-	}
 	err = checkBalance(bi, a, 101*50*COIN-15*COIN)
 	if err != nil {
 		panic(err)
