@@ -1023,7 +1023,7 @@ func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 	ckv.CPkh = pkh
 	ckv.Index = in.OutIndex
 	ckv.TxId = in.OutHash
-	if key := ckv.GetKey(); out.pool {
+	if key := ckv.MustKey(); out.pool {
 		return tp.HasCoin(ckv)
 	} else {
 		return db.Index().Has(key)
@@ -1181,10 +1181,10 @@ func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *
 			return err
 		}
 		//被消费删除
-		bt.Del(coin.GetKey())
+		bt.Del(coin.MustKey())
 		//添加回退日志用来恢复,如果是引用本区块的忽略
 		if !coin.pool {
-			rt.Put(coin.GetKey(), coin.GetValue())
+			rt.Put(coin.MustKey(), coin.MustValue())
 		}
 	}
 	//输出coin
@@ -1204,12 +1204,12 @@ func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *
 			tk.TxId = tid
 		}
 		if coinbase {
-			tk.Coinbase = 1
+			tk.Base = 1
 		} else {
-			tk.Coinbase = 0
+			tk.Base = 0
 		}
 		tk.Height = VarUInt(blk.Meta.Height)
-		bt.Put(tk.GetKey(), tk.GetValue())
+		bt.Put(tk.MustKey(), tk.MustValue())
 	}
 	return nil
 }

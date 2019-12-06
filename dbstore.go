@@ -15,28 +15,10 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-//用于将写入内存数据库
-type dbbatchreplay struct {
-	db DBImp
-}
-
-func (r *dbbatchreplay) Put(key, value []byte) {
-	_ = r.db.Put(key, value)
-}
-
-func (r *dbbatchreplay) Delete(key []byte) {
-	_ = r.db.Del(key)
-}
-
 type Batch struct {
-	db   DBImp
-	bptr *leveldb.Batch
-	rb   *Batch //事务回退日志
-}
-
-func (b *Batch) ReplayDB(db DBImp) error {
-	dbr := &dbbatchreplay{db: db}
-	return b.bptr.Replay(dbr)
+	db DBImp
+	bt *leveldb.Batch
+	rb *Batch //事务回退日志
 }
 
 func (b *Batch) GetRev() *Batch {
@@ -49,15 +31,15 @@ func (b *Batch) NewRev() *Batch {
 }
 
 func (b *Batch) Load(d []byte) error {
-	return b.bptr.Load(d)
+	return b.bt.Load(d)
 }
 
 func (b *Batch) Dump() []byte {
-	return b.bptr.Dump()
+	return b.bt.Dump()
 }
 
 func (b *Batch) Len() int {
-	return b.bptr.Len()
+	return b.bt.Len()
 }
 
 //最后一个是数据，前面都是key
@@ -66,20 +48,20 @@ func (b *Batch) Put(ks ...[]byte) {
 	if b.rb != nil {
 		b.rb.Del(k)
 	}
-	b.bptr.Put(k, v)
+	b.bt.Put(k, v)
 }
 
 func (b *Batch) Del(ks ...[]byte) {
 	k := getDBKey(ks...)
-	b.bptr.Delete(k)
+	b.bt.Delete(k)
 }
 
 func (b *Batch) GetBatch() *leveldb.Batch {
-	return b.bptr
+	return b.bt
 }
 
 func (b *Batch) Reset() {
-	b.bptr.Reset()
+	b.bt.Reset()
 }
 
 func loadBatch(d []byte) (*Batch, error) {
@@ -90,7 +72,7 @@ func loadBatch(d []byte) (*Batch, error) {
 
 func newBatch() *Batch {
 	return &Batch{
-		bptr: &leveldb.Batch{},
+		bt: &leveldb.Batch{},
 	}
 }
 
@@ -252,10 +234,10 @@ func (db *leveldbimp) Sync() {
 	}
 }
 
-func (db *leveldbimp) Write(b *Batch) error {
+func (db *leveldbimp) Write(b *Batch, sync ...bool) error {
 	opts := &opt.WriteOptions{
-		NoWriteMerge: false,
-		Sync:         false,
+		Sync:         len(sync) > 0 && sync[0],
+		NoWriteMerge: len(sync) > 1 && sync[1],
 	}
 	return db.l.Write(b.GetBatch(), opts)
 }
@@ -301,12 +283,12 @@ func (db *leveldbtr) Del(ks ...[]byte) error {
 	return db.tr.Delete(k, opts)
 }
 
-func (db *leveldbtr) Write(b *Batch) error {
+func (db *leveldbtr) Write(b *Batch, sync ...bool) error {
 	opts := &opt.WriteOptions{
-		NoWriteMerge: false,
-		Sync:         false,
+		Sync:         len(sync) > 0 && sync[0],
+		NoWriteMerge: len(sync) > 1 && sync[1],
 	}
-	return db.tr.Write(b.bptr, opts)
+	return db.tr.Write(b.bt, opts)
 }
 
 func (db *leveldbtr) Iterator(slice ...*Range) *Iterator {

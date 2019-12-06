@@ -256,7 +256,7 @@ func listCoins(c *gin.Context) {
 		i.Idx = v.Index.ToInt()
 		i.Value = v.Value
 		i.Pool = v.pool
-		i.Coinbase = v.Coinbase == 1
+		i.Coinbase = v.Base == 1
 		i.Height = v.Height.ToUInt32()
 		res.Coins = append(res.Coins, i)
 		total += v.Value

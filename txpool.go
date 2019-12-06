@@ -220,13 +220,13 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		ckv.CPkh = pkh
 		ckv.Index = VarUInt(idx)
 		ckv.TxId = txid
-		ckv.Coinbase = 0
+		ckv.Base = 0
 		ckv.Height = 0
 		vps[pkh] = add
 		if add {
-			err = p.mdb.Put(ckv.GetKey(), ckv.GetValue()) //存储输出到内存池的金额
+			err = p.mdb.Put(ckv.MustKey(), ckv.MustValue()) //存储输出到内存池的金额
 		} else {
-			err = p.mdb.Delete(ckv.GetKey())
+			err = p.mdb.Delete(ckv.MustKey())
 		}
 		if err != nil {
 			panic(err)
@@ -392,7 +392,7 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.mdb.Contains(coin.GetKey())
+	return p.mdb.Contains(coin.MustKey())
 }
 
 //获取spkh相关的交易
