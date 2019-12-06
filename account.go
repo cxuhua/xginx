@@ -55,6 +55,29 @@ func (ap Account) IsEnableArb() bool {
 	return ap.arb != InvalidArb
 }
 
+//指定的私钥签名hash
+//返回账户对应的索引和签名
+func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) {
+	pub := pri.PublicKey()
+	sigb := SigBytes{}
+	i := -1
+	for idx, p := range ap.pubs {
+		if p.Equal(pub.Encode()) {
+			i = idx
+			break
+		}
+	}
+	if i < 0 {
+		return i, sigb, errors.New("private not belong to account")
+	}
+	sig, err := pri.Sign(hash)
+	if err != nil {
+		return i, sigb, err
+	}
+	sigb.Set(sig)
+	return i, sigb, nil
+}
+
 //pi public index
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {

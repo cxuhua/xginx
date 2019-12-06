@@ -3,7 +3,6 @@ package xginx
 import (
 	"errors"
 	"fmt"
-	"log"
 	"testing"
 )
 
@@ -66,12 +65,14 @@ func NewTestHeaders(bi *BlockIndex, self bool, limit int, id HASH256) Headers {
 
 //移除所有区块
 func removeAll(bi *BlockIndex) {
+	cnt := bi.Len()
 	for num := bi.Len() - 1; num >= 0; num-- {
 		err := bi.UnlinkLast()
 		if err != nil {
 			panic(err)
 		}
 	}
+	LogInfof("remove %d block success", cnt)
 }
 
 func createBlock(bi *BlockIndex, num int) {
@@ -82,12 +83,8 @@ func createBlock(bi *BlockIndex, num int) {
 		if err != nil {
 			panic(err)
 		}
-		id, err := cb.ID()
-		if err != nil {
-			panic(err)
-		}
-		LogInfo("create block", id, "success")
 	}
+	LogInfof("create %d block success", testnum)
 }
 
 func TestUnlik1(t *testing.T) {
@@ -307,8 +304,8 @@ func TestLockTimeTx(t *testing.T) {
 
 	tp := bi.GetTxPool()
 
-	tx1 := createtx(bi, blk, a, b, 10*COIN, coin, 120, 0)
-	log.Println("create tx1", tx1)
+	//locktime=120 seq=0
+	createtx(bi, blk, a, b, 10*COIN, coin, 120, 0)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
@@ -320,9 +317,8 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	tx2 := createtx(bi, blk, a, b, 15*COIN, coin, 120, 1)
-	log.Println("create tx2", tx2)
+	//locktime=120 seq=1
+	createtx(bi, blk, a, b, 15*COIN, coin, 120, 1)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
@@ -334,9 +330,8 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-
-	tx3 := createtx(bi, blk, a, b, 20*COIN, coin, 5, SEQUENCE_FINAL)
-	log.Println("create tx3", tx3)
+	//locktime=120 seq=SEQUENCE_FINAL
+	createtx(bi, blk, a, b, 20*COIN, coin, 1111, SEQUENCE_FINAL)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}
@@ -377,6 +372,39 @@ func TestLockTimeTx(t *testing.T) {
 	err = checkBalance(bi, b, 0)
 	if err != nil {
 		panic(err)
+	}
+}
+
+func TestUnlinkTo(t *testing.T) {
+	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
+	bi := GetTestBlockIndex()
+	defer bi.Close()
+	removeAll(bi)
+	defer removeAll(bi)
+	createBlock(bi, 5)
+	txs, err := bi.ListTxs(a)
+	if err != nil {
+		panic(err)
+	}
+	if len(txs) != 5 {
+		t.Errorf("createBlock tx error")
+	}
+	err = bi.UnlinkTo(conf.genesis)
+	if err != nil {
+		panic(err)
+	}
+	txs, err = bi.ListTxs(a)
+	if err != nil {
+		panic(err)
+	}
+	if len(txs) != 1 {
+		t.Errorf("createBlock tx error")
+	}
+	if bi.Len() != 1 {
+		t.Errorf("unlink to error")
+	}
+	if !bi.First().MustID().Equal(conf.genesis) {
+		t.Errorf("unlink to error")
 	}
 }
 
@@ -445,7 +473,7 @@ func TestTransfire(t *testing.T) {
 		panic(err)
 	}
 	//A -> B = 15 fee=1
-	mi := bi.EmptyMulTransInfo()
+	mi := bi.NewMulTrans()
 	mi.Acts = []*Account{getacc(bi, a)}
 	mi.Keep = 0
 	mi.Spent = blk.Meta.Height
@@ -453,11 +481,11 @@ func TestTransfire(t *testing.T) {
 	mi.Amts = []Amount{15 * COIN}
 	mi.Fee = 1 * COIN
 	mi.Ext = []byte{}
-	tx, err := mi.NewTx(true)
+	tx1, err := mi.NewTx(true)
 	if err != nil {
 		panic(err)
 	}
-	err = blk.AddTx(bi, tx)
+	err = blk.AddTx(bi, tx1)
 	if err != nil {
 		panic(err)
 	}
@@ -506,7 +534,7 @@ func TestTransfire(t *testing.T) {
 	}
 
 	//B -> C =5 fee=1
-	mi = bi.EmptyMulTransInfo()
+	mi = bi.NewMulTrans()
 	mi.Acts = []*Account{getacc(bi, b)}
 	mi.Keep = 0
 	mi.Spent = blk.Meta.Height
@@ -515,14 +543,15 @@ func TestTransfire(t *testing.T) {
 	mi.Fee = 1 * COIN
 	mi.Ext = []byte{}
 
-	tx, err = mi.NewTx(true)
+	tx2, err := mi.NewTx(true)
 	if err != nil {
 		panic(err)
 	}
-	err = blk.AddTx(bi, tx)
+	err = blk.AddTx(bi, tx2)
 	if err != nil {
 		panic(err)
 	}
+
 	//a剩余
 	err = checkBalance(bi, a, 100*50*COIN-15*COIN-1*COIN)
 	if err != nil {
@@ -666,5 +695,66 @@ func TestTransfire(t *testing.T) {
 	}
 	if len(txs) != 0 {
 		t.Error("c txs error")
+	}
+}
+
+func TestRefTxDels(t *testing.T) {
+	var err error
+	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
+	b := Address("st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")
+	c := Address("st1qm24876nvtcn83m8jlg7r4jsr223lcepn3g8wt3")
+	bi := GetTestBlockIndex()
+	defer bi.Close()
+	removeAll(bi)
+	defer removeAll(bi)
+
+	//生成5个区块
+	createBlock(bi, 100)
+
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	//A -> B = 15 fee=1
+	mi := bi.NewMulTrans()
+	mi.Acts = []*Account{getacc(bi, a)}
+	mi.Keep = 0
+	mi.Spent = blk.Meta.Height
+	mi.Dst = []Address{b}
+	mi.Amts = []Amount{15 * COIN}
+	mi.Fee = 1 * COIN
+	mi.Ext = []byte{}
+	tx1, err := mi.NewTx(true)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx1)
+	if err != nil {
+		panic(err)
+	}
+	//B -> C =5 fee=1
+	mi = bi.NewMulTrans()
+	mi.Acts = []*Account{getacc(bi, b)}
+	mi.Keep = 0
+	mi.Spent = blk.Meta.Height
+	mi.Dst = []Address{c}
+	mi.Amts = []Amount{5 * COIN}
+	mi.Fee = 1 * COIN
+	mi.Ext = []byte{}
+
+	tx2, err := mi.NewTx(true)
+	if err != nil {
+		panic(err)
+	}
+	err = blk.AddTx(bi, tx2)
+	if err != nil {
+		panic(err)
+	}
+
+	//移除tx1 将会移除tx2，因为tx2引用了tx1
+	bi.txp.Del(bi, tx1.MustID())
+
+	if bi.txp.Len() != 0 {
+		t.Errorf("TestRefTxDels error")
 	}
 }

@@ -15,6 +15,9 @@ type MulTransInfo struct {
 }
 
 func (m *MulTransInfo) Check() error {
+	if m.Spent == InvalidHeight {
+		return errors.New("spent height invalid")
+	}
 	if len(m.Acts) == 0 || len(m.Dst) == 0 || len(m.Dst) != len(m.Amts) {
 		return errors.New("src dst amts num error")
 	}
@@ -53,9 +56,6 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
-	if m.Spent < m.bi.NextHeight() {
-		return nil, errors.New("spent error,must >= best height")
-	}
 	tx := NewTx()
 	//输出总计
 	sum := m.Fee
@@ -75,6 +75,7 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 		}
 		//获取需要消耗的输出
 		for _, cv := range ds {
+			//只能消费成熟的金额
 			if !cv.IsMatured(m.Spent) {
 				continue
 			}
@@ -118,9 +119,6 @@ func (m *MulTransInfo) NewTx(pri bool) (*TX, error) {
 	if err := tx.Sign(m.bi); err != nil {
 		return nil, err
 	}
-	if err := tx.Check(m.bi, true); err != nil {
-		return nil, err
-	}
 	if err := m.bi.txp.PushTx(m.bi, tx); err != nil {
 		return nil, err
 	}
@@ -132,13 +130,15 @@ func (m *MulTransInfo) BroadTx(tx *TX) {
 	ps.Pub(tx, NewTxTopic)
 }
 
-func (bi *BlockIndex) EmptyMulTransInfo() *MulTransInfo {
+//创建交易对象
+func (bi *BlockIndex) NewMulTrans() *MulTransInfo {
 	return &MulTransInfo{
-		bi:   bi,
-		Acts: []*Account{},
-		Keep: 0,
-		Dst:  []Address{},
-		Amts: []Amount{},
-		Fee:  0,
+		Spent: InvalidHeight,
+		bi:    bi,
+		Acts:  []*Account{},
+		Keep:  0,
+		Dst:   []Address{},
+		Amts:  []Amount{},
+		Fee:   0,
 	}
 }

@@ -209,9 +209,6 @@ func NewLockedScript(pkh HASH160, vbs ...[]byte) (Script, error) {
 	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = pkh
 	for _, vb := range vbs {
-		if len(vb) == 0 {
-			continue
-		}
 		std.Ext = append(std.Ext, vb...)
 	}
 	if std.Ext.Len() > MAX_EXT_SIZE {

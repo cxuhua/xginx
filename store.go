@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -99,6 +98,7 @@ var (
 	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
 	COINS_PREFIX = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
 	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_txid -> blkid+txidx
+	REFTX_PREFIX = []byte{5} //存放交易池中的交易引用的其他交易，只在交易池使用
 )
 
 //金额状态
@@ -147,7 +147,7 @@ type CoinKeyValue struct {
 	TxId     HASH256 //tx id
 	Index    VarUInt //txout idx
 	Value    Amount  //list时设置不包含在key中
-	Coinbase VarUInt //是否属于coinbase o or 1
+	Coinbase uint8   //是否属于coinbase o or 1
 	Height   VarUInt //所在区块高度
 	pool     bool    //是否来自内存池
 	spent    bool    //是否在内存池被消费了
@@ -155,12 +155,10 @@ type CoinKeyValue struct {
 
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	buf := NewReader(k)
-	pf := []byte{0}
-	if err := buf.ReadFull(pf); err != nil {
-		return err
-	}
-	if !bytes.Equal(pf, COINS_PREFIX) {
-		return errors.New("key prefix error")
+	//解析key
+	cp, err := buf.ReadByte()
+	if err != nil || cp != COINS_PREFIX[0] {
+		return fmt.Errorf("conins prefix error %w", err)
 	}
 	if err := tk.CPkh.Decode(buf); err != nil {
 		return err
@@ -171,11 +169,12 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	if err := tk.Index.Decode(buf); err != nil {
 		return err
 	}
+	//解析value
 	buf = NewReader(v)
 	if err := tk.Value.Decode(buf); err != nil {
 		return err
 	}
-	if err := tk.Coinbase.Decode(buf); err != nil {
+	if err := buf.TRead(&tk.Coinbase); err != nil {
 		return err
 	}
 	if err := tk.Height.Decode(buf); err != nil {
@@ -202,7 +201,7 @@ func (tk CoinKeyValue) GetValue() []byte {
 	if err := tk.Value.Encode(buf); err != nil {
 		panic(err)
 	}
-	if err := tk.Coinbase.Encode(buf); err != nil {
+	if err := buf.TWrite(tk.Coinbase); err != nil {
 		panic(err)
 	}
 	if err := tk.Height.Encode(buf); err != nil {
@@ -212,8 +211,9 @@ func (tk CoinKeyValue) GetValue() []byte {
 }
 
 //是否成熟可用
+//内存中的，非coinbase直接可用
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
-	return tk.Coinbase == 0 || (spent-tk.Height.ToUInt32() >= COINBASE_MATURITY)
+	return tk.pool || tk.Coinbase == 0 || spent-tk.Height.ToUInt32() >= COINBASE_MATURITY
 }
 
 //消费key,用来记录输入对应的输出是否已经别消费
@@ -298,7 +298,7 @@ func NextHeight(h uint32) uint32 {
 
 func NewInvalidBest() BestValue {
 	return BestValue{
-		Id:     ZERO,
+		Id:     ZERO256,
 		Height: InvalidHeight,
 	}
 }

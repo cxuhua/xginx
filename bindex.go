@@ -102,7 +102,7 @@ func (it *BIndexIter) ID() HASH256 {
 	id, err := ele.ID()
 	if err != nil {
 		LogError("get block index iter id error", err)
-		return ZERO
+		return ZERO256
 	}
 	return id
 }
@@ -364,7 +364,7 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	bv := bi.GetBestValue()
 	//设置当前难度
 	if !bv.IsValid() {
-		blk.Header.Prev = ZERO
+		blk.Header.Prev = ZERO256
 		blk.Header.Bits = GetMinPowBits()
 	} else {
 		blk.Header.Prev = bv.Id
@@ -398,13 +398,11 @@ func (bi *BlockIndex) First() *TBEle {
 }
 
 func (bi *BlockIndex) NextHeight() uint32 {
-	bv := bi.GetBestValue()
-	return bv.Next()
+	return bi.GetBestValue().Next()
 }
 
 func (bi *BlockIndex) BestHeight() uint32 {
-	bv := bi.GetBestValue()
-	return bv.Height
+	return bi.GetBestValue().Height
 }
 
 func (bi *BlockIndex) lastHeight() uint32 {
@@ -670,7 +668,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	iter := bi.NewIter()
 	//最后匹配的高度和id
 	lh := InvalidHeight
-	li := ZERO
+	li := ZERO256
 	//产生分叉后剩余的区块
 	ls := Headers{}
 	for i, v := range hds {
@@ -783,7 +781,7 @@ func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 	//获取最后一个区块头
 	last := bi.lis.Back()
 	if last == nil {
-		return 0, ZERO, true
+		return 0, ZERO256, true
 	}
 	ele := last.Value.(*TBEle)
 	id, err := ele.ID()
@@ -929,7 +927,6 @@ func (bi *BlockIndex) unlinkLast() error {
 	if err == nil {
 		bi.cleancache(blk)
 	}
-	LogInfo("unlink block", id, "success")
 	return err
 }
 
@@ -1070,17 +1067,13 @@ func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
 
 //获取用户交易
 func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
-	prefix := getDBKey(TXP_PREFIX, id[:])
+	prefix := GetDBKey(TXP_PREFIX, id[:])
 	idxs := TxIndexs{}
-	off := 1 + len(id)
 	//获取区块链中历史可用金额
 	iter := bi.db.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	for iter.Next() {
-		key := iter.Key()
-		iv := &TxIndex{}
-		copy(iv.TxId[:], key[off:off+len(ZERO)])
-		err := iv.Value.Decode(NewReader(iter.Value()))
+		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
@@ -1228,7 +1221,7 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	//连接必定不能出错
 	bi.LinkBack(blk.Meta)
 	//删除交易池中存在这个区块中的交易
-	bi.txp.DelTxs(blk.Txs)
+	bi.txp.DelTxs(bi, blk.Txs)
 	//事件通知
 	bi.lptr.OnLinkBlock(blk)
 	return nil

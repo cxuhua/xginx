@@ -248,15 +248,39 @@ func (sig SigValue) Encode() []byte {
 	if s[0] >= 0x80 {
 		s = append([]byte{0}, s...)
 	}
-	res := new(bytes.Buffer)
-	res.WriteByte(0x30)
-	res.WriteByte(byte(4 + len(r) + len(s)))
-	res.WriteByte(0x02)
-	res.WriteByte(byte(len(r)))
-	res.Write(r)
-	res.WriteByte(0x02)
-	res.WriteByte(byte(len(s)))
-	res.Write(s)
+	res := NewWriter()
+	err := res.WriteByte(0x30)
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteByte(byte(4 + len(r) + len(s)))
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteByte(0x02)
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteByte(byte(len(r)))
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteFull(r)
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteByte(0x02)
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteByte(byte(len(s)))
+	if err != nil {
+		panic(err)
+	}
+	err = res.WriteFull(s)
+	if err != nil {
+		panic(err)
+	}
 	return res.Bytes()
 }
 
@@ -409,7 +433,7 @@ type Address string
 //创建一个输出
 func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
-		return nil, errors.New("amount errror")
+		return nil, errors.New("amount error")
 	}
 	out := &TxOut{}
 	out.Value = v

@@ -323,7 +323,7 @@ func transferFee(c *gin.Context) {
 		})
 		return
 	}
-	mi := bi.EmptyMulTransInfo()
+	mi := bi.NewMulTrans()
 	mi.Acts = []*Account{acc}
 	mi.Spent = bi.NextHeight()
 	mi.Keep = args.Keep
@@ -543,7 +543,7 @@ func getBlockInfoApi(c *gin.Context) {
 	if iter.Next() && iter.Next() {
 		b.Next = iter.ID().String()
 	} else {
-		b.Next = ZERO.String()
+		b.Next = ZERO256.String()
 	}
 	c.JSON(http.StatusOK, b)
 }

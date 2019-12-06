@@ -45,26 +45,26 @@ func (p *TxPool) Close() {
 	p.mdb.Reset()
 }
 
-func (p *TxPool) deltx(tx *TX) {
+func (p *TxPool) deltx(bi *BlockIndex, tx *TX) {
 	id, err := tx.ID()
 	if err != nil {
 		panic(err)
 	}
-	p.del(id)
+	p.del(bi, id)
 }
 
-func (p *TxPool) del(id HASH256) {
+func (p *TxPool) del(bi *BlockIndex, id HASH256) {
 	if ele, has := p.tmap[id]; has {
-		p.removeEle(ele)
+		p.removeEle(bi, ele)
 		LogInfo("del txpool tx=", id, " pool size =", p.tlis.Len())
 	}
 }
 
 //返回非空是移除的交易
-func (p *TxPool) Del(id HASH256) {
+func (p *TxPool) Del(bi *BlockIndex, id HASH256) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.del(id)
+	p.del(bi, id)
 }
 
 //加入其他节点过来的多个交易数据
@@ -129,23 +129,78 @@ func (p *TxPool) NewMsgTxPool(m *MsgGetTxPool) *MsgTxPool {
 	return msg
 }
 
+//获取输入引用的tx只能在txpool内部使用
+func (p *TxPool) loadTxOut(bi *BlockIndex, in *TxIn) (*TX, *TxOut, error) {
+	otx, err := bi.LoadTX(in.OutHash)
+	if err != nil {
+		otx, err = p.get(in.OutHash) //如果在交易池中
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("txin outtx miss %w", err)
+	}
+	oidx := in.OutIndex.ToInt()
+	if oidx < 0 || oidx >= len(otx.Outs) {
+		return nil, nil, fmt.Errorf("outindex out of bound")
+	}
+	out := otx.Outs[oidx]
+	out.pool = otx.pool
+	return otx, out, nil
+}
+
+//获取交易引用的交易id
+func (p *TxPool) GetRefsTxs(id HASH256) []HASH256 {
+	prefix := GetDBKey(REFTX_PREFIX, id[:])
+	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
+	defer iter.Release()
+	ids := []HASH256{}
+	for iter.Next() {
+		id := HASH256{}
+		copy(id[:], iter.Key()[len(prefix):])
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+//检测引用的交易是否存在
+func (p *TxPool) checkRefs(bi *BlockIndex, tx *TX) error {
+	for _, in := range tx.Ins {
+		_, _, err := p.loadTxOut(bi, in)
+		if err != nil {
+			return fmt.Errorf("ref tx miss %w", err)
+		}
+	}
+	return nil
+}
+
 //设置内存消费金额索引
-func (p *TxPool) setMemIdx(tx *TX, add bool) {
-	tid, err := tx.ID()
+func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
+	txid, err := tx.ID()
 	if err != nil {
 		panic(err)
 	}
 	tx.pool = add
+	refs := map[HASH256]bool{}
+	vps := map[HASH160]bool{}
 	//存储已经消费的输出
 	for idx, in := range tx.Ins {
+		ref, out, err := p.loadTxOut(bi, in)
+		if err != nil {
+			panic(err)
+		}
+		if ref.pool {
+			refs[ref.MustID()] = add
+		}
+		pkh, err := out.Script.GetPkh()
+		if err != nil {
+			panic(err)
+		}
 		ckv := &CoinKeyValue{}
 		ckv.Index = in.OutIndex
 		ckv.TxId = in.OutHash
+		vps[pkh] = add
 		if add {
-			//存放in对应的tx和位置
-			p.imap[in.OutKey()] = txpoolin{tx: tx, idx: idx}
-			//存放消耗的金额
-			err = p.mdb.Put(ckv.SpentKey(), tid[:])
+			p.imap[in.OutKey()] = txpoolin{tx: tx, idx: idx} //存放in对应的tx和位置
+			err = p.mdb.Put(ckv.SpentKey(), txid[:])         //存放消耗的金额
 		} else {
 			delete(p.imap, in.OutKey())
 			err = p.mdb.Delete(ckv.SpentKey())
@@ -164,13 +219,47 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 		ckv.Value = out.Value
 		ckv.CPkh = pkh
 		ckv.Index = VarUInt(idx)
-		ckv.TxId = tid
+		ckv.TxId = txid
 		ckv.Coinbase = 0
 		ckv.Height = 0
+		vps[pkh] = add
 		if add {
-			err = p.mdb.Put(ckv.GetKey(), ckv.GetValue())
+			err = p.mdb.Put(ckv.GetKey(), ckv.GetValue()) //存储输出到内存池的金额
 		} else {
 			err = p.mdb.Delete(ckv.GetKey())
+		}
+		if err != nil {
+			panic(err)
+		}
+	}
+	//存储哪些交易引用到了当前交易
+	for ref, _ := range refs {
+		key := GetDBKey(REFTX_PREFIX, ref[:], txid[:])
+		if add {
+			err = p.mdb.Put(key, VarUInt(len(refs)).Bytes())
+		} else {
+			err = p.mdb.Delete(key)
+		}
+		if err != nil {
+			panic(err)
+		}
+	}
+	//写入账户相关的交易
+	for pkh, _ := range vps {
+		//pkh相关的内存中的交易
+		vval := TxValue{
+			TxIdx: 0,
+			BlkId: ZERO256,
+		}
+		vbys, err := vval.Bytes()
+		if err != nil {
+			panic(err)
+		}
+		key := GetDBKey(TXP_PREFIX, pkh[:], txid[:])
+		if add {
+			err = p.mdb.Put(key, vbys)
+		} else {
+			err = p.mdb.Delete(key)
 		}
 		if err != nil {
 			panic(err)
@@ -179,37 +268,19 @@ func (p *TxPool) setMemIdx(tx *TX, add bool) {
 }
 
 //移除引用了此交易的交易
-func (p *TxPool) removeRefsTxs(id HASH256, ele *list.Element) {
-	ids := map[HASH256]bool{}
-	for _, ref := range p.tmap {
-		//忽略自己
-		if ref == ele {
-			continue
-		}
-		tx := ref.Value.(*TX)
-		tid, err := tx.ID()
-		if err != nil {
-			panic(err)
-		}
-		for _, in := range tx.Ins {
-			if !in.OutHash.Equal(id) {
-				continue
-			}
-			ids[tid] = true
-		}
-	}
-	for key, _ := range ids {
-		ele, has := p.tmap[key]
+func (p *TxPool) removeRefsTxs(bi *BlockIndex, id HASH256, ele *list.Element) {
+	ids := p.GetRefsTxs(id)
+	for _, id := range ids {
+		ele, has := p.tmap[id]
 		if !has {
 			continue
 		}
-		p.removeEle(ele)
+		p.removeEle(bi, ele)
 	}
-	ids = nil
 }
 
 //移除一个元素
-func (p *TxPool) removeEle(ele *list.Element) {
+func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	ps := GetPubSub()
 	tx := ele.Value.(*TX)
 	id, err := tx.ID()
@@ -217,9 +288,9 @@ func (p *TxPool) removeEle(ele *list.Element) {
 		panic(err)
 	}
 	//引用了此交易的交易也应该被删除
-	p.removeRefsTxs(id, ele)
+	p.removeRefsTxs(bi, id, ele)
 	//移除自己
-	p.setMemIdx(tx, false)
+	p.setMemIdx(bi, tx, false)
 	p.tlis.Remove(ele)
 	delete(p.tmap, id)
 	ps.Pub(id, TxPoolDelTxTopic)
@@ -227,7 +298,7 @@ func (p *TxPool) removeEle(ele *list.Element) {
 }
 
 //移除多个交易
-func (p *TxPool) DelTxs(txs []*TX) {
+func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, tx := range txs {
@@ -239,7 +310,7 @@ func (p *TxPool) DelTxs(txs []*TX) {
 		if !has {
 			continue
 		}
-		p.removeEle(ele)
+		p.removeEle(bi, ele)
 	}
 }
 
@@ -272,12 +343,17 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		if !blk.IsFinal(tx) {
 			continue
 		}
-		//引用了未成熟的交易删除
-		if !tx.IsMatured(blk.Meta.Height, bi) {
+		mat, err := tx.IsMatured(blk.Meta.Height, bi)
+		if err != nil {
 			res = append(res, cur)
 			continue
 		}
-		err := tx.Check(bi, true)
+		//引用了未成熟的交易删除
+		if !mat {
+			res = append(res, cur)
+			continue
+		}
+		err = tx.Check(bi, true)
 		//检测失败的将会被删除
 		if err != nil {
 			res = append(res, cur)
@@ -307,7 +383,7 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, ele := range res {
-		p.removeEle(ele)
+		p.removeEle(bi, ele)
 	}
 	return txs, nil
 }
@@ -321,58 +397,22 @@ func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 
 //获取spkh相关的交易
 func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	prefix := GetDBKey(TXP_PREFIX, spkh[:])
 	idxs := TxIndexs{}
-	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
-		tx := cur.Value.(*TX)
-		id, err := tx.ID()
+	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
+	defer iter.Release()
+	for iter.Next() {
+		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		vval := TxValue{
-			TxIdx: VarUInt(0),
-			BlkId: ZERO, //引用自内存中的交易
-		}
-		//交易中有哪些账户
-		ids := map[HASH256]bool{}
-		for _, in := range tx.Ins {
-			if in.IsCoinBase() {
-				continue
-			}
-			out, err := in.LoadTxOut(bi)
-			if err != nil {
-				return nil, err
-			}
-			pkh, err := out.Script.GetPkh()
-			if err != nil {
-				return nil, err
-			}
-			if pkh.Equal(spkh) {
-				ids[id] = true
-			}
-		}
-		for _, out := range tx.Outs {
-			pkh, err := out.Script.GetPkh()
-			if err != nil {
-				return nil, err
-			}
-			if pkh.Equal(spkh) {
-				ids[id] = true
-			}
-		}
-		for tid, _ := range ids {
-			vv := &TxIndex{}
-			vv.TxId = tid
-			vv.Value = vval
-			idxs = append(idxs, vv)
-		}
+		idxs = append(idxs, iv)
 	}
 	return idxs, nil
 }
 
 func (p *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
-	key := getDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	key := GetDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
 	val, err := p.mdb.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("get coin from txpool error %w", err)
@@ -390,7 +430,7 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	if len(limit) > 0 && limit[0] <= 0 {
 		return coins, nil
 	}
-	key := getDBKey(COINS_PREFIX, spkh[:])
+	key := GetDBKey(COINS_PREFIX, spkh[:])
 	iter := p.mdb.NewIterator(util.BytesPrefix(key))
 	defer iter.Release()
 	sum := Amount(0)
@@ -431,14 +471,19 @@ func (p *TxPool) Has(id HASH256) bool {
 }
 
 //获取交易
-func (p *TxPool) Get(id HASH256) (*TX, error) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+func (p *TxPool) get(id HASH256) (*TX, error) {
 	if ele, has := p.tmap[id]; has {
 		tx := ele.Value.(*TX)
 		return tx, nil
 	}
 	return nil, fmt.Errorf("txpool not found tx = %v", id)
+}
+
+//获取交易
+func (p *TxPool) Get(id HASH256) (*TX, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.get(id)
 }
 
 //获取交易池交易数量
@@ -465,22 +510,30 @@ func (p *TxPool) findTxIn(in *TxIn) (*list.Element, *TxIn) {
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	//如果tx已经可打包，忽略覆盖操作
 	for _, in := range tx.Ins {
+		//获取有相同引用的输出的交易
 		val, has := p.imap[in.OutKey()]
 		if !has {
 			continue
 		}
-		//忽略已经完成的交易
+		//忽略Final交易
 		if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
-			continue
+			return errors.New("tx is final,can't replace")
+		}
+		//如果当前交易完成直接覆盖
+		if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
+			bi.lptr.OnTxRep(tx)
+			p.deltx(bi, val.tx)
+			return nil
 		}
 		vin := val.tx.Ins[val.idx]
 		//seq比之前大可以覆盖交易
 		if in.Sequence > vin.Sequence {
 			bi.lptr.OnTxRep(tx)
-			p.deltx(val.tx)
+			p.deltx(bi, val.tx)
 			return nil
 		}
-		return errors.New("sequence error")
+		//引用了相同的输出并且不能覆盖不能进入交易池
+		return errors.New("sequence < old seq error")
 	}
 	return nil
 }
@@ -488,10 +541,17 @@ func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 //添加进去一笔交易放入最后
 //交易必须是校验过的
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
+	//检测交易是否合法
+	if err := tx.Check(bi, true); err != nil {
+		return err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
 		return errors.New("tx pool full,ignore push back")
+	}
+	if err := p.checkRefs(bi, tx); err != nil {
+		return err
 	}
 	if err := p.replaceTx(bi, tx); err != nil {
 		return err
@@ -506,7 +566,7 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	if _, has := p.tmap[id]; has {
 		return errors.New("tx exists")
 	}
-	p.setMemIdx(tx, true)
+	p.setMemIdx(bi, tx, true)
 	ele := p.tlis.PushBack(tx)
 	p.tmap[id] = ele
 	return nil
