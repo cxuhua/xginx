@@ -880,6 +880,19 @@ func NewTxIn() *TxIn {
 	}
 }
 
+//设置按时间的seq
+//tv是秒数
+func (in *TxIn) SetSeqTime(seconds uint32) {
+	seconds = seconds >> SEQUENCE_LOCKTIME_GRANULARITY
+	seconds = seconds & SEQUENCE_LOCKTIME_MASK
+	in.Sequence = seconds | SEQUENCE_LOCKTIME_TYPE_FLAG
+}
+
+//按高度锁定
+func (in *TxIn) SetSeqHeight(height uint32) {
+	in.Sequence = height & SEQUENCE_LOCKTIME_MASK
+}
+
 func (in TxIn) Equal(v *TxIn) bool {
 	return in.OutIndex == v.OutIndex && in.OutHash.Equal(v.OutHash)
 }
