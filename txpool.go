@@ -343,24 +343,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		if !blk.IsFinal(tx) {
 			continue
 		}
-		//检测引用的交易是否成熟可用
-		mat, err := tx.IsMatured(blk.Meta.Height, bi)
-		if err != nil {
-			res = append(res, cur)
-			continue
-		}
-		//引用了未成熟的交易删除
-		if !mat {
-			res = append(res, cur)
-			continue
-		}
-		//被seq锁定的交易不获取,出错直接删除
-		if lck, err := tx.CheckSeqLocks(bi); err != nil {
-			res = append(res, cur)
-		} else if lck {
-			continue
-		}
-		err = tx.Check(bi, true)
+		err := tx.Check(bi, true)
 		//检测失败的将会被删除
 		if err != nil {
 			res = append(res, cur)

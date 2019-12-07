@@ -693,22 +693,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		lck, err := tx.CheckSeqLocks(bi)
-		if err != nil {
-			return err
-		}
-		if lck {
-			return fmt.Errorf("tx seq locked %v in %d", tx, blk.Meta.Height)
-		}
-		//如果引用了coinbase检查是否成熟
-		mat, err := tx.IsMatured(blk.Meta.Height, bi)
-		if err != nil {
-			return err
-		}
-		if !mat {
-			return fmt.Errorf("tx not marured %v in %d", tx, blk.Meta.Height)
-		}
-		err = tx.Check(bi, false)
+		err := tx.Check(bi, false)
 		if err != nil {
 			return err
 		}
@@ -1045,22 +1030,19 @@ type TxOut struct {
 
 //in引用的coin是否存在
 func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
-	db := bi.GetStoreDB()
-	tp := bi.GetTxPool()
-	ckv := &CoinKeyValue{}
-	ckv.Value = out.Value
 	pkh, err := out.Script.GetPkh()
 	if err != nil {
 		panic(fmt.Errorf("get pkh error %w", err))
 	}
-	ckv.CPkh = pkh
-	ckv.Index = in.OutIndex
-	ckv.TxId = in.OutHash
-	if key := ckv.MustKey(); out.pool {
-		return tp.HasCoin(ckv)
-	} else {
-		return db.Index().Has(key)
+	coin, err := bi.GetCoin(pkh, in.OutHash, in.OutIndex)
+	if err != nil {
+		return false
 	}
+	//coin没成熟
+	if !coin.IsMatured(bi.NextHeight()) {
+		return false
+	}
+	return true
 }
 
 func (out *TxOut) Check(bi *BlockIndex) error {
@@ -1117,10 +1099,6 @@ func NewTx() *TX {
 //检测输入是否被锁定
 //返回true表示被锁住，无法进入区块
 func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
-	//忽略coinbase
-	if tx.IsCoinBase() {
-		return false, nil
-	}
 	height := bi.BestHeight()
 	minh, mint := int64(-1), int64(-1)
 	//每个输入的上一个高度
@@ -1173,24 +1151,6 @@ func (tx *TX) FindTxIn(hash HASH256, idx VarUInt) *TxIn {
 		}
 	}
 	return nil
-}
-
-//检查所有输入引用的金额是否可用
-//spent消费高度
-func (tx *TX) IsMatured(spent uint32, bi *BlockIndex) (bool, error) {
-	for _, in := range tx.Ins {
-		if in.IsCoinBase() {
-			continue
-		}
-		coin, err := in.GetCoin(bi)
-		if err != nil {
-			return false, err
-		}
-		if !coin.IsMatured(spent) {
-			return false, nil
-		}
-	}
-	return true, nil
 }
 
 //当locktime ！=0 时，如果所有输入 Sequence==SEQUENCE_FINAL 交易及时生效
@@ -1482,6 +1442,13 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	}
 	if len(tx.Ins) == 0 {
 		return errors.New("tx ins too slow")
+	}
+	//锁定的交易不能进入 csp=true时才会检查，如果交易已经在区块中不需要检查
+	if csp {
+		lck, err := tx.CheckSeqLocks(bi)
+		if err != nil || lck {
+			return fmt.Errorf("tx seq locked %v %w", tx, err)
+		}
 	}
 	//总的输入金额
 	itv := Amount(0)
