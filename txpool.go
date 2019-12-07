@@ -282,7 +282,10 @@ func (p *TxPool) removeRefsTxs(bi *BlockIndex, id HASH256, ele *list.Element) {
 //移除一个元素
 func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	ps := GetPubSub()
-	tx := ele.Value.(*TX)
+	tx, ok := ele.Value.(*TX)
+	if !ok {
+		panic(errors.New("txpool save type error"))
+	}
 	id := tx.MustID()
 	//引用了此交易的交易也应该被删除
 	p.removeRefsTxs(bi, id, ele)
@@ -338,8 +341,17 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		if !blk.IsFinal(tx) {
 			continue
 		}
-		err := tx.Check(bi, true)
-		//检测失败的将会被删除
+		//如果被锁定
+		lck, err := tx.CheckSeqLocks(bi)
+		if err != nil {
+			res = append(res, cur)
+			continue
+		}
+		if lck {
+			continue
+		}
+		err = tx.Check(bi, true)
+		//检测失败的将会被删除，除了seq检查错误
 		if err != nil {
 			res = append(res, cur)
 			continue
@@ -507,6 +519,10 @@ func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 //添加进去一笔交易放入最后
 //交易必须是校验过的
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
+	//coinbase不允许进去交易池
+	if tx.IsCoinBase() {
+		return errors.New("coinbase push to txpool error")
+	}
 	//检测交易是否合法
 	if err := tx.Check(bi, true); err != nil {
 		return err

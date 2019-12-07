@@ -250,7 +250,7 @@ func listCoins(c *gin.Context) {
 	}
 	res := result{}
 	total := Amount(0)
-	for _, v := range ds {
+	for _, v := range ds.All {
 		i := coin{}
 		i.Tx = v.TxId.String()
 		i.Idx = v.Index.ToInt()

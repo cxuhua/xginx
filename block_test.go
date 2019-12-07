@@ -220,7 +220,7 @@ func checkBalance(bi *BlockIndex, addr Address, amt Amount) error {
 	if err != nil {
 		return err
 	}
-	if b := ads.Balance(); b != amt {
+	if b := ads.All.Balance(); b != amt {
 		return fmt.Errorf("Balance=%d != %d", b, amt)
 	}
 	return nil
@@ -261,9 +261,6 @@ func createtx(bi *BlockIndex, blk *BlockInfo, a Address, b Address, fee Amount, 
 	if err != nil {
 		panic(err)
 	}
-	if err := tx.Check(bi, true); err != nil {
-		panic(err)
-	}
 	if err := bi.txp.PushTx(bi, tx); err != nil {
 		panic(err)
 	}
@@ -287,16 +284,14 @@ func TestSequance(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if len(ds) == 0 {
+	if len(ds.Coins) == 0 {
 		panic(errors.New("not coins"))
 	}
 	//获取一笔可用的金额
 	var coin *CoinKeyValue
-	for _, v := range ds {
-		if v.IsMatured(blk.Meta.Height) {
-			coin = v
-			break
-		}
+	for _, v := range ds.Coins {
+		coin = v
+		break
 	}
 	if coin == nil {
 		panic(errors.New("not coin"))
@@ -369,16 +364,14 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if len(ds) == 0 {
+	if len(ds.Coins) == 0 {
 		panic(errors.New("not coins"))
 	}
 	//获取一笔可用的金额
 	var coin *CoinKeyValue
-	for _, v := range ds {
-		if v.IsMatured(blk.Meta.Height) {
-			coin = v
-			break
-		}
+	for _, v := range ds.Coins {
+		coin = v
+		break
 	}
 	if coin == nil {
 		panic(errors.New("not coin"))

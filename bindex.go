@@ -1075,12 +1075,16 @@ func (bi *BlockIndex) WriteGenesis() {
 	LogInfof("write genesis block %v success", blk)
 }
 
-func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (Coins, error) {
+func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	return bi.ListCoinsWithID(pkh, limit...)
+	ds, err := bi.ListCoinsWithID(pkh, limit...)
+	if err != nil {
+		return nil, err
+	}
+	return ds.State(bi.NextHeight()), nil
 }
 
 func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
@@ -1230,13 +1234,14 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	//检测区块数据
-	err = blk.Check(bi, true)
+	//检测sequence
+	err = blk.CheckTxsLockTime(bi)
 	if err != nil {
 		return err
 	}
-	//检测coinbase
-	if err := blk.CheckCoinbase(); err != nil {
+	//检测区块数据
+	err = blk.Check(bi, true)
+	if err != nil {
 		return err
 	}
 	//写入数据库

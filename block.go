@@ -355,6 +355,22 @@ type BlockInfo struct {
 	merkel HashCacher  //merkel hash 缓存
 }
 
+//检测交易seq和locktime
+func (blk *BlockInfo) CheckTxsLockTime(bi *BlockIndex) error {
+	for idx, tx := range blk.Txs {
+		//不允许未完成的交易进入区块
+		if !tx.IsFinal(blk.Meta.Height, blk.Meta.Time) {
+			return fmt.Errorf("tx %d:%v check final error", idx, tx)
+		}
+		//不允许输入被锁定的交易进入区块
+		lck, err := tx.CheckSeqLocks(bi)
+		if err != nil || lck {
+			return fmt.Errorf("tx %d:%v check seq error %w", idx, tx, err)
+		}
+	}
+	return nil
+}
+
 func (blk *BlockInfo) Write(bi *BlockIndex) error {
 	bid, err := blk.ID()
 	if err != nil {
@@ -738,20 +754,20 @@ func (blk *BlockInfo) ResetHasher() {
 
 //完成块数据
 func (blk *BlockInfo) Finish(bi *BlockIndex) error {
-	lptr := bi.GetListener()
-	if lptr == nil {
-		return errors.New("listener null")
-	}
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
 	//最后设置merkleid
-	if err := lptr.OnFinished(blk); err != nil {
+	if err := bi.lptr.OnFinished(blk); err != nil {
 		return err
 	}
 	//重置缓存设置merkle
 	blk.ResetHasher()
 	if err := blk.SetMerkle(); err != nil {
+		return err
+	}
+	err := blk.CheckTxsLockTime(bi)
+	if err != nil {
 		return err
 	}
 	return blk.Check(bi, true)
@@ -806,6 +822,10 @@ func (blk *BlockInfo) Check(bi *BlockIndex, csp bool) error {
 	}
 	if !merkle.Equal(blk.Header.Merkle) {
 		return errors.New("txs merkle hash error")
+	}
+	//检测coinbase
+	if err := blk.CheckCoinbase(); err != nil {
+		return err
 	}
 	//检查重复消费
 	if err := blk.CheckRepCostTxOut(bi); err != nil {
@@ -1445,6 +1465,7 @@ func (tx *TX) HasRepTxIn(bi *BlockIndex, csp bool) bool {
 
 //检测除coinbase交易外的交易金额
 //csp是否检测输出金额是否已经被消费,如果交易已经打包进区块，输入引用的输出肯定被消费,coin将不存在
+//clk 是否检查seqlock
 func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	//至少有一个交易
 	if len(tx.Ins) == 0 {
@@ -1458,13 +1479,6 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	if tx.IsCoinBase() {
 		return nil
 	}
-	//锁定的交易不能进入 csp=true时才会检查，如果交易已经在区块中不需要检查
-	if csp {
-		lck, err := tx.CheckSeqLocks(bi)
-		if err != nil || lck {
-			return fmt.Errorf("tx seq locked %v %w", tx, err)
-		}
-	}
 	//总的输入金额
 	itv := Amount(0)
 	for _, in := range tx.Ins {
@@ -1475,6 +1489,9 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
+		}
+		if !out.Value.IsRange() {
+			return errors.New("ref'out value error")
 		}
 		//是否校验金额是否存在
 		if csp && !out.HasCoin(in, bi) {
@@ -1488,6 +1505,9 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 		err := out.Check(bi)
 		if err != nil {
 			return err
+		}
+		if !out.Value.IsRange() {
+			return errors.New("out value error")
 		}
 		otv += out.Value
 	}
