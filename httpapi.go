@@ -443,11 +443,12 @@ func getBlockInfoApi(c *gin.Context) {
 		return
 	}
 	type txin struct {
-		OutTx  string `json:"otx"`
-		OutIdx int    `json:"oidx"`
-		Addr   string `json:"addr,omitempty"`
-		Amount Amount `json:"amount,omitempty"`
-		Script string `json:"script,omitempty"`
+		OutTx    string `json:"otx"`
+		OutIdx   int    `json:"oidx"`
+		Addr     string `json:"addr,omitempty"`
+		Amount   Amount `json:"amount,omitempty"`
+		Script   string `json:"script,omitempty"`
+		Sequence uint32 `json:"sequence"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
@@ -508,6 +509,7 @@ func getBlockInfoApi(c *gin.Context) {
 		}
 		for _, iv := range v.Ins {
 			xvi := txin{}
+			xvi.Sequence = iv.Sequence
 			xvi.Script = hex.EncodeToString(iv.Script)
 			xvi.OutTx = iv.OutHash.String()
 			xvi.OutIdx = iv.OutIndex.ToInt()
@@ -552,11 +554,12 @@ func listTxPoolApi(c *gin.Context) {
 	bi := GetBlockIndex()
 	txp := bi.GetTxPool()
 	type txin struct {
-		OutTx  string `json:"otx"`
-		OutIdx int    `json:"oidx"`
-		Addr   string `json:"addr,omitempty"`
-		Amount Amount `json:"amount"`
-		Script string `json:"script,omitempty"`
+		OutTx    string `json:"otx"`
+		OutIdx   int    `json:"oidx"`
+		Addr     string `json:"addr,omitempty"`
+		Amount   Amount `json:"amount"`
+		Script   string `json:"script,omitempty"`
+		Sequence uint32 `json:"sequence"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
@@ -594,6 +597,7 @@ func listTxPoolApi(c *gin.Context) {
 		}
 		for _, iv := range tv.Ins {
 			xvi := txin{}
+			xvi.Sequence = iv.Sequence
 			xvi.OutTx = iv.OutHash.String()
 			xvi.OutIdx = iv.OutIndex.ToInt()
 			xvi.Script = hex.EncodeToString(iv.Script)
@@ -645,11 +649,12 @@ func getTxInfoApi(c *gin.Context) {
 		return
 	}
 	type txin struct {
-		OutTx  string `json:"otx"`
-		OutIdx int    `json:"oidx"`
-		Addr   string `json:"addr,omitempty"`
-		Amount Amount `json:"amount,omitempty"`
-		Script string `json:"script,omitempty"`
+		OutTx    string `json:"otx"`
+		OutIdx   int    `json:"oidx"`
+		Addr     string `json:"addr,omitempty"`
+		Amount   Amount `json:"amount,omitempty"`
+		Sequence uint32 `json:"sequence"`
+		Script   string `json:"script,omitempty"`
 	}
 	type txout struct {
 		Addr   string `json:"addr"`
@@ -689,6 +694,7 @@ func getTxInfoApi(c *gin.Context) {
 	}
 	for _, iv := range tp.Ins {
 		xvi := txin{}
+		xvi.Sequence = iv.Sequence
 		xvi.OutTx = iv.OutHash.String()
 		xvi.OutIdx = iv.OutIndex.ToInt()
 		xvi.Script = hex.EncodeToString(iv.Script)
