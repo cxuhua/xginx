@@ -270,6 +270,88 @@ func createtx(bi *BlockIndex, blk *BlockInfo, a Address, b Address, fee Amount, 
 	return tx
 }
 
+func TestSequance(t *testing.T) {
+	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
+	b := Address("st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")
+	bi := GetTestBlockIndex()
+	defer bi.Close()
+	removeAll(bi)
+	defer removeAll(bi)
+	createBlock(bi, 101)
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		panic(err)
+	}
+	//获取可用的金额
+	ds, err := bi.ListCoins(a)
+	if err != nil {
+		panic(err)
+	}
+	if len(ds) == 0 {
+		panic(errors.New("not coins"))
+	}
+	//获取一笔可用的金额
+	var coin *CoinKeyValue
+	for _, v := range ds {
+		if v.IsMatured(blk.Meta.Height) {
+			coin = v
+			break
+		}
+	}
+	if coin == nil {
+		panic(errors.New("not coin"))
+	}
+
+	tp := bi.GetTxPool()
+
+	//按高度锁住
+	createtx(bi, blk, a, b, 20*COIN, coin, 0, 1000&SEQUENCE_MASK)
+	if tp.Len() != 1 {
+		panic("tx pool size error")
+	}
+	err = checkBalance(bi, a, 101*50*COIN-20*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 20*COIN)
+	if err != nil {
+		panic(err)
+	}
+
+	err = blk.LoadTxs(bi)
+	if err != nil {
+		panic(err)
+	}
+	if err := blk.Finish(bi); err != nil {
+		panic(err)
+	}
+	calcHash(blk)
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		panic(err)
+	}
+	if len(blk.Txs) != 1 {
+		t.Errorf("tx seq lock,no add to block")
+	}
+	err = checkBalance(bi, a, 30*COIN+101*50*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 20*COIN)
+	if err != nil {
+		panic(err)
+	}
+	removeAll(bi)
+	err = checkBalance(bi, a, 30*COIN)
+	if err != nil {
+		panic(err)
+	}
+	err = checkBalance(bi, b, 20*COIN)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func TestLockTimeTx(t *testing.T) {
 	a := Address("st1qresg66j0t9c8c9awxfkeremk0fwgha06hwuw6q")
 	b := Address("st1q8rdl75cy8qsuy7lteyvrf6q92q2wfrrc5xdvp3")
@@ -313,16 +395,12 @@ func TestLockTimeTx(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	err = checkBalance(bi, a, 101*50*COIN-15*COIN)
-	if err != nil {
-		panic(err)
-	}
-	err = checkBalance(bi, b, 15*COIN)
+	err = checkBalance(bi, b, 10*COIN)
 	if err != nil {
 		panic(err)
 	}
 	//locktime=120 seq=SEQUENCE_FINAL
-	createtx(bi, blk, a, b, 20*COIN, coin, 1111, SEQUENCE_FINAL)
+	createtx(bi, blk, a, b, 20*COIN, coin, 0, SEQUENCE_FINAL)
 	if tp.Len() != 1 {
 		panic("tx pool size error")
 	}

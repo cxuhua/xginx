@@ -14,16 +14,16 @@ const (
 	MAX_EXT_SIZE = 1024 * 4
 	//锁定时间分界值
 	LOCKTIME_THRESHOLD = uint32(500000000)
-	//Sequence
-	SEQUENCE_FINAL = 0xffffffff
+	//如果所有输入都是SEQUENCE_FINAL忽略locktime
+	SEQUENCE_FINAL = uint32(0xffffffff)
 	//是否禁止sequencel规则
-	SEQUENCE_LOCKTIME_DISABLE_FLAG = uint32(1 << 31)
+	SEQUENCE_DISABLE_FLAG = uint32(1 << 31)
 	//设置此位表示相对时间，时间粒度为512
-	SEQUENCE_LOCKTIME_TYPE_FLAG = uint32(1 << 22)
+	SEQUENCE_TYPE_FLAG = uint32(1 << 22)
 	//相对时间mask
-	SEQUENCE_LOCKTIME_MASK = 0x0000ffff
+	SEQUENCE_MASK = uint32(0x0000ffff)
 	//粒度 2^9=512
-	SEQUENCE_LOCKTIME_GRANULARITY = 9
+	SEQUENCE_GRANULARITY = 9
 	//coinbase输出只能在当前区块高度100之后使用
 	COINBASE_MATURITY = 100
 )
@@ -693,7 +693,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		lck, err := tx.CheckSeqLocks(bi, blk.Meta.Height)
+		lck, err := tx.CheckSeqLocks(bi)
 		if err != nil {
 			return err
 		}
@@ -883,14 +883,19 @@ func NewTxIn() *TxIn {
 //设置按时间的seq
 //tv是秒数
 func (in *TxIn) SetSeqTime(seconds uint32) {
-	seconds = seconds >> SEQUENCE_LOCKTIME_GRANULARITY
-	seconds = seconds & SEQUENCE_LOCKTIME_MASK
-	in.Sequence = seconds | SEQUENCE_LOCKTIME_TYPE_FLAG
+	seconds = seconds >> SEQUENCE_GRANULARITY
+	seconds = seconds & SEQUENCE_MASK
+	in.Sequence = seconds | SEQUENCE_TYPE_FLAG
+}
+
+//禁用seq
+func (in *TxIn) DisableSeq() {
+	in.Sequence |= SEQUENCE_DISABLE_FLAG
 }
 
 //按高度锁定
 func (in *TxIn) SetSeqHeight(height uint32) {
-	in.Sequence = height & SEQUENCE_LOCKTIME_MASK
+	in.Sequence = height & SEQUENCE_MASK
 }
 
 func (in TxIn) Equal(v *TxIn) bool {
@@ -1109,9 +1114,14 @@ func NewTx() *TX {
 	return tx
 }
 
-//检测seqlock
-//spent消费高度
-func (tx *TX) CheckSeqLocks(bi *BlockIndex, spent uint32) (bool, error) {
+//检测输入是否被锁定
+//返回true表示被锁住，无法进入区块
+func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
+	//忽略coinbase
+	if tx.IsCoinBase() {
+		return false, nil
+	}
+	height := bi.BestHeight()
 	minh, mint := int64(-1), int64(-1)
 	//每个输入的上一个高度
 	hs := make([]uint32, len(tx.Ins))
@@ -1121,35 +1131,38 @@ func (tx *TX) CheckSeqLocks(bi *BlockIndex, spent uint32) (bool, error) {
 			return false, err
 		}
 		if coin.pool {
-			hs[idx] = spent
+			hs[idx] = height + 1
 		} else {
 			hs[idx] = coin.Height.ToUInt32()
 		}
 	}
 	for idx, in := range tx.Ins {
-		if in.Sequence&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
+		if in.Sequence&SEQUENCE_DISABLE_FLAG != 0 {
 			hs[idx] = 0
 			continue
 		}
 		coinheight := hs[idx]
-		if in.Sequence&SEQUENCE_LOCKTIME_TYPE_FLAG != 0 {
+		if in.Sequence&SEQUENCE_TYPE_FLAG != 0 {
 			cointime := bi.GetMedianTime(coinheight - 1) //计算中间时间
-			seqtime := int64(cointime) + int64(in.Sequence&SEQUENCE_LOCKTIME_MASK)<<SEQUENCE_LOCKTIME_GRANULARITY - 1
+			seqtime := int64(cointime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
 			if seqtime > mint {
 				mint = seqtime
 			}
 		} else {
-			seqheight := int64(coinheight) + int64(in.Sequence&SEQUENCE_LOCKTIME_MASK) - 1
+			seqheight := int64(coinheight) + int64(in.Sequence&SEQUENCE_MASK) - 1
 			if seqheight > minh {
 				minh = seqheight
 			}
 		}
 	}
-	blocktime := bi.GetMedianTime(spent)
-	if minh >= int64(spent) || mint >= int64(blocktime) {
-		return false, nil
+	if minh > 0 && minh >= int64(height) {
+		return true, nil
 	}
-	return true, nil
+	blocktime := bi.GetMedianTime(height)
+	if mint > 0 && mint >= int64(blocktime) {
+		return true, nil
+	}
+	return false, nil
 }
 
 //查找消费金额的输入

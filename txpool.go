@@ -18,8 +18,8 @@ const (
 )
 
 type txpoolin struct {
-	tx  *TX
-	idx int
+	tx *TX
+	in *TxIn
 }
 
 //交易池，存放签名成功，未确认的交易
@@ -182,7 +182,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 	refs := map[HASH256]bool{}
 	vps := map[HASH160]bool{}
 	//存储已经消费的输出
-	for idx, in := range tx.Ins {
+	for _, in := range tx.Ins {
 		ref, out, err := p.loadTxOut(bi, in)
 		if err != nil {
 			panic(err)
@@ -199,8 +199,8 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		ckv.TxId = in.OutHash
 		vps[pkh] = add
 		if add {
-			p.imap[in.OutKey()] = txpoolin{tx: tx, idx: idx} //存放in对应的tx和位置
-			err = p.mdb.Put(ckv.SpentKey(), txid[:])         //存放消耗的金额
+			p.imap[in.OutKey()] = txpoolin{tx: tx, in: in} //存放in对应的tx和位置
+			err = p.mdb.Put(ckv.SpentKey(), txid[:])       //存放消耗的金额
 		} else {
 			delete(p.imap, in.OutKey())
 			err = p.mdb.Delete(ckv.SpentKey())
@@ -343,20 +343,21 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		if !blk.IsFinal(tx) {
 			continue
 		}
+		//检测引用的交易是否成熟可用
 		mat, err := tx.IsMatured(blk.Meta.Height, bi)
 		if err != nil {
 			res = append(res, cur)
 			continue
 		}
-		//被seq锁定的交易不获取,出错直接删除
-		if cok, err := tx.CheckSeqLocks(bi, blk.Meta.Height); err != nil {
-			res = append(res, cur)
-		} else if !cok {
-			continue
-		}
 		//引用了未成熟的交易删除
 		if !mat {
 			res = append(res, cur)
+			continue
+		}
+		//被seq锁定的交易不获取,出错直接删除
+		if lck, err := tx.CheckSeqLocks(bi); err != nil {
+			res = append(res, cur)
+		} else if lck {
 			continue
 		}
 		err = tx.Check(bi, true)
@@ -499,34 +500,29 @@ func (p *TxPool) Len() int {
 	return p.tlis.Len()
 }
 
-//查询有相同输入的交易
-func (p *TxPool) findTxIn(in *TxIn) (*list.Element, *TxIn) {
-	for _, ele := range p.tmap {
-		tx := ele.Value.(*TX)
-		for _, iv := range tx.Ins {
-			if iv.Equal(in) {
-				return ele, iv
-			}
-		}
-	}
-	return nil, nil
-}
-
 //如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	//如果tx已经可打包，忽略覆盖操作
 	for _, in := range tx.Ins {
-		//获取有相同引用的输出的交易
+		//获取有相同引用的交易
 		val, has := p.imap[in.OutKey()]
 		if !has {
 			continue
 		}
-		//忽略Final交易
+		//原交易已经final就不能覆盖了
 		if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
 			return errors.New("tx is final,can't replace")
 		}
-		//如果当前交易完成直接覆盖
+		//如果当前交易final直接覆盖
 		if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
+			bi.lptr.OnTxRep(tx)
+			p.deltx(bi, val.tx)
+			return nil
+		}
+		//如果最高位都设置了标记，比较大小覆盖
+		if in.Sequence&SEQUENCE_DISABLE_FLAG != 0 &&
+			val.in.Sequence&SEQUENCE_DISABLE_FLAG != 0 &&
+			in.Sequence > val.in.Sequence {
 			bi.lptr.OnTxRep(tx)
 			p.deltx(bi, val.tx)
 			return nil
