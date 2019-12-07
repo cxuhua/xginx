@@ -1184,16 +1184,6 @@ func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
 	return false, nil
 }
 
-//查找消费金额的输入
-func (tx *TX) FindTxIn(hash HASH256, idx VarUInt) *TxIn {
-	for _, in := range tx.Ins {
-		if in.OutHash.Equal(hash) && in.OutIndex == idx {
-			return in
-		}
-	}
-	return nil
-}
-
 //当locktime ！=0 时，如果所有输入 Sequence==SEQUENCE_FINAL 交易及时生效
 //否则要达到自定高度或者时间交易才能生效
 //未生效前，输入可以被替换，也就是输入对应的输出可以被消费，这时原先的交易将被移除
