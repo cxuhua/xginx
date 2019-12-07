@@ -46,7 +46,7 @@ func (lis *listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
-func (lis *listener) OnTxRep(tx *TX) {
+func (lis *listener) OnTxRep(old *TX, new *TX) {
 
 }
 
@@ -150,5 +150,5 @@ func (lis *listener) OnFinished(blk *BlockInfo) error {
 	if fee > 0 {
 		tx.Outs[0].Value += fee
 	}
-	return blk.CheckTxs(lis.bi)
+	return nil
 }

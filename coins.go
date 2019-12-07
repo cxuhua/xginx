@@ -44,10 +44,10 @@ func (c Coins) Balance() Amount {
 
 //金额存储结构
 type CoinKeyValue struct {
-	CPkh   HASH160 //cli hash
-	TxId   HASH256 //tx id
-	Index  VarUInt //txout idx
-	Value  Amount  //list时设置不包含在key中
+	CPkh   HASH160 //公钥hash
+	TxId   HASH256 //交易id
+	Index  VarUInt //输出索引
+	Value  Amount  //输出金额
 	Base   uint8   //是否属于coinbase o or 1
 	Height VarUInt //所在区块高度
 	pool   bool    //是否来自内存池

@@ -283,16 +283,14 @@ func (p *TxPool) removeRefsTxs(bi *BlockIndex, id HASH256, ele *list.Element) {
 func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	ps := GetPubSub()
 	tx := ele.Value.(*TX)
-	id, err := tx.ID()
-	if err != nil {
-		panic(err)
-	}
+	id := tx.MustID()
 	//引用了此交易的交易也应该被删除
 	p.removeRefsTxs(bi, id, ele)
 	//移除自己
 	p.setMemIdx(bi, tx, false)
 	p.tlis.Remove(ele)
 	delete(p.tmap, id)
+	//广播交易从内存池移除
 	ps.Pub(id, TxPoolDelTxTopic)
 	LogInfof("remove tx %v success from txpool", id)
 }
@@ -302,10 +300,7 @@ func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, tx := range txs {
-		id, err := tx.ID()
-		if err != nil {
-			panic(err)
-		}
+		id := tx.MustID()
 		ele, has := p.tmap[id]
 		if !has {
 			continue
@@ -483,32 +478,25 @@ func (p *TxPool) Len() int {
 	return p.tlis.Len()
 }
 
+func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
+	bi.lptr.OnTxRep(old, new)
+	p.deltx(bi, old)
+	return nil
+}
+
 //如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	//如果tx已经可打包，忽略覆盖操作
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
-		val, has := p.imap[in.OutKey()]
-		if !has {
+		if val, has := p.imap[in.OutKey()]; !has {
 			continue
-		}
-		//原交易已经final就不能覆盖了
-		if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
+		} else if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) { //原交易已经final就不能覆盖了
 			return errors.New("tx is final,can't replace")
-		}
-		//如果当前交易final直接覆盖
-		if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) {
-			bi.lptr.OnTxRep(tx)
-			p.deltx(bi, val.tx)
-			return nil
-		}
-		//如果最高位都设置了标记，比较大小覆盖
-		if in.Sequence&SEQUENCE_DISABLE_FLAG != 0 &&
-			val.in.Sequence&SEQUENCE_DISABLE_FLAG != 0 &&
-			in.Sequence > val.in.Sequence {
-			bi.lptr.OnTxRep(tx)
-			p.deltx(bi, val.tx)
-			return nil
+		} else if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) { //如果当前交易final直接覆盖
+			return p.replace(bi, val.tx, tx)
+		} else if in.IsReplace(val.in) { //如果最高位都设置了标记，比较大小覆盖
+			return p.replace(bi, val.tx, tx)
 		}
 		//引用了相同的输出并且不能覆盖不能进入交易池
 		return errors.New("sequence < old seq error")

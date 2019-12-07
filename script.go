@@ -78,6 +78,14 @@ func (s Script) GetAddress() (Address, error) {
 	}
 }
 
+func (s Script) MustPkh() HASH160 {
+	pkh, err := s.GetPkh()
+	if err != nil {
+		panic(err)
+	}
+	return pkh
+}
+
 //coinbase交易没有pkh
 func (s Script) GetPkh() (HASH160, error) {
 	pkh := HASH160{}

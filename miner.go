@@ -243,7 +243,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	if err := blk.Finish(bi); err != nil {
 		return err
 	}
-	LogInfof("gen new block add %d Tx, prev=%v cpu=%d", len(blk.Txs), blk.Meta.Prev, conf.MinerNum)
+	LogInfof("start gen new block add %d Tx, prev=%v cpu=%d", len(blk.Txs), blk.Meta.Prev, conf.MinerNum)
 	m.mbv = blk.Header.Bytes()
 	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
 	defer mg.Stop()
@@ -255,7 +255,6 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	ps := GetPubSub()
 	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
-finished:
 	for !genok {
 		select {
 		case <-dt.C:
@@ -284,14 +283,14 @@ finished:
 			if mg.ok {
 				blk.Header = mg.bh
 				genok = true
-				break finished
+				goto finished
 			}
 		case mbv := <-m.mch:
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
 				mg.StopAndWait()
 				blk.Header = mbv.Header()
 				genok = true
-				break finished
+				goto finished
 			}
 		case chv := <-bch:
 			//如果交易池中的交易被删除，或者收到新的区块检测是否停止区块生成
@@ -310,14 +309,10 @@ finished:
 			return m.cctx.Err()
 		}
 	}
-	if !genok {
-		return errors.New("miner gen block failed")
-	}
+finished:
+	//保存第一个区块
 	if bi.Len() == 0 {
-		buf := NewWriter()
-		_ = blk.Encode(buf)
-		ioutil.WriteFile("genesis.blk", buf.Bytes(), 0644)
-		LogInfo("save first block")
+		m.SaveFirstBlock(blk)
 	}
 	LogInfo("gen new block success, id = ", blk)
 	if err = bi.LinkBlk(blk); err != nil {
@@ -331,6 +326,19 @@ finished:
 	msg.AddFlags(MsgBlockNewFlags)
 	Server.BroadMsg(msg)
 	return nil
+}
+
+func (m *minerEngine) SaveFirstBlock(blk *BlockInfo) {
+	buf := NewWriter()
+	err := blk.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile("genesis.blk", buf.Bytes(), 0644)
+	if err != nil {
+		panic(err)
+	}
+	LogInfof("save first block %v success,file = genesis.blk", blk)
 }
 
 //处理操作
@@ -395,14 +403,15 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 				LogError("dispatch recv error opt", op)
 			}
 		case <-dt.C:
+			if conf.MinerNum == 0 {
+				break
+			}
 			if acc := m.GetMiner(); acc == nil {
 				LogError("miner acc not set,can't gen new block")
 			} else if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
-			if conf.MinerNum > 0 {
-				dt.Reset(time.Second * 30)
-			}
+			dt.Reset(time.Second * 30)
 		case <-m.cctx.Done():
 			return
 		}

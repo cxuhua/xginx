@@ -26,7 +26,7 @@ func newListener(wdir string) IListener {
 	}
 }
 
-func (lis *testLisener) OnTxRep(tx *TX) {
+func (lis *testLisener) OnTxRep(old *TX, new *TX) {
 
 }
 

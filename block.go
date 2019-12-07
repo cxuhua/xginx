@@ -467,9 +467,11 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 		if err != nil {
 			return err
 		}
+		//交易对应的区块和位置
 		bt.Put(TXS_PREFIX, id[:], vbys)
 		vps := map[HASH160]bool{}
-		err = tx.writetx(bi, blk, vps, bt)
+		//写入金额和索引
+		err = tx.writeTxIndex(bi, blk, vps, bt)
 		if err != nil {
 			return err
 		}
@@ -678,7 +680,7 @@ func (blk *BlockInfo) GetIncome(bi *BlockIndex) (Amount, error) {
 }
 
 //检查所有的交易
-func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
+func (blk *BlockInfo) CheckTxs(bi *BlockIndex, csp bool) error {
 	//必须有交易
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
@@ -693,7 +695,7 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, false)
+		err := tx.Check(bi, csp)
 		if err != nil {
 			return err
 		}
@@ -743,10 +745,6 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if len(blk.Txs) == 0 {
 		return errors.New("txs miss, too little")
 	}
-	//检查所有的交易
-	if err := blk.CheckTxs(bi); err != nil {
-		return err
-	}
 	//最后设置merkleid
 	if err := lptr.OnFinished(blk); err != nil {
 		return err
@@ -756,7 +754,7 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := blk.SetMerkle(); err != nil {
 		return err
 	}
-	return blk.Check(bi)
+	return blk.Check(bi, true)
 }
 
 //检查是否有多个输入消费同一个输出
@@ -791,11 +789,11 @@ func (blk *BlockInfo) Verify(ele *TBEle, bi *BlockIndex) error {
 	if !CheckProofOfWork(id, blk.Meta.Bits) {
 		return errors.New("check pow error")
 	}
-	return blk.Check(bi)
+	return blk.Check(bi, false)
 }
 
 //检查区块数据
-func (blk *BlockInfo) Check(bi *BlockIndex) error {
+func (blk *BlockInfo) Check(bi *BlockIndex, csp bool) error {
 	//检测工作难度
 	bits := bi.CalcBits(blk.Meta.Height)
 	if bits != blk.Header.Bits {
@@ -814,7 +812,7 @@ func (blk *BlockInfo) Check(bi *BlockIndex) error {
 		return err
 	}
 	//检查所有的交易
-	return blk.CheckTxs(bi)
+	return blk.CheckTxs(bi, csp)
 }
 
 func (blk *BlockInfo) Encode(w IWriter) error {
@@ -863,6 +861,11 @@ func NewTxIn() *TxIn {
 	return &TxIn{
 		Sequence: SEQUENCE_FINAL,
 	}
+}
+
+//如果比较seq可替换
+func (in *TxIn) IsReplace(sin *TxIn) bool {
+	return in.Sequence&SEQUENCE_DISABLE_FLAG != 0 && sin.Sequence&SEQUENCE_DISABLE_FLAG != 0 && in.Sequence > sin.Sequence
 }
 
 //设置按时间的seq
@@ -1028,7 +1031,23 @@ type TxOut struct {
 	pool   bool   //是否来自交易池中的交易
 }
 
-//in引用的coin是否存在
+//获取输入引用的输出和金额
+func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
+	pkh, err := out.Script.GetPkh()
+	if err != nil {
+		return nil, err
+	}
+	coin, err := bi.GetCoin(pkh, in.OutHash, in.OutIndex)
+	if err != nil {
+		return nil, err
+	}
+	if !coin.IsMatured(bi.NextHeight()) {
+		return nil, errors.New("coin not matured")
+	}
+	return coin, err
+}
+
+//in引用的coin状态是否正常
 func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 	pkh, err := out.Script.GetPkh()
 	if err != nil {
@@ -1099,45 +1118,47 @@ func NewTx() *TX {
 //检测输入是否被锁定
 //返回true表示被锁住，无法进入区块
 func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
-	height := bi.BestHeight()
+	height := bi.Height()
+	//如果链空忽略seq检测
+	if height == 0 || height == InvalidHeight {
+		return false, nil
+	}
 	minh, mint := int64(-1), int64(-1)
-	//每个输入的上一个高度
-	hs := make([]uint32, len(tx.Ins))
-	for idx, in := range tx.Ins {
+	for _, in := range tx.Ins {
+		if in.Sequence&SEQUENCE_DISABLE_FLAG != 0 {
+			continue
+		}
+		//获取当前引用的块高
+		ch := uint32(0)
 		coin, err := in.GetCoin(bi)
 		if err != nil {
 			return false, err
 		}
 		if coin.pool {
-			hs[idx] = height + 1
+			ch = height + 1
 		} else {
-			hs[idx] = coin.Height.ToUInt32()
+			ch = coin.Height.ToUInt32()
 		}
-	}
-	for idx, in := range tx.Ins {
-		if in.Sequence&SEQUENCE_DISABLE_FLAG != 0 {
-			hs[idx] = 0
-			continue
-		}
-		coinheight := hs[idx]
+		//如果是按时间锁定
 		if in.Sequence&SEQUENCE_TYPE_FLAG != 0 {
-			cointime := bi.GetMedianTime(coinheight - 1) //计算中间时间
-			seqtime := int64(cointime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
-			if seqtime > mint {
-				mint = seqtime
+			ctime := bi.GetMedianTime(ch - 1) //计算中间时间
+			stime := int64(ctime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
+			if stime > mint {
+				mint = stime
 			}
 		} else {
-			seqheight := int64(coinheight) + int64(in.Sequence&SEQUENCE_MASK) - 1
-			if seqheight > minh {
-				minh = seqheight
+			//按高度锁定
+			sheight := int64(ch) + int64(in.Sequence&SEQUENCE_MASK) - 1
+			if sheight > minh {
+				minh = sheight
 			}
 		}
 	}
 	if minh > 0 && minh >= int64(height) {
 		return true, nil
 	}
-	blocktime := bi.GetMedianTime(height)
-	if mint > 0 && mint >= int64(blocktime) {
+	blktime := bi.GetMedianTime(height)
+	if mint > 0 && mint >= int64(blktime) {
 		return true, nil
 	}
 	return false, nil
@@ -1198,12 +1219,12 @@ func (tx *TX) IsCoinBase() bool {
 }
 
 //写入交易信息索引和回退索引
-func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *Batch) error {
+func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
 		return errors.New("batch miss rev")
 	}
-	coinbase := tx.IsCoinBase()
+	base := tx.IsCoinBase()
 	//输入coin
 	for _, in := range tx.Ins {
 		if in.IsCoinBase() {
@@ -1214,15 +1235,15 @@ func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *
 		if err != nil {
 			return err
 		}
-		pkh, err := out.Script.GetPkh()
-		if err != nil {
-			return err
-		}
+		pkh := out.Script.MustPkh()
 		vps[pkh] = true //交易相关的pkh
 		//引用的金额
 		coin, err := bi.GetCoin(pkh, in.OutHash, in.OutIndex)
 		if err != nil {
 			return err
+		}
+		if !coin.IsMatured(blk.Meta.Height) {
+			return errors.New("ref out coin not matured")
 		}
 		//被消费删除
 		bt.Del(coin.MustKey())
@@ -1233,27 +1254,20 @@ func (tx *TX) writetx(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *
 	}
 	//输出coin
 	for idx, out := range tx.Outs {
-		tk := CoinKeyValue{}
+		pkh := out.Script.MustPkh()
+		tk := &CoinKeyValue{}
 		tk.Value = out.Value
-		if pkh, err := out.Script.GetPkh(); err != nil {
-			return err
-		} else {
-			tk.CPkh = pkh
-			vps[pkh] = true //交易相关的pkh
-		}
+		tk.CPkh = pkh
 		tk.Index = VarUInt(idx)
-		if tid, err := tx.ID(); err != nil {
-			return err
-		} else {
-			tk.TxId = tid
-		}
-		if coinbase {
+		tk.TxId = tx.MustID()
+		if base {
 			tk.Base = 1
 		} else {
 			tk.Base = 0
 		}
 		tk.Height = VarUInt(blk.Meta.Height)
 		bt.Put(tk.MustKey(), tk.MustValue())
+		vps[pkh] = true //交易相关的pkh
 	}
 	return nil
 }
@@ -1417,7 +1431,7 @@ func (tx *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 }
 
 //检测交易中是否有重复的输入
-func (tx *TX) HasRepTxIn() bool {
+func (tx *TX) HasRepTxIn(bi *BlockIndex, csp bool) bool {
 	mps := map[HASH256]bool{}
 	for _, iv := range tx.Ins {
 		key := iv.OutKey()
@@ -1432,16 +1446,17 @@ func (tx *TX) HasRepTxIn() bool {
 //检测除coinbase交易外的交易金额
 //csp是否检测输出金额是否已经被消费,如果交易已经打包进区块，输入引用的输出肯定被消费,coin将不存在
 func (tx *TX) Check(bi *BlockIndex, csp bool) error {
+	//至少有一个交易
+	if len(tx.Ins) == 0 {
+		return errors.New("tx ins too slow")
+	}
 	//检测输入是否重复引用了相同的输出
-	if tx.HasRepTxIn() {
+	if tx.HasRepTxIn(bi, csp) {
 		return errors.New("txin repeat cost txout")
 	}
 	//这里不检测coinbase交易
 	if tx.IsCoinBase() {
 		return nil
-	}
-	if len(tx.Ins) == 0 {
-		return errors.New("tx ins too slow")
 	}
 	//锁定的交易不能进入 csp=true时才会检查，如果交易已经在区块中不需要检查
 	if csp {
@@ -1461,6 +1476,7 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 		if err != nil {
 			return err
 		}
+		//是否校验金额是否存在
 		if csp && !out.HasCoin(in, bi) {
 			return errors.New("coin miss")
 		}

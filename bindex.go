@@ -418,6 +418,15 @@ func (bi *BlockIndex) NextHeight() uint32 {
 	return bi.GetBestValue().Next()
 }
 
+//获取当前链高度
+func (bi *BlockIndex) Height() uint32 {
+	last := bi.Last()
+	if last == nil {
+		return 0
+	}
+	return last.Height
+}
+
 func (bi *BlockIndex) BestHeight() uint32 {
 	return bi.GetBestValue().Height
 }
@@ -1035,7 +1044,7 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 
 //获取一笔金额
 func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
-	key := getDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	key := GetDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
 	coin := &CoinKeyValue{}
 	val, err := bi.db.Index().Get(key)
 	if err != nil {
@@ -1222,7 +1231,7 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 		return err
 	}
 	//检测区块数据
-	err = blk.Check(bi)
+	err = blk.Check(bi, true)
 	if err != nil {
 		return err
 	}
