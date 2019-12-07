@@ -538,11 +538,11 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	if err := p.replaceTx(bi, tx); err != nil {
 		return err
 	}
-	if err := bi.lptr.OnTxPool(tx); err != nil {
-		return err
-	}
 	id, err := tx.ID()
 	if err != nil {
+		return err
+	}
+	if err := bi.lptr.OnTxPool(tx); err != nil {
 		return err
 	}
 	if _, has := p.tmap[id]; has {
