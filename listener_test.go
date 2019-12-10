@@ -46,10 +46,6 @@ func (lis *testLisener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
 }
 
-func (lis *testLisener) OnNewTx(tx *TX) error {
-	return nil
-}
-
 func (lis *testLisener) GetConfig() *Config {
 	return conf
 }
