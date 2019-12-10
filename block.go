@@ -885,7 +885,12 @@ func NewTxIn() *TxIn {
 
 //如果比较seq可替换
 func (in *TxIn) IsReplace(sin *TxIn) bool {
-	return in.Sequence&SEQUENCE_DISABLE_FLAG != 0 && sin.Sequence&SEQUENCE_DISABLE_FLAG != 0 && in.Sequence > sin.Sequence
+	return in.Sequence > sin.Sequence
+}
+
+//设置替换seq
+func (in *TxIn) SetReplace(seq uint32) {
+	in.Sequence = seq | SEQUENCE_DISABLE_FLAG
 }
 
 //设置按时间的seq
@@ -896,18 +901,9 @@ func (in *TxIn) SetSeqTime(seconds uint32) {
 	in.Sequence = seconds | SEQUENCE_TYPE_FLAG
 }
 
-//禁用seq
-func (in *TxIn) DisableSeq() {
-	in.Sequence |= SEQUENCE_DISABLE_FLAG
-}
-
 //按高度锁定
 func (in *TxIn) SetSeqHeight(height uint32) {
 	in.Sequence = height & SEQUENCE_MASK
-}
-
-func (in TxIn) Equal(v *TxIn) bool {
-	return in.OutIndex == v.OutIndex && in.OutHash.Equal(v.OutHash)
 }
 
 //获取引用的coin
@@ -1138,9 +1134,9 @@ func NewTx() *TX {
 //检测输入是否被锁定
 //返回true表示被锁住，无法进入区块
 func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
-	height := bi.Height()
+	best := bi.Height()
 	//如果链空忽略seq检测
-	if height == 0 || height == InvalidHeight {
+	if best == 0 || best == InvalidHeight {
 		return false, nil
 	}
 	minh, mint := int64(-1), int64(-1)
@@ -1155,30 +1151,29 @@ func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
 			return false, err
 		}
 		if coin.pool {
-			ch = height + 1
+			ch = best + 1
 		} else {
 			ch = coin.Height.ToUInt32()
 		}
 		//如果是按时间锁定
 		if in.Sequence&SEQUENCE_TYPE_FLAG != 0 {
-			ctime := bi.GetMedianTime(ch - 1) //计算中间时间
-			stime := int64(ctime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
-			if stime > mint {
-				mint = stime
+			mtime := bi.GetMedianTime(ch - 1) //计算中间时间
+			vt := int64(mtime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
+			if vt > mint {
+				mint = vt
 			}
 		} else {
 			//按高度锁定
-			sheight := int64(ch) + int64(in.Sequence&SEQUENCE_MASK) - 1
-			if sheight > minh {
-				minh = sheight
+			vh := int64(ch) + int64(in.Sequence&SEQUENCE_MASK) - 1
+			if vh > minh {
+				minh = vh
 			}
 		}
 	}
-	if minh > 0 && minh >= int64(height) {
+	if minh > 0 && minh >= int64(best) {
 		return true, nil
 	}
-	blktime := bi.GetMedianTime(height)
-	if mint > 0 && mint >= int64(blktime) {
+	if mint > 0 && mint >= int64(bi.GetMedianTime(best)) {
 		return true, nil
 	}
 	return false, nil
@@ -1282,7 +1277,7 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 	return nil
 }
 
-//验证交易输入数据
+//验证交易签名数据
 func (tx *TX) Verify(bi *BlockIndex) error {
 	for idx, in := range tx.Ins {
 		//不验证base的签名
@@ -1416,7 +1411,7 @@ func (tx *TX) CoinbaseFee() (Amount, error) {
 		fee += out.Value
 	}
 	if !fee.IsRange() {
-		return 0, errors.New("amount range error")
+		return 0, errors.New("coinbase fee range error")
 	}
 	return fee, nil
 }
@@ -1436,6 +1431,9 @@ func (tx *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 	}
 	for _, out := range tx.Outs {
 		fee -= out.Value
+	}
+	if !fee.IsRange() {
+		return 0, errors.New("fee range error")
 	}
 	return fee, nil
 }
@@ -1548,7 +1546,7 @@ func (tx *TX) Decode(r IReader) error {
 	}
 	tx.Ins = make([]*TxIn, inum)
 	for i, _ := range tx.Ins {
-		in := NewTxIn()
+		in := &TxIn{}
 		err := in.Decode(r)
 		if err != nil {
 			return err
