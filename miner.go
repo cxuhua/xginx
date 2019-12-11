@@ -310,6 +310,8 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		}
 	}
 finished:
+	//取消订阅
+	ps.Unsub(bch)
 	//保存第一个区块
 	if bi.Len() == 0 {
 		m.SaveFirstBlock(blk)

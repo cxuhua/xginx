@@ -59,6 +59,8 @@ func (t NTType) String() string {
 		return "NT_BROAD_PKG"
 	case NT_BROAD_ACK:
 		return "NT_BROAD_ACK"
+	case NT_HEADERS:
+		return "NT_HEADERS"
 	default:
 		return "NT_UNKNOW"
 	}

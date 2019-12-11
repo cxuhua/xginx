@@ -101,10 +101,9 @@ var (
 )
 
 func GetDBKey(p []byte, ids ...[]byte) []byte {
-	tk := []byte{}
-	tk = append(tk, p...)
-	for _, v := range ids {
-		tk = append(tk, v...)
+	tk := append([]byte{}, p...)
+	for _, id := range ids {
+		tk = append(tk, id...)
 	}
 	return tk
 }

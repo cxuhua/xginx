@@ -56,10 +56,10 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgBroadPkg{}
 	}
 	if m == nil {
-		return nil, fmt.Errorf("message not create instance type=%d", v.Type)
+		return nil, fmt.Errorf("message not create instance type=%v", v.Type)
 	}
 	if err := m.Decode(buf); err != nil {
-		return nil, fmt.Errorf("message type=%d decode error %w", v.Type, err)
+		return nil, fmt.Errorf("message type=%v decode error %w", v.Type, err)
 	}
 	return m, nil
 }
