@@ -407,9 +407,7 @@ func (pk *PublicKey) Decode(data []byte) error {
 
 func (pb *PublicKey) Hash() HASH160 {
 	b := pb.Encode()
-	uid := HASH160{}
-	copy(uid[:], Hash160(b))
-	return uid
+	return Hash160From(b)
 }
 
 func (pb *PublicKey) IsValid() bool {
@@ -506,8 +504,7 @@ func (pk *PublicKey) Load(s string) (*PublicKey, error) {
 
 func (pk *PublicKey) GetPks() PKBytes {
 	pks := PKBytes{}
-	pks.Set(pk)
-	return pks
+	return pks.Set(pk)
 }
 
 func (pk *PublicKey) Dump() string {

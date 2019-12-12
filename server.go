@@ -332,7 +332,7 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.cls {
-		if c.Service&SERVICE_NODE == 0 {
+		if c.Service&FULL_NODE == 0 {
 			continue
 		}
 		if c.Height == InvalidHeight {

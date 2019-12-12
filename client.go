@@ -379,12 +379,12 @@ func (c *Client) loop() {
 			bi := GetBlockIndex()
 			tp := bi.GetTxPool()
 			//获取对方地址列表
-			if c.Service&SERVICE_NODE != 0 {
+			if c.Service&FULL_NODE != 0 {
 				msg := c.ss.NewMsgAddrs(c)
 				c.SendMsg(msg)
 			}
 			//同步双发交易池数据
-			if c.Service&SERVICE_NODE != 0 {
+			if c.Service&FULL_NODE != 0 {
 				msg := tp.NewMsgGetTxPool()
 				c.SendMsg(msg)
 			}

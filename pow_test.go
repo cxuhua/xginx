@@ -1,8 +1,6 @@
 package xginx
 
 import (
-	"encoding/binary"
-	"log"
 	"testing"
 	"time"
 )
@@ -13,16 +11,6 @@ func TestBaseBits(t *testing.T) {
 	if limit.Compact(false) != 0x1d00ffff {
 		t.Errorf("base bits error")
 	}
-
-	x := int64(-10000)
-	ux := uint64(x) << 1
-	if x < 0 {
-		ux = ^ux
-	}
-	log.Println(ux)
-	buf := make([]byte, 10)
-	log.Println(binary.PutVarint(buf, -10000))
-	log.Println(buf)
 }
 
 //201600 bits compute

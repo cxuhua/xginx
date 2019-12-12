@@ -374,7 +374,6 @@ func (h UINT256) Add(b UINT256) UINT256 {
 }
 
 // a = b /c
-
 func (h UINT256) Div(b UINT256) UINT256 {
 	a := UINT256{}
 	num := h
