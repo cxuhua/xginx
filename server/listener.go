@@ -18,10 +18,6 @@ func newListener() IListener {
 	return &listener{}
 }
 
-func (lis *listener) IsTest() bool {
-	return false
-}
-
 func (lis *listener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
 }

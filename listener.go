@@ -2,8 +2,6 @@ package xginx
 
 //所有回调可能来自不同的协程
 type IListener interface {
-	//是否在测试环境
-	IsTest() bool
 	//时间戳发生器
 	TimeNow() uint32
 	//设置当前使用的链

@@ -240,7 +240,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 	monce.Do(func() {
 		bi := NewBlockIndex(lis)
 		//写入第一个区块
-		if bv := bi.GetBestValue(); !lis.IsTest() && !bv.IsValid() {
+		if bv := bi.GetBestValue(); !bv.IsValid() {
 			bi.WriteGenesis()
 		}
 		err := bi.LoadAll(func(pv uint) {
