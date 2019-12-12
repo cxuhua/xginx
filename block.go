@@ -893,6 +893,19 @@ func (in *TxIn) SetReplace(seq uint32) {
 	in.Sequence = seq | SEQUENCE_DISABLE_FLAG
 }
 
+//是否是按时间锁定的seq
+func (in *TxIn) IsTimeSeq() bool {
+	return in.Sequence&SEQUENCE_TYPE_FLAG != 0
+}
+
+func (in *TxIn) ToTimeSeq() uint32 {
+	return (in.Sequence & SEQUENCE_MASK) << SEQUENCE_GRANULARITY
+}
+
+func (in *TxIn) ToHeightSeq() uint32 {
+	return in.Sequence & SEQUENCE_MASK
+}
+
 //设置按时间的seq
 //tv是秒数
 func (in *TxIn) SetSeqTime(seconds uint32) {
@@ -1156,15 +1169,15 @@ func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
 			ch = coin.Height.ToUInt32()
 		}
 		//如果是按时间锁定
-		if in.Sequence&SEQUENCE_TYPE_FLAG != 0 {
+		if in.IsTimeSeq() {
 			mtime := bi.GetMedianTime(ch - 1) //计算中间时间
-			vt := int64(mtime) + int64(in.Sequence&SEQUENCE_MASK)<<SEQUENCE_GRANULARITY - 1
+			vt := int64(mtime) + int64(in.ToTimeSeq()) - 1
 			if vt > mint {
 				mint = vt
 			}
 		} else {
 			//按高度锁定
-			vh := int64(ch) + int64(in.Sequence&SEQUENCE_MASK) - 1
+			vh := int64(ch) + int64(in.ToHeightSeq()) - 1
 			if vh > minh {
 				minh = vh
 			}

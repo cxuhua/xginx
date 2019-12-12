@@ -398,7 +398,7 @@ func (v *MsgPong) Decode(r IReader) error {
 
 const (
 	//全节点
-	SERVICE_NODE = 1 << 0
+	FULL_NODE = 1 << 0
 )
 
 //版本消息包
@@ -417,7 +417,7 @@ func (bi *BlockIndex) NewMsgVersion() *MsgVersion {
 	m.Ver = conf.Ver
 	m.Addr = conf.GetNetAddr()
 	m.Height = bi.BestHeight()
-	m.Service = SERVICE_NODE
+	m.Service = FULL_NODE
 	m.NodeID = conf.nodeid
 	m.Tps = VarUInt(bi.txp.Len())
 	return m

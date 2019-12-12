@@ -11,7 +11,7 @@ func TestMsgVersion(t *testing.T) {
 	defer conf.Close()
 	msg := &MsgVersion{}
 	msg.Ver = 1
-	msg.Service = SERVICE_NODE
+	msg.Service = FULL_NODE
 	msg.Addr = NetAddrForm("127.0.0.1:9000")
 
 	buf := NewWriter()

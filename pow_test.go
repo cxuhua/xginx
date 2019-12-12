@@ -1,15 +1,19 @@
 package xginx
 
 import (
+	"log"
 	"testing"
 	"time"
 )
 
 func TestBaseBits(t *testing.T) {
+	InitConfig("v10000.json")
 	limit := NewUINT256(conf.PowLimit)
 	if limit.Compact(false) != 0x1d00ffff {
 		t.Errorf("base bits error")
 	}
+	log.Println(conf.PowLimit)
+	log.Printf("%032b", 0x1715b23e)
 }
 
 //201600 bits compute
