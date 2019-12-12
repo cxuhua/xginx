@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"sync"
 	"time"
 
 	. "github.com/cxuhua/xginx"
@@ -10,7 +9,6 @@ import (
 
 //测试用监听器
 type listener struct {
-	mu sync.RWMutex
 }
 
 func newListener() IListener {
