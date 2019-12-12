@@ -37,10 +37,6 @@ func (lis *testLisener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
 }
 
-func (lis *testLisener) GetConfig() *Config {
-	return conf
-}
-
 func (lis *testLisener) OnLinkBlock(blk *BlockInfo) {
 
 }
@@ -64,7 +60,7 @@ func (lis *testLisener) IsTest() bool {
 
 //当块创建完毕
 func (lis *testLisener) OnNewBlock(blk *BlockInfo) error {
-	conf := lis.GetConfig()
+	conf = LoadConfig("test.json")
 	//设置base out script
 	//创建coinbase tx
 	tx := NewTx()

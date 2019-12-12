@@ -20,7 +20,7 @@ func main() {
 	ps := GetPubSub()
 	defer ps.Shutdown()
 
-	lis := newListener(conf)
+	lis := newListener()
 
 	bi := InitBlockIndex(lis)
 	defer bi.Close()

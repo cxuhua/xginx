@@ -392,7 +392,7 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	ch := ps.Sub(NewMinerActTopic)
 	//每隔30秒开始自动创建区块
 	dt := time.NewTimer(time.Second * 30)
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 2; i++ {
 		go m.loop(i, ch, dt)
 	}
 }

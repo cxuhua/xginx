@@ -10,15 +10,12 @@ import (
 
 //测试用监听器
 type listener struct {
-	mu   sync.RWMutex
-	bi   *BlockIndex
-	conf *Config
+	mu sync.RWMutex
+	bi *BlockIndex
 }
 
-func newListener(conf *Config) IListener {
-	return &listener{
-		conf: conf,
-	}
+func newListener() IListener {
+	return &listener{}
 }
 
 func (lis *listener) IsTest() bool {
@@ -27,10 +24,6 @@ func (lis *listener) IsTest() bool {
 
 func (lis *listener) SetBlockIndex(bi *BlockIndex) {
 	lis.bi = bi
-}
-
-func (lis *listener) GetConfig() *Config {
-	return lis.conf
 }
 
 func (lis *listener) OnTxPool(tx *TX) error {
@@ -63,7 +56,7 @@ func (lis *listener) OnClose() {
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(blk *BlockInfo) error {
-	conf := lis.GetConfig()
+	conf := GetConfig()
 	//设置base out script
 	//创建coinbase tx
 	tx := NewTx()

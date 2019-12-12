@@ -6,8 +6,6 @@ type IListener interface {
 	IsTest() bool
 	//时间戳发生器
 	TimeNow() uint32
-	//获取当前配置
-	GetConfig() *Config
 	//设置当前使用的链
 	SetBlockIndex(bi *BlockIndex)
 	//当一个区块断开后

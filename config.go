@@ -135,6 +135,10 @@ var (
 	conf *Config = nil
 )
 
+func GetConfig() *Config {
+	return conf
+}
+
 func InitConfig() *Config {
 	if *ConfFile == "" {
 		panic(errors.New("config file miss -conf"))
