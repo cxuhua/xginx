@@ -15,7 +15,7 @@ type ISigner interface {
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
-	Sign(bi *BlockIndex, acc *Account) error
+	Sign(bi *BlockIndex) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取输出地址
@@ -188,44 +188,6 @@ func (sr *mulsigner) GetOutHash() (HASH160, error) {
 	return sr.out.Script.GetPkh()
 }
 
-//签名生成解锁脚本
-func (sr *mulsigner) Sign(bi *BlockIndex, acc *Account) error {
-	if err := acc.Check(); err != nil {
-		return err
-	}
-	pkh, err := sr.GetOutHash()
-	if err != nil {
-		return err
-	}
-	wits := acc.NewWitnessScript()
-	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
-		return fmt.Errorf("witness hash or pkh error %w", err)
-	}
-	if acc.HasPrivate() {
-		sigh, err := sr.GetSigHash()
-		if err != nil {
-			return err
-		}
-		for i := 0; i < len(acc.pubs); i++ {
-			sigb, err := acc.Sign(i, sigh)
-			if err != nil {
-				continue
-			}
-			wits.Sig = append(wits.Sig, sigb)
-		}
-	} else {
-		err := bi.lptr.OnSignTx(sr, wits)
-		if err != nil {
-			return err
-		}
-	}
-	if err := wits.Check(); err != nil {
-		return err
-	}
-	if script, err := wits.ToScript(); err != nil {
-		return err
-	} else {
-		sr.in.Script = script
-	}
-	return nil
+func (sr *mulsigner) Sign(bi *BlockIndex) error {
+	return bi.lptr.OnSignTx(sr)
 }

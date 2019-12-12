@@ -7,8 +7,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -273,7 +271,7 @@ func (c *Client) processMsg(m MsgIO) error {
 }
 
 func (c *Client) recoverError() {
-	if gin.Mode() == gin.DebugMode {
+	if *IsDebug {
 		c.cfun()
 		return
 	}

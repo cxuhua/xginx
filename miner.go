@@ -7,8 +7,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -30,8 +28,6 @@ const (
 const (
 	//开始挖矿操作 args(uint32) = block ver
 	OptGenBlock = iota
-	//设置矿工奖励账号 arg=*Account
-	OptSetMiner
 	//停止当前区块创建
 	OptStopGenBlock
 	//发送一个区块头数据进行验证 args = HeaderBytes
@@ -123,10 +119,6 @@ type IMiner interface {
 	Stop()
 	//等待停止
 	Wait()
-	//设置矿工账号
-	SetMiner(acc *Account) error
-	//获取矿工账号
-	GetMiner() *Account
 	//获取区块头
 	GetHeader() ([]byte, error)
 	//设置区块头
@@ -145,7 +137,6 @@ type minerEngine struct {
 	wg   sync.WaitGroup     //
 	cctx context.Context    //
 	cfun context.CancelFunc //
-	acc  *Account
 	mu   sync.RWMutex
 	ogb  ONCE
 	sch  chan bool        //停止当前正在创建的区块
@@ -159,12 +150,6 @@ func newMinerEngine() IMiner {
 		sch: make(chan bool, 1),
 		mch: make(chan HeaderBytes, 1),
 	}
-}
-
-func (m *minerEngine) GetMiner() *Account {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.acc
 }
 
 func (m *minerEngine) TimeNow() uint32 {
@@ -210,13 +195,6 @@ func (m *minerEngine) SetHeader(b []byte) error {
 		Opt: OptSendHeadBytes,
 		Arg: HeaderBytes(b),
 	}, NewMinerActTopic)
-	return nil
-}
-
-func (m *minerEngine) SetMiner(acc *Account) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.acc = acc
 	return nil
 }
 
@@ -358,22 +336,9 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 			LogError("OptGetBlock args type error", opt.Arg)
 			break
 		}
-		if acc := m.GetMiner(); acc != nil {
-			err := m.genNewBlock(ver)
-			if err != nil {
-				LogError("gen new block error", err)
-			}
-		} else {
-			LogError("miner account not set,gen new block error")
-		}
-	case OptSetMiner:
-		acc, ok := opt.Arg.(*Account)
-		if !ok {
-			LogError("OptGetBlock args type error", opt.Arg)
-			break
-		}
-		if err := m.SetMiner(acc); err != nil {
-			LogError("set miner error", err)
+		err := m.genNewBlock(ver)
+		if err != nil {
+			LogError("gen new block error", err)
 		}
 	default:
 		LogError("unknow opt type,no process", opt)
@@ -381,7 +346,7 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 }
 
 func (m *minerEngine) recoverError() {
-	if gin.Mode() == gin.DebugMode {
+	if *IsDebug {
 		m.cfun()
 		return
 	}
@@ -408,9 +373,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			if conf.MinerNum == 0 {
 				break
 			}
-			if acc := m.GetMiner(); acc == nil {
-				LogError("miner acc not set,can't gen new block")
-			} else if err := m.genNewBlock(1); err != nil {
+			if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
 			dt.Reset(time.Second * 30)

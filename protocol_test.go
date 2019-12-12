@@ -7,7 +7,7 @@ import (
 )
 
 func TestMsgVersion(t *testing.T) {
-	conf := InitConfig("test.json")
+	conf = LoadConfig("test.json")
 	defer conf.Close()
 	msg := &MsgVersion{}
 	msg.Ver = 1

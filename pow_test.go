@@ -1,15 +1,28 @@
 package xginx
 
 import (
+	"encoding/binary"
+	"log"
 	"testing"
 	"time"
 )
 
 func TestBaseBits(t *testing.T) {
+	conf = LoadConfig("test.json")
 	limit := NewUINT256(conf.PowLimit)
 	if limit.Compact(false) != 0x1d00ffff {
 		t.Errorf("base bits error")
 	}
+
+	x := int64(-10000)
+	ux := uint64(x) << 1
+	if x < 0 {
+		ux = ^ux
+	}
+	log.Println(ux)
+	buf := make([]byte, 10)
+	log.Println(binary.PutVarint(buf, -10000))
+	log.Println(buf)
 }
 
 //201600 bits compute
@@ -29,7 +42,7 @@ func TestCalculateWorkRequired(t *testing.T) {
 
 //Check whether a block hash satisfies the proof-of-work requirement specified by nBits
 func TestCheckProofOfWork(t *testing.T) {
-	InitConfig("v10000.json")
+	conf = LoadConfig("test.json")
 	h := NewHASH256("0000000000000000000e20e727e0f9e4d88c44d68e572fbc9a2bd8c61e50010b")
 	b := CheckProofOfWork(h, 0x1715b23e)
 	if !b {

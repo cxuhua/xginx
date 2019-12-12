@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/patrickmn/go-cache"
-
-	"github.com/gin-gonic/gin"
 )
 
 const (
@@ -283,7 +281,7 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 }
 
 func (s *TcpServer) recoverError() {
-	if gin.Mode() == gin.DebugMode {
+	if *IsDebug {
 		s.cfun()
 	} else if err := recover(); err != nil {
 		s.err = err

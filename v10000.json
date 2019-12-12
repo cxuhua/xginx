@@ -1,7 +1,7 @@
 {
   "data_dir": "/Users/xuhua/datadir",
-  "wallet_dir": "/Users/xuhua/wallet",
   "miner_num": 2,
+  "miner_addr": "st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v",
   "version":10000,
   "tcp_port": 9333,
   "tcp_ip": "192.168.31.198",
@@ -10,7 +10,6 @@
   "pow_limit": "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,
   "pow_span": 2016,
-  "http_port": 9334,
   "addr_prefix": "st",
   "seeds":["seed.xginx.com"],
   "genesis": "00000000218cc232bd8b0ca407f25b297d4af7c6158012904f4b62cf01cf2355"

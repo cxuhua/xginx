@@ -1334,16 +1334,8 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 		if !out.HasCoin(in, bi) {
 			return errors.New("coin miss")
 		}
-		pkh, err := out.Script.GetPkh()
-		if err != nil {
-			return err
-		}
-		acc, err := bi.lptr.GetWallet().GetAccountWithPkh(pkh)
-		if err != nil {
-			return err
-		}
 		//对每个输入签名
-		err = NewSigner(tx, out, in).Sign(bi, acc)
+		err = NewSigner(tx, out, in).Sign(bi)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

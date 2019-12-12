@@ -2,31 +2,22 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"sync"
 	"time"
-
-	"github.com/gin-gonic/gin"
 
 	. "github.com/cxuhua/xginx"
 )
 
 //测试用监听器
 type listener struct {
-	mu     sync.RWMutex
-	bi     *BlockIndex
-	conf   *Config
-	wallet IWallet
+	mu   sync.RWMutex
+	bi   *BlockIndex
+	conf *Config
 }
 
 func newListener(conf *Config) IListener {
-	w, err := NewLevelDBWallet(conf.WalletDir)
-	if err != nil {
-		panic(err)
-	}
 	return &listener{
-		conf:   conf,
-		wallet: w,
+		conf: conf,
 	}
 }
 
@@ -62,30 +53,17 @@ func (lis *listener) TimeNow() uint32 {
 	return uint32(time.Now().Unix())
 }
 
-func (lis *listener) OnInitHttp(m *gin.Engine) {
-
-}
-
 func (lis *listener) OnUnlinkBlock(blk *BlockInfo) {
 
 }
 
 func (lis *listener) OnClose() {
-	lis.wallet.Close()
-}
 
-func (lis *listener) GetWallet() IWallet {
-	return lis.wallet
 }
 
 //当块创建完毕
 func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	conf := lis.GetConfig()
-	//获取矿工账号
-	acc := Miner.GetMiner()
-	if acc == nil {
-		return fmt.Errorf("miner set miss")
-	}
 	//设置base out script
 	//创建coinbase tx
 	tx := NewTx()
@@ -99,36 +77,28 @@ func (lis *listener) OnNewBlock(blk *BlockInfo) error {
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
 	//锁定到矿工账号
-	if script, err := acc.NewLockedScript(); err != nil {
+	pkh, err := conf.MinerAddr.GetPkh()
+	if err != nil {
 		return err
-	} else {
-		out.Script = script
 	}
+	script, err := NewLockedScript(pkh)
+	if err != nil {
+		return err
+	}
+	out.Script = script
 	tx.Outs = []*TxOut{out}
 	blk.Txs = []*TX{tx}
 	return nil
 }
 
 func (lis *listener) OnStartup() {
-	acc, err := lis.wallet.GetMiner()
-	if err != nil {
-		panic(err)
-	}
-	addr, err := acc.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	LogInfo("miner address = ", addr)
-	err = Miner.SetMiner(acc)
-	if err != nil {
-		panic(err)
-	}
+
 }
 
 //当账户没有私钥时调用此方法签名
 //singer 签名器
 //wits 脚本对象
-func (lis *listener) OnSignTx(singer ISigner, wits *WitnessScript) error {
+func (lis *listener) OnSignTx(singer ISigner) error {
 	return errors.New("not imp OnSignTx")
 }
 

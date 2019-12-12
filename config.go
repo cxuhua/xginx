@@ -3,12 +3,17 @@ package xginx
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
+	"flag"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+)
 
-	"github.com/gin-gonic/gin"
+var (
+	ConfFile = flag.String("conf", "v10000.json", "config file name")
+	IsDebug  = flag.Bool("debug", true, "startup mode")
 )
 
 func LoadPrivateKeys(file string) []*PrivateKey {
@@ -34,14 +39,13 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 //配置加载后只读
 type Config struct {
 	MinerNum   int      `json:"miner_num"`   //挖掘机数量,=0不会启动协程计算
+	MinerAddr  Address  `json:"miner_addr"`  //矿工默认地址
 	MaxConn    int      `json:"max_conn"`    //最大激活的连接，包括连入和连出的
 	Seeds      []string `json:"seeds"`       //dns seed服务器
-	WalletDir  string   `json:"wallet_dir"`  //钱包地址
 	DataDir    string   `json:"data_dir"`    //数据路径
 	AddrPrefix string   `json:"addr_prefix"` //地址前缀
 	Genesis    string   `json:"genesis"`     //第一个区块
 	LogFile    string   `json:"log_file"`    //日志文件路径
-	HttpPort   int      `json:"http_port"`   //http服务器端口
 	PowTime    uint     `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
 	PowLimit   string   `json:"pow_limit"`   //最小难度设置
 	PowSpan    uint32   `json:"pow_span"`    //难度计算间隔 2016
@@ -117,8 +121,6 @@ func (c *Config) Init() *Config {
 		c.logFile = os.Stdout
 	}
 	log.SetOutput(c.logFile)
-	gin.DefaultWriter = c.logFile
-	gin.DefaultErrorWriter = c.logFile
 	log.SetFlags(logflags)
 	//
 	c.nodeid = c.GenUInt64()
@@ -133,8 +135,11 @@ var (
 	conf *Config = nil
 )
 
-func InitConfig(f string) *Config {
-	conf = LoadConfig(f)
+func InitConfig() *Config {
+	if *ConfFile == "" {
+		panic(errors.New("config file miss -conf"))
+	}
+	conf = LoadConfig(*ConfFile)
 	return conf
 }
 

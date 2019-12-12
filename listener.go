@@ -1,7 +1,5 @@
 package xginx
 
-import "github.com/gin-gonic/gin"
-
 //所有回调可能来自不同的协程
 type IListener interface {
 	//是否在测试环境
@@ -24,16 +22,12 @@ type IListener interface {
 	OnClientMsg(c *Client, msg MsgIO)
 	//链关闭时
 	OnClose()
-	//获取当前设置的钱包
-	GetWallet() IWallet
 	//当服务启动后会调用一次
 	OnStartup()
-	//初始化http服务器后
-	OnInitHttp(m *gin.Engine)
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
 	//当账户没有私钥签名时调用此方法
-	OnSignTx(singer ISigner, wits *WitnessScript) error
+	OnSignTx(singer ISigner) error
 	//当交易池的交易因为seq设置被替换时
 	OnTxRep(old *TX, new *TX)
 }
