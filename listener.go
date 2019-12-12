@@ -4,8 +4,6 @@ package xginx
 type IListener interface {
 	//时间戳发生器
 	TimeNow() uint32
-	//设置当前使用的链
-	SetBlockIndex(bi *BlockIndex)
 	//当一个区块断开后
 	OnUnlinkBlock(blk *BlockInfo)
 	//更新区块数据成功时

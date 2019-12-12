@@ -254,7 +254,6 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 			panic(err)
 		}
 		midx = bi
-		lis.SetBlockIndex(midx)
 	})
 	return midx
 }

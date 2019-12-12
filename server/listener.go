@@ -11,15 +11,10 @@ import (
 //测试用监听器
 type listener struct {
 	mu sync.RWMutex
-	bi *BlockIndex
 }
 
 func newListener() IListener {
 	return &listener{}
-}
-
-func (lis *listener) SetBlockIndex(bi *BlockIndex) {
-	lis.bi = bi
 }
 
 func (lis *listener) OnTxPool(tx *TX) error {
@@ -101,8 +96,9 @@ func (lis *listener) OnFinished(blk *BlockInfo) error {
 	if !tx.IsCoinBase() {
 		return errors.New("coinbase tx miss")
 	}
+	bi := GetBlockIndex()
 	//交易费用处理，添加给矿工
-	fee, err := blk.GetFee(lis.bi)
+	fee, err := blk.GetFee(bi)
 	if err != nil {
 		return err
 	}
