@@ -20,7 +20,7 @@ type IListener interface {
 	OnStartup()
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
-	//当账户没有私钥签名时调用此方法
+	//调用TX.Sign时当签名交易时
 	OnSignTx(singer ISigner) error
 	//当交易池的交易因为seq设置被替换时
 	OnTxRep(old *TX, new *TX)
