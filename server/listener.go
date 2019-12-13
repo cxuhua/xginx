@@ -19,8 +19,15 @@ func (lis *listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
-func (lis *listener) OnTxRep(old *TX, new *TX) {
+func (lis *listener) OnTxPoolRep(old *TX, new *TX) {
 
+}
+
+func (lis *listener) OnInit(bi *BlockIndex) error {
+	if bv := bi.GetBestValue(); !bv.IsValid() {
+		bi.WriteGenesis()
+	}
+	return nil
 }
 
 func (lis *listener) OnLinkBlock(blk *BlockInfo) {
@@ -28,7 +35,7 @@ func (lis *listener) OnLinkBlock(blk *BlockInfo) {
 }
 
 func (lis *listener) OnClientMsg(c *Client, msg MsgIO) {
-
+	//LogInfo(msg.Type())
 }
 
 func (lis *listener) TimeNow() uint32 {
@@ -79,8 +86,7 @@ func (lis *listener) OnStartup() {
 
 //当账户没有私钥时调用此方法签名
 //singer 签名器
-//wits 脚本对象
-func (lis *listener) OnSignTx(singer ISigner) error {
+func (lis *listener) OnSignTx(signer ISigner) error {
 	return errors.New("not imp OnSignTx")
 }
 

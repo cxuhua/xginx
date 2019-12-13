@@ -18,8 +18,6 @@ type ISigner interface {
 	Sign(bi *BlockIndex) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
-	//获取输出地址
-	GetOutAddress() (Address, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出
 	GetObjs() (*TX, *TxIn, *TxOut)
 }
@@ -45,47 +43,6 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut) {
 	return sr.tx, sr.in, sr.out
 }
 
-//验证msg消息
-func (sr *mulsigner) verify(msg []byte, wits WitnessScript, sigs []SigBytes) error {
-	//至少需要签名正确的数量
-	less := int(wits.Less)
-	//总的数量
-	num := int(wits.Num)
-	if len(wits.Pks) != num {
-		return errors.New("pub num error")
-	}
-	if num < less {
-		return errors.New("pub num error,num must >= less")
-	}
-	for i, k := 0, 0; i < len(sigs) && k < len(wits.Pks); {
-		sig, err := NewSigValue(sigs[i][:])
-		if err != nil {
-			return err
-		}
-		pub, err := NewPublicKey(wits.Pks[k][:])
-		if err != nil {
-			return err
-		}
-		vok := pub.Verify(msg, sig)
-		if vok {
-			less--
-			i++
-		}
-		//如果启用仲裁，并且当前仲裁验证成功立即返回
-		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
-			less = 0
-		}
-		if less == 0 {
-			break
-		}
-		k++
-	}
-	if less > 0 {
-		return errors.New("sig verify error")
-	}
-	return nil
-}
-
 //多重签名验证
 func (sr *mulsigner) Verify() error {
 	wits, err := sr.in.Script.ToWitness()
@@ -106,7 +63,43 @@ func (sr *mulsigner) Verify() error {
 	if err != nil {
 		return err
 	}
-	return sr.verify(sigh, wits, wits.Sig)
+	//至少需要签名正确的数量
+	less := int(wits.Less)
+	//总的数量
+	num := int(wits.Num)
+	if len(wits.Pks) != num {
+		return errors.New("pub num error")
+	}
+	if num < less {
+		return errors.New("pub num error,num must >= less")
+	}
+	for i, k := 0, 0; i < len(wits.Sig) && k < len(wits.Pks); {
+		sig, err := NewSigValue(wits.Sig[i][:])
+		if err != nil {
+			return err
+		}
+		pub, err := NewPublicKey(wits.Pks[k][:])
+		if err != nil {
+			return err
+		}
+		vok := pub.Verify(sigh, sig)
+		if vok {
+			less--
+			i++
+		}
+		//如果启用仲裁，并且当前仲裁验证成功立即返回
+		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
+			less = 0
+		}
+		if less == 0 {
+			break
+		}
+		k++
+	}
+	if less > 0 {
+		return errors.New("sig verify error")
+	}
+	return nil
 }
 
 func (sp *mulsigner) OutputsHash() HASH256 {
@@ -176,16 +169,6 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 		return nil, err
 	}
 	return Hash256(buf.Bytes()), nil
-}
-
-//获取输出地址
-func (sr *mulsigner) GetOutAddress() (Address, error) {
-	return sr.out.Script.GetAddress()
-}
-
-//获取输出hash
-func (sr *mulsigner) GetOutHash() (HASH160, error) {
-	return sr.out.Script.GetPkh()
 }
 
 func (sr *mulsigner) Sign(bi *BlockIndex) error {

@@ -384,7 +384,7 @@ func (blk *BlockInfo) Write(bi *BlockIndex) error {
 		return fmt.Errorf("block %v too big", bid)
 	}
 	//写入索引数据
-	bt := bi.db.Index().NewBatch()
+	bt := bi.blkdb.Index().NewBatch()
 	rt := bt.NewRev()
 	//写入最好区块数据信息
 	bt.Put(BestBlockKey, BestValueBytes(bid, blk.Meta.Height))
@@ -401,12 +401,12 @@ func (blk *BlockInfo) Write(bi *BlockIndex) error {
 		return errors.New("opts state logs too big > MAX_LOG_SIZE")
 	}
 	//保存回退日志
-	blk.Meta.Rev, err = bi.db.Rev().Write(rt.Dump())
+	blk.Meta.Rev, err = bi.blkdb.Rev().Write(rt.Dump())
 	if err != nil {
 		return err
 	}
 	//保存区块数据
-	blk.Meta.Blk, err = bi.db.Blk().Write(buf.Bytes())
+	blk.Meta.Blk, err = bi.blkdb.Blk().Write(buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -417,7 +417,7 @@ func (blk *BlockInfo) Write(bi *BlockIndex) error {
 	}
 	bt.Put(BLOCK_PREFIX, bid[:], hbs)
 	//写入索引数据
-	return bi.db.Index().Write(bt)
+	return bi.blkdb.Index().Write(bt)
 }
 
 func (blk BlockInfo) String() string {
@@ -1086,11 +1086,7 @@ func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 	if err != nil {
 		return false
 	}
-	//coin没成熟
-	if !coin.IsMatured(bi.NextHeight()) {
-		return false
-	}
-	return true
+	return coin.IsMatured(bi.NextHeight())
 }
 
 func (out *TxOut) Check(bi *BlockIndex) error {
@@ -1217,10 +1213,15 @@ func (tx *TX) IsFinal(hv uint32, tv uint32) bool {
 }
 
 //重置缓存
-func (tx *TX) ResetAll() {
-	tx.idcs.Reset()
+func (tx *TX) ResetSign() {
 	tx.outs.Reset()
 	tx.pres.Reset()
+}
+
+//重置缓存
+func (tx *TX) ResetAll() {
+	tx.idcs.Reset()
+	tx.ResetSign()
 }
 
 func (tx TX) String() string {
@@ -1309,34 +1310,14 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 	return nil
 }
 
-//获取某个输入的签名器
-func (tx *TX) GetSigner(bi *BlockIndex, idx int) (ISigner, error) {
-	if idx < 0 || idx >= len(tx.Ins) {
-		return nil, errors.New("tx index out bound")
-	}
-	in := tx.Ins[idx]
-	if in.IsCoinBase() {
-		return nil, errors.New("conbase no signer")
-	}
-	out, err := in.LoadTxOut(bi)
-	if err != nil {
-		return nil, err
-	}
-	//检查是否已经被消费
-	if !out.HasCoin(in, bi) {
-		return nil, errors.New("coin miss")
-	}
-	return NewSigner(tx, out, in), nil
-}
-
 //签名交易数据
 //cspent 是否检测输出金额是否存在
 func (tx *TX) Sign(bi *BlockIndex) error {
-	lptr := bi.GetListener()
-	if lptr == nil {
-		return errors.New("block index listener null,can't sign")
-	}
+	//重置签名数据
+	tx.ResetSign()
+	//签名每一个输入
 	for idx, in := range tx.Ins {
+		//不签名coinbase
 		if in.IsCoinBase() {
 			continue
 		}
@@ -1345,7 +1326,7 @@ func (tx *TX) Sign(bi *BlockIndex) error {
 			return err
 		}
 		if !out.HasCoin(in, bi) {
-			return errors.New("coin miss")
+			return errors.New("sign tx, coin miss")
 		}
 		//对每个输入签名
 		err = NewSigner(tx, out, in).Sign(bi)

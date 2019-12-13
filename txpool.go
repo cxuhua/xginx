@@ -56,7 +56,6 @@ func (p *TxPool) deltx(bi *BlockIndex, tx *TX) {
 func (p *TxPool) del(bi *BlockIndex, id HASH256) {
 	if ele, has := p.tmap[id]; has {
 		p.removeEle(bi, ele)
-		LogInfo("del txpool tx=", id, " pool size =", p.tlis.Len())
 	}
 }
 
@@ -295,7 +294,7 @@ func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	delete(p.tmap, id)
 	//广播交易从内存池移除
 	ps.Pub(id, TxPoolDelTxTopic)
-	LogInfof("remove tx %v success from txpool", id)
+	LogInfof("remove tx %v success from txpool len=%d", id, p.tlis.Len())
 }
 
 //移除多个交易
@@ -491,7 +490,7 @@ func (p *TxPool) Len() int {
 }
 
 func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
-	bi.lptr.OnTxRep(old, new)
+	bi.lptr.OnTxPoolRep(old, new)
 	p.deltx(bi, old)
 	return nil
 }
@@ -519,7 +518,15 @@ func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 //添加进去一笔交易放入最后
 //交易必须是校验过的
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
-	//coinbase不允许进去交易池
+	id, err := tx.ID()
+	if err != nil {
+		return err
+	}
+	//如果交易已经在区块中忽略
+	if bi.HasTxValue(id) {
+		return errors.New("tx in block idnex")
+	}
+	//coinbase不允许进入交易池
 	if tx.IsCoinBase() {
 		return errors.New("coinbase push to txpool error")
 	}
@@ -536,10 +543,6 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 		return err
 	}
 	if err := p.replaceTx(bi, tx); err != nil {
-		return err
-	}
-	id, err := tx.ID()
-	if err != nil {
 		return err
 	}
 	if err := bi.lptr.OnTxPool(tx); err != nil {

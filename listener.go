@@ -2,6 +2,8 @@ package xginx
 
 //所有回调可能来自不同的协程
 type IListener interface {
+	//首次初始化时
+	OnInit(bi *BlockIndex) error
 	//时间戳发生器
 	TimeNow() uint32
 	//当一个区块断开后
@@ -23,5 +25,5 @@ type IListener interface {
 	//调用TX.Sign时当签名交易时
 	OnSignTx(singer ISigner) error
 	//当交易池的交易因为seq设置被替换时
-	OnTxRep(old *TX, new *TX)
+	OnTxPoolRep(old *TX, new *TX)
 }

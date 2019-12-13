@@ -4,16 +4,16 @@ import "fmt"
 
 //金额状态
 type CoinsState struct {
-	Pools    Coins  //内存池中的
-	Indexs   Coins  //历史区块中的
-	Matureds Coins  //未成熟的
-	Coins    Coins  //当前可支配的
-	All      Coins  //所有
-	Sum      Amount //总和
+	Pools  Coins  //内存池中的
+	Indexs Coins  //历史区块
+	NotMts Coins  //未成熟的
+	Coins  Coins  //当前可支配的
+	All    Coins  //所有
+	Sum    Amount //总和
 }
 
 func (s CoinsState) String() string {
-	return fmt.Sprintf("pool = %d,index = %d, matured = %d, coins = %d sum = %d", s.Pools.Balance(), s.Indexs.Balance(), s.Matureds.Balance(), s.Coins.Balance(), s.Sum)
+	return fmt.Sprintf("pool = %d,index = %d, not matured = %d, coins = %d sum = %d", s.Pools.Balance(), s.Indexs.Balance(), s.NotMts.Balance(), s.Coins.Balance(), s.Sum)
 }
 
 //金额记录
@@ -24,7 +24,7 @@ func (c Coins) State(spent uint32) *CoinsState {
 	s := &CoinsState{All: c}
 	for _, v := range c {
 		if !v.IsMatured(spent) {
-			s.Matureds = append(s.Matureds, v)
+			s.NotMts = append(s.NotMts, v)
 		} else if v.pool {
 			s.Pools = append(s.Pools, v)
 			s.Coins = append(s.Coins, v)

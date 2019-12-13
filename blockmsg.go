@@ -119,7 +119,7 @@ func (m MsgBlock) IsUseBlk() bool {
 	return m.Flags&MsgBlockUseBlk != 0
 }
 
-func (m MsgBlock) IsBroad() bool {
+func (m MsgBlock) IsNewBlock() bool {
 	return m.Flags&MsgBlockNewFlags != 0
 }
 

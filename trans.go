@@ -132,8 +132,9 @@ func (m *MulTransInfo) BroadTx(tx *TX) {
 
 //创建交易对象
 func (bi *BlockIndex) NewMulTrans() *MulTransInfo {
+	spent := bi.NextHeight()
 	return &MulTransInfo{
-		Spent: InvalidHeight,
+		Spent: spent,
 		bi:    bi,
 		Acts:  []*Account{},
 		Keep:  0,

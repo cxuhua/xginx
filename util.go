@@ -83,6 +83,12 @@ func SetRandInt(v interface{}) {
 	_ = binary.Read(rand.Reader, binary.LittleEndian, v)
 }
 
+func RandUInt32() uint32 {
+	v := uint32(0)
+	_ = binary.Read(rand.Reader, binary.LittleEndian, &v)
+	return v
+}
+
 func HexToBytes(s string) []byte {
 	d, err := hex.DecodeString(s)
 	if err != nil {

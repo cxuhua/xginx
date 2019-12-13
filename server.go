@@ -23,6 +23,7 @@ type AddrNode struct {
 	openTime  time.Time //打开时间
 	closeTime time.Time //关闭时间
 	lastTime  time.Time //最后链接时间
+	connErr   int       //连接错误次数
 }
 
 //是否需要连接
@@ -30,7 +31,8 @@ func (node AddrNode) IsNeedConn() bool {
 	if !node.addr.IsGlobalUnicast() {
 		return false
 	}
-	if time.Now().Sub(node.lastTime) > time.Minute*10 {
+	span := time.Minute * 5 * time.Duration(node.connErr+1)
+	if time.Now().Sub(node.lastTime) > span {
 		return true
 	}
 	return false
@@ -40,6 +42,15 @@ func (node AddrNode) IsNeedConn() bool {
 type AddrMap struct {
 	mu    sync.RWMutex
 	addrs map[string]*AddrNode
+}
+
+func (m *AddrMap) IncErr(a NetAddr) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	v := m.addrs[a.String()]
+	if v != nil {
+		v.connErr++
+	}
 }
 
 func (m *AddrMap) Has(a NetAddr) bool {
@@ -293,37 +304,21 @@ func (s *TcpServer) recoverError() {
 
 func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	bi := GetBlockIndex()
+	txp := bi.GetTxPool()
 	rsg := &MsgTx{}
 	for _, tx := range msg.Txs {
-		//获取交易id
-		id, err := tx.ID()
-		if err != nil {
-			return err
-		}
-		//检测交易是否可用
-		if err := tx.Check(bi, true); err != nil {
-			return err
-		}
-		//如果交易已经在区块中忽略
-		if _, err := bi.LoadTX(id); err == nil {
-			return nil
-		}
-		txp := bi.GetTxPool()
-		//已经存在交易池中忽略
-		if txp.Has(id) {
-			return nil
-		}
 		//放入交易池
-		err = txp.PushTx(bi, tx)
+		err := txp.PushTx(bi, tx)
 		if err != nil {
-			LogError("push tx error", err, "skip push tx")
 			continue
 		}
 		rsg.Add(tx)
 		LogInfo("recv new tx =", tx, " txpool size =", txp.Len())
 	}
 	//广播到周围节点,不包括c
-	s.BroadMsg(rsg, c)
+	if len(rsg.Txs) > 0 {
+		s.BroadMsg(rsg, c)
+	}
 	return nil
 }
 
@@ -358,19 +353,19 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	s.single.Lock()
 	defer s.single.Unlock()
+	ps := GetPubSub()
 	bi := GetBlockIndex()
 	//尝试更新区块数据
 	if err := bi.LinkBlk(msg.Blk); err != nil {
 		LogError("link block error", err)
 		return err
 	}
-	ps := GetPubSub()
-	ps.Pub(msg.Blk, NewRecvBlockTopic)
-	LogInfo("update block to chain success, blk =", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
+	LogInfo("update block ", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
 	s.dt.Reset(time.Microsecond * 300)
-	if msg.IsBroad() {
+	if msg.IsNewBlock() {
 		s.BroadMsg(msg, c)
 	}
+	ps.Pub(msg.Blk, NewRecvBlockTopic)
 	return nil
 }
 
@@ -411,6 +406,7 @@ func (s *TcpServer) tryConnect() {
 		c := s.NewClient()
 		err := c.Open(v)
 		if err != nil {
+			s.addrs.IncErr(v)
 			LogError("try connect error", err)
 			continue
 		}
