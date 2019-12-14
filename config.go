@@ -67,6 +67,10 @@ func (c *Config) GetTcpListenAddr() NetAddr {
 	}
 }
 
+func (c *Config) GetLogFile() *os.File {
+	return c.logFile
+}
+
 func (c *Config) GetNetAddr() NetAddr {
 	return NetAddr{
 		ip:   net.ParseIP(c.TcpIp),
