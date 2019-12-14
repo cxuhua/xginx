@@ -148,6 +148,105 @@ func NewTestBlockIndex(num int) *BlockIndex {
 	return bi
 }
 
+func TestRePushTx(t *testing.T) {
+	bi := NewTestBlockIndex(100)
+	defer bi.Close()
+	lis := bi.lptr.(*TestLis)
+	mi := bi.NewMulTrans()
+	var first *TX
+	dst, _ := lis.ams[1].GetAddress()
+	//创建10个交易
+	for i := 0; i < 10; i++ {
+		mi.Acts = []*Account{lis.ams[0]}
+		mi.Dst = []Address{dst}
+		mi.Amts = []Amount{1 * COIN}
+		mi.Fee = 0
+		//创建交易
+		tx, err := mi.NewTx(true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = tx.Check(bi, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			first = tx
+		}
+	}
+	if bi.txp.Len() != 10 {
+		t.Fatal("tx pool count error")
+	}
+	//创建区块打包
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//只打包第一个交易
+	err = blk.AddTx(bi, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = blk.Finish(bi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calcbits(bi, blk)
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//剩下的9个交易应该是恢复进去的
+	if bi.txp.Len() != 9 {
+		t.Fatal("tx pool count error")
+	}
+	//目标应该有10个 但打包的只有一个
+	ds, err := bi.ListCoins(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//总的101个区块减去转出的,多了一个区块，多奖励50，所以应该是101
+	if ds.All.Balance() != 10*COIN {
+		t.Fatal("dst coin error")
+	}
+	if ds.Indexs.Balance() != 1*COIN {
+		t.Fatal("dst coin error")
+	}
+	//打包剩下的交易
+	//创建区块打包
+	blk, err = bi.NewBlock(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//只打包第一个交易
+	err = blk.LoadTxs(bi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = blk.Finish(bi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calcbits(bi, blk)
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//剩下交易应该全部被打包了
+	if bi.txp.Len() != 0 {
+		t.Fatal("tx pool count error")
+	}
+	//目标应该有10个
+	ds, err = bi.ListCoins(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//总的101个区块减去转出的,多了一个区块，多奖励50，所以应该是101
+	if ds.All.Balance() != 10*COIN {
+		t.Fatal("dst coin error")
+	}
+}
+
 //测试转账
 func TestTransfer(t *testing.T) {
 	bi := NewTestBlockIndex(100)

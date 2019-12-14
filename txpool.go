@@ -56,7 +56,7 @@ func (p *TxPool) deltx(bi *BlockIndex, tx *TX) {
 
 func (p *TxPool) del(bi *BlockIndex, id HASH256) {
 	if ele, has := p.tmap[id]; has {
-		p.removeEle(bi, ele)
+		p.removeEle(bi, nil, ele)
 	}
 }
 
@@ -267,20 +267,23 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 	}
 }
 
-//移除引用了此交易的交易
-func (p *TxPool) removeRefsTxs(bi *BlockIndex, id HASH256, ele *list.Element) {
+//移除引用了此交易的交易，返回移除了的交易
+func (p *TxPool) removeRefsTxs(bi *BlockIndex, refs *[]*TX, id HASH256) {
 	ids := p.GetRefsTxs(id)
 	for _, id := range ids {
 		ele, has := p.tmap[id]
 		if !has {
 			continue
 		}
-		p.removeEle(bi, ele)
+		p.removeEle(bi, refs, ele)
+		if refs != nil {
+			*refs = append(*refs, ele.Value.(*TX))
+		}
 	}
 }
 
 //移除一个元素
-func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
+func (p *TxPool) removeEle(bi *BlockIndex, refs *[]*TX, ele *list.Element) {
 	ps := GetPubSub()
 	tx, ok := ele.Value.(*TX)
 	if !ok {
@@ -288,7 +291,7 @@ func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	}
 	id := tx.MustID()
 	//引用了此交易的交易也应该被删除
-	p.removeRefsTxs(bi, id, ele)
+	p.removeRefsTxs(bi, refs, id)
 	//移除自己
 	p.setMemIdx(bi, tx, false)
 	p.tlis.Remove(ele)
@@ -298,17 +301,37 @@ func (p *TxPool) removeEle(bi *BlockIndex, ele *list.Element) {
 	LogInfof("remove tx %v success from txpool len=%d", id, p.tlis.Len())
 }
 
-//移除多个交易
-func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
+//删除交易并返回已经删除的引用的交易
+func (p *TxPool) GetDelTxs(bi *BlockIndex, txs []*TX) []*TX {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	refs := []*TX{}
 	for _, tx := range txs {
 		id := tx.MustID()
 		ele, has := p.tmap[id]
 		if !has {
 			continue
 		}
-		p.removeEle(bi, ele)
+		p.removeEle(bi, &refs, ele)
+	}
+	return refs
+}
+
+//当区块打包时，移除多个交易
+func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
+	//移除并返回删除了的交易
+	refs := p.GetDelTxs(bi, txs)
+	//这些被删除的引用是否恢复?反向恢复
+	for i := len(refs) - 1; i >= 0; i-- {
+		tx := refs[i]
+		err := tx.Check(bi, true)
+		if err != nil {
+			continue
+		}
+		err = p.PushTx(bi, tx)
+		if err != nil {
+			LogError("repush tx error", err)
+		}
 	}
 }
 
@@ -380,7 +403,7 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, ele := range res {
-		p.removeEle(bi, ele)
+		p.removeEle(bi, nil, ele)
 	}
 	return txs, nil
 }
