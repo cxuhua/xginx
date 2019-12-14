@@ -1,5 +1,11 @@
 package xginx
 
+import (
+	"errors"
+	"os"
+	"time"
+)
+
 //所有回调可能来自不同的协程
 type IListener interface {
 	//首次初始化时
@@ -19,11 +25,118 @@ type IListener interface {
 	//链关闭时
 	OnClose()
 	//当服务启动后会调用一次
-	OnStartup()
+	OnStart()
+	//系统结束时
+	OnStop(sig os.Signal)
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
 	//调用TX.Sign时当签名交易时
 	OnSignTx(singer ISigner) error
 	//当交易池的交易因为seq设置被替换时
 	OnTxPoolRep(old *TX, new *TX)
+}
+
+//默认监听器
+type Listener struct {
+}
+
+func (lis *Listener) OnTxPool(tx *TX) error {
+	return nil
+}
+
+func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
+
+}
+
+func (lis *Listener) OnInit(bi *BlockIndex) error {
+	if bv := bi.GetBestValue(); !bv.IsValid() {
+		bi.WriteGenesis()
+	}
+	return nil
+}
+
+func (lis *Listener) OnLinkBlock(blk *BlockInfo) {
+
+}
+
+func (lis *Listener) OnClientMsg(c *Client, msg MsgIO) {
+	//LogInfo(msg.Type())
+}
+
+func (lis *Listener) TimeNow() uint32 {
+	return uint32(time.Now().Unix())
+}
+
+func (lis *Listener) OnUnlinkBlock(blk *BlockInfo) {
+
+}
+
+func (lis *Listener) OnStart() {
+	LogInfo("xginx start")
+}
+
+func (lis *Listener) OnStop(sig os.Signal) {
+	LogInfo("xginx stop sig=", sig)
+}
+
+//当账户没有私钥时调用此方法签名
+//singer 签名器
+func (lis *Listener) OnSignTx(signer ISigner) error {
+	return errors.New("not imp OnSignTx")
+}
+
+func (lis *Listener) OnClose() {
+	LogInfo("xginx block index close")
+}
+
+//当块创建完毕
+func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
+	conf := GetConfig()
+	//设置base out script
+	//创建coinbase tx
+	tx := NewTx()
+	txt := time.Now().Format("2006-01-02 15:04:05")
+	addr := conf.GetNetAddr()
+	//base tx
+	in := NewTxIn()
+	in.Script = blk.CoinbaseScript(addr.IP(), []byte(txt))
+	tx.Ins = []*TxIn{in}
+	//
+	out := &TxOut{}
+	out.Value = blk.CoinbaseReward()
+	//锁定到矿工账号
+	pkh, err := conf.MinerAddr.GetPkh()
+	if err != nil {
+		return err
+	}
+	script, err := NewLockedScript(pkh)
+	if err != nil {
+		return err
+	}
+	out.Script = script
+	tx.Outs = []*TxOut{out}
+	blk.Txs = []*TX{tx}
+	return nil
+}
+
+//完成区块
+func (lis *Listener) OnFinished(blk *BlockInfo) error {
+	//处理交易费用
+	if len(blk.Txs) == 0 {
+		return errors.New("coinbase tx miss")
+	}
+	tx := blk.Txs[0]
+	if !tx.IsCoinBase() {
+		return errors.New("coinbase tx miss")
+	}
+	bi := GetBlockIndex()
+	//交易费用处理，添加给矿工
+	fee, err := blk.GetFee(bi)
+	if err != nil {
+		return err
+	}
+	if fee > 0 {
+		tx.Outs[0].Value += fee
+	}
+	return nil
 }

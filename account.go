@@ -94,6 +94,7 @@ func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	return sigb, nil
 }
 
+//生成未带有签名的脚本对象
 func (ap Account) NewWitnessScript() *WitnessScript {
 	w := &WitnessScript{}
 	w.Type = SCRIPT_WITNESS_TYPE
@@ -108,6 +109,7 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 	return w
 }
 
+//生成锁定脚本
 func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
 	if pkh, err := ap.GetPkh(); err != nil {
 		return nil, err

@@ -912,15 +912,15 @@ func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 }
 
 //清除区块相关的缓存
-func (bi *BlockIndex) cleancache(b *BlockInfo) {
-	for _, tv := range b.Txs {
+func (bi *BlockIndex) cleancache(blk *BlockInfo) {
+	for _, tv := range blk.Txs {
 		id, err := tv.ID()
 		if err != nil {
 			panic(err)
 		}
 		bi.lru.Delete(id)
 	}
-	if id, err := b.ID(); err == nil {
+	if id, err := blk.ID(); err == nil {
 		bi.lru.Delete(id)
 	}
 }

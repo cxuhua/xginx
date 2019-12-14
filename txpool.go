@@ -24,6 +24,7 @@ type txpoolin struct {
 
 //交易池，存放签名成功，未确认的交易
 //当区块连接后需要把区块中的交易从这个池子删除
+//交易池加入交易后会记录消费输出，也会记录交易池中可用的金额
 type TxPool struct {
 	mu   sync.RWMutex
 	tlis *list.List

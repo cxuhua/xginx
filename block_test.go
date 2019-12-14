@@ -11,6 +11,7 @@ import (
 
 //测试用监听器
 type TestLis struct {
+	Listener
 	addrs []Address
 	acc   map[HASH160]*Account
 	ams   []*Account
@@ -47,72 +48,14 @@ func newTestLis() *TestLis {
 	return lis
 }
 
-func (lis *TestLis) OnTxPool(tx *TX) error {
-	return nil
-}
-
-func (lis *TestLis) OnTxPoolRep(old *TX, new *TX) {
-
-}
-
-func (lis *TestLis) OnLinkBlock(blk *BlockInfo) {
-
-}
-
-func (lis *TestLis) OnClientMsg(c *Client, msg MsgIO) {
-	//LogInfo(msg.Type())
-}
-
 func (lis *TestLis) TimeNow() uint32 {
 	atomic.AddUint32(&lis.t, 1)
 	return atomic.LoadUint32(&lis.t)
 }
 
-func (lis *TestLis) OnUnlinkBlock(blk *BlockInfo) {
-
-}
-
 func (lis *TestLis) OnInit(bi *BlockIndex) error {
 	//测试每次清楚数据
 	return bi.RemoveBestValue()
-}
-
-func (lis *TestLis) OnClose() {
-
-}
-
-//当块创建完毕
-func (lis *TestLis) OnNewBlock(blk *BlockInfo) error {
-	conf := GetConfig()
-	//设置base out script
-	//创建coinbase tx
-	tx := NewTx()
-	txt := time.Now().Format("2006-01-02 15:04:05")
-	addr := conf.GetNetAddr()
-	//base tx
-	in := NewTxIn()
-	in.Script = blk.CoinbaseScript(addr.IP(), []byte(txt))
-	tx.Ins = []*TxIn{in}
-	//
-	out := &TxOut{}
-	out.Value = blk.CoinbaseReward()
-	//锁定到矿工账号
-	pkh, err := conf.MinerAddr.GetPkh()
-	if err != nil {
-		return err
-	}
-	script, err := NewLockedScript(pkh)
-	if err != nil {
-		return err
-	}
-	out.Script = script
-	tx.Outs = []*TxOut{out}
-	blk.Txs = []*TX{tx}
-	return nil
-}
-
-func (lis *TestLis) OnStartup() {
-
 }
 
 //当账户没有私钥时调用此方法签名
@@ -144,28 +87,6 @@ func (lis *TestLis) OnSignTx(signer ISigner) error {
 		return err
 	}
 	in.Script = script
-	return nil
-}
-
-//完成区块
-func (lis *TestLis) OnFinished(blk *BlockInfo) error {
-	//处理交易费用
-	if len(blk.Txs) == 0 {
-		return errors.New("coinbase tx miss")
-	}
-	tx := blk.Txs[0]
-	if !tx.IsCoinBase() {
-		return errors.New("coinbase tx miss")
-	}
-	bi := GetBlockIndex()
-	//交易费用处理，添加给矿工
-	fee, err := blk.GetFee(bi)
-	if err != nil {
-		return err
-	}
-	if fee > 0 {
-		tx.Outs[0].Value += fee
-	}
 	return nil
 }
 
@@ -298,7 +219,7 @@ func TestTransfer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//总的101个区块减去转出的
+	//总的101个区块减去转出的,多了一个区块，多奖励50，所以应该是101
 	if ds.All.Balance() != 101*50*COIN-10*COIN {
 		t.Fatal("src coin error")
 	}

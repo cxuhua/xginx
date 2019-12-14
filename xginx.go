@@ -10,8 +10,9 @@ import (
 )
 
 func Run(lis IListener) {
-	flag.Parse()
-
+	if !flag.Parsed() {
+		flag.Parse()
+	}
 	conf := InitConfig()
 	defer conf.Close()
 
@@ -30,10 +31,13 @@ func Run(lis IListener) {
 	Miner.Start(ctx, lis)
 
 	time.Sleep(time.Millisecond * 300)
-	lis.OnStartup()
+	lis.OnStart()
 
+	//等候关闭信号
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
+
+	lis.OnStop(sig)
 
 	cancel()
 	LogInfo("recv sig :", sig, ",system start exit")
@@ -45,6 +49,4 @@ func Run(lis IListener) {
 	Miner.Stop()
 	LogInfo("wait miner stop")
 	Miner.Wait()
-
-	LogInfo("system exited")
 }
