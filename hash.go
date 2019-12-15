@@ -145,6 +145,9 @@ func (v *HASH160) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
+func (v HASH160)Bytes()[]byte {
+	return v[:]
+}
 
 var (
 	SizeError  = errors.New("size data error")

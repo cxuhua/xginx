@@ -11,7 +11,7 @@ const (
 	//最大日志大小
 	MAX_LOG_SIZE = 1024 * 1024 * 2
 	//最大扩展数据
-	MAX_EXT_SIZE = 1024 * 4
+	MAX_EXT_SIZE = 128
 	//锁定时间分界值
 	LOCKTIME_THRESHOLD = uint32(500000000)
 	//如果所有输入都是SEQUENCE_FINAL忽略locktime

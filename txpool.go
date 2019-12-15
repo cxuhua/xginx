@@ -76,7 +76,7 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 			continue
 		}
 		//已经被打包
-		if _, err := bi.LoadTxValue(id); err == nil {
+		if bi.HasTxValue(id) {
 			continue
 		}
 		if err := tx.Check(bi, true); err != nil {
