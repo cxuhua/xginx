@@ -60,12 +60,10 @@ func TestRePushTx(t *testing.T) {
 	if bi.txp.Len() != 9 {
 		t.Fatal("tx pool count error")
 	}
-	//目标应该有10个 但打包的只有一个
 	ds, err := bi.ListCoins(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
-	//总的101个区块减去转出的,多了一个区块，多奖励50，所以应该是101
 	if ds.All.Balance() != 10*COIN {
 		t.Fatal("dst coin error")
 	}
