@@ -143,11 +143,15 @@ func GetConfig() *Config {
 	return conf
 }
 
-func InitConfig() *Config {
-	if *ConfFile == "" {
+func InitConfig(file ...string) *Config {
+	if *ConfFile == "" && len(file) == 0 {
 		panic(errors.New("config file miss -conf"))
 	}
-	conf = LoadConfig(*ConfFile)
+	if len(file) > 0 {
+		conf = LoadConfig(file[0])
+	}else {
+		conf = LoadConfig(*ConfFile)
+	}
 	return conf
 }
 

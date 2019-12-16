@@ -21,13 +21,15 @@ type AccountJson struct {
 	Pris []string `json:"pris"`
 }
 
+type PrivatesMap map[HASH160]*PrivateKey
+
 //账号地址
 type Account struct {
 	Num  uint8                   //总的密钥数量
 	Less uint8                   //至少需要签名的数量
 	Arb  uint8                   //仲裁，当less  < num时可启用，必须是最后一个公钥
 	Pubs []*PublicKey            //所有的密钥公钥
-	Pris map[HASH160]*PrivateKey //公钥对应的私钥
+	Pris PrivatesMap //公钥对应的私钥
 }
 
 func LoadAccount(s string) (*Account, error) {
@@ -147,7 +149,7 @@ func (ap *Account) Load(s string) error {
 		return errors.New("checksum error")
 	}
 	ap.Pubs = []*PublicKey{}
-	ap.Pris = map[HASH160]*PrivateKey{}
+	ap.Pris = PrivatesMap{}
 	aj := &AccountJson{}
 	err = json.Unmarshal(data[:dl-4], aj)
 	if err != nil {
@@ -204,17 +206,20 @@ func (ap Account) Dump(ispri bool) (string, error) {
 	return str, nil
 }
 
-//获取账号地址
-func (ap Account) GetPkh() (HASH160, error) {
-	id := HASH160{}
-	if err := ap.Check(); err != nil {
-		return id, err
-	}
+func (ap Account) GetPks() []PKBytes {
 	pks := []PKBytes{}
 	for _, pub := range ap.Pubs {
 		pks = append(pks, pub.GetPks())
 	}
-	return HashPks(ap.Num, ap.Less, ap.Arb, pks)
+	return pks
+}
+
+//获取账号地址
+func (ap Account) GetPkh() (HASH160, error) {
+	if err := ap.Check(); err != nil {
+		return ZERO160, err
+	}
+	return HashPks(ap.Num, ap.Less, ap.Arb, ap.GetPks())
 }
 
 //获取账号地址
@@ -243,7 +248,7 @@ func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account
 		return nil, errors.New("can't use arb")
 	}
 	ap.Pubs = []*PublicKey{}
-	ap.Pris = map[HASH160]*PrivateKey{}
+	ap.Pris = PrivatesMap{}
 	for _, pks := range pkss {
 		pub, err := LoadPublicKey(pks)
 		if err != nil {
@@ -263,7 +268,8 @@ func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account
 
 //创建num个证书的账号,至少需要less个签名
 //arb是否启用仲裁
-func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
+//有pkss将不包含私钥
+func NewAccount(num uint8, less uint8, arb bool, pkss ...PKBytes) (*Account, error) {
 	ap := &Account{
 		Num:  num,
 		Less: less,
@@ -273,15 +279,29 @@ func NewAccount(num uint8, less uint8, arb bool) (*Account, error) {
 		return nil, errors.New("can't use arb")
 	}
 	ap.Pubs = []*PublicKey{}
-	ap.Pris = map[HASH160]*PrivateKey{}
-	for i := 0; i < int(num); i++ {
-		pri, err := NewPrivateKey()
-		if err != nil {
-			return nil, err
+	ap.Pris = PrivatesMap{}
+	if len(pkss) > 0 {
+		if len(pkss) != int(num) {
+			return nil,errors.New("pkss count error")
 		}
-		pub := pri.PublicKey()
-		ap.Pris[pub.Hash()] = pri
-		ap.Pubs = append(ap.Pubs, pub)
+		for _, pks := range pkss {
+			pub, err := NewPublicKey(pks.Bytes())
+			if err != nil {
+				return nil, err
+			}
+			ap.Pubs = append(ap.Pubs, pub)
+		}
+	}else {
+		//自动创建公钥私钥
+		for i := 0; i < int(num); i++ {
+			pri, err := NewPrivateKey()
+			if err != nil {
+				return nil, err
+			}
+			pub := pri.PublicKey()
+			ap.Pris[pub.Hash()] = pri
+			ap.Pubs = append(ap.Pubs, pub)
+		}
 	}
 	//如果启用arb，最后后一个为仲裁公钥
 	if num > 0 && less > 0 && arb && less < num {
