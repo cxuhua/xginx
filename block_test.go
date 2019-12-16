@@ -10,7 +10,7 @@ func init() {
 
 func TestRePushTx(t *testing.T) {
 	bi := NewTestBlockIndex(100)
-	defer bi.Close()
+	defer CloseTestBlock(bi)
 	lis := bi.lptr.(*TestLis)
 	mi := bi.NewMulTrans()
 	var first *TX
@@ -108,7 +108,7 @@ func TestRePushTx(t *testing.T) {
 //测试转账
 func TestTransfer(t *testing.T) {
 	bi := NewTestBlockIndex(100)
-	defer bi.Close()
+	defer CloseTestBlock(bi)
 	lis := bi.lptr.(*TestLis)
 	mi := bi.NewMulTrans()
 	//0 -> 1
@@ -185,7 +185,7 @@ func TestTransfer(t *testing.T) {
 //测试成熟的coinbase
 func TestMtsBlock(t *testing.T) {
 	bi := NewTestBlockIndex(100)
-	defer bi.Close()
+	defer CloseTestBlock(bi)
 	if bi.Len() != 100 {
 		t.Fatal("create 100 block error")
 	}
@@ -209,7 +209,7 @@ func TestMtsBlock(t *testing.T) {
 
 func TestCreateBlock(t *testing.T) {
 	bi := NewTestBlockIndex(10)
-	defer bi.Close()
+	defer CloseTestBlock(bi)
 	if bi.Len() != 10 {
 		t.Fatal("create 10 block error")
 	}
