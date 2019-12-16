@@ -12,6 +12,15 @@ type CoinsState struct {
 	Sum    Amount //总和
 }
 
+func (s *CoinsState)Merge(v *CoinsState) {
+	s.Pools = append(s.Pools,v.Pools...)
+	s.Indexs = append(s.Indexs,v.Indexs...)
+	s.NotMts = append(s.NotMts,v.NotMts...)
+	s.Coins = append(s.Coins,v.Coins...)
+	s.All = append(s.All,v.All...)
+	s.Sum += v.Sum
+}
+
 func (s CoinsState) String() string {
 	return fmt.Sprintf("pool = %d,index = %d, not matured = %d, coins = %d sum = %d", s.Pools.Balance(), s.Indexs.Balance(), s.NotMts.Balance(), s.Coins.Balance(), s.Sum)
 }

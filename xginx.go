@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+var (
+	ctx context.Context
+	cancel context.CancelFunc
+)
+
+func GetContext() (context.Context,context.CancelFunc) {
+	return ctx,cancel
+}
+
 func Run(lis IListener) {
 	if !flag.Parsed() {
 		flag.Parse()
@@ -23,7 +32,7 @@ func Run(lis IListener) {
 	defer bi.Close()
 
 	csig := make(chan os.Signal)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel = context.WithCancel(context.Background())
 	defer cancel()
 
 	Server.Start(ctx, lis)

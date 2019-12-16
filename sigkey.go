@@ -456,15 +456,22 @@ func (a Address) GetPkh() (HASH160, error) {
 	return DecodeAddress(a)
 }
 
-func EncodeAddress(pkh HASH160) (Address, error) {
+//编码地址用指定前缀
+func EncodeAddressWithPrefix(prefix string,pkh HASH160) (string, error) {
 	ver := byte(0)
 	b := []byte{ver, byte(len(pkh))}
 	b = append(b, pkh[:]...)
-	addr, err := SegWitAddressEncode(conf.AddrPrefix, b)
+	addr, err := SegWitAddressEncode(prefix, b)
 	if err != nil {
 		return "", err
 	}
-	return Address(addr), nil
+	return addr, nil
+}
+
+
+func EncodeAddress(pkh HASH160) (Address, error) {
+	a,err := EncodeAddressWithPrefix(conf.AddrPrefix, pkh)
+	return Address(a),err
 }
 
 func DecodeAddress(addr Address) (HASH160, error) {

@@ -215,6 +215,15 @@ func (ap Account) GetPks() []PKBytes {
 }
 
 //获取账号地址
+func (ap Account) GetPkhs() []HASH160 {
+	pkhs := []HASH160{}
+	for _,v := range ap.GetPks() {
+		pkhs = append(pkhs,v.Hash())
+	}
+	return pkhs
+}
+
+//获取账号地址
 func (ap Account) GetPkh() (HASH160, error) {
 	if err := ap.Check(); err != nil {
 		return ZERO160, err
@@ -235,7 +244,7 @@ func (ap Account) GetAddress() (Address, error) {
 
 //创建无私钥账号
 //不能用来签名
-func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account, error) {
+func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []PKBytes) (*Account, error) {
 	if len(pkss) != int(num) {
 		return nil, errors.New("pubs num error")
 	}
@@ -250,7 +259,7 @@ func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []string) (*Account
 	ap.Pubs = []*PublicKey{}
 	ap.Pris = PrivatesMap{}
 	for _, pks := range pkss {
-		pub, err := LoadPublicKey(pks)
+		pub, err := NewPublicKey(pks.Bytes())
 		if err != nil {
 			return nil, err
 		}

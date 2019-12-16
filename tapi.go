@@ -107,10 +107,7 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 	}
 }
 
-//创建一个测试用区块索引
-//num创建num个区块
-func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
-	//测试配置文件
+func NewTestConfig() {
 	conf = &Config{}
 	conf.nodeid = conf.GenUInt64()
 	conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
@@ -127,6 +124,17 @@ func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
 	conf.Seeds = []string{"seed.xginx.com"}
 	conf.Flags = [4]byte{'T', 'E', 'S', 'T'}
 	conf.LimitHash = NewUINT256(conf.PowLimit)
+}
+
+func CloseTestBlock(bi *BlockIndex) {
+	bi.Close()
+	os.RemoveAll(conf.DataDir )
+}
+
+//创建一个测试用区块索引
+//num创建num个区块
+func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
+	//测试配置文件
 	lis := newTestLis()
 	if len(miner) > 0 {
 		conf.MinerAddr = miner[0]

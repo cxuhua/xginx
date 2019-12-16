@@ -4,6 +4,10 @@ import (
 	"testing"
 )
 
+func init() {
+	NewTestConfig()
+}
+
 func TestRePushTx(t *testing.T) {
 	bi := NewTestBlockIndex(100)
 	defer bi.Close()
