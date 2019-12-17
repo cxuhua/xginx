@@ -10,12 +10,17 @@ type IGetSigBytes interface {
 	GetSigBytes() ([]byte, error)
 }
 
+//签名交易
+type ISignerListener interface {
+	SignTx(singer ISigner) error
+}
+
 //签名验证接口
 type ISigner interface {
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
-	Sign(bi *BlockIndex) error
+	Sign(lis ISignerListener) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出
@@ -171,6 +176,6 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	return Hash256(buf.Bytes()), nil
 }
 
-func (sr *mulsigner) Sign(bi *BlockIndex) error {
-	return bi.lptr.OnSignTx(sr)
+func (sr *mulsigner) Sign(lis ISignerListener) error {
+	return lis.SignTx(sr)
 }

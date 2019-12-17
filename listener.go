@@ -30,8 +30,6 @@ type IListener interface {
 	OnStop(sig os.Signal)
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
-	//调用TX.Sign时当签名交易时
-	OnSignTx(singer ISigner) error
 	//当交易池的交易因为seq设置被替换时
 	OnTxPoolRep(old *TX, new *TX)
 }

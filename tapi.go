@@ -131,6 +131,11 @@ func CloseTestBlock(bi *BlockIndex) {
 	os.RemoveAll(conf.DataDir )
 }
 
+func GetTestAccount(bi *BlockIndex)[]*Account {
+	lis := bi.lptr.(*TestLis)
+	return lis.ams
+}
+
 //创建一个测试用区块索引
 //num创建num个区块
 func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
