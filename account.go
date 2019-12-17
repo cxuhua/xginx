@@ -214,7 +214,7 @@ func (ap Account) GetPks() []PKBytes {
 	return pks
 }
 
-//获取账号地址
+//获取公钥hash数组
 func (ap Account) GetPkhs() []HASH160 {
 	pkhs := []HASH160{}
 	for _,v := range ap.GetPks() {
