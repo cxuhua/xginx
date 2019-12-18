@@ -148,6 +148,14 @@ func (tk CoinKeyValue) SpentKey() []byte {
 	return buf.Bytes()
 }
 
+func (tk CoinKeyValue)GetAddress()Address {
+	addr,err := EncodeAddress(tk.CPkh)
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
 //用来存储pkh拥有的可消费的金额
 func (tk CoinKeyValue) MustKey() []byte {
 	buf := NewWriter()

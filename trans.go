@@ -6,9 +6,9 @@ import "errors"
 type ITransListener interface {
 	//获取金额对应的账户方法
 	GetAcc(ckv *CoinKeyValue) *Account
-	//获取输出地址的扩展
+	//获取输出地址的扩展不同的地址可以返回不同的扩展信息
 	GetExt(addr Address) []byte
-	//获取使用的金额
+	//获取使用的金额列表
 	GetCoins() Coins
 	//获取找零地址
 	GetKeep() Address
@@ -19,8 +19,19 @@ type Trans struct {
 	bi   *BlockIndex
 	lis  ITransListener
 	Dst  []Address //目标地址
-	Amts []Amount  //目标金额 大小与dst对应
+	Amt []Amount  //目标金额 大小与dst对应
 	Fee  Amount    //交易费
+}
+
+func (m *Trans)Clean() {
+	m.Dst = []Address{}
+	m.Amt = []Amount{}
+}
+
+//设置一个转账对象
+func (m *Trans)Add(dst Address,amt Amount) {
+	m.Dst = append(m.Dst,dst)
+	m.Amt = append(m.Amt,amt)
 }
 
 //检测参数
@@ -31,7 +42,7 @@ func (m *Trans) Check() error {
 	if len(m.Dst) == 0 {
 		return errors.New("dst count == 0")
 	}
-	if len(m.Dst) != len(m.Amts) {
+	if len(m.Dst) != len(m.Amt) {
 		return errors.New("dst address and amount error")
 	}
 	return nil
@@ -45,7 +56,7 @@ func (m *Trans) NewTx() (*TX, error) {
 	tx := NewTx()
 	//输出总计
 	sum := m.Fee
-	for _, v := range m.Amts {
+	for _, v := range m.Amt {
 		sum += v
 	}
 	//使用哪些金额
@@ -68,10 +79,10 @@ func (m *Trans) NewTx() (*TX, error) {
 	}
 	//没有减完，余额不足
 	if sum > 0 {
-		return nil, errors.New("insufficient balance or miss private key")
+		return nil, errors.New("insufficient balance")
 	}
 	//转出到其他账号的输出
-	for i, v := range m.Amts {
+	for i, v := range m.Amt {
 		dst := m.Dst[i]
 		ext := m.lis.GetExt(dst)
 		out, err := dst.NewTxOut(v, ext)
@@ -82,8 +93,10 @@ func (m *Trans) NewTx() (*TX, error) {
 	}
 	//多减的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
+		//获取找零地址
 		addr := m.lis.GetKeep()
-		out, err := addr.NewTxOut(amt)
+		ext := m.lis.GetExt(addr)
+		out, err := addr.NewTxOut(amt,ext)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +116,7 @@ func (bi *BlockIndex) NewTrans(lis ITransListener) *Trans {
 		bi:   bi,
 		lis:  lis,
 		Dst:  []Address{},
-		Amts: []Amount{},
+		Amt: []Amount{},
 		Fee:  0,
 	}
 }
