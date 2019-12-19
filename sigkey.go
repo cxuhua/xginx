@@ -88,6 +88,16 @@ type PrivateKey struct {
 	D *big.Int
 }
 
+//当前私钥基础上hash新的私钥
+func (p PrivateKey)New(plus []byte) *PrivateKey {
+	b := p.D.Bytes()
+	plus = append(plus,b...)
+	b = Hash256(plus)
+	pk := &PrivateKey{}
+	pk.D = new(big.Int).SetBytes(b)
+	return pk
+}
+
 func (p *PrivateKey) Clone() *PrivateKey {
 	np := &PrivateKey{}
 	np.D = new(big.Int).SetBytes(p.D.Bytes())

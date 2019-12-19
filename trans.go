@@ -102,6 +102,13 @@ func (m *Trans) NewTx() (*TX, error) {
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
+	//如果lis实现了签名lis
+	if slis, ok := m.lis.(ISignerListener); ok {
+		err := tx.Sign(m.bi,slis)
+		if err != nil {
+			return nil,err
+		}
+	}
 	return tx, nil
 }
 
