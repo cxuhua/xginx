@@ -1,9 +1,25 @@
 package xginx
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
 )
+
+func TestSeedKey(t *testing.T) {
+	dk := NewDeterKey()
+	s := dk.Dump()
+	dk2, err := LoadDeterKey(s)
+	if err != nil {
+		panic(err)
+	}
+	if !bytes.Equal(dk.Root, dk2.Root) {
+		t.Error("root error")
+	}
+	if !bytes.Equal(dk.Key, dk2.Key) {
+		t.Error("key error")
+	}
+}
 
 func BenchmarkVerify(b *testing.B) {
 	for i := 0; i < b.N; i++ {

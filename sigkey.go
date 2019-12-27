@@ -3,9 +3,14 @@ package xginx
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha512"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"hash"
 	"io"
 	"math/big"
 )
@@ -15,6 +20,83 @@ const (
 	P256_PUBKEY_EVEN = byte(0x02)
 	P256_PUBKEY_ODD  = byte(0x03)
 )
+
+//确定性私钥地址
+type DeterKey struct {
+	Root []byte `bson:"root"` //种子私钥
+	Key  []byte `bson:"key"`  //私钥编码
+}
+
+//加载key
+func LoadDeterKey(s string) (*DeterKey, error) {
+	data, err := B58Decode(s, BitcoinAlphabet)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) != 68 {
+		return nil, errors.New("data length error")
+	}
+	dl := len(data)
+	hbytes := Hash256(data[:dl-4])
+	if !bytes.Equal(hbytes[:4], data[dl-4:]) {
+		return nil, errors.New("checksum error")
+	}
+	dk := &DeterKey{
+		Root: data[:32],
+		Key:  data[32 : dl-4],
+	}
+	return dk, nil
+}
+
+func (k DeterKey) Dump() string {
+	data := append([]byte{}, k.Root...)
+	data = append(data, k.Key...)
+	hbytes := Hash256(data)
+	data = append(data, hbytes[:4]...)
+	return B58Encode(data, BitcoinAlphabet)
+}
+
+func (k DeterKey) String() string {
+	return fmt.Sprintf("%s %s", hex.EncodeToString(k.Root), hex.EncodeToString(k.Key))
+}
+
+//派生一个密钥
+func (k DeterKey) New(idx uint32) *DeterKey {
+	h := hmac.New(func() hash.Hash {
+		return sha512.New()
+	}, k.Key)
+	_, err := h.Write(k.Root)
+	if err != nil {
+		panic(err)
+	}
+	err = binary.Write(h, binary.BigEndian, idx)
+	if err != nil {
+		panic(err)
+	}
+	b := h.Sum(nil)
+	if len(b) != 64 {
+		panic(errors.New("hmac sha512 sum error"))
+	}
+	return &DeterKey{
+		Root: b[:32],
+		Key:  b[32:],
+	}
+}
+
+func NewDeterKey() *DeterKey {
+	pri, err := NewPrivateKey()
+	if err != nil {
+		panic(err)
+	}
+	k := &DeterKey{}
+	k.Root = pri.Bytes()
+	k.Key = make([]byte, 32)
+	_, err = rand.Read(k.Key)
+	if err != nil {
+		panic(err)
+	}
+	return k
+}
 
 var (
 	curve             = SECP256K1()
@@ -89,9 +171,9 @@ type PrivateKey struct {
 }
 
 //当前私钥基础上hash新的私钥
-func (p PrivateKey)New(plus []byte) *PrivateKey {
+func (p PrivateKey) New(plus []byte) *PrivateKey {
 	b := p.D.Bytes()
-	plus = append(plus,b...)
+	plus = append(plus, b...)
 	b = Hash256(plus)
 	pk := &PrivateKey{}
 	pk.D = new(big.Int).SetBytes(b)
@@ -126,6 +208,10 @@ func (pk *PrivateKey) Decode(data []byte) error {
 		pk.SetBytes(data[pl : dl-1])
 	}
 	return nil
+}
+
+func (pk *PrivateKey) Bytes() []byte {
+	return pk.D.Bytes()
 }
 
 func (pk *PrivateKey) Encode() []byte {
@@ -467,7 +553,7 @@ func (a Address) GetPkh() (HASH160, error) {
 }
 
 //编码地址用指定前缀
-func EncodeAddressWithPrefix(prefix string,pkh HASH160) (string, error) {
+func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 	ver := byte(0)
 	b := []byte{ver, byte(len(pkh))}
 	b = append(b, pkh[:]...)
@@ -478,10 +564,9 @@ func EncodeAddressWithPrefix(prefix string,pkh HASH160) (string, error) {
 	return addr, nil
 }
 
-
 func EncodeAddress(pkh HASH160) (Address, error) {
-	a,err := EncodeAddressWithPrefix(conf.AddrPrefix, pkh)
-	return Address(a),err
+	a, err := EncodeAddressWithPrefix(conf.AddrPrefix, pkh)
+	return Address(a), err
 }
 
 func DecodeAddress(addr Address) (HASH160, error) {
