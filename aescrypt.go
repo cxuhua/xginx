@@ -97,10 +97,14 @@ func TrimAESKey(key []byte) ([]byte, error) {
 }
 
 //创建加密算法
-func NewAESCipher(key []byte) (cipher.Block, error) {
+func NewAESCipher(key []byte) cipher.Block {
 	ikey, err := TrimAESKey(key)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
-	return aes.NewCipher(ikey)
+	c,err := aes.NewCipher(ikey)
+	if err != nil {
+		panic(err)
+	}
+	return c
 }

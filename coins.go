@@ -1,28 +1,27 @@
 package xginx
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 //金额状态
 type CoinsState struct {
-	Pools  Coins  //内存池中的
-	Indexs Coins  //历史区块
-	NotMts Coins  //未成熟的
-	Coins  Coins  //当前可支配的
-	All    Coins  //所有
-	Sum    Amount //总和
+	Locks Coins  //锁定的
+	Coins Coins  //当前可用
+	All   Coins  //所有
+	Sum   Amount //总和
 }
 
-func (s *CoinsState)Merge(v *CoinsState) {
-	s.Pools = append(s.Pools,v.Pools...)
-	s.Indexs = append(s.Indexs,v.Indexs...)
-	s.NotMts = append(s.NotMts,v.NotMts...)
-	s.Coins = append(s.Coins,v.Coins...)
-	s.All = append(s.All,v.All...)
+func (s *CoinsState) Merge(v *CoinsState) {
+	s.Locks = append(s.Locks, v.Locks...)
+	s.Coins = append(s.Coins, v.Coins...)
+	s.All = append(s.All, v.All...)
 	s.Sum += v.Sum
 }
 
 func (s CoinsState) String() string {
-	return fmt.Sprintf("pool = %d,index = %d, not matured = %d, coins = %d sum = %d", s.Pools.Balance(), s.Indexs.Balance(), s.NotMts.Balance(), s.Coins.Balance(), s.Sum)
+	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.Sum)
 }
 
 //金额记录
@@ -33,17 +32,24 @@ func (c Coins) State(spent uint32) *CoinsState {
 	s := &CoinsState{All: c}
 	for _, v := range c {
 		if !v.IsMatured(spent) {
-			s.NotMts = append(s.NotMts, v)
+			s.Locks = append(s.Locks, v)
 		} else if v.pool {
-			s.Pools = append(s.Pools, v)
+			s.Coins = append(s.Coins, v)
+		} else if spent-v.Height.ToUInt32() >= conf.Confirms {
 			s.Coins = append(s.Coins, v)
 		} else {
-			s.Indexs = append(s.Indexs, v)
-			s.Coins = append(s.Coins, v)
+			s.Locks = append(s.Locks, v)
 		}
 		s.Sum += v.Value
 	}
 	return s
+}
+
+//按高度排序
+func (c *Coins) Sort() {
+	sort.Slice(*c, func(i, j int) bool {
+		return (*c)[i].Height < (*c)[j].Height
+	})
 }
 
 //获取总金额
@@ -148,8 +154,8 @@ func (tk CoinKeyValue) SpentKey() []byte {
 	return buf.Bytes()
 }
 
-func (tk CoinKeyValue)GetAddress()Address {
-	addr,err := EncodeAddress(tk.CPkh)
+func (tk CoinKeyValue) GetAddress() Address {
+	addr, err := EncodeAddress(tk.CPkh)
 	if err != nil {
 		panic(err)
 	}

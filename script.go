@@ -380,9 +380,6 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 }
 
 func (ss WitnessScript) ToScript() (Script, error) {
-	if err := ss.Check();err != nil {
-		return nil,err
-	}
 	buf := NewWriter()
 	err := ss.Encode(buf)
 	if err != nil {

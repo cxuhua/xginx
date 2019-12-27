@@ -38,6 +38,7 @@ func LoadPrivateKeys(file string) []*PrivateKey {
 
 //配置加载后只读
 type Config struct {
+	Confirms   uint32   `json:"confirms"`    //确认数 = 6
 	MinerNum   int      `json:"miner_num"`   //挖掘机数量,=0不会启动协程计算
 	MinerAddr  Address  `json:"miner_addr"`  //矿工默认地址
 	MaxConn    int      `json:"max_conn"`    //最大激活的连接，包括连入和连出的
@@ -149,7 +150,7 @@ func InitConfig(file ...string) *Config {
 	}
 	if len(file) > 0 {
 		conf = LoadConfig(file[0])
-	}else {
+	} else {
 		conf = LoadConfig(*ConfFile)
 	}
 	return conf

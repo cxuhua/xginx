@@ -1,5 +1,6 @@
 {
   "data_dir": "/Users/xuhua/datadir",
+  "confirms": 6,
   "miner_num": 2,
   "miner_addr": "st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v",
   "version":10000,
