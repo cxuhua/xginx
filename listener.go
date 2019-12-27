@@ -47,6 +47,7 @@ func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
 }
 
 func (lis *Listener) OnInit(bi *BlockIndex) error {
+	LogInfo("MinerAddr =", conf.MinerAddr)
 	if bv := bi.GetBestValue(); !bv.IsValid() {
 		bi.WriteGenesis()
 	}

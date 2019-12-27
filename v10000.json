@@ -2,7 +2,7 @@
   "data_dir": "/Users/xuhua/datadir",
   "confirms": 6,
   "miner_num": 2,
-  "miner_addr": "st1qcenzwakw5mfmh93thjzk4deveeue2n8yrw526v",
+  "miner_addr": "st1qwgpep2ge4jj6tkpmxq5dy0wjmlk5qdd7srrz3n",
   "version":10000,
   "tcp_port": 9333,
   "tcp_ip": "192.168.31.198",
