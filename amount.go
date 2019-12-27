@@ -10,8 +10,8 @@ import (
 // MAX_MONEY < MAX_COMPRESS_UINT
 const (
 	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
-	COIN              = Amount(100_000_000)
-	MAX_MONEY         = 21_000_000 * COIN
+	COIN              = Amount(1000)
+	MAX_MONEY         = 21000000 * COIN
 )
 
 //结算当前奖励

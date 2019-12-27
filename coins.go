@@ -46,10 +46,11 @@ func (c Coins) State(spent uint32) *CoinsState {
 }
 
 //按高度排序
-func (c *Coins) Sort() {
+func (c *Coins) Sort() Coins {
 	sort.Slice(*c, func(i, j int) bool {
 		return (*c)[i].Height < (*c)[j].Height
 	})
+	return *c
 }
 
 //获取总金额
