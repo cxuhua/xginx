@@ -213,10 +213,13 @@ func (ss *LockedScript) Decode(r IReader) error {
 }
 
 func NewLockedScript(pkh HASH160, vbs ...[]byte) (Script, error) {
-	std := &LockedScript{}
+	std := &LockedScript{Ext:VarBytes{}}
 	std.Type = SCRIPT_LOCKED_TYPE
 	std.Pkh = pkh
 	for _, vb := range vbs {
+		if len(vb) > MAX_EXT_SIZE {
+			return nil, errors.New("ext size > MAX_EXT_SIZE")
+		}
 		std.Ext = append(std.Ext, vb...)
 	}
 	if std.Ext.Len() > MAX_EXT_SIZE {
@@ -298,6 +301,7 @@ func (ss WitnessScript) Encode(w IWriter) error {
 }
 
 func (ss *WitnessScript) Decode(r IReader) error {
+	num := uint8(0)
 	if err := r.TRead(&ss.Type); err != nil {
 		return err
 	}
@@ -310,11 +314,10 @@ func (ss *WitnessScript) Decode(r IReader) error {
 	if err := r.TRead(&ss.Arb); err != nil {
 		return err
 	}
-	pnum := uint8(0)
-	if err := r.TRead(&pnum); err != nil {
+	if err := r.TRead(&num); err != nil {
 		return err
 	}
-	ss.Pks = make([]PKBytes, pnum)
+	ss.Pks = make([]PKBytes, num)
 	for i, _ := range ss.Pks {
 		pk := PKBytes{}
 		if err := pk.Decode(r); err != nil {
@@ -322,11 +325,10 @@ func (ss *WitnessScript) Decode(r IReader) error {
 		}
 		ss.Pks[i] = pk
 	}
-	snum := uint8(0)
-	if err := r.TRead(&snum); err != nil {
+	if err := r.TRead(&num); err != nil {
 		return err
 	}
-	ss.Sig = make([]SigBytes, snum)
+	ss.Sig = make([]SigBytes, num)
 	for i, _ := range ss.Sig {
 		sig := SigBytes{}
 		if err := sig.Decode(r); err != nil {

@@ -503,7 +503,6 @@ func (b HASH256) Equal(v HASH256) bool {
 }
 
 func (b HASH256) Bytes() []byte {
-
 	return b[:]
 }
 
