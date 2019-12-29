@@ -16,12 +16,12 @@ const (
 
 //结算当前奖励
 func GetCoinbaseReward(h uint32) Amount {
-	halvings := int(h) / conf.Halving
-	if halvings >= 64 {
+	hlv := int(h) / conf.Halving
+	if hlv < 0 ||  hlv >= 64 {
 		return 0
 	}
 	n := 50 * COIN
-	n >>= halvings
+	n >>= hlv
 	return n
 }
 
@@ -57,7 +57,7 @@ func (a Amount) String() string {
 	}
 	n := a / COIN
 	x := a % COIN
-	str := fmt.Sprintf("%d.%08d", n, x)
+	str := fmt.Sprintf("%d.%03d", n, x)
 	trim := 0
 	for i := len(str) - 1; str[i] == '0' && str[i-1] != '.'; i-- {
 		trim++

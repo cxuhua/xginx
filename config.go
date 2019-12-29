@@ -50,7 +50,7 @@ type Config struct {
 	PowTime    uint     `json:"pow_time"`    //14 * 24 * 60 * 60=1209600
 	PowLimit   string   `json:"pow_limit"`   //最小难度设置
 	PowSpan    uint32   `json:"pow_span"`    //难度计算间隔 2016
-	Halving    int      `json:"halving"`     //210000
+	Halving    int      `json:"halving"`     //210000减产配置
 	Ver        uint32   `json:"version"`     //节点版本
 	TcpPort    int      `json:"tcp_port"`    //服务端口和ip
 	TcpIp      string   `json:"tcp_ip"`      //节点远程连接ip

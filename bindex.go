@@ -808,7 +808,7 @@ func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 		return 0, id, false
 	}
 	//时间戳检测
-	if meta.Time <= ele.Time {
+	if meta.Time < ele.Time {
 		LogError("check islink back time < prev time")
 		return 0, id, false
 	}
