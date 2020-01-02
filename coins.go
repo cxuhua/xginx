@@ -33,12 +33,8 @@ func (c Coins) State(spent uint32) *CoinsState {
 	for _, v := range c {
 		if !v.IsMatured(spent) {
 			s.Locks = append(s.Locks, v)
-		} else if v.pool {
-			s.Coins = append(s.Coins, v)
-		} else if spent-v.Height.ToUInt32() >= conf.Confirms {
-			s.Coins = append(s.Coins, v)
 		} else {
-			s.Locks = append(s.Locks, v)
+			s.Coins = append(s.Coins, v)
 		}
 		s.Sum += v.Value
 	}

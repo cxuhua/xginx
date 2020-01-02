@@ -372,7 +372,7 @@ func (ss *leveldbstore) Init(arg ...interface{}) {
 		if err := ss.blk.Init(); err != nil {
 			panic(err)
 		}
-		ss.rev = ss.newdata(".rev", 1024*1024*32)
+		ss.rev = ss.newdata(".rev", 1024*1024*64)
 		if err := ss.rev.Init(); err != nil {
 			panic(err)
 		}
