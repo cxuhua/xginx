@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -14,6 +15,11 @@ type BlockTestSuite struct {
 func (suite *BlockTestSuite) SetupTest() {
 	NewTestConfig()
 	suite.bi = NewTestBlockIndex(100)
+	txs, err := suite.bi.ListTxs(conf.MinerAddr)
+	suite.Require().NoError(err)
+	for _, v := range txs {
+		log.Println(v.TxId, v.Height)
+	}
 }
 
 func (suite *BlockTestSuite) TestRePushTx() {

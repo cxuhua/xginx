@@ -127,6 +127,10 @@ func (tk CoinKeyValue) MustValue() []byte {
 	return buf.Bytes()
 }
 
+func (tk CoinKeyValue) IsPool() bool {
+	return tk.pool
+}
+
 //是否成熟可用
 //内存中的，非coinbase直接可用
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {

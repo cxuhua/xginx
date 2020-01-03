@@ -1100,22 +1100,31 @@ func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
 func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 	prefix := GetDBKey(TXP_PREFIX, id[:])
 	idxs := TxIndexs{}
-	//获取区块链中历史可用金额
-	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
-	defer iter.Close()
-	for iter.Next() {
-		iv, err := NewTxIndex(iter.Key(), iter.Value())
-		if err != nil {
-			return nil, err
-		}
-		idxs = append(idxs, iv)
-	}
+	//从交易池获取
 	cvs, err := bi.txp.ListTxsWithID(bi, id)
 	if err != nil {
 		return nil, err
 	}
 	for _, tv := range cvs {
 		idxs = append(idxs, tv)
+	}
+	//获取区块链中历史可用金额
+	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
+	defer iter.Close()
+	//倒序获取
+	if iter.Last() {
+		iv, err := NewTxIndex(iter.Key(), iter.Value())
+		if err != nil {
+			return nil, err
+		}
+		idxs = append(idxs, iv)
+	}
+	for iter.Prev() {
+		iv, err := NewTxIndex(iter.Key(), iter.Value())
+		if err != nil {
+			return nil, err
+		}
+		idxs = append(idxs, iv)
 	}
 	return idxs, nil
 }

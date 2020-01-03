@@ -30,13 +30,16 @@ const (
 
 //用户交易索引
 type TxIndex struct {
-	TxId  HASH256
-	Value TxValue
+	TxId   HASH256
+	Height uint32
+	Value  TxValue
 }
 
 func NewTxIndex(k []byte, v []byte) (*TxIndex, error) {
 	iv := &TxIndex{}
 	off := len(ZERO160) + len(TXP_PREFIX)
+	iv.Height = Endian.Uint32(k[off : off+4])
+	off += 4
 	copy(iv.TxId[:], k[off:off+len(ZERO256)])
 	err := iv.Value.Decode(NewReader(v))
 	return iv, err
@@ -463,12 +466,19 @@ func (blk *BlockInfo) CheckCoinbase() error {
 	return nil
 }
 
+func (blk *BlockInfo) EndianHeight() []byte {
+	hb := []byte{0, 0, 0, 0}
+	Endian.PutUint32(hb, blk.Meta.Height)
+	return hb
+}
+
 //写入交易索引
 func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	bid, err := blk.ID()
 	if err != nil {
 		return err
 	}
+	hb := blk.EndianHeight()
 	//交易所在的区块信息和金额信息索引
 	for idx, tx := range blk.Txs {
 		id, err := tx.ID()
@@ -493,7 +503,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 		}
 		//写入账户相关的交易
 		for pkh, _ := range vps {
-			bt.Put(TXP_PREFIX, pkh[:], id[:], vbys)
+			bt.Put(TXP_PREFIX, pkh[:], hb, id[:], vbys)
 		}
 	}
 	return nil

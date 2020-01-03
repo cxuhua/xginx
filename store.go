@@ -96,7 +96,7 @@ var (
 	BLOCK_PREFIX = []byte{1} //块头信息前缀 ->blkmeta
 	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
 	COINS_PREFIX = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
-	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_txid -> blkid+txidx
+	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_height(big endian)_txid -> blkid+txidx
 	REFTX_PREFIX = []byte{5} //存放交易池中的交易引用的其他交易，只在交易池使用
 )
 

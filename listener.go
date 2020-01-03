@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"errors"
+	"log"
 	"os"
 	"time"
 )
@@ -115,6 +116,8 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	out.Script = script
 	tx.Outs = []*TxOut{out}
 	blk.Txs = []*TX{tx}
+
+	log.Println(tx.MustID())
 	return nil
 }
 
