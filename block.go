@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
@@ -33,12 +34,13 @@ type TxIndex struct {
 	TxId   HASH256
 	Height uint32
 	Value  TxValue
+	pool   bool
 }
 
 func NewTxIndex(k []byte, v []byte) (*TxIndex, error) {
 	iv := &TxIndex{}
 	off := len(ZERO160) + len(TXP_PREFIX)
-	iv.Height = Endian.Uint32(k[off : off+4])
+	iv.Height = binary.BigEndian.Uint32(k[off : off+4])
 	off += 4
 	copy(iv.TxId[:], k[off:off+len(ZERO256)])
 	err := iv.Value.Decode(NewReader(v))
@@ -47,7 +49,7 @@ func NewTxIndex(k []byte, v []byte) (*TxIndex, error) {
 
 //是否来自内存
 func (ti TxIndex) IsPool() bool {
-	return ti.Value.BlkId.IsZero()
+	return ti.pool
 }
 
 type TxIndexs []*TxIndex
@@ -468,7 +470,7 @@ func (blk *BlockInfo) CheckCoinbase() error {
 
 func (blk *BlockInfo) EndianHeight() []byte {
 	hb := []byte{0, 0, 0, 0}
-	Endian.PutUint32(hb, blk.Meta.Height)
+	binary.BigEndian.PutUint32(hb, blk.Meta.Height)
 	return hb
 }
 

@@ -426,6 +426,7 @@ func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
 		if err != nil {
 			return nil, err
 		}
+		iv.pool = true
 		idxs = append(idxs, iv)
 	}
 	return idxs, nil
