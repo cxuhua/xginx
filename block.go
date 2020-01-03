@@ -360,6 +360,14 @@ type BlockInfo struct {
 	merkel HashCacher  //merkel hash 缓存
 }
 
+//获取区块交易
+func (blk *BlockInfo)GetTx(idx int)(*TX,error) {
+	if idx < 0 || idx >= len(blk.Txs) {
+		return nil,errors.New("idx outbound")
+	}
+	return blk.Txs[idx],nil
+}
+
 //检测交易seq和locktime
 func (blk *BlockInfo) CheckTxsLockTime(bi *BlockIndex) error {
 	for idx, tx := range blk.Txs {

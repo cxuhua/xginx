@@ -133,6 +133,7 @@ func (tk CoinKeyValue) IsPool() bool {
 
 //是否成熟可用
 //内存中的，非coinbase直接可用
+//coinbase输出必须在100个高度后才可消费
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
 	return tk.pool || tk.Base == 0 || spent-tk.Height.ToUInt32() >= COINBASE_MATURITY
 }
