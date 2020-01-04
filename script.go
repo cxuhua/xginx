@@ -359,16 +359,13 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 		return id, errors.New("args num arb error")
 	}
 	w := NewWriter()
-	err := w.TWrite(num)
-	if err != nil {
+	if err := w.TWrite(num);err != nil {
 		return id, err
 	}
-	err = w.TWrite(less)
-	if err != nil {
+	if err = w.TWrite(less);err != nil {
 		return id, err
 	}
-	err = w.TWrite(arb)
-	if err != nil {
+	if err = w.TWrite(arb);err != nil {
 		return id, err
 	}
 	for _, pk := range pks {

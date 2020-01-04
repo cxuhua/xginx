@@ -1160,6 +1160,11 @@ func NewTx() *TX {
 	return tx
 }
 
+//是否来自交易池
+func (tx TX)IsPool() bool {
+	return tx.pool
+}
+
 //检测输入是否被锁定
 //返回true表示被锁住，无法进入区块
 func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
