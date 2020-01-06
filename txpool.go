@@ -255,7 +255,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		if err != nil {
 			panic(err)
 		}
-		key := GetDBKey(TXP_PREFIX, pkh[:], txid[:])
+		key := GetDBKey(TXP_PREFIX, pkh[:], []byte{0, 0, 0, 0}, txid[:])
 		if add {
 			err = p.mdb.Put(key, vbys)
 		} else {

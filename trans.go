@@ -1,6 +1,37 @@
 package xginx
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+type AddrValue struct {
+	Addr  Address
+	Value Amount
+}
+
+func (av AddrValue) String() string {
+	return fmt.Sprintf("%s->%d", av.Addr, av.Value)
+}
+
+func NewAddrValue(s string) (AddrValue, error) {
+	av := AddrValue{}
+	v := strings.Split(s, "->")
+	if len(v) != 2 {
+		return av, errors.New("dst format error")
+	}
+	amt, err := ParseIntMoney(v[1])
+	if err != nil {
+		return av, err
+	}
+	if !amt.IsRange() {
+		return av, errors.New("amount range error")
+	}
+	av.Addr = Address(v[0])
+	av.Value = amt
+	return av, nil
+}
 
 //转账监听器
 type ITransListener interface {
@@ -16,22 +47,22 @@ type ITransListener interface {
 
 //交易数据结构
 type Trans struct {
-	bi   *BlockIndex
-	lis  ITransListener
-	Dst  []Address //目标地址
+	bi  *BlockIndex
+	lis ITransListener
+	Dst []Address //目标地址
 	Amt []Amount  //目标金额 大小与dst对应
-	Fee  Amount    //交易费
+	Fee Amount    //交易费
 }
 
-func (m *Trans)Clean() {
+func (m *Trans) Clean() {
 	m.Dst = []Address{}
 	m.Amt = []Amount{}
 }
 
 //设置一个转账对象
-func (m *Trans)Add(dst Address,amt Amount) {
-	m.Dst = append(m.Dst,dst)
-	m.Amt = append(m.Amt,amt)
+func (m *Trans) Add(dst Address, amt Amount) {
+	m.Dst = append(m.Dst, dst)
+	m.Amt = append(m.Amt, amt)
 }
 
 //检测参数
@@ -49,11 +80,15 @@ func (m *Trans) Check() error {
 }
 
 //生成交易,不签名，不放入交易池
-func (m *Trans) NewTx() (*TX, error) {
+//lt = tx locktime
+func (m *Trans) NewTx(lt...uint32) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
 	tx := NewTx()
+	if len(lt) > 0 {
+		tx.LockTime = lt[0]
+	}
 	//输出总计
 	sum := m.Fee
 	for _, v := range m.Amt {
@@ -96,7 +131,7 @@ func (m *Trans) NewTx() (*TX, error) {
 		//获取找零地址
 		addr := m.lis.GetKeep()
 		ext := m.lis.GetExt(addr)
-		out, err := addr.NewTxOut(amt,ext)
+		out, err := addr.NewTxOut(amt, ext)
 		if err != nil {
 			return nil, err
 		}
@@ -104,9 +139,9 @@ func (m *Trans) NewTx() (*TX, error) {
 	}
 	//如果lis实现了签名lis
 	if slis, ok := m.lis.(ISignerListener); ok {
-		err := tx.Sign(m.bi,slis)
+		err := tx.Sign(m.bi, slis)
 		if err != nil {
-			return nil,err
+			return nil, err
 		}
 	}
 	return tx, nil
@@ -120,10 +155,10 @@ func (m *Trans) BroadTx(tx *TX) {
 //创建待回调的交易对象
 func (bi *BlockIndex) NewTrans(lis ITransListener) *Trans {
 	return &Trans{
-		bi:   bi,
-		lis:  lis,
-		Dst:  []Address{},
+		bi:  bi,
+		lis: lis,
+		Dst: []Address{},
 		Amt: []Amount{},
-		Fee:  0,
+		Fee: 0,
 	}
 }

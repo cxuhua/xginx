@@ -362,10 +362,10 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	if err := w.TWrite(num);err != nil {
 		return id, err
 	}
-	if err = w.TWrite(less);err != nil {
+	if err := w.TWrite(less);err != nil {
 		return id, err
 	}
-	if err = w.TWrite(arb);err != nil {
+	if err := w.TWrite(arb);err != nil {
 		return id, err
 	}
 	for _, pk := range pks {
@@ -397,6 +397,10 @@ func (ss WitnessScript) CheckSigs(sigs []SigBytes) error {
 	}
 	if ss.Less == 0 || ss.Less > ACCOUNT_KEY_MAX_SIZE || ss.Less > ss.Num {
 		return errors.New("less error")
+	}
+	//启用arb的情况下num必须》=3
+	if ss.IsEnableArb() && ss.Num < 3 {
+		return errors.New("arb num error")
 	}
 	//启用arb的情况下，less不能和num相等
 	if ss.IsEnableArb() && ss.Num == ss.Less {

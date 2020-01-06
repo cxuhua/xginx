@@ -41,6 +41,15 @@ func (a *Amount) Decode(r IReader) error {
 }
 
 //解析金额
+func ParseIntMoney(str string) (Amount, error) {
+	i, err := strconv.ParseInt(str, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return Amount(i), nil
+}
+
+//解析金额
 func ParseMoney(str string) (Amount, error) {
 	f, err := strconv.ParseFloat(str, 64)
 	if err != nil {

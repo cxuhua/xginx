@@ -331,6 +331,9 @@ func (ap Account) Check() error {
 		ap.Less > ap.Num {
 		return errors.New("num less error")
 	}
+	if ap.Arb != InvalidArb && ap.Num < 3 {
+		return errors.New("use arb,num must >= 3")
+	}
 	if ap.Less == ap.Num && ap.Arb != InvalidArb {
 		return errors.New("arb error")
 	}

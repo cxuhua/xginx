@@ -136,6 +136,29 @@ func GetTestAccount(bi *BlockIndex)[]*Account {
 	return lis.ams
 }
 
+//从交易池获取交易打包区块
+func NewTestOneBlock() error {
+	bi := GetBlockIndex()
+	blk, err := bi.NewBlock(1)
+	if err != nil {
+		return err
+	}
+	err = blk.LoadTxs(bi)
+	if err != nil {
+		return err
+	}
+	err = blk.Finish(bi)
+	if err != nil {
+		return err
+	}
+	calcbits(bi, blk)
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 //创建一个测试用区块索引
 //num创建num个区块
 func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
