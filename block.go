@@ -361,11 +361,11 @@ type BlockInfo struct {
 }
 
 //获取区块交易
-func (blk *BlockInfo)GetTx(idx int)(*TX,error) {
+func (blk *BlockInfo) GetTx(idx int) (*TX, error) {
 	if idx < 0 || idx >= len(blk.Txs) {
-		return nil,errors.New("idx outbound")
+		return nil, errors.New("idx outbound")
 	}
-	return blk.Txs[idx],nil
+	return blk.Txs[idx], nil
 }
 
 //检测交易seq和locktime
@@ -1161,7 +1161,7 @@ func NewTx() *TX {
 }
 
 //是否来自交易池
-func (tx TX)IsPool() bool {
+func (tx TX) IsPool() bool {
 	return tx.pool
 }
 
@@ -1327,7 +1327,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		err = NewSigner(tx, out, in).Verify()
+		err = NewSigner(tx, out, in, idx).Verify()
 		if err != nil {
 			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
@@ -1354,7 +1354,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener) error {
 			return errors.New("sign tx, coin miss")
 		}
 		//对每个输入签名
-		err = NewSigner(tx, out, in).Sign(lis)
+		err = NewSigner(tx, out, in, idx).Sign(lis)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

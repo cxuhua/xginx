@@ -12,6 +12,18 @@ import (
 	"time"
 )
 
+func TestHashDumpLoad(t *testing.T) {
+	s1 := "sdfsdf978s9df7s0df7sdf"
+	b := HashDump([]byte(s1))
+	s2, err := HashLoad(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(s2) != s1 {
+		t.Error("hash error")
+	}
+}
+
 func TestOne(t *testing.T) {
 	var f ONCE
 

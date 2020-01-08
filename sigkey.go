@@ -181,6 +181,15 @@ func (pk PrivateKey) String() string {
 	return hex.EncodeToString(pk.D.Bytes())
 }
 
+func NewPrivateKeyWithBytes(b []byte) (*PrivateKey, error) {
+	params := curve.Params()
+	k := new(big.Int).SetBytes(b)
+	n := new(big.Int).Sub(params.N, one)
+	k.Mod(k, n)
+	k.Add(k, one)
+	return &PrivateKey{D: k}, nil
+}
+
 func GenPrivateKey() (k *big.Int, err error) {
 	params := curve.Params()
 	b := make([]byte, params.BitSize/8+8)

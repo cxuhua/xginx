@@ -62,7 +62,7 @@ func (lis *TestLis) OnInit(bi *BlockIndex) error {
 //当账户没有私钥时调用此方法签名
 //singer 签名器
 func (lis *TestLis) OnSignTx(signer ISigner) error {
-	_, in, out := signer.GetObjs()
+	_, in, out, _ := signer.GetObjs()
 	pkh, err := out.Script.GetPkh()
 	if err != nil {
 		return err
@@ -128,10 +128,10 @@ func NewTestConfig() {
 
 func CloseTestBlock(bi *BlockIndex) {
 	bi.Close()
-	os.RemoveAll(conf.DataDir )
+	os.RemoveAll(conf.DataDir)
 }
 
-func GetTestAccount(bi *BlockIndex)[]*Account {
+func GetTestAccount(bi *BlockIndex) []*Account {
 	lis := bi.lptr.(*TestLis)
 	return lis.ams
 }

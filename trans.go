@@ -2,36 +2,7 @@ package xginx
 
 import (
 	"errors"
-	"fmt"
-	"strings"
 )
-
-type AddrValue struct {
-	Addr  Address
-	Value Amount
-}
-
-func (av AddrValue) String() string {
-	return fmt.Sprintf("%s->%d", av.Addr, av.Value)
-}
-
-func NewAddrValue(s string) (AddrValue, error) {
-	av := AddrValue{}
-	v := strings.Split(s, "->")
-	if len(v) != 2 {
-		return av, errors.New("dst format error")
-	}
-	amt, err := ParseIntMoney(v[1])
-	if err != nil {
-		return av, err
-	}
-	if !amt.IsRange() {
-		return av, errors.New("amount range error")
-	}
-	av.Addr = Address(v[0])
-	av.Value = amt
-	return av, nil
-}
 
 //转账监听器
 type ITransListener interface {
@@ -84,6 +55,9 @@ func (m *Trans) Check() error {
 func (m *Trans) NewTx(lt...uint32) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
+	}
+	if !m.Fee.IsRange() {
+		return nil,errors.New("fee error")
 	}
 	tx := NewTx()
 	if len(lt) > 0 {

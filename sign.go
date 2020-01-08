@@ -23,8 +23,8 @@ type ISigner interface {
 	Sign(lis ISignerListener) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
-	//获取签名对象 当前交易，当前输入，输入引用的输出
-	GetObjs() (*TX, *TxIn, *TxOut)
+	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的位置
+	GetObjs() (*TX, *TxIn, *TxOut, int)
 	//获取消费地址
 	GetAddress() Address
 	//获取交易id
@@ -36,25 +36,27 @@ type mulsigner struct {
 	tx  *TX    //当前交易
 	out *TxOut //输入引用的输出
 	in  *TxIn  //当前签名验证的输入
+	idx int    //输入索引
 }
 
 //新建标准签名
-func NewSigner(tx *TX, out *TxOut, in *TxIn) ISigner {
+func NewSigner(tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
 	return &mulsigner{
 		tx:  tx,
 		out: out,
 		in:  in,
+		idx: idx,
 	}
 }
 
 //
-func (sr *mulsigner)GetTxId() HASH256 {
+func (sr *mulsigner) GetTxId() HASH256 {
 	return sr.tx.MustID()
 }
 
 //获取输出对应的地址
-func (sr *mulsigner)GetAddress() Address {
-	addr,err := sr.out.Script.GetAddress()
+func (sr *mulsigner) GetAddress() Address {
+	addr, err := sr.out.Script.GetAddress()
 	if err != nil {
 		panic(err)
 	}
@@ -62,8 +64,8 @@ func (sr *mulsigner)GetAddress() Address {
 }
 
 //获取签名对象
-func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut) {
-	return sr.tx, sr.in, sr.out
+func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
+	return sr.tx, sr.in, sr.out, sr.idx
 }
 
 //多重签名验证

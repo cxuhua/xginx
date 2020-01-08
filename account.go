@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,11 +24,11 @@ type PrivatesMap map[HASH160]*PrivateKey
 
 //账号地址
 type Account struct {
-	Num  uint8                   //总的密钥数量
-	Less uint8                   //至少需要签名的数量
-	Arb  uint8                   //仲裁，当less  < num时可启用，必须是最后一个公钥
-	Pubs []*PublicKey            //所有的密钥公钥
-	Pris PrivatesMap //公钥对应的私钥
+	Num  uint8        //总的密钥数量
+	Less uint8        //至少需要签名的数量
+	Arb  uint8        //仲裁，当less  < num时可启用，必须是最后一个公钥
+	Pubs []*PublicKey //所有的密钥公钥
+	Pris PrivatesMap  //公钥对应的私钥
 }
 
 func LoadAccount(s string) (*Account, error) {
@@ -139,19 +138,14 @@ func (ap *Account) hasPub(pub *PublicKey) bool {
 
 //加载账号信息
 func (ap *Account) Load(s string) error {
-	data, err := B58Decode(s, BitcoinAlphabet)
+	data, err := HashLoad(s)
 	if err != nil {
 		return err
-	}
-	dl := len(data)
-	hash := Hash256(data[:dl-4])
-	if !bytes.Equal(hash[:4], data[dl-4:]) {
-		return errors.New("checksum error")
 	}
 	ap.Pubs = []*PublicKey{}
 	ap.Pris = PrivatesMap{}
 	aj := &AccountJson{}
-	err = json.Unmarshal(data[:dl-4], aj)
+	err = json.Unmarshal(data, aj)
 	if err != nil {
 		return err
 	}
@@ -200,10 +194,7 @@ func (ap Account) Dump(ispri bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	hash := Hash256(data)
-	data = append(data, hash[:4]...)
-	str := B58Encode(data, BitcoinAlphabet)
-	return str, nil
+	return HashDump(data), nil
 }
 
 func (ap Account) GetPks() []PKBytes {
@@ -217,8 +208,8 @@ func (ap Account) GetPks() []PKBytes {
 //获取公钥hash数组
 func (ap Account) GetPkhs() []HASH160 {
 	pkhs := []HASH160{}
-	for _,v := range ap.GetPks() {
-		pkhs = append(pkhs,v.Hash())
+	for _, v := range ap.GetPks() {
+		pkhs = append(pkhs, v.Hash())
 	}
 	return pkhs
 }
@@ -291,7 +282,7 @@ func NewAccount(num uint8, less uint8, arb bool, pkss ...PKBytes) (*Account, err
 	ap.Pris = PrivatesMap{}
 	if len(pkss) > 0 {
 		if len(pkss) != int(num) {
-			return nil,errors.New("pkss count error")
+			return nil, errors.New("pkss count error")
 		}
 		for _, pks := range pkss {
 			pub, err := NewPublicKey(pks.Bytes())
@@ -300,7 +291,7 @@ func NewAccount(num uint8, less uint8, arb bool, pkss ...PKBytes) (*Account, err
 			}
 			ap.Pubs = append(ap.Pubs, pub)
 		}
-	}else {
+	} else {
 		//自动创建公钥私钥
 		for i := 0; i < int(num); i++ {
 			pri, err := NewPrivateKey()

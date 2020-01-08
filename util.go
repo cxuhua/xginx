@@ -1,12 +1,35 @@
 package xginx
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"sync/atomic"
 )
+
+//dump b58
+func HashDump(b []byte) string {
+	hash := Hash160(b)
+	data := append(b, hash...)
+	return B58Encode(data, BitcoinAlphabet)
+}
+
+//load b58 string
+func HashLoad(s string) ([]byte, error) {
+	hl := len(HASH160{})
+	data, err := B58Decode(s, BitcoinAlphabet)
+	if err != nil {
+		return nil, err
+	}
+	dl := len(data)-hl
+	if !bytes.Equal(Hash160(data[:dl]), data[dl:]) {
+		return nil, errors.New("checksum error")
+	}
+	return data[:dl], nil
+}
 
 //防止被多个线程同时执行
 
