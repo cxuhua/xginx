@@ -22,6 +22,15 @@ func TestHashDumpLoad(t *testing.T) {
 	if string(s2) != s1 {
 		t.Error("hash error")
 	}
+	//带加密
+	b = HashDump([]byte(s1), "xhKfd9fd789")
+	s2, err = HashLoad(b, "xhKfd9fd789")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(s2) != s1 {
+		t.Error("hash error")
+	}
 }
 
 func TestOne(t *testing.T) {

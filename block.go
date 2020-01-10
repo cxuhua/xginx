@@ -1337,7 +1337,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 
 //签名交易数据
 //cspent 是否检测输出金额是否存在
-func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener) error {
+func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener,pass...string) error {
 	//重置签名数据
 	tx.ResetSign()
 	//签名每一个输入
@@ -1354,7 +1354,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener) error {
 			return errors.New("sign tx, coin miss")
 		}
 		//对每个输入签名
-		err = NewSigner(tx, out, in, idx).Sign(lis)
+		err = NewSigner(tx, out, in, idx).Sign(lis,pass...)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

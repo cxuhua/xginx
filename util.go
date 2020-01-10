@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"bytes"
+	"crypto/aes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -11,20 +12,48 @@ import (
 )
 
 //dump b58
-func HashDump(b []byte) string {
+func HashDump(b []byte, pass ...string) string {
 	hash := Hash160(b)
 	data := append(b, hash...)
+	if len(pass) > 0 {
+		key, err := TrimAESKey([]byte(pass[0]))
+		if err != nil {
+			panic(err)
+		}
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			panic(err)
+		}
+		data, err = AesEncrypt(block, data)
+		if err != nil {
+			panic(err)
+		}
+	}
 	return B58Encode(data, BitcoinAlphabet)
 }
 
 //load b58 string
-func HashLoad(s string) ([]byte, error) {
+func HashLoad(s string, pass ...string) ([]byte, error) {
 	hl := len(HASH160{})
 	data, err := B58Decode(s, BitcoinAlphabet)
 	if err != nil {
 		return nil, err
 	}
-	dl := len(data)-hl
+	if len(pass) > 0 {
+		key, err := TrimAESKey([]byte(pass[0]))
+		if err != nil {
+			panic(err)
+		}
+		block, err := aes.NewCipher(key)
+		if err != nil {
+			panic(err)
+		}
+		data, err = AesDecrypt(block, data)
+		if err != nil {
+			panic(err)
+		}
+	}
+	dl := len(data) - hl
 	if !bytes.Equal(Hash160(data[:dl]), data[dl:]) {
 		return nil, errors.New("checksum error")
 	}
