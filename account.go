@@ -79,6 +79,59 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
+//验证hash
+func (ap Account) VerifyAll(hv []byte, sigs []string) error {
+	less := int(ap.Less)
+	num := int(ap.Num)
+	if len(ap.Pubs) != num {
+		return errors.New("pub num error")
+	}
+	if num < less {
+		return errors.New("pub num error,num must >= less")
+	}
+	for i, k := 0, 0; i < len(sigs) && k < len(ap.Pubs); {
+		sigb, err := B58Decode(sigs[i], BitcoinAlphabet)
+		if err != nil {
+			return err
+		}
+		sig, err := NewSigValue(sigb[:])
+		if err != nil {
+			return err
+		}
+		vok := ap.Pubs[i].Verify(hv, sig)
+		if vok {
+			less--
+			i++
+		}
+		//如果启用仲裁，并且当前仲裁验证成功立即返回
+		if vok && ap.IsEnableArb() && ap.Arb == uint8(k) {
+			less = 0
+		}
+		if less == 0 {
+			break
+		}
+		k++
+	}
+	if less > 0 {
+		return errors.New("sig verify error")
+	}
+	return nil
+}
+
+//获取账号所有签名
+func (ap Account) SignAll(hv []byte) ([]string, error) {
+	rets := []string{}
+	for idx, _ := range ap.Pubs {
+		sig, err := ap.Sign(idx, hv)
+		if err != nil {
+			continue
+		}
+		ss := B58Encode(sig.Bytes(), BitcoinAlphabet)
+		rets = append(rets, ss)
+	}
+	return rets, nil
+}
+
 //pi public index
 //hv sign hash
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
