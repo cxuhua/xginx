@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"bytes"
-	"crypto/aes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -12,24 +11,18 @@ import (
 )
 
 //dump b58,设定密码会加密
-func HashDump(b []byte, pass ...string) (string,error) {
+func HashDump(b []byte, pass ...string) (string, error) {
 	hash := Hash160(b)
 	data := append(b, hash...)
 	if len(pass) > 0 && pass[0] != "" {
-		key, err := TrimAESKey([]byte(pass[0]))
+		block := NewAESCipher([]byte(pass[0]))
+		d, err := AesEncrypt(block, data)
 		if err != nil {
-			return "",err
+			return "", err
 		}
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			return "",err
-		}
-		data, err = AesEncrypt(block, data)
-		if err != nil {
-			return "",err
-		}
+		data = d
 	}
-	return B58Encode(data, BitcoinAlphabet),nil
+	return B58Encode(data, BitcoinAlphabet), nil
 }
 
 //load b58 string
@@ -40,18 +33,12 @@ func HashLoad(s string, pass ...string) ([]byte, error) {
 		return nil, err
 	}
 	if len(pass) > 0 && pass[0] != "" {
-		key, err := TrimAESKey([]byte(pass[0]))
+		block := NewAESCipher([]byte(pass[0]))
+		d, err := AesDecrypt(block, data)
 		if err != nil {
 			return nil, err
 		}
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			return nil, err
-		}
-		data, err = AesDecrypt(block, data)
-		if err != nil {
-			return nil, err
-		}
+		data = d
 	}
 	dl := len(data) - hl
 	if !bytes.Equal(Hash160(data[:dl]), data[dl:]) {
