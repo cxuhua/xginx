@@ -11,25 +11,25 @@ import (
 	"sync/atomic"
 )
 
-//dump b58
-func HashDump(b []byte, pass ...string) string {
+//dump b58,设定密码会加密
+func HashDump(b []byte, pass ...string) (string,error) {
 	hash := Hash160(b)
 	data := append(b, hash...)
-	if len(pass) > 0 {
+	if len(pass) > 0 && pass[0] != "" {
 		key, err := TrimAESKey([]byte(pass[0]))
 		if err != nil {
-			panic(err)
+			return "",err
 		}
 		block, err := aes.NewCipher(key)
 		if err != nil {
-			panic(err)
+			return "",err
 		}
 		data, err = AesEncrypt(block, data)
 		if err != nil {
-			panic(err)
+			return "",err
 		}
 	}
-	return B58Encode(data, BitcoinAlphabet)
+	return B58Encode(data, BitcoinAlphabet),nil
 }
 
 //load b58 string
@@ -39,18 +39,18 @@ func HashLoad(s string, pass ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(pass) > 0 {
+	if len(pass) > 0 && pass[0] != "" {
 		key, err := TrimAESKey([]byte(pass[0]))
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		block, err := aes.NewCipher(key)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		data, err = AesDecrypt(block, data)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 	}
 	dl := len(data) - hl

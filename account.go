@@ -247,7 +247,7 @@ func (ap Account) Dump(ispri bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return HashDump(data), nil
+	return HashDump(data)
 }
 
 func (ap Account) GetPks() []PKBytes {
