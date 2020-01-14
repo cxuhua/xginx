@@ -69,8 +69,7 @@ func (v TxValue) GetTX(bi *BlockIndex) (*TX, error) {
 	if uidx < 0 || uidx >= len(blk.Txs) {
 		return nil, errors.New("txsidx out of bound")
 	}
-	tx := blk.Txs[uidx]
-	return tx, nil
+	return blk.Txs[uidx], nil
 }
 
 func (v TxValue) Encode(w IWriter) error {

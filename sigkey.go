@@ -499,11 +499,11 @@ func EncodeAddress(pkh HASH160) (Address, error) {
 func DecodeAddress(addr Address) (HASH160, error) {
 	hv := HASH160{}
 	hrp, b, err := SegWitAddressDecode(string(addr))
-	if hrp != conf.AddrPrefix {
-		return hv, errors.New("address prefix error")
-	}
 	if err != nil {
 		return hv, err
+	}
+	if hrp != conf.AddrPrefix {
+		return hv, errors.New("address prefix error")
 	}
 	if b[0] != 0 {
 		return hv, errors.New("ver error")

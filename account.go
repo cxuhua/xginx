@@ -79,7 +79,7 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
-//验证hash
+//验证签名
 func (ap Account) VerifyAll(hv []byte, sigs []string) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
@@ -128,6 +128,9 @@ func (ap Account) SignAll(hv []byte) ([]string, error) {
 		}
 		ss := B58Encode(sig.Bytes(), BitcoinAlphabet)
 		rets = append(rets, ss)
+	}
+	if len(rets) == 0 {
+		return nil,errors.New("miss sigs")
 	}
 	return rets, nil
 }
