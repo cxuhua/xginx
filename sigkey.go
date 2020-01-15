@@ -124,9 +124,9 @@ func (pk *PrivateKey) Clone() *PrivateKey {
 }
 
 //LoadPrivateKey 加载私钥
-func LoadPrivateKey(s string) (*PrivateKey, error) {
+func LoadPrivateKey(s string, pass ...string) (*PrivateKey, error) {
 	key := &PrivateKey{}
-	err := key.Load(s)
+	err := key.Load(s, pass...)
 	return key, err
 }
 
@@ -494,8 +494,8 @@ func (pk *PublicKey) Verify(hash []byte, sig *SigValue) bool {
 }
 
 //LoadPublicKey 加载公钥数据
-func LoadPublicKey(s string) (*PublicKey, error) {
-	return new(PublicKey).Load(s)
+func LoadPublicKey(s string, pass ...string) (*PublicKey, error) {
+	return new(PublicKey).Load(s, pass...)
 }
 
 //Address 账号地址
@@ -576,6 +576,11 @@ func (pk *PublicKey) Load(s string, pass ...string) (*PublicKey, error) {
 		return nil, err
 	}
 	return pk, pk.Decode(b)
+	// b, err := B58Decode(s, BitcoinAlphabet)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return pk, pk.Decode(b[0 : len(b)-4])
 }
 
 //GetPks 获取公钥数据

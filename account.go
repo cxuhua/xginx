@@ -33,9 +33,9 @@ type Account struct {
 }
 
 //LoadAccount 从导出的数据加载账号
-func LoadAccount(s string) (*Account, error) {
+func LoadAccount(s string, pass ...string) (*Account, error) {
 	a := &Account{}
-	err := a.Load(s)
+	err := a.Load(s, pass...)
 	return a, err
 }
 
@@ -194,8 +194,8 @@ func (ap *Account) hasPub(pub *PublicKey) bool {
 }
 
 //Load 加载账号信息
-func (ap *Account) Load(s string) error {
-	data, err := HashLoad(s)
+func (ap *Account) Load(s string, pass ...string) error {
+	data, err := HashLoad(s, pass...)
 	if err != nil {
 		return err
 	}
@@ -210,14 +210,14 @@ func (ap *Account) Load(s string) error {
 	ap.Less = aj.Less
 	ap.Arb = aj.Arb
 	for _, ss := range aj.Pubs {
-		pp, err := LoadPublicKey(ss)
+		pp, err := LoadPublicKey(ss, pass...)
 		if err != nil {
 			return err
 		}
 		ap.Pubs = append(ap.Pubs, pp)
 	}
 	for _, ss := range aj.Pris {
-		pri, err := LoadPrivateKey(ss)
+		pri, err := LoadPrivateKey(ss, pass...)
 		if err != nil {
 			return err
 		}
@@ -247,7 +247,9 @@ func (ap Account) Dump(ispri bool, pass ...string) (string, error) {
 		aj.Pubs = append(aj.Pubs, ds)
 	}
 	if ispri && ap.HasPrivate() {
-		for _, pri := range ap.Pris {
+		for _, pub := range ap.Pubs {
+			pkh := pub.GetPks().Hash()
+			pri := ap.Pris[pkh]
 			ds, err := pri.Dump(pass...)
 			if err != nil {
 				return "", err
@@ -259,7 +261,7 @@ func (ap Account) Dump(ispri bool, pass ...string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return HashDump(data)
+	return HashDump(data, pass...)
 }
 
 //GetPks 获取所有的公钥
