@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	//账号最大的私钥数量
+	// 账号最大的私钥数量
 	ACCOUNT_KEY_MAX_SIZE = 16
 )
 
@@ -20,6 +20,7 @@ type AccountJson struct {
 	Pris []string `json:"pris"`
 }
 
+//
 type PrivatesMap map[HASH160]*PrivateKey
 
 //账号地址
@@ -130,7 +131,7 @@ func (ap Account) SignAll(hv []byte) ([]string, error) {
 		rets = append(rets, ss)
 	}
 	if len(rets) == 0 {
-		return nil,errors.New("miss sigs")
+		return nil, errors.New("miss sigs")
 	}
 	return rets, nil
 }

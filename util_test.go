@@ -14,7 +14,10 @@ import (
 
 func TestHashDumpLoad(t *testing.T) {
 	s1 := "sdfsdf978s9df7s0df7sdf"
-	b := HashDump([]byte(s1))
+	b, err := HashDump([]byte(s1))
+	if err != nil {
+		t.Fatal(err)
+	}
 	s2, err := HashLoad(b)
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +26,10 @@ func TestHashDumpLoad(t *testing.T) {
 		t.Error("hash error")
 	}
 	//带加密
-	b = HashDump([]byte(s1), "xhKfd9fd789")
+	b, err = HashDump([]byte(s1), "xhKfd9fd789")
+	if err != nil {
+		t.Fatal(err)
+	}
 	s2, err = HashLoad(b, "xhKfd9fd789")
 	if err != nil {
 		t.Fatal(err)

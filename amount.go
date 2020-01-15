@@ -17,7 +17,7 @@ const (
 //结算当前奖励
 func GetCoinbaseReward(h uint32) Amount {
 	hlv := int(h) / conf.Halving
-	if hlv < 0 ||  hlv >= 64 {
+	if hlv < 0 || hlv >= 64 {
 		return 0
 	}
 	n := 50 * COIN

@@ -105,7 +105,7 @@ func (it *BIndexIter) ID() HASH256 {
 	return id
 }
 
-//获取当前
+// 获取当前
 func (it *BIndexIter) Curr() *TBEle {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -400,7 +400,7 @@ func (bi *BlockIndex) first() *TBEle {
 	return le.Value.(*TBEle)
 }
 
-//最低块
+// 最低块
 func (bi *BlockIndex) First() *TBEle {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
