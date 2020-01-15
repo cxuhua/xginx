@@ -32,7 +32,11 @@ func TestSignVerify(t *testing.T) {
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
 	}
-	pk2, err := LoadPrivateKey(pk1.Dump())
+	ds, err := pk1.Dump()
+	if err != nil {
+		t.Error(err)
+	}
+	pk2, err := LoadPrivateKey(ds)
 	if err != nil {
 		t.Error(err)
 	}
