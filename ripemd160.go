@@ -5,10 +5,10 @@ import (
 	"math/bits"
 )
 
-// The size of the checksum in bytes.
+// Ripemd160Size The size of the checksum in bytes.
 const Ripemd160Size = 20
 
-// The block size of the hash algorithm in bytes.
+// Ripemd160BlockSize The block size of the hash algorithm in bytes.
 const Ripemd160BlockSize = 64
 
 const (
@@ -33,7 +33,7 @@ func (d *ripemd160) Reset() {
 	d.tc = 0
 }
 
-// New returns a new hash.Hash computing the checksum.
+// NewRipemd160 returns a new hash.Hash computing the checksum.
 func NewRipemd160() hash.Hash {
 	result := new(ripemd160)
 	result.Reset()
@@ -70,18 +70,19 @@ func (d *ripemd160) Write(p []byte) (nn int, err error) {
 	return
 }
 
-func (d0 *ripemd160) Sum(in []byte) []byte {
+//Sum 计算hash
+func (d *ripemd160) Sum(in []byte) []byte {
 	// Make a copy of d0 so that caller can keep writing and summing.
-	d := *d0
+	dd := *d
 
 	// Padding.  Add a 1 bit and 0 bits until 56 bytes mod 64.
-	tc := d.tc
+	tc := dd.tc
 	var tmp [64]byte
 	tmp[0] = 0x80
 	if tc%64 < 56 {
-		_, _ = d.Write(tmp[0 : 56-tc%64])
+		_, _ = dd.Write(tmp[0 : 56-tc%64])
 	} else {
-		_, _ = d.Write(tmp[0 : 64+56-tc%64])
+		_, _ = dd.Write(tmp[0 : 64+56-tc%64])
 	}
 
 	// Length in bits.
@@ -89,14 +90,14 @@ func (d0 *ripemd160) Sum(in []byte) []byte {
 	for i := uint(0); i < 8; i++ {
 		tmp[i] = byte(tc >> (8 * i))
 	}
-	_, _ = d.Write(tmp[0:8])
+	_, _ = dd.Write(tmp[0:8])
 
-	if d.nx != 0 {
+	if dd.nx != 0 {
 		panic("d.nx != 0")
 	}
 
 	var digest [Ripemd160Size]byte
-	for i, s := range d.s {
+	for i, s := range dd.s {
 		digest[i*4] = byte(s)
 		digest[i*4+1] = byte(s >> 8)
 		digest[i*4+2] = byte(s >> 16)
@@ -124,7 +125,7 @@ var _r = [80]uint{
 }
 
 // same for the other parallel one
-var n_ = [80]uint{
+var nv = [80]uint{
 	5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12,
 	6, 11, 3, 7, 0, 13, 5, 10, 14, 15, 8, 12, 4, 9, 1, 2,
 	15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0, 4, 13,
@@ -132,7 +133,7 @@ var n_ = [80]uint{
 	12, 15, 10, 4, 1, 5, 8, 7, 6, 2, 13, 14, 0, 3, 9, 11,
 }
 
-var r_ = [80]uint{
+var rv = [80]uint{
 	8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6,
 	9, 13, 15, 7, 12, 8, 9, 11, 7, 7, 12, 7, 6, 15, 13, 11,
 	9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14, 13, 13, 7, 5,
@@ -163,8 +164,8 @@ func ripemd160Block(md *ripemd160, p []byte) int {
 			a, b, c, d, e = e, alpha, b, beta, d
 
 			// parallel line
-			alpha = aa + (bb ^ (cc | ^dd)) + x[n_[i]] + 0x50a28be6
-			s = int(r_[i])
+			alpha = aa + (bb ^ (cc | ^dd)) + x[nv[i]] + 0x50a28be6
+			s = int(rv[i])
 			alpha = bits.RotateLeft32(alpha, s) + ee
 			beta = bits.RotateLeft32(cc, 10)
 			aa, bb, cc, dd, ee = ee, alpha, bb, beta, dd
@@ -181,8 +182,8 @@ func ripemd160Block(md *ripemd160, p []byte) int {
 			a, b, c, d, e = e, alpha, b, beta, d
 
 			// parallel line
-			alpha = aa + (bb&dd | cc&^dd) + x[n_[i]] + 0x5c4dd124
-			s = int(r_[i])
+			alpha = aa + (bb&dd | cc&^dd) + x[nv[i]] + 0x5c4dd124
+			s = int(rv[i])
 			alpha = bits.RotateLeft32(alpha, s) + ee
 			beta = bits.RotateLeft32(cc, 10)
 			aa, bb, cc, dd, ee = ee, alpha, bb, beta, dd
@@ -199,8 +200,8 @@ func ripemd160Block(md *ripemd160, p []byte) int {
 			a, b, c, d, e = e, alpha, b, beta, d
 
 			// parallel line
-			alpha = aa + (bb | ^cc ^ dd) + x[n_[i]] + 0x6d703ef3
-			s = int(r_[i])
+			alpha = aa + (bb | ^cc ^ dd) + x[nv[i]] + 0x6d703ef3
+			s = int(rv[i])
 			alpha = bits.RotateLeft32(alpha, s) + ee
 			beta = bits.RotateLeft32(cc, 10)
 			aa, bb, cc, dd, ee = ee, alpha, bb, beta, dd
@@ -217,8 +218,8 @@ func ripemd160Block(md *ripemd160, p []byte) int {
 			a, b, c, d, e = e, alpha, b, beta, d
 
 			// parallel line
-			alpha = aa + (bb&cc | ^bb&dd) + x[n_[i]] + 0x7a6d76e9
-			s = int(r_[i])
+			alpha = aa + (bb&cc | ^bb&dd) + x[nv[i]] + 0x7a6d76e9
+			s = int(rv[i])
 			alpha = bits.RotateLeft32(alpha, s) + ee
 			beta = bits.RotateLeft32(cc, 10)
 			aa, bb, cc, dd, ee = ee, alpha, bb, beta, dd
@@ -235,8 +236,8 @@ func ripemd160Block(md *ripemd160, p []byte) int {
 			a, b, c, d, e = e, alpha, b, beta, d
 
 			// parallel line
-			alpha = aa + (bb ^ cc ^ dd) + x[n_[i]]
-			s = int(r_[i])
+			alpha = aa + (bb ^ cc ^ dd) + x[nv[i]]
+			s = int(rv[i])
 			alpha = bits.RotateLeft32(alpha, s) + ee
 			beta = bits.RotateLeft32(cc, 10)
 			aa, bb, cc, dd, ee = ee, alpha, bb, beta, dd

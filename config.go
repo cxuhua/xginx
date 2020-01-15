@@ -11,32 +11,13 @@ import (
 	"os"
 )
 
+// 启动参数
 var (
 	ConfFile = flag.String("conf", "v10000.json", "config file name")
 	IsDebug  = flag.Bool("debug", true, "startup mode")
 )
 
-func LoadPrivateKeys(file string) []*PrivateKey {
-	data, err := ioutil.ReadFile(file)
-	if err != nil {
-		panic(err)
-	}
-	ss := []string{}
-	if err := json.Unmarshal(data, &ss); err != nil {
-		panic(err)
-	}
-	ret := []*PrivateKey{}
-	for _, s := range ss {
-		pk, err := LoadPrivateKey(s)
-		if err != nil {
-			panic(err)
-		}
-		ret = append(ret, pk)
-	}
-	return ret
-}
-
-//配置加载后只读
+//Config 配置加载后只读
 type Config struct {
 	Confirms   uint32   `json:"confirms"`    //确认数 = 6
 	MinerNum   int      `json:"miner_num"`   //挖掘机数量,=0不会启动协程计算
@@ -52,43 +33,49 @@ type Config struct {
 	PowSpan    uint32   `json:"pow_span"`    //难度计算间隔 2016
 	Halving    int      `json:"halving"`     //210000减产配置
 	Ver        uint32   `json:"version"`     //节点版本
-	TcpPort    int      `json:"tcp_port"`    //服务端口和ip
-	TcpIp      string   `json:"tcp_ip"`      //节点远程连接ip
-	Flags      [4]byte  `json:"-"`           //协议标识
-	logFile    *os.File `json:"-"`           //日志文件
-	genesis    HASH256  `json:"-"`           //第一个区块id
+	TCPPort    int      `json:"tcp_port"`    //服务端口和ip
+	TCPIp      string   `json:"tcp_ip"`      //节点远程连接ip
 	LimitHash  UINT256  `json:"-"`           //最小工作难度
-	nodeid     uint64   `json:"-"`           //节点随机id
+	flags      [4]byte  //协议标识
+	logFile    *os.File //日志文件
+	genesis    HASH256  //第一个区块id
+	nodeid     uint64   //节点随机id
 }
 
-func (c *Config) GetTcpListenAddr() NetAddr {
+//GetTCPListenAddr 获取服务地址
+func (c *Config) GetTCPListenAddr() NetAddr {
 	return NetAddr{
 		ip:   net.ParseIP("0.0.0.0"),
-		port: uint16(c.TcpPort),
+		port: uint16(c.TCPPort),
 	}
 }
 
+//GetLogFile 获取日志文件
 func (c *Config) GetLogFile() *os.File {
 	return c.logFile
 }
 
+//GetNetAddr 获取网络地址
 func (c *Config) GetNetAddr() NetAddr {
 	return NetAddr{
-		ip:   net.ParseIP(c.TcpIp),
-		port: uint16(c.TcpPort),
+		ip:   net.ParseIP(c.TCPIp),
+		port: uint16(c.TCPPort),
 	}
 }
 
+//Close 关闭
 func (c *Config) Close() {
 	if c.logFile != nil {
 		_ = c.logFile.Close()
 	}
 }
 
-func (c *Config) IsGenesisId(id HASH256) bool {
+//IsGenesisID 检测id是否是第一个区块
+func (c *Config) IsGenesisID(id HASH256) bool {
 	return c.genesis.Equal(id)
 }
 
+//GenUInt64 创建64位随机值
 func (c *Config) GenUInt64() uint64 {
 	//生成节点随机id
 	kb0 := make([]byte, 8)
@@ -112,8 +99,9 @@ func (c *Config) GenUInt64() uint64 {
 	return SipHash(k0, k1, buf.Bytes())
 }
 
+//Init 初始化
 func (c *Config) Init() *Config {
-	c.Flags = [4]byte{'x', 'h', 'l', 'm'}
+	c.flags = [4]byte{'x', 'h', 'l', 'm'}
 	//设置日志输出
 	logflags := log.Llongfile | log.LstdFlags | log.Lmicroseconds
 	if c.LogFile != "" {
@@ -140,10 +128,12 @@ var (
 	conf *Config = nil
 )
 
+//GetConfig 获取当前配置
 func GetConfig() *Config {
 	return conf
 }
 
+//InitConfig 初始化配置
 func InitConfig(file ...string) *Config {
 	if *ConfFile == "" && len(file) == 0 {
 		panic(errors.New("config file miss -conf"))
@@ -156,6 +146,7 @@ func InitConfig(file ...string) *Config {
 	return conf
 }
 
+//LoadConfig 加载配置
 func LoadConfig(f string) *Config {
 	d, err := ioutil.ReadFile(f)
 	if err != nil {

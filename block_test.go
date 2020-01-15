@@ -18,7 +18,7 @@ func (suite *BlockTestSuite) SetupTest() {
 	txs, err := suite.bi.ListTxs(conf.MinerAddr)
 	suite.Require().NoError(err)
 	for _, v := range txs {
-		log.Println(v.TxId, v.Height)
+		log.Println(v.TxID, v.Height)
 	}
 }
 

@@ -13,8 +13,9 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/memdb"
 )
 
+//交易池最大数量
 const (
-	MAX_TX_POOL_SIZE = 4096 * 4
+	MaxTxPoolSize = 4096 * 4
 )
 
 type txpoolin struct {
@@ -22,7 +23,7 @@ type txpoolin struct {
 	in *TxIn
 }
 
-//交易池，存放签名成功，未确认的交易
+//TxPool 交易池，存放签名成功，未确认的交易
 //当区块连接后需要把区块中的交易从这个池子删除
 //交易池加入交易后会记录消费输出，也会记录交易池中可用的金额
 type TxPool struct {
@@ -33,6 +34,7 @@ type TxPool struct {
 	mdb  *memdb.DB
 }
 
+//NewTxPool 创建交易池
 func NewTxPool() *TxPool {
 	return &TxPool{
 		tlis: list.New(),
@@ -42,6 +44,7 @@ func NewTxPool() *TxPool {
 	}
 }
 
+//Close 关闭交易池
 func (p *TxPool) Close() {
 	p.mdb.Reset()
 }
@@ -60,14 +63,14 @@ func (p *TxPool) del(bi *BlockIndex, id HASH256) {
 	}
 }
 
-//返回非空是移除的交易
+//Del 移除交易
 func (p *TxPool) Del(bi *BlockIndex, id HASH256) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.del(bi, id)
 }
 
-//加入其他节点过来的多个交易数据
+//PushTxs 加入其他节点过来的多个交易数据
 func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 	bl := p.Len()
 	for _, tx := range msg.Txs {
@@ -93,7 +96,7 @@ func (p *TxPool) PushTxs(bi *BlockIndex, msg *MsgTxPool) {
 	}
 }
 
-//发送获取交易池数据包,并告知本节点拥有的
+//NewMsgGetTxPool 发送获取交易池数据包,并告知本节点拥有的
 func (p *TxPool) NewMsgGetTxPool() *MsgGetTxPool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -109,7 +112,7 @@ func (p *TxPool) NewMsgGetTxPool() *MsgGetTxPool {
 	return msg
 }
 
-//获取交易池子数据
+//NewMsgTxPool 获取交易池子数据
 func (p *TxPool) NewMsgTxPool(m *MsgGetTxPool) *MsgTxPool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -147,9 +150,9 @@ func (p *TxPool) loadTxOut(bi *BlockIndex, in *TxIn) (*TX, *TxOut, error) {
 	return otx, out, nil
 }
 
-//获取交易引用的交易id
+//GetRefsTxs 获取交易引用的交易id
 func (p *TxPool) GetRefsTxs(id HASH256) []HASH256 {
-	prefix := GetDBKey(REFTX_PREFIX, id[:])
+	prefix := GetDBKey(RefTxPrefix, id[:])
 	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
 	defer iter.Release()
 	ids := []HASH256{}
@@ -196,7 +199,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		}
 		ckv := &CoinKeyValue{}
 		ckv.Index = in.OutIndex
-		ckv.TxId = in.OutHash
+		ckv.TxID = in.OutHash
 		vps[pkh] = add
 		if add {
 			p.imap[in.OutKey()] = txpoolin{tx: tx, in: in} //存放in对应的tx和位置
@@ -219,7 +222,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		ckv.Value = out.Value
 		ckv.CPkh = pkh
 		ckv.Index = VarUInt(idx)
-		ckv.TxId = txid
+		ckv.TxID = txid
 		ckv.Base = 0
 		ckv.Height = 0
 		vps[pkh] = add
@@ -233,8 +236,8 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		}
 	}
 	//存储哪些交易引用到了当前交易
-	for ref, _ := range refs {
-		key := GetDBKey(REFTX_PREFIX, ref[:], txid[:])
+	for ref := range refs {
+		key := GetDBKey(RefTxPrefix, ref[:], txid[:])
 		if add {
 			err = p.mdb.Put(key, VarUInt(len(refs)).Bytes())
 		} else {
@@ -245,17 +248,17 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		}
 	}
 	//写入账户相关的交易
-	for pkh, _ := range vps {
+	for pkh := range vps {
 		//pkh相关的内存中的交易
 		vval := TxValue{
 			TxIdx: 0,
-			BlkId: ZERO256,
+			BlkID: ZERO256,
 		}
 		vbys, err := vval.Bytes()
 		if err != nil {
 			panic(err)
 		}
-		key := GetDBKey(TXP_PREFIX, pkh[:], []byte{0, 0, 0, 0}, txid[:])
+		key := GetDBKey(TxpPrefix, pkh[:], []byte{0, 0, 0, 0}, txid[:])
 		if add {
 			err = p.mdb.Put(key, vbys)
 		} else {
@@ -301,7 +304,7 @@ func (p *TxPool) removeEle(bi *BlockIndex, refs *[]*TX, ele *list.Element) {
 	LogInfof("remove tx %v success from txpool len=%d", id, p.tlis.Len())
 }
 
-//删除交易并返回已经删除的引用的交易
+//GetDelTxs 返回已经删除的引用的交易
 func (p *TxPool) GetDelTxs(bi *BlockIndex, txs []*TX) []*TX {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -317,7 +320,7 @@ func (p *TxPool) GetDelTxs(bi *BlockIndex, txs []*TX) []*TX {
 	return refs
 }
 
-//当区块打包时，移除多个交易
+//DelTxs 当区块打包时，移除多个交易
 func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
 	//移除并返回删除了的交易
 	refs := p.GetDelTxs(bi, txs)
@@ -335,7 +338,7 @@ func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
 	}
 }
 
-//获取所有的tx
+//AllTxs 获取所有的tx
 func (p *TxPool) AllTxs() []*TX {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -384,7 +387,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 			panic(err)
 		}
 		size += buf.Len()
-		if size > MAX_BLOCK_SIZE {
+		if size > MaxBlockSize {
 			break
 		}
 		txs = append(txs, tx)
@@ -392,7 +395,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 	return txs, res, nil
 }
 
-//取出符合区块blk的交易，大小不能超过限制
+//GetTxs 取出符合区块blk的交易，大小不能超过限制
 func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	//获取交易
 	txs, res, err := p.gettxs(bi, blk)
@@ -408,16 +411,16 @@ func (p *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
 	return txs, nil
 }
 
-//是否存在可消费的coin
+//HasCoin 是否存在可消费的coin
 func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.mdb.Contains(coin.MustKey())
 }
 
-//获取spkh相关的交易
+//ListTxsWithID 获取spkh相关的交易
 func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
-	prefix := GetDBKey(TXP_PREFIX, spkh[:])
+	prefix := GetDBKey(TxpPrefix, spkh[:])
 	idxs := TxIndexs{}
 	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
 	defer iter.Release()
@@ -432,8 +435,9 @@ func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
 	return idxs, nil
 }
 
+//GetCoin 获取交易相关的金额
 func (p *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
-	key := GetDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	key := GetDBKey(CoinsPrefix, pkh[:], txid[:], idx.Bytes())
 	val, err := p.mdb.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("get coin from txpool error %w", err)
@@ -443,7 +447,7 @@ func (p *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue,
 	return ckv, err
 }
 
-//获取pkh在交易池中可用的金额
+//ListCoins 获取pkh在交易池中可用的金额
 func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -451,7 +455,7 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	if len(limit) > 0 && limit[0] <= 0 {
 		return coins, nil
 	}
-	key := GetDBKey(COINS_PREFIX, spkh[:])
+	key := GetDBKey(CoinsPrefix, spkh[:])
 	iter := p.mdb.NewIterator(util.BytesPrefix(key))
 	defer iter.Release()
 	sum := Amount(0)
@@ -471,19 +475,19 @@ func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	return coins, nil
 }
 
-//一笔钱是否已经在内存交易池中某个交易消费
+//IsSpent 一笔钱是否已经在内存交易池中某个交易消费
 func (p *TxPool) IsSpent(skey []byte) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.mdb.Contains(skey)
 }
 
-//一笔钱是否已经在内存交易池中某个交易消费
+//IsSpentCoin 一笔钱是否已经在内存交易池中某个交易消费
 func (p *TxPool) IsSpentCoin(coin *CoinKeyValue) bool {
 	return p.IsSpent(coin.SpentKey())
 }
 
-//交易池是否存在某个交易
+//Has 交易池是否存在某个交易
 func (p *TxPool) Has(id HASH256) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -500,14 +504,14 @@ func (p *TxPool) get(id HASH256) (*TX, error) {
 	return nil, fmt.Errorf("txpool not found tx = %v", id)
 }
 
-//获取交易
+//Get 获取交易
 func (p *TxPool) Get(id HASH256) (*TX, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.get(id)
 }
 
-//获取交易池交易数量
+//Len 获取交易池交易数量
 func (p *TxPool) Len() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -540,7 +544,7 @@ func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	return nil
 }
 
-//添加进去一笔交易放入最后
+//PushTx 添加进去一笔交易放入最后
 //交易必须是校验过的
 func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	id, err := tx.ID()
@@ -561,7 +565,7 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.tlis.Len() >= MAX_TX_POOL_SIZE {
+	if p.tlis.Len() >= MaxTxPoolSize {
 		return errors.New("tx pool full,ignore push back")
 	}
 	if err := p.checkRefs(bi, tx); err != nil {

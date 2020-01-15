@@ -7,26 +7,29 @@ import (
 	"strconv"
 )
 
-// MAX_MONEY < MAX_COMPRESS_UINT
+//金额定义
 const (
-	MAX_COMPRESS_UINT = uint64(0b1111 << 57)
-	COIN              = Amount(1000)
-	MAX_MONEY         = 21000000 * COIN
+	MaxCompressUInt = uint64(0b1111 << 57)
+	Coin            = Amount(1000)
+	// MaxMoney < MaxCompressUInt
+	MaxMoney = 21000000 * Coin
 )
 
-//结算当前奖励
+//GetCoinbaseReward 结算当前奖励
 func GetCoinbaseReward(h uint32) Amount {
 	hlv := int(h) / conf.Halving
 	if hlv < 0 || hlv >= 64 {
 		return 0
 	}
-	n := 50 * COIN
+	n := 50 * Coin
 	n >>= hlv
 	return n
 }
 
+//Amount 金额类型
 type Amount int64
 
+//Decode 解码金额，并解压缩
 func (a *Amount) Decode(r IReader) error {
 	cv, err := binary.ReadUvarint(r)
 	if err != nil {
@@ -40,7 +43,7 @@ func (a *Amount) Decode(r IReader) error {
 	return nil
 }
 
-//解析金额
+//ParseIntMoney 解析金额
 func ParseIntMoney(str string) (Amount, error) {
 	i, err := strconv.ParseInt(str, 10, 64)
 	if err != nil {
@@ -49,13 +52,13 @@ func ParseIntMoney(str string) (Amount, error) {
 	return Amount(i), nil
 }
 
-//解析金额
+//ParseMoney 解析金额
 func ParseMoney(str string) (Amount, error) {
 	f, err := strconv.ParseFloat(str, 64)
 	if err != nil {
 		return 0, err
 	}
-	a := Amount(f * float64(COIN))
+	a := Amount(f * float64(Coin))
 	return a, nil
 }
 
@@ -64,8 +67,8 @@ func (a Amount) String() string {
 	if abs < 0 {
 		abs = -abs
 	}
-	n := a / COIN
-	x := a % COIN
+	n := a / Coin
+	x := a % Coin
 	str := fmt.Sprintf("%d.%03d", n, x)
 	trim := 0
 	for i := len(str) - 1; str[i] == '0' && str[i-1] != '.'; i-- {
@@ -80,6 +83,7 @@ func (a Amount) String() string {
 	return str
 }
 
+//Bytes 压缩金额并生成二进制数据
 func (a Amount) Bytes() []byte {
 	if !a.IsRange() {
 		panic(errors.New("amount range error"))
@@ -90,13 +94,15 @@ func (a Amount) Bytes() []byte {
 	return lb[:l]
 }
 
-func (v *Amount) From(b []byte) Amount {
+//From 从二进制生成金额
+func (a *Amount) From(b []byte) Amount {
 	cv, _ := binary.Uvarint(b)
 	vv := DecompressUInt(cv)
-	*v = Amount(vv)
-	return *v
+	*a = Amount(vv)
+	return *a
 }
 
+//Encode 编码并压缩金额
 func (a Amount) Encode(w IWriter) error {
 	if !a.IsRange() {
 		return errors.New("amount range error")
@@ -108,14 +114,15 @@ func (a Amount) Encode(w IWriter) error {
 	return w.TWrite(wb)
 }
 
+//IsRange 检测金额是否在有效范围内
 func (a Amount) IsRange() bool {
-	return a >= 0 && a <= MAX_MONEY
+	return a >= 0 && a <= MaxMoney
 }
 
-//max : 60 bits
+//CompressUInt 压缩一个整形 max : 60 bits
 func CompressUInt(n uint64) uint64 {
-	if n > MAX_COMPRESS_UINT {
-		panic(VarSizeErr)
+	if n > MaxCompressUInt {
+		panic(ErrVarSize)
 	}
 	if n == 0 {
 		return 0
@@ -135,7 +142,7 @@ func CompressUInt(n uint64) uint64 {
 	return n
 }
 
-//max : 60 bits
+//DecompressUInt 解压整形max : 60 bits
 func DecompressUInt(x uint64) uint64 {
 	if x == 0 {
 		return 0
@@ -155,8 +162,8 @@ func DecompressUInt(x uint64) uint64 {
 		n *= 10
 		e--
 	}
-	if n > MAX_COMPRESS_UINT {
-		panic(VarSizeErr)
+	if n > MaxCompressUInt {
+		panic(ErrVarSize)
 	}
 	return n
 }

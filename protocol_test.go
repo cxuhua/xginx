@@ -11,7 +11,7 @@ func TestMsgVersion(t *testing.T) {
 	defer conf.Close()
 	msg := &MsgVersion{}
 	msg.Ver = 1
-	msg.Service = FULL_NODE
+	msg.Service = FullNodeFlag
 	msg.Addr = NetAddrForm("127.0.0.1:9000")
 
 	buf := NewWriter()
@@ -21,7 +21,7 @@ func TestMsgVersion(t *testing.T) {
 	bb := buf.Bytes()
 	log.Println(hex.EncodeToString(bb))
 	pd := &NetPackage{
-		Flags: conf.Flags,
+		Flags: conf.flags,
 		Type:  msg.Type(),
 		Bytes: bb,
 	}

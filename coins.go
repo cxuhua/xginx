@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-//金额状态
+//CoinsState 金额状态
 type CoinsState struct {
 	Locks Coins  //锁定的
 	Coins Coins  //当前可用
@@ -13,6 +13,7 @@ type CoinsState struct {
 	Sum   Amount //总和
 }
 
+//Merge 拼合
 func (s *CoinsState) Merge(v *CoinsState) {
 	s.Locks = append(s.Locks, v.Locks...)
 	s.Coins = append(s.Coins, v.Coins...)
@@ -24,10 +25,10 @@ func (s CoinsState) String() string {
 	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.Sum)
 }
 
-//金额记录
+//Coins 金额记录
 type Coins []*CoinKeyValue
 
-//假设当前消费高度为 spent 获取金额状态
+//State 假设当前消费高度为 spent 获取金额状态
 func (c Coins) State(spent uint32) *CoinsState {
 	s := &CoinsState{All: c}
 	for _, v := range c {
@@ -41,7 +42,7 @@ func (c Coins) State(spent uint32) *CoinsState {
 	return s
 }
 
-//按高度排序
+//Sort 按高度排序
 func (c *Coins) Sort() Coins {
 	sort.Slice(*c, func(i, j int) bool {
 		return (*c)[i].Height < (*c)[j].Height
@@ -49,7 +50,7 @@ func (c *Coins) Sort() Coins {
 	return *c
 }
 
-//获取总金额
+//Balance 获取总金额
 func (c Coins) Balance() Amount {
 	a := Amount(0)
 	for _, v := range c {
@@ -58,10 +59,10 @@ func (c Coins) Balance() Amount {
 	return a
 }
 
-//金额存储结构
+//CoinKeyValue 金额存储结构
 type CoinKeyValue struct {
 	CPkh   HASH160 //公钥hash
-	TxId   HASH256 //交易id
+	TxID   HASH256 //交易id
 	Index  VarUInt //输出索引
 	Value  Amount  //输出金额
 	Base   uint8   //是否属于coinbase o or 1
@@ -70,17 +71,18 @@ type CoinKeyValue struct {
 	spent  bool    //是否在内存池被消费了
 }
 
+//From 从kv获取数据
 func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	buf := NewReader(k)
 	//解析key
 	cp, err := buf.ReadByte()
-	if err != nil || cp != COINS_PREFIX[0] {
+	if err != nil || cp != CoinsPrefix[0] {
 		return fmt.Errorf("conins prefix error %w", err)
 	}
 	if err := tk.CPkh.Decode(buf); err != nil {
 		return err
 	}
-	if err := tk.TxId.Decode(buf); err != nil {
+	if err := tk.TxID.Decode(buf); err != nil {
 		return err
 	}
 	if err := tk.Index.Decode(buf); err != nil {
@@ -100,19 +102,20 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 	return nil
 }
 
-//创建一个消费输入
+//NewTxIn 创建一个消费输入
 func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
 	in := NewTxIn()
-	in.OutHash = tk.TxId
+	in.OutHash = tk.TxID
 	in.OutIndex = tk.Index
-	if script, err := acc.NewWitnessScript().ToScript(); err != nil {
+	script, err := acc.NewWitnessScript().ToScript()
+	if err != nil {
 		return nil, err
-	} else {
-		in.Script = script
 	}
+	in.Script = script
 	return in, nil
 }
 
+//MustValue 必定获取二进制
 func (tk CoinKeyValue) MustValue() []byte {
 	buf := NewWriter()
 	if err := tk.Value.Encode(buf); err != nil {
@@ -127,25 +130,26 @@ func (tk CoinKeyValue) MustValue() []byte {
 	return buf.Bytes()
 }
 
+//IsPool 是否来自交易池
 func (tk CoinKeyValue) IsPool() bool {
 	return tk.pool
 }
 
-//是否成熟可用
+//IsMatured 是否成熟可用
 //内存中的，非coinbase直接可用
 //coinbase输出必须在100个高度后才可消费
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
-	return tk.pool || tk.Base == 0 || spent-tk.Height.ToUInt32() >= COINBASE_MATURITY
+	return tk.pool || tk.Base == 0 || spent-tk.Height.ToUInt32() >= CoinbaseMaturity
 }
 
-//消费key,用来记录输入对应的输出是否已经别消费
+//SpentKey 消费key,用来记录输入对应的输出是否已经别消费
 func (tk CoinKeyValue) SpentKey() []byte {
 	buf := NewWriter()
-	err := buf.WriteFull(COINS_PREFIX)
+	err := buf.WriteFull(CoinsPrefix)
 	if err != nil {
 		panic(err)
 	}
-	err = tk.TxId.Encode(buf)
+	err = tk.TxID.Encode(buf)
 	if err != nil {
 		panic(err)
 	}
@@ -156,6 +160,7 @@ func (tk CoinKeyValue) SpentKey() []byte {
 	return buf.Bytes()
 }
 
+//GetAddress 获取金额所在地址
 func (tk CoinKeyValue) GetAddress() Address {
 	addr, err := EncodeAddress(tk.CPkh)
 	if err != nil {
@@ -164,10 +169,10 @@ func (tk CoinKeyValue) GetAddress() Address {
 	return addr
 }
 
-//用来存储pkh拥有的可消费的金额
+//MustKey 用来存储pkh拥有的可消费的金额
 func (tk CoinKeyValue) MustKey() []byte {
 	buf := NewWriter()
-	err := buf.WriteFull(COINS_PREFIX)
+	err := buf.WriteFull(CoinsPrefix)
 	if err != nil {
 		panic(err)
 	}
@@ -175,7 +180,7 @@ func (tk CoinKeyValue) MustKey() []byte {
 	if err != nil {
 		panic(err)
 	}
-	err = tk.TxId.Encode(buf)
+	err = tk.TxID.Encode(buf)
 	if err != nil {
 		panic(err)
 	}

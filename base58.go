@@ -58,7 +58,7 @@ func NewAlphabet(alphabet string) *Alphabet {
 	return ret
 }
 
-// Encode encode with custom alphabet
+// B58Encode encode with custom alphabet
 func B58Encode(input []byte, alphabet *Alphabet) string {
 	// prefix 0
 	inputLength := len(input)
@@ -107,7 +107,7 @@ func B58Encode(input []byte, alphabet *Alphabet) string {
 	return string(retStrRunes)
 }
 
-// Decode docode with custom alphabet
+// B58Decode docode with custom alphabet
 func B58Decode(input string, alphabet *Alphabet) ([]byte, error) {
 	capacity := utf8.RuneCountInString(input)*733/1000 + 1 // log(58) / log(256)
 	output := make([]byte, capacity)

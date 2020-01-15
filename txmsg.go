@@ -5,44 +5,51 @@ import (
 	"errors"
 )
 
-//获取交易验证merkle树
+//MsgGetMerkle 获取交易验证merkle树
 type MsgGetMerkle struct {
-	TxId HASH256 //交易id
+	TxID HASH256 //交易id
 }
 
+//Type 消息类型
 func (m MsgGetMerkle) Type() NTType {
-	return NT_GET_MERKLE
+	return NtGetMerkle
 
 }
 
-func (m MsgGetMerkle) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgGetMerkle) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Encode 编码消息
 func (m MsgGetMerkle) Encode(w IWriter) error {
-	return m.TxId.Encode(w)
+	return m.TxID.Encode(w)
 }
 
+//Decode 解码消息
 func (m *MsgGetMerkle) Decode(r IReader) error {
-	return m.TxId.Decode(r)
+	return m.TxID.Decode(r)
 }
 
-//返回交易验证merkle树
+//MsgTxMerkle 返回交易验证merkle树
 type MsgTxMerkle struct {
-	TxId  HASH256   //当前交易id
+	TxID  HASH256   //当前交易id
 	Trans VarInt    //交易锁在块的交易数量
 	Hashs []HASH256 //基于merkle树的验证hash
 	Bits  VarBytes  //
 }
 
+//Type 消息类型
 func (m MsgTxMerkle) Type() NTType {
-	return NT_TX_MERKLE
+	return NtTxMerkle
 }
 
-func (m MsgTxMerkle) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgTxMerkle) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Verify 验证数据
 func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	bits := BitSetFrom(m.Bits)
 	nt := GetMerkleTree(m.Trans.ToInt(), m.Hashs, bits)
@@ -50,11 +57,11 @@ func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	if err != nil {
 		return err
 	}
-	txv, err := bi.LoadTxValue(m.TxId)
+	txv, err := bi.LoadTxValue(m.TxID)
 	if err != nil {
 		return err
 	}
-	bh, err := bi.GetBlockHeader(txv.BlkId)
+	bh, err := bi.GetBlockHeader(txv.BlkID)
 	if err != nil {
 		return err
 	}
@@ -64,8 +71,9 @@ func (m MsgTxMerkle) Verify(bi *BlockIndex) error {
 	return nil
 }
 
+//Encode 编码消息
 func (m MsgTxMerkle) Encode(w IWriter) error {
-	if err := m.TxId.Encode(w); err != nil {
+	if err := m.TxID.Encode(w); err != nil {
 		return err
 	}
 	if err := m.Trans.Encode(w); err != nil {
@@ -86,8 +94,9 @@ func (m MsgTxMerkle) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgTxMerkle) Decode(r IReader) error {
-	if err := m.TxId.Decode(r); err != nil {
+	if err := m.TxID.Decode(r); err != nil {
 		return err
 	}
 	if err := m.Trans.Decode(r); err != nil {
@@ -98,7 +107,7 @@ func (m *MsgTxMerkle) Decode(r IReader) error {
 		return err
 	}
 	m.Hashs = make([]HASH256, num.ToInt())
-	for i, _ := range m.Hashs {
+	for i := range m.Hashs {
 		v := HASH256{}
 		err := v.Decode(r)
 		if err != nil {
@@ -112,8 +121,7 @@ func (m *MsgTxMerkle) Decode(r IReader) error {
 	return nil
 }
 
-//
-
+//inv类型定义
 const (
 	//交易类型
 	InvTypeTx = uint8(1)
@@ -121,46 +129,48 @@ const (
 	InvTypeBlock = uint8(2)
 )
 
-//加以区块库存列表
+//Inventory 加以区块库存列表
 type Inventory struct {
-	Typ uint8
-	ID  HASH256
+	InvType uint8
+	InvID   HASH256
 }
 
+//Encode 编码消息
 func (m Inventory) Encode(w IWriter) error {
-	if err := w.TWrite(m.Typ); err != nil {
+	if err := w.TWrite(m.InvType); err != nil {
 		return err
 	}
-	if err := m.ID.Encode(w); err != nil {
+	if err := m.InvID.Encode(w); err != nil {
 		return err
 	}
 	return nil
 }
 
+//Decode 解码消息
 func (m *Inventory) Decode(r IReader) error {
-	if err := r.TRead(&m.Typ); err != nil {
+	if err := r.TRead(&m.InvType); err != nil {
 		return err
 	}
-	if err := m.ID.Decode(r); err != nil {
+	if err := m.InvID.Decode(r); err != nil {
 		return err
 	}
 	return nil
 }
 
-//获取参数发送相关数据
+//GetMsgGetInv 获取参数发送相关数据
 func (bi *BlockIndex) GetMsgGetInv(msg *MsgGetInv, c *Client) {
 	for _, inv := range msg.Invs {
-		if inv.Typ == InvTypeTx {
-			tx, err := bi.txp.Get(inv.ID)
+		if inv.InvType == InvTypeTx {
+			tx, err := bi.txp.Get(inv.InvID)
 			if err != nil {
-				tx, err = bi.LoadTX(inv.ID)
+				tx, err = bi.LoadTX(inv.InvID)
 			}
 			if err != nil {
 				continue
 			}
 			c.SendMsg(NewMsgTx(tx))
-		} else if inv.Typ == InvTypeBlock {
-			blk, err := bi.LoadBlock(inv.ID)
+		} else if inv.InvType == InvTypeBlock {
+			blk, err := bi.LoadBlock(inv.InvID)
 			if err != nil {
 				continue
 			}
@@ -169,27 +179,30 @@ func (bi *BlockIndex) GetMsgGetInv(msg *MsgGetInv, c *Client) {
 	}
 }
 
-//
-
+//MsgGetInv 获取库存
 type MsgGetInv struct {
 	Invs []Inventory
 }
 
+//Type 消息类型
 func (m MsgGetInv) Type() NTType {
-	return NT_GET_INV
+	return NtGetInv
 }
 
-func (m MsgGetInv) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgGetInv) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//AddInv 添加库存
 func (m *MsgGetInv) AddInv(typ uint8, id HASH256) {
 	m.Invs = append(m.Invs, Inventory{
-		Typ: typ,
-		ID:  id,
+		InvType: typ,
+		InvID:   id,
 	})
 }
 
+//Encode 编码消息
 func (m MsgGetInv) Encode(w IWriter) error {
 	if err := VarInt(len(m.Invs)).Encode(w); err != nil {
 		return err
@@ -202,13 +215,14 @@ func (m MsgGetInv) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgGetInv) Decode(r IReader) error {
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
 	}
 	m.Invs = make([]Inventory, num.ToInt())
-	for i, _ := range m.Invs {
+	for i := range m.Invs {
 		v := Inventory{}
 		err := v.Decode(r)
 		if err != nil {
@@ -219,27 +233,30 @@ func (m *MsgGetInv) Decode(r IReader) error {
 	return nil
 }
 
-//交易消息
-
+//MsgInv 交易消息
 type MsgInv struct {
 	Invs []Inventory
 }
 
+//Type 消息类型
 func (m MsgInv) Type() NTType {
-	return NT_INV
+	return NtInv
 }
 
-func (m MsgInv) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgInv) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//AddInv 添加
 func (m *MsgInv) AddInv(typ uint8, id HASH256) {
 	m.Invs = append(m.Invs, Inventory{
-		Typ: typ,
-		ID:  id,
+		InvType: typ,
+		InvID:   id,
 	})
 }
 
+//Encode 编码
 func (m MsgInv) Encode(w IWriter) error {
 	if err := VarInt(len(m.Invs)).Encode(w); err != nil {
 		return err
@@ -252,13 +269,14 @@ func (m MsgInv) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码
 func (m *MsgInv) Decode(r IReader) error {
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
 	}
 	m.Invs = make([]Inventory, num.ToInt())
-	for i, _ := range m.Invs {
+	for i := range m.Invs {
 		v := Inventory{}
 		err := v.Decode(r)
 		if err != nil {
@@ -269,24 +287,27 @@ func (m *MsgInv) Decode(r IReader) error {
 	return nil
 }
 
-//NT_GET_TXPOOL
-//获取本节点没有的
+//MsgGetTxPool 获取本节点没有的
 type MsgGetTxPool struct {
 	Skip []HASH256 //忽略的交易id
 }
 
+//Type 消息类型
 func (m MsgGetTxPool) Type() NTType {
-	return NT_GET_TXPOOL
+	return NtGetTxPool
 }
 
+//Add 添加不需要的交易Id
 func (m *MsgGetTxPool) Add(id HASH256) {
 	m.Skip = append(m.Skip, id)
 }
 
-func (m MsgGetTxPool) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgGetTxPool) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Has 检测id是否在忽略列表中
 func (m MsgGetTxPool) Has(id HASH256) bool {
 	for _, v := range m.Skip {
 		if v.Equal(id) {
@@ -296,6 +317,7 @@ func (m MsgGetTxPool) Has(id HASH256) bool {
 	return false
 }
 
+//Encode 编码消息
 func (m MsgGetTxPool) Encode(w IWriter) error {
 	if err := VarUInt(len(m.Skip)).Encode(w); err != nil {
 		return err
@@ -309,13 +331,14 @@ func (m MsgGetTxPool) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgGetTxPool) Decode(r IReader) error {
 	num := VarUInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
 	}
 	m.Skip = make([]HASH256, num.ToInt())
-	for i, _ := range m.Skip {
+	for i := range m.Skip {
 		id := HASH256{}
 		err := id.Decode(r)
 		if err != nil {
@@ -326,24 +349,27 @@ func (m *MsgGetTxPool) Decode(r IReader) error {
 	return nil
 }
 
-//NT_TXPOOL
-
+//MsgTxPool 返回交易池数据
 type MsgTxPool struct {
 	Txs []*TX
 }
 
+//Type 消息类型
 func (m MsgTxPool) Type() NTType {
-	return NT_TXPOOL
+	return NtTxPool
 }
 
-func (m MsgTxPool) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgTxPool) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Add 添加交易
 func (m *MsgTxPool) Add(tx *TX) {
 	m.Txs = append(m.Txs, tx)
 }
 
+//Encode 编码消息
 func (m MsgTxPool) Encode(w IWriter) error {
 	if err := VarUInt(len(m.Txs)).Encode(w); err != nil {
 		return err
@@ -357,13 +383,14 @@ func (m MsgTxPool) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgTxPool) Decode(r IReader) error {
 	num := VarUInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
 	}
 	m.Txs = make([]*TX, num.ToInt())
-	for i, _ := range m.Txs {
+	for i := range m.Txs {
 		tx := &TX{}
 		err := tx.Decode(r)
 		if err != nil {
@@ -374,37 +401,42 @@ func (m *MsgTxPool) Decode(r IReader) error {
 	return nil
 }
 
-// NT_TX
+//MsgTx 交易信息
 type MsgTx struct {
 	Txs []*TX
 }
 
+//NewMsgTx 从tx创建交易消息
 func NewMsgTx(tx *TX) *MsgTx {
 	return &MsgTx{Txs: []*TX{tx}}
 }
 
-func (m MsgTx) Id() (MsgId, error) {
+//ID 交易ID
+func (m MsgTx) ID() (MsgID, error) {
 	sum := md5.New()
 	for _, v := range m.Txs {
 		id, err := v.ID()
 		if err != nil {
-			return ErrMsgId, err
+			return ErrMsgID, err
 		}
 		sum.Write(id[:])
 	}
-	id := MsgId{}
+	id := MsgID{}
 	copy(id[:], sum.Sum(nil))
 	return id, nil
 }
 
+//Type 消息类型
 func (m MsgTx) Type() NTType {
-	return NT_TX
+	return NvTx
 }
 
+//Add 添加交易
 func (m *MsgTx) Add(tx *TX) {
 	m.Txs = append(m.Txs, tx)
 }
 
+//Encode 编码消息
 func (m MsgTx) Encode(w IWriter) error {
 	if err := VarUInt(len(m.Txs)).Encode(w); err != nil {
 		return err
@@ -418,13 +450,14 @@ func (m MsgTx) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgTx) Decode(r IReader) error {
 	num := VarUInt(0)
 	if err := num.Decode(r); err != nil {
 		return err
 	}
 	m.Txs = make([]*TX, num.ToInt())
-	for i, _ := range m.Txs {
+	for i := range m.Txs {
 		tx := &TX{}
 		err := tx.Decode(r)
 		if err != nil {

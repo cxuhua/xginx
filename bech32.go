@@ -144,7 +144,7 @@ func HRPExpand(input string) []byte {
 	return output
 }
 
-// create checksum makes a 6-shortbyte checksum from the HRP and data parts
+// CreateChecksum makes a 6-shortbyte checksum from the HRP and data parts
 func CreateChecksum(hrp string, data []byte) []byte {
 	values := append(HRPExpand(hrp), data...)
 	// put 6 zero bytes on at the end
@@ -164,6 +164,7 @@ func CreateChecksum(hrp string, data []byte) []byte {
 	return values[len(values)-6:]
 }
 
+// VerifyChecksum verify checksum
 func VerifyChecksum(hrp string, data []byte) bool {
 	values := append(HRPExpand(hrp), data...)
 	checksum := PolyMod(values)
@@ -171,7 +172,7 @@ func VerifyChecksum(hrp string, data []byte) bool {
 	return checksum == 1
 }
 
-// Encode takes regular bytes of data, and an hrp prefix, and returns the
+// BECH32Encode takes regular bytes of data, and an hrp prefix, and returns the
 // bech32 encoded string.  It doesn't do any segwit specific encoding.
 func BECH32Encode(hrp string, data []byte) string {
 	fiveData := Bytes8to5(data)
@@ -193,7 +194,7 @@ func EncodeSquashed(hrp string, data []byte) string {
 	return hrp + "1" + dataString
 }
 
-// Decode takes a bech32 encoded string and returns the hrp and the full-height
+// BECH32Decode takes a bech32 encoded string and returns the hrp and the full-height
 // data.  Can error out for various reasons, mostly problems in the string given.
 // Doesn't do anything segwit specific.
 func BECH32Decode(adr string) (string, []byte, error) {
@@ -251,7 +252,7 @@ func DecodeSquashed(adr string) (string, []byte, error) {
 	return hrp, data, nil
 }
 
-// Segwit addresses can't be used in Encode and Decode directly, because the
+// GetHRP Segwit addresses can't be used in Encode and Decode directly, because the
 // witness version is special and doesn't get squashed.  GetHRP gets the
 // HRP without checking any validity.
 func GetHRP(adr string) (string, error) {

@@ -8,7 +8,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-// Cacher provides interface to implements a caching functionality.
+// LRUCacher provides interface to implements a caching functionality.
 // An implementation must be safe for concurrent use.
 type LRUCacher interface {
 	// Capacity returns cache capacity.
@@ -242,7 +242,7 @@ func (n *mNode) initBuckets() {
 	atomic.StorePointer(&n.pred, nil)
 }
 
-// Cache is a 'cache map'.
+// IndexCacher is a 'cache map'.
 type IndexCacher struct {
 	mu     sync.RWMutex
 	mHead  unsafe.Pointer // *mNode
@@ -252,7 +252,7 @@ type IndexCacher struct {
 	closed bool
 }
 
-// NewCache creates a new 'cache map'. The cacher is optional and
+// NewIndexCacher creates a new 'cache map'. The cacher is optional and
 // may be nil.
 func NewIndexCacher(capacity int) *IndexCacher {
 	h := &mNode{
@@ -488,7 +488,7 @@ func (r *IndexCacher) CloseWeak() error {
 	return nil
 }
 
-// Node is a 'cache node'.
+// LRUNode is a 'cache node'.
 type LRUNode struct {
 	r         *IndexCacher
 	hash      uint32
@@ -558,6 +558,7 @@ func (h *Handle) Value() Value {
 	return nil
 }
 
+// Size returs cache size
 func (h *Handle) Size() int {
 	n := (*LRUNode)(atomic.LoadPointer(&h.n))
 	if n != nil {

@@ -4,7 +4,7 @@ import (
 	"errors"
 )
 
-//转账监听器
+//ITransListener 转账监听器
 type ITransListener interface {
 	//获取金额对应的账户方法
 	GetAcc(ckv *CoinKeyValue) *Account
@@ -16,7 +16,7 @@ type ITransListener interface {
 	GetKeep() Address
 }
 
-//交易数据结构
+//Trans 交易数据结构
 type Trans struct {
 	bi  *BlockIndex
 	lis ITransListener
@@ -25,18 +25,19 @@ type Trans struct {
 	Fee Amount    //交易费
 }
 
+//Clean 清楚交易对象
 func (m *Trans) Clean() {
 	m.Dst = []Address{}
 	m.Amt = []Amount{}
 }
 
-//设置一个转账对象
+//Add 设置一个转账对象
 func (m *Trans) Add(dst Address, amt Amount) {
 	m.Dst = append(m.Dst, dst)
 	m.Amt = append(m.Amt, amt)
 }
 
-//检测参数
+//Check 检测参数
 func (m *Trans) Check() error {
 	if m.lis == nil || m.bi == nil {
 		return errors.New("lis or bi args error")
@@ -50,14 +51,14 @@ func (m *Trans) Check() error {
 	return nil
 }
 
-//生成交易,不签名，不放入交易池
+//NewTx 生成交易,不签名，不放入交易池
 //lt = tx locktime
-func (m *Trans) NewTx(lt...uint32) (*TX, error) {
+func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
 	if !m.Fee.IsRange() {
-		return nil,errors.New("fee error")
+		return nil, errors.New("fee error")
 	}
 	tx := NewTx()
 	if len(lt) > 0 {
@@ -121,12 +122,13 @@ func (m *Trans) NewTx(lt...uint32) (*TX, error) {
 	return tx, nil
 }
 
+//BroadTx 广播交易
 func (m *Trans) BroadTx(tx *TX) {
 	ps := GetPubSub()
 	ps.Pub(tx, NewTxTopic)
 }
 
-//创建待回调的交易对象
+//NewTrans 创建待回调的交易对象
 func (bi *BlockIndex) NewTrans(lis ITransListener) *Trans {
 	return &Trans{
 		bi:  bi,

@@ -5,40 +5,48 @@ import (
 	"errors"
 )
 
+//MsgHeaders 获取区块头网络结构
 type MsgHeaders struct {
 	Headers Headers
 }
 
-func (m MsgHeaders) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 获取消息ID
+func (m MsgHeaders) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Type 消息类型
 func (m MsgHeaders) Type() NTType {
-	return NT_HEADERS
+	return NtHeaders
 }
 
+//Encode 编码
 func (m MsgHeaders) Encode(w IWriter) error {
 	return m.Headers.Encode(w)
 }
 
+//Decode 解码
 func (m *MsgHeaders) Decode(r IReader) error {
 	return m.Headers.Decode(r)
 }
 
-//NT_GET_BLOCK
+//MsgGetBlock 获取区块消息
 type MsgGetBlock struct {
 	Last HASH256
 	Next uint32
 }
 
-func (m MsgGetBlock) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgGetBlock) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Type 消息类型
 func (m MsgGetBlock) Type() NTType {
-	return NT_GET_BLOCK
+	return NtGetBlock
 }
 
+//Encode 编码消息
 func (m MsgGetBlock) Encode(w IWriter) error {
 	if err := m.Last.Encode(w); err != nil {
 		return err
@@ -49,6 +57,7 @@ func (m MsgGetBlock) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgGetBlock) Decode(r IReader) error {
 	if err := m.Last.Decode(r); err != nil {
 		return err
@@ -59,7 +68,7 @@ func (m *MsgGetBlock) Decode(r IReader) error {
 	return nil
 }
 
-//获取区块数据返回
+//GetMsgBlock 获取区块数据返回
 func (bi *BlockIndex) GetMsgBlock(id HASH256) (*MsgBlock, error) {
 	blk, err := bi.LoadBlock(id)
 	if err != nil {
@@ -68,6 +77,7 @@ func (bi *BlockIndex) GetMsgBlock(id HASH256) (*MsgBlock, error) {
 	return &MsgBlock{Blk: blk}, nil
 }
 
+//区块消息标记
 const (
 	//如果是新出的区块设置此标记并广播
 	MsgBlockNewFlags = 1 << 0
@@ -77,52 +87,62 @@ const (
 	MsgBlockUseBlk = 1 << 2
 )
 
+//MsgBlock 区块消息结构
 type MsgBlock struct {
 	Flags uint8
 	Blk   *BlockInfo
 	Bytes VarBytes
 }
 
+//NewMsgBlock 从区块信息创建消息
 func NewMsgBlock(blk *BlockInfo) *MsgBlock {
 	m := &MsgBlock{Blk: blk}
 	m.AddFlags(MsgBlockUseBlk)
 	return m
 }
 
+//NewMsgBlockBytes 从区块数据创建消息
 func NewMsgBlockBytes(b []byte) *MsgBlock {
 	m := &MsgBlock{Bytes: b}
 	m.AddFlags(MsgBlockUseBytes)
 	return m
 }
 
-func (m MsgBlock) Id() (MsgId, error) {
+//ID 消息ID
+func (m MsgBlock) ID() (MsgID, error) {
 	bid, err := m.Blk.ID()
 	if err != nil {
-		return ErrMsgId, err
+		return ErrMsgID, err
 	}
 	return md5.Sum(bid[:]), nil
 }
 
+//AddFlags 添加消息标记
 func (m *MsgBlock) AddFlags(f uint8) {
 	m.Flags |= f
 }
 
+//Type 获取消息类型
 func (m MsgBlock) Type() NTType {
-	return NT_BLOCK
+	return NtBlock
 }
 
+//IsUseBytes 是否存储的是消息数据
 func (m MsgBlock) IsUseBytes() bool {
 	return m.Flags&MsgBlockUseBytes != 0
 }
 
+//IsUseBlk 是否存储的是消息结构数据
 func (m MsgBlock) IsUseBlk() bool {
 	return m.Flags&MsgBlockUseBlk != 0
 }
 
+//IsNewBlock  是否是新的区块
 func (m MsgBlock) IsNewBlock() bool {
 	return m.Flags&MsgBlockNewFlags != 0
 }
 
+//Encode 编码
 func (m MsgBlock) Encode(w IWriter) error {
 	if err := w.TWrite(m.Flags); err != nil {
 		return err
@@ -144,6 +164,7 @@ func (m MsgBlock) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码
 func (m *MsgBlock) Decode(r IReader) error {
 	if err := r.TRead(&m.Flags); err != nil {
 		return err

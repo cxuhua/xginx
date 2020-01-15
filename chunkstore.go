@@ -15,19 +15,21 @@ import (
 	"sync/atomic"
 )
 
-//文件数据状态
+//BlkChunk 文件数据状态
 type BlkChunk struct {
-	Id  VarUInt //数据所在文件id
+	ID  VarUInt //数据所在文件id
 	Off VarUInt //数据所在位置
 	Len VarUInt //数据长度
 }
 
+//HasData 是否存在数据
 func (f BlkChunk) HasData() bool {
-	return f.Id >= 0 && f.Off >= 0 && f.Len > 0
+	return f.ID >= 0 && f.Off >= 0 && f.Len > 0
 }
 
+//Decode 解码数据
 func (f *BlkChunk) Decode(r IReader) error {
-	if err := f.Id.Decode(r); err != nil {
+	if err := f.ID.Decode(r); err != nil {
 		return err
 	}
 	if err := f.Off.Decode(r); err != nil {
@@ -39,8 +41,9 @@ func (f *BlkChunk) Decode(r IReader) error {
 	return nil
 }
 
+//Encode 编码数据
 func (f BlkChunk) Encode(w IWriter) error {
-	if err := f.Id.Encode(w); err != nil {
+	if err := f.ID.Encode(w); err != nil {
 		return err
 	}
 	if err := f.Off.Encode(w); err != nil {
@@ -52,6 +55,7 @@ func (f BlkChunk) Encode(w IWriter) error {
 	return nil
 }
 
+//TBMeta 区块头存储类型
 type TBMeta struct {
 	BlockHeader          //区块头
 	Txs         VarUInt  //tx数量
@@ -60,12 +64,12 @@ type TBMeta struct {
 	hasher      HashCacher
 }
 
-// 是否有区块数据
+//HasBlk 是否有区块数据
 func (h TBMeta) HasBlk() bool {
 	return h.Blk.HasData()
 }
 
-// 是否有回退数据
+//HasRev 是否有回退数据
 func (h TBMeta) HasRev() bool {
 	return h.Rev.HasData()
 }
@@ -75,6 +79,7 @@ func (h TBMeta) String() string {
 	return id.String()
 }
 
+//Hash 计算hash
 func (h *TBMeta) Hash() HASH256 {
 	if h, set := h.hasher.IsSet(); set {
 		return h
@@ -86,12 +91,14 @@ func (h *TBMeta) Hash() HASH256 {
 	return h.hasher.Hash(buf.Bytes())
 }
 
+//Bytes 返回编码数据
 func (h TBMeta) Bytes() ([]byte, error) {
 	buf := NewWriter()
 	err := h.Encode(buf)
 	return buf.Bytes(), err
 }
 
+//Encode 编码
 func (h TBMeta) Encode(w IWriter) error {
 	if err := h.BlockHeader.Encode(w); err != nil {
 		return err
@@ -108,6 +115,7 @@ func (h TBMeta) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode  解码
 func (h *TBMeta) Decode(r IReader) error {
 	if err := h.BlockHeader.Decode(r); err != nil {
 		return err
@@ -177,7 +185,7 @@ func (s *sstore) Init() error {
 	if err != nil {
 		return err
 	}
-	fi, err := os.Stat(s.fileIdPath(uint32(id)))
+	fi, err := os.Stat(s.fileIDPath(uint32(id)))
 	if err == nil && fi.Size() >= s.size {
 		id++
 	}
@@ -194,15 +202,16 @@ type sstore struct {
 	dir   string            //目录名称
 }
 
+//错误
 var (
 	//需要切换到下一个文件存储
-	nextFileErr = errors.New("next file")
+	ErrNextFile = errors.New("next file")
 )
 
 //获取文件头标识和版本
 func sfileHeaderBytes() []byte {
 	w := NewWriter()
-	err := w.TWrite(conf.Flags[:])
+	err := w.TWrite(conf.flags[:])
 	if err != nil {
 		panic(err)
 	}
@@ -258,14 +267,14 @@ func (s *sfile) read(off uint32, b []byte) error {
 	return nil
 }
 
-//写入数据，返回数据偏移
-func (f *sfile) write(b []byte) (uint32, error) {
-	f.rwm.Lock()
-	defer f.rwm.Unlock()
+//write 写入数据，返回数据偏移
+func (s *sfile) write(b []byte) (uint32, error) {
+	s.rwm.Lock()
+	defer s.rwm.Unlock()
 	if len(b) == 0 {
 		return 0, errors.New("b args nil")
 	}
-	fi, err := f.Stat()
+	fi, err := s.Stat()
 	if err != nil {
 		return 0, err
 	}
@@ -273,21 +282,21 @@ func (f *sfile) write(b []byte) (uint32, error) {
 	pl := 0
 	off := int(fi.Size())
 	for pl < wl {
-		cl, err := f.Write(b[pl:])
+		cl, err := s.Write(b[pl:])
 		if err != nil {
 			return 0, err
 		}
 		pl += cl
 	}
-	if off+wl > int(f.size) {
-		_ = f.Sync()
-		return uint32(off), nextFileErr
+	if off+wl > int(s.size) {
+		_ = s.Sync()
+		return uint32(off), ErrNextFile
 	}
 	return uint32(off), nil
 }
 
-func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
-	spath := s.fileIdPath(id)
+func (s *sstore) newFile(id uint32, max int64) (*sfile, error) {
+	spath := s.fileIDPath(id)
 	locker := NewFLocker(spath+".lck", false)
 	if err := locker.Lock(); err != nil {
 		return nil, err
@@ -308,12 +317,13 @@ func (s sstore) newFile(id uint32, max int64) (*sfile, error) {
 	return sf, nil
 }
 
-func (s sstore) fileIdPath(id uint32) string {
+func (s *sstore) fileIDPath(id uint32) string {
 	return fmt.Sprintf("%s%s%06d%s", s.dir, Separator, id, s.ext)
 }
 
-func (f *sstore) Id() uint32 {
-	return atomic.LoadUint32(&f.id)
+//ID 获取当前ID
+func (s *sstore) ID() uint32 {
+	return atomic.LoadUint32(&s.id)
 }
 
 func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
@@ -331,7 +341,7 @@ func (s *sstore) checkmeta(id uint32, sf *sfile) (*sfile, error) {
 		_ = sf.Close()
 		return nil, err
 	}
-	if !bytes.Equal(sf.flags, conf.Flags[:]) {
+	if !bytes.Equal(sf.flags, conf.flags[:]) {
 		_ = sf.Close()
 		return nil, errors.New("file meta error")
 	}
@@ -370,11 +380,11 @@ func (s *sstore) openfile(id uint32) (*sfile, error) {
 }
 
 func (s *sstore) Read(st BlkChunk) ([]byte, error) {
-	if st.Len > MAX_BLOCK_SIZE {
+	if st.Len > MaxBlockSize {
 		return nil, errors.New("data too big")
 	}
 	bb := make([]byte, st.Len)
-	err := s.read(st.Id.ToUInt32(), st.Off.ToUInt32(), bb)
+	err := s.read(st.ID.ToUInt32(), st.Off.ToUInt32(), bb)
 	if err != nil {
 		return nil, err
 	}
@@ -392,11 +402,11 @@ func (s *sstore) read(id uint32, off uint32, b []byte) error {
 
 func (s *sstore) Write(b []byte) (BlkChunk, error) {
 	fs := BlkChunk{
-		Id:  VarUInt(s.Id()),
+		ID:  VarUInt(s.ID()),
 		Off: VarUInt(0),
 		Len: VarUInt(len(b)),
 	}
-	if fs.Len > MAX_BLOCK_SIZE {
+	if fs.Len > MaxBlockSize {
 		return fs, errors.New("data too big")
 	}
 	off, err := s.write(b)
@@ -414,7 +424,7 @@ func (s *sstore) write(b []byte) (uint32, error) {
 		return 0, err
 	}
 	pos, err := f.write(b)
-	if err == nextFileErr {
+	if err == ErrNextFile {
 		atomic.AddUint32(&s.id, 1)
 		return pos, nil
 	}

@@ -5,22 +5,22 @@ import (
 	"fmt"
 )
 
-//获取签名数据接口
+//IGetSigBytes 获取签名数据接口
 type IGetSigBytes interface {
 	GetSigBytes() ([]byte, error)
 }
 
-//签名交易
+//ISignerListener 签名交易
 type ISignerListener interface {
-	SignTx(singer ISigner,pass ...string) error
+	SignTx(singer ISigner, pass ...string) error
 }
 
-//签名验证接口
+//ISigner 签名验证接口
 type ISigner interface {
 	//签名校验
 	Verify() error
 	//签名生成解锁脚本
-	Sign(lis ISignerListener,pass ...string) error
+	Sign(lis ISignerListener, pass ...string) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的位置
@@ -28,7 +28,7 @@ type ISigner interface {
 	//获取消费地址
 	GetAddress() Address
 	//获取交易id
-	GetTxId() HASH256
+	GetTxID() HASH256
 }
 
 //多重签名器
@@ -39,7 +39,7 @@ type mulsigner struct {
 	idx int    //输入索引
 }
 
-//新建标准签名
+//NewSigner 新建标准签名
 func NewSigner(tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
 	return &mulsigner{
 		tx:  tx,
@@ -49,12 +49,12 @@ func NewSigner(tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
 	}
 }
 
-//
-func (sr *mulsigner) GetTxId() HASH256 {
+//GetTxId 获取交易ID
+func (sr *mulsigner) GetTxID() HASH256 {
 	return sr.tx.MustID()
 }
 
-//获取输出对应的地址
+//GetAddress 获取输出对应的地址
 func (sr *mulsigner) GetAddress() Address {
 	addr, err := sr.out.Script.GetAddress()
 	if err != nil {
@@ -63,12 +63,12 @@ func (sr *mulsigner) GetAddress() Address {
 	return addr
 }
 
-//获取签名对象
+//GetObjs 获取签名对象
 func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 	return sr.tx, sr.in, sr.out, sr.idx
 }
 
-//多重签名验证
+//Verify 多重签名验证
 func (sr *mulsigner) Verify() error {
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
@@ -127,26 +127,28 @@ func (sr *mulsigner) Verify() error {
 	return nil
 }
 
-func (sp *mulsigner) OutputsHash() HASH256 {
-	if hash, set := sp.tx.outs.IsSet(); set {
+//OutputsHash outhash
+func (sr *mulsigner) OutputsHash() HASH256 {
+	if hash, set := sr.tx.outs.IsSet(); set {
 		return hash
 	}
 	buf := NewWriter()
-	for _, v := range sp.tx.Outs {
+	for _, v := range sr.tx.Outs {
 		err := v.Encode(buf)
 		if err != nil {
 			panic(err)
 		}
 	}
-	return sp.tx.outs.Hash(buf.Bytes())
+	return sr.tx.outs.Hash(buf.Bytes())
 }
 
-func (sp *mulsigner) PrevoutHash() HASH256 {
-	if hash, set := sp.tx.pres.IsSet(); set {
+//PrevoutHash hash
+func (sr *mulsigner) PrevoutHash() HASH256 {
+	if hash, set := sr.tx.pres.IsSet(); set {
 		return hash
 	}
 	buf := NewWriter()
-	for _, v := range sp.tx.Ins {
+	for _, v := range sr.tx.Ins {
 		err := v.OutHash.Encode(buf)
 		if err != nil {
 			panic(err)
@@ -156,10 +158,10 @@ func (sp *mulsigner) PrevoutHash() HASH256 {
 			panic(err)
 		}
 	}
-	return sp.tx.pres.Hash(buf.Bytes())
+	return sr.tx.pres.Hash(buf.Bytes())
 }
 
-//获取输入签名数据
+//GetSigHash 获取输入签名数据
 //out 当前输入对应的上一个输出,idx 当前输入的索引位置
 func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	buf := NewWriter()
@@ -196,6 +198,7 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	return Hash256(buf.Bytes()), nil
 }
 
-func (sr *mulsigner) Sign(lis ISignerListener,pass...string) error {
-	return lis.SignTx(sr,pass...)
+//Sign 开始签名
+func (sr *mulsigner) Sign(lis ISignerListener, pass ...string) error {
+	return lis.SignTx(sr, pass...)
 }

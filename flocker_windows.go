@@ -42,6 +42,7 @@ func (fl *windowsFileLock) Lock() error {
 	return err
 }
 
+//NewFLocker 创建文件锁
 func NewFLocker(path string, readOnly bool) FLocker {
 	return &windowsFileLock{
 		path:     path,

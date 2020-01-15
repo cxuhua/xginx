@@ -10,14 +10,16 @@ import (
 )
 
 var (
-	ctx context.Context
+	ctx    context.Context
 	cancel context.CancelFunc
 )
 
-func GetContext() (context.Context,context.CancelFunc) {
-	return ctx,cancel
+//GetContext 获取区块链服务context
+func GetContext() (context.Context, context.CancelFunc) {
+	return ctx, cancel
 }
 
+//Run 启动区块链服务
 func Run(lis IListener) {
 	if !flag.Parsed() {
 		flag.Parse()

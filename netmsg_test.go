@@ -13,7 +13,7 @@ func TestLookUp(t *testing.T) {
 
 func TestMsgAddrs(t *testing.T) {
 	gm := &MsgGetAddrs{}
-	if gm.Type() != NT_GET_ADDRS {
+	if gm.Type() != NtGetAddrs {
 		t.Errorf("get typ error")
 	}
 
@@ -42,13 +42,13 @@ func TestMsgAddrs(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if m.Type() != NT_ADDRS {
+	if m.Type() != NtAddrs {
 		t.Errorf("type 1 error")
 	}
 	if len(m.Addrs) != len(m2.Addrs) {
 		t.Errorf("num error")
 	}
-	if m2.Type() != NT_ADDRS {
+	if m2.Type() != NtAddrs {
 		t.Errorf("type 2 error")
 	}
 	for i := 0; i < len(m2.Addrs); i++ {

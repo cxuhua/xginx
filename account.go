@@ -6,13 +6,13 @@ import (
 	"fmt"
 )
 
+// 账号最大的私钥数量
 const (
-	// 账号最大的私钥数量
-	ACCOUNT_KEY_MAX_SIZE = 16
+	AccountKeyMaxSize = 16
 )
 
-//导出json结构
-type AccountJson struct {
+//AccountJSON 账户导出结构
+type AccountJSON struct {
 	Num  uint8    `json:"num"`
 	Less uint8    `json:"less"`
 	Arb  uint8    `json:"arb"`
@@ -20,10 +20,10 @@ type AccountJson struct {
 	Pris []string `json:"pris"`
 }
 
-//
+//PrivatesMap 私钥存储结构
 type PrivatesMap map[HASH160]*PrivateKey
 
-//账号地址
+//Account 账号地址
 type Account struct {
 	Num  uint8        //总的密钥数量
 	Less uint8        //至少需要签名的数量
@@ -32,18 +32,19 @@ type Account struct {
 	Pris PrivatesMap  //公钥对应的私钥
 }
 
+//LoadAccount 从导出的数据加载账号
 func LoadAccount(s string) (*Account, error) {
 	a := &Account{}
 	err := a.Load(s)
 	return a, err
 }
 
-//是否包含私钥
+//HasPrivate 是否包含私钥
 func (ap Account) HasPrivate() bool {
 	return len(ap.Pris) >= int(ap.Less)
 }
 
-//根据公钥索引获取私钥
+//GetPrivateKey 根据公钥索引获取私钥
 func (ap Account) GetPrivateKey(pi int) *PrivateKey {
 	if pi < 0 || pi >= len(ap.Pubs) {
 		return nil
@@ -52,12 +53,12 @@ func (ap Account) GetPrivateKey(pi int) *PrivateKey {
 	return ap.Pris[pkh]
 }
 
-//是否启用仲裁
+//IsEnableArb 是否启用仲裁
 func (ap Account) IsEnableArb() bool {
 	return ap.Arb != InvalidArb
 }
 
-//指定的私钥签名hash
+//SignHash 指定的私钥签名hash
 //返回账户对应的索引和签名
 func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) {
 	pub := pri.PublicKey()
@@ -80,7 +81,7 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
-//验证签名
+//VerifyAll 验证签名
 func (ap Account) VerifyAll(hv []byte, sigs []string) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
@@ -119,10 +120,10 @@ func (ap Account) VerifyAll(hv []byte, sigs []string) error {
 	return nil
 }
 
-//获取账号所有签名
+//SignAll 获取账号所有签名
 func (ap Account) SignAll(hv []byte) ([]string, error) {
 	rets := []string{}
-	for idx, _ := range ap.Pubs {
+	for idx := range ap.Pubs {
 		sig, err := ap.Sign(idx, hv)
 		if err != nil {
 			continue
@@ -136,8 +137,7 @@ func (ap Account) SignAll(hv []byte) ([]string, error) {
 	return rets, nil
 }
 
-//pi public index
-//hv sign hash
+//Sign 签名指定公钥
 func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	sigb := SigBytes{}
 	pri := ap.GetPrivateKey(pi)
@@ -152,10 +152,10 @@ func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 	return sigb, nil
 }
 
-//生成未带有签名的脚本对象
+//NewWitnessScript 生成未带有签名的脚本对象
 func (ap Account) NewWitnessScript() *WitnessScript {
 	w := &WitnessScript{}
-	w.Type = SCRIPT_WITNESS_TYPE
+	w.Type = ScriptWitnessType
 	w.Num = ap.Num
 	w.Less = ap.Less
 	w.Arb = ap.Arb
@@ -167,21 +167,21 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 	return w
 }
 
-//生成锁定脚本
+//NewLockedScript 生成锁定脚本
 func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
-	if pkh, err := ap.GetPkh(); err != nil {
+	pkh, err := ap.GetPkh()
+	if err != nil {
 		return nil, err
-	} else {
-		return NewLockedScript(pkh, vbs...)
 	}
+	return NewLockedScript(pkh, vbs...)
 }
 
+//
 func (ap Account) String() string {
 	if ap.IsEnableArb() {
 		return fmt.Sprintf("%d-%d+arb", ap.Less, ap.Num)
-	} else {
-		return fmt.Sprintf("%d-%d", ap.Less, ap.Num)
 	}
+	return fmt.Sprintf("%d-%d", ap.Less, ap.Num)
 }
 
 func (ap *Account) hasPub(pub *PublicKey) bool {
@@ -193,7 +193,7 @@ func (ap *Account) hasPub(pub *PublicKey) bool {
 	return false
 }
 
-//加载账号信息
+//Load 加载账号信息
 func (ap *Account) Load(s string) error {
 	data, err := HashLoad(s)
 	if err != nil {
@@ -201,7 +201,7 @@ func (ap *Account) Load(s string) error {
 	}
 	ap.Pubs = []*PublicKey{}
 	ap.Pris = PrivatesMap{}
-	aj := &AccountJson{}
+	aj := &AccountJSON{}
 	err = json.Unmarshal(data, aj)
 	if err != nil {
 		return err
@@ -230,9 +230,9 @@ func (ap *Account) Load(s string) error {
 	return ap.Check()
 }
 
-//导出账号信息
-func (ap Account) Dump(ispri bool) (string, error) {
-	aj := AccountJson{
+//Dump 导出账号信息
+func (ap Account) Dump(ispri bool, pass ...string) (string, error) {
+	aj := AccountJSON{
 		Num:  ap.Num,
 		Less: ap.Less,
 		Arb:  ap.Arb,
@@ -240,11 +240,19 @@ func (ap Account) Dump(ispri bool) (string, error) {
 		Pris: []string{},
 	}
 	for _, pub := range ap.Pubs {
-		aj.Pubs = append(aj.Pubs, pub.Dump())
+		ds, err := pub.Dump(pass...)
+		if err != nil {
+			return "", err
+		}
+		aj.Pubs = append(aj.Pubs, ds)
 	}
 	if ispri && ap.HasPrivate() {
 		for _, pri := range ap.Pris {
-			aj.Pris = append(aj.Pris, pri.Dump())
+			ds, err := pri.Dump(pass...)
+			if err != nil {
+				return "", err
+			}
+			aj.Pris = append(aj.Pris, ds)
 		}
 	}
 	data, err := json.Marshal(aj)
@@ -254,6 +262,7 @@ func (ap Account) Dump(ispri bool) (string, error) {
 	return HashDump(data)
 }
 
+//GetPks 获取所有的公钥
 func (ap Account) GetPks() []PKBytes {
 	pks := []PKBytes{}
 	for _, pub := range ap.Pubs {
@@ -262,7 +271,7 @@ func (ap Account) GetPks() []PKBytes {
 	return pks
 }
 
-//获取公钥hash数组
+//GetPkhs 获取公钥hash数组
 func (ap Account) GetPkhs() []HASH160 {
 	pkhs := []HASH160{}
 	for _, v := range ap.GetPks() {
@@ -271,7 +280,7 @@ func (ap Account) GetPkhs() []HASH160 {
 	return pkhs
 }
 
-//获取账号地址
+//GetPkh 获取账号地址
 func (ap Account) GetPkh() (HASH160, error) {
 	if err := ap.Check(); err != nil {
 		return ZERO160, err
@@ -279,7 +288,7 @@ func (ap Account) GetPkh() (HASH160, error) {
 	return HashPks(ap.Num, ap.Less, ap.Arb, ap.GetPks())
 }
 
-//获取账号地址
+//GetAddress 获取账号地址
 func (ap Account) GetAddress() (Address, error) {
 	if pkh, err := ap.GetPkh(); err != nil {
 		return "", err
@@ -290,7 +299,7 @@ func (ap Account) GetAddress() (Address, error) {
 	}
 }
 
-//创建无私钥账号
+//NewAccountWithPks 创建无私钥账号
 //不能用来签名
 func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []PKBytes) (*Account, error) {
 	if len(pkss) != int(num) {
@@ -323,7 +332,7 @@ func NewAccountWithPks(num uint8, less uint8, arb bool, pkss []PKBytes) (*Accoun
 	return ap, nil
 }
 
-//创建num个证书的账号,至少需要less个签名
+//NewAccount 创建num个证书的账号,至少需要less个签名
 //arb是否启用仲裁
 //有pkss将不包含私钥
 func NewAccount(num uint8, less uint8, arb bool, pkss ...PKBytes) (*Account, error) {
@@ -370,12 +379,12 @@ func NewAccount(num uint8, less uint8, arb bool, pkss ...PKBytes) (*Account, err
 	return ap, nil
 }
 
-//csp=true 检查签名证书数量
+//Check 检查签名证书数量
 func (ap Account) Check() error {
 	if ap.Num == 0 ||
-		ap.Num > ACCOUNT_KEY_MAX_SIZE ||
+		ap.Num > AccountKeyMaxSize ||
 		ap.Less == 0 ||
-		ap.Less > ACCOUNT_KEY_MAX_SIZE ||
+		ap.Less > AccountKeyMaxSize ||
 		ap.Less > ap.Num {
 		return errors.New("num less error")
 	}

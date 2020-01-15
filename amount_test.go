@@ -5,7 +5,7 @@ import (
 )
 
 func TestUseMaxMoney(t *testing.T) {
-	if uint64(MAX_MONEY) > MAX_COMPRESS_UINT {
+	if uint64(MaxMoney) > MaxCompressUInt {
 		t.Errorf("can't use amount compress")
 	}
 }
@@ -22,7 +22,7 @@ func TestAmountPut(t *testing.T) {
 
 func TestAmountDecodeEncode(t *testing.T) {
 	buf := NewReadWriter()
-	a := MAX_MONEY
+	a := MaxMoney
 	err := a.Encode(buf)
 	if err != nil {
 		t.Error(err)

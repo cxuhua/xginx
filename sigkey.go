@@ -10,107 +10,127 @@ import (
 	"math/big"
 )
 
+//公钥定义
 const (
-	PUBLIC_KEY_SIZE  = 33
-	P256_PUBKEY_EVEN = byte(0x02)
-	P256_PUBKEY_ODD  = byte(0x03)
+	PublicKeySize  = 33
+	P256PubKeyEven = byte(0x02)
+	P256PubKeyOdd  = byte(0x03)
 )
 
+//算法
 var (
-	curve             = SECP256K1()
-	PREFIX_SECRET_KEY = []byte{128}
+	curve           = SECP256K1()
+	PrefixSecretKey = []byte{128}
 )
 
+//PKBytes 公钥字节存储
 type PKBytes [33]byte
 
+//Bytes 获取字节
 func (v PKBytes) Bytes() []byte {
 	return v[:]
 }
 
+//Hash 计算 hash
 func (v PKBytes) Hash() HASH160 {
 	return Hash160From(v[:])
 }
 
+//Cmp 转为大数比较
 func (v PKBytes) Cmp(b PKBytes) int {
 	vu := NewUINT256(v[:])
 	bu := NewUINT256(b[:])
 	return vu.Cmp(bu)
 }
 
+//Equal ==
 func (v PKBytes) Equal(b PKBytes) bool {
 	return bytes.Equal(v[:], b[:])
 }
 
+//Encode 编码
 func (v PKBytes) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
 
+//Decode 解码数据
 func (v *PKBytes) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
-func (p *PKBytes) SetBytes(b []byte) {
-	copy(p[:], b)
+//SetBytes  使用二进制初始化数据
+func (v *PKBytes) SetBytes(b []byte) {
+	copy(v[:], b)
 }
 
-func (p *PKBytes) Set(pk *PublicKey) PKBytes {
-	copy(p[:], pk.Encode())
-	return *p
+//Set 使用公钥初始化
+func (v *PKBytes) Set(pk *PublicKey) PKBytes {
+	copy(v[:], pk.Encode())
+	return *v
 }
 
+//SigBytes 签名数据
 type SigBytes [75]byte
 
+//Bytes 获取二进制
 func (v SigBytes) Bytes() []byte {
 	return v[:]
 }
 
+//Encode 编码数据
 func (v SigBytes) Encode(w IWriter) error {
 	_, err := w.Write(v[:])
 	return err
 }
 
+//Decode 解码签名数据
 func (v *SigBytes) Decode(r IReader) error {
 	_, err := r.Read(v[:])
 	return err
 }
 
-func (p *SigBytes) SetBytes(b []byte) {
-	copy(p[:], b)
+//SetBytes 使用二进制初始化
+func (v *SigBytes) SetBytes(b []byte) {
+	copy(v[:], b)
 }
 
-func (p *SigBytes) Set(sig *SigValue) {
-	copy(p[:], sig.Encode())
+//Set 使用签名初始化
+func (v *SigBytes) Set(sig *SigValue) {
+	copy(v[:], sig.Encode())
 }
 
+//PrivateKey 私钥
 type PrivateKey struct {
 	D *big.Int
 }
 
-//当前私钥基础上hash新的私钥
-func (p PrivateKey) New(plus []byte) *PrivateKey {
-	b := p.D.Bytes()
+//New 当前私钥基础上hash新的私钥
+func (pk PrivateKey) New(plus []byte) *PrivateKey {
+	b := pk.D.Bytes()
 	plus = append(plus, b...)
 	b = Hash256(plus)
-	pk := &PrivateKey{}
-	pk.D = new(big.Int).SetBytes(b)
-	return pk
+	pkv := &PrivateKey{}
+	pkv.D = new(big.Int).SetBytes(b)
+	return pkv
 }
 
-func (p *PrivateKey) Clone() *PrivateKey {
+//Clone 复制私钥
+func (pk *PrivateKey) Clone() *PrivateKey {
 	np := &PrivateKey{}
-	np.D = new(big.Int).SetBytes(p.D.Bytes())
+	np.D = new(big.Int).SetBytes(pk.D.Bytes())
 	return np
 }
 
-//prefix[1] key[32] checknum[HASH256-prefix-4]
+//LoadPrivateKey 加载私钥
 func LoadPrivateKey(s string) (*PrivateKey, error) {
 	key := &PrivateKey{}
 	err := key.Load(s)
 	return key, err
 }
 
+//Decode 解码私钥
 func (pk *PrivateKey) Decode(data []byte) error {
 	if len(data) < 4 {
 		return errors.New("size error")
@@ -121,21 +141,23 @@ func (pk *PrivateKey) Decode(data []byte) error {
 		data = data[:dl-4]
 	}
 	dl = len(data)
-	pl := len(PREFIX_SECRET_KEY)
-	if (dl == pl+32 || (dl == pl+33 && data[dl-1] == 1)) && bytes.Equal(PREFIX_SECRET_KEY, data[:pl]) {
+	pl := len(PrefixSecretKey)
+	if (dl == pl+32 || (dl == pl+33 && data[dl-1] == 1)) && bytes.Equal(PrefixSecretKey, data[:pl]) {
 		pk.SetBytes(data[pl : dl-1])
 	}
 	return nil
 }
 
+//Bytes 获取二进制数据
 func (pk *PrivateKey) Bytes() []byte {
 	return pk.D.Bytes()
 }
 
+//Encode 编码数据
 func (pk *PrivateKey) Encode() []byte {
 	pb := pk.D.Bytes()
 	buf := NewWriter()
-	err := buf.TWrite(PREFIX_SECRET_KEY)
+	err := buf.TWrite(PrefixSecretKey)
 	if err != nil {
 		panic(err)
 	}
@@ -155,23 +177,27 @@ func (pk *PrivateKey) Encode() []byte {
 	return buf.Bytes()
 }
 
-func (pk *PrivateKey) Dump() string {
+//Dump 导出私钥
+func (pk *PrivateKey) Dump(pass ...string) (string, error) {
 	bb := pk.Encode()
-	return B58Encode(bb, BitcoinAlphabet)
+	return HashDump(bb, pass...)
 }
 
-func (pk *PrivateKey) Load(s string) error {
-	data, err := B58Decode(s, BitcoinAlphabet)
+//Load 加载私钥
+func (pk *PrivateKey) Load(s string, pass ...string) error {
+	data, err := HashLoad(s, pass...)
 	if err != nil {
 		return err
 	}
 	return pk.Decode(data)
 }
 
+//IsValid 是否有效
 func (pk *PrivateKey) IsValid() bool {
 	return pk.PublicKey().IsValid()
 }
 
+//SetBytes 二进制初始化
 func (pk *PrivateKey) SetBytes(b []byte) *PrivateKey {
 	pk.D = new(big.Int).SetBytes(b)
 	return pk
@@ -181,6 +207,7 @@ func (pk PrivateKey) String() string {
 	return hex.EncodeToString(pk.D.Bytes())
 }
 
+//NewPrivateKeyWithBytes 使用二进制创建私钥
 func NewPrivateKeyWithBytes(b []byte) (*PrivateKey, error) {
 	params := curve.Params()
 	k := new(big.Int).SetBytes(b)
@@ -190,6 +217,7 @@ func NewPrivateKeyWithBytes(b []byte) (*PrivateKey, error) {
 	return &PrivateKey{D: k}, nil
 }
 
+//GenPrivateKey 自动生成私钥
 func GenPrivateKey() (k *big.Int, err error) {
 	params := curve.Params()
 	b := make([]byte, params.BitSize/8+8)
@@ -204,6 +232,7 @@ func GenPrivateKey() (k *big.Int, err error) {
 	return
 }
 
+//NewPrivateKey 创建私钥
 func NewPrivateKey() (*PrivateKey, error) {
 	d, err := GenPrivateKey()
 	if err != nil {
@@ -212,6 +241,7 @@ func NewPrivateKey() (*PrivateKey, error) {
 	return &PrivateKey{D: d}, nil
 }
 
+//Sign 签名hash256数据
 func (pk PrivateKey) Sign(hash []byte) (*SigValue, error) {
 	sig := &SigValue{}
 	priv := new(ecdsa.PrivateKey)
@@ -227,33 +257,39 @@ func (pk PrivateKey) Sign(hash []byte) (*SigValue, error) {
 	return sig, nil
 }
 
+//Marshal 编码数据
 func (pk PrivateKey) Marshal() []byte {
 	return pk.D.Bytes()
 }
 
+//PublicKey 获取私钥对应的公钥
 func (pk *PrivateKey) PublicKey() *PublicKey {
 	pub := &PublicKey{}
 	pub.X, pub.Y = curve.ScalarBaseMult(pk.Marshal())
 	return pub
 }
 
+//SigValue 签名
 type SigValue struct {
 	R *big.Int
 	S *big.Int
 }
 
+//GetSigs 导出签名数据
 func (sig *SigValue) GetSigs() SigBytes {
 	sb := SigBytes{}
 	sb.Set(sig)
 	return sb
 }
 
+//NewSigValue 从二进制创建签名
 func NewSigValue(b []byte) (*SigValue, error) {
 	sig := &SigValue{}
 	err := sig.Decode(b)
 	return sig, err
 }
 
+//FromHEX 从hex格式创建
 func (sig *SigValue) FromHEX(s string) error {
 	data, err := hex.DecodeString(s)
 	if err != nil {
@@ -262,6 +298,7 @@ func (sig *SigValue) FromHEX(s string) error {
 	return sig.Decode(data)
 }
 
+//Encode 编码签名
 func (sig SigValue) Encode() []byte {
 	r := sig.R.Bytes()
 	if r[0] >= 0x80 {
@@ -307,6 +344,7 @@ func (sig SigValue) Encode() []byte {
 	return res.Bytes()
 }
 
+//CheckLow 检测签名数据
 func (sig *SigValue) CheckLow(b []byte) (int, int, error) {
 	if b[0] != 0x30 || len(b) < 5 {
 		return 0, 0, errors.New("der format error")
@@ -322,33 +360,38 @@ func (sig *SigValue) CheckLow(b []byte) (int, int, error) {
 	return lenr, lens, nil
 }
 
+//Decode 解码签名
 func (sig *SigValue) Decode(b []byte) error {
-	if r, s, err := sig.CheckLow(b); err != nil {
+	r, s, err := sig.CheckLow(b)
+	if err != nil {
 		return err
-	} else {
-		sig.R = new(big.Int).SetBytes(b[4 : 4+r])
-		sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
 	}
+	sig.R = new(big.Int).SetBytes(b[4 : 4+r])
+	sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
 	return nil
 }
 
+//PublicKey 公钥
 type PublicKey struct {
 	X  *big.Int
 	Y  *big.Int
 	b0 byte
 }
 
+//NewPublicKey 从二进制创建公钥
 func NewPublicKey(data []byte) (*PublicKey, error) {
 	pk := &PublicKey{}
 	err := pk.Decode(data)
 	return pk, err
 }
 
+//Equal ==
 func (pk *PublicKey) Equal(sb []byte) bool {
 	pb := pk.Encode()
 	return bytes.Equal(pb, sb)
 }
 
+//FromHEX 从16进制格式创建私钥
 func (pk *PublicKey) FromHEX(s string) error {
 	data, err := hex.DecodeString(s)
 	if err != nil {
@@ -357,6 +400,7 @@ func (pk *PublicKey) FromHEX(s string) error {
 	return pk.Decode(data)
 }
 
+//DecompressY 为压缩公钥计算y
 // y^2 = x^3 + b
 // y   = sqrt(x^3 + b)
 func DecompressY(x *big.Int, ybit uint) *big.Int {
@@ -373,6 +417,7 @@ func DecompressY(x *big.Int, ybit uint) *big.Int {
 	return &y
 }
 
+// 标准算法计算y
 // y^2 = x^3 -3x + b
 // y = sqrt(x^3 -3x + b)
 //func DecompressY(x *big.Int, ybit uint) *big.Int {
@@ -392,30 +437,31 @@ func DecompressY(x *big.Int, ybit uint) *big.Int {
 //	return &y
 //}
 
+//Decode 解码公钥
 func (pk *PublicKey) Decode(data []byte) error {
 	byteLen := (curve.Params().BitSize + 7) >> 3
 	if len(data) == 0 {
 		return errors.New("data empty")
 	}
 	pk.b0 = data[0]
-	if len(data) != PUBLIC_KEY_SIZE {
+	if len(data) != PublicKeySize {
 		return errors.New("data size error")
 	}
-	if pk.b0 != P256_PUBKEY_EVEN && pk.b0 != P256_PUBKEY_ODD {
+	if pk.b0 != P256PubKeyEven && pk.b0 != P256PubKeyOdd {
 		return errors.New(" compressed head byte error")
 	}
 	p := curve.Params().P
 	x := new(big.Int).SetBytes(data[1 : 1+byteLen])
 	ybit := uint(0)
-	if pk.b0 == P256_PUBKEY_ODD {
+	if pk.b0 == P256PubKeyOdd {
 		ybit = 1
 	}
 	y := DecompressY(x, ybit)
 	d := byte(y.Bit(0))
-	if pk.b0 == P256_PUBKEY_ODD && d != 1 {
+	if pk.b0 == P256PubKeyOdd && d != 1 {
 		return errors.New("decompress public key odd error")
 	}
-	if pk.b0 == P256_PUBKEY_EVEN && d != 0 {
+	if pk.b0 == P256PubKeyEven && d != 0 {
 		return errors.New("decompress public key even error")
 	}
 	if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
@@ -428,15 +474,18 @@ func (pk *PublicKey) Decode(data []byte) error {
 	return nil
 }
 
-func (pb *PublicKey) Hash() HASH160 {
-	b := pb.Encode()
+//Hash hash公钥
+func (pk *PublicKey) Hash() HASH160 {
+	b := pk.Encode()
 	return Hash160From(b)
 }
 
-func (pb *PublicKey) IsValid() bool {
-	return curve.IsOnCurve(pb.X, pb.Y)
+//IsValid 检查公钥是否有效
+func (pk *PublicKey) IsValid() bool {
+	return curve.IsOnCurve(pk.X, pk.Y)
 }
 
+//Verify 验证hash签名
 func (pk *PublicKey) Verify(hash []byte, sig *SigValue) bool {
 	pub := new(ecdsa.PublicKey)
 	pub.Curve = curve
@@ -444,14 +493,15 @@ func (pk *PublicKey) Verify(hash []byte, sig *SigValue) bool {
 	return ecdsa.Verify(pub, hash, sig.R, sig.S)
 }
 
+//LoadPublicKey 加载公钥数据
 func LoadPublicKey(s string) (*PublicKey, error) {
 	return new(PublicKey).Load(s)
 }
 
-//账号地址
+//Address 账号地址
 type Address string
 
-//创建一个输出
+//NewTxOut 创建一个输出
 func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
 		return nil, errors.New("amount error")
@@ -462,24 +512,26 @@ func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	if script, err := NewLockedScript(pkh, ext...); err != nil {
+	script, err := NewLockedScript(pkh, ext...)
+	if err != nil {
 		return nil, err
-	} else {
-		out.Script = script
 	}
+	out.Script = script
 	return out, nil
 }
 
+//Check 检测地址是否正确
 func (a Address) Check() error {
 	_, err := DecodeAddress(a)
 	return err
 }
 
+//GetPkh 获取公钥hash
 func (a Address) GetPkh() (HASH160, error) {
 	return DecodeAddress(a)
 }
 
-//编码地址用指定前缀
+//EncodeAddressWithPrefix 编码地址用指定前缀
 func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 	ver := byte(0)
 	b := []byte{ver, byte(len(pkh))}
@@ -491,11 +543,13 @@ func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 	return addr, nil
 }
 
+//EncodeAddress 编码地址
 func EncodeAddress(pkh HASH160) (Address, error) {
 	a, err := EncodeAddressWithPrefix(conf.AddrPrefix, pkh)
 	return Address(a), err
 }
 
+//DecodeAddress 解码地址
 func DecodeAddress(addr Address) (HASH160, error) {
 	hv := HASH160{}
 	hrp, b, err := SegWitAddressDecode(string(addr))
@@ -515,38 +569,32 @@ func DecodeAddress(addr Address) (HASH160, error) {
 	return hv, nil
 }
 
-func (pk *PublicKey) Load(s string) (*PublicKey, error) {
-	b, err := B58Decode(s, BitcoinAlphabet)
+//Load 加载公钥
+func (pk *PublicKey) Load(s string, pass ...string) (*PublicKey, error) {
+	b, err := HashLoad(s, pass...)
 	if err != nil {
 		return nil, err
 	}
-	l := len(b)
-	if l < 16 {
-		return nil, errors.New("pub length error")
-	}
-	hv := Hash256(b[:l-4])
-	if !bytes.Equal(hv[:4], b[l-4:]) {
-		return nil, errors.New("check sum error")
-	}
-	return pk, pk.Decode(b[:l-4])
+	return pk, pk.Decode(b)
 }
 
+//GetPks 获取公钥数据
 func (pk *PublicKey) GetPks() PKBytes {
 	pks := PKBytes{}
 	return pks.Set(pk)
 }
 
-func (pk *PublicKey) Dump() string {
+//Dump 导出公钥
+func (pk *PublicKey) Dump(pass ...string) (string, error) {
 	b := pk.Encode()
-	hv := Hash256(b)
-	b = append(b, hv[:4]...)
-	return B58Encode(b, BitcoinAlphabet)
+	return HashDump(b, pass...)
 }
 
+//Encode 编码公钥
 func (pk *PublicKey) Encode() []byte {
 	ret := []byte{}
 	d := byte(pk.Y.Bit(0))
-	ret = append(ret, P256_PUBKEY_EVEN+d)
+	ret = append(ret, P256PubKeyEven+d)
 	ret = append(ret, pk.X.Bytes()...)
 	return ret
 }

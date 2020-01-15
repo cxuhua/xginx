@@ -6,53 +6,54 @@ import (
 	"fmt"
 )
 
+//ToMsgIO 转为类型
 func (v NetPackage) ToMsgIO() (MsgIO, error) {
 	var m MsgIO = nil
 	buf := NewReader(v.Bytes)
 	switch v.Type {
-	case NT_VERSION:
+	case NtVersion:
 		m = &MsgVersion{}
-	case NT_PING:
+	case NtPing:
 		m = &MsgPing{}
-	case NT_PONG:
+	case NtPong:
 		m = &MsgPong{}
-	case NT_GET_ADDRS:
+	case NtGetAddrs:
 		m = &MsgGetAddrs{}
-	case NT_ADDRS:
+	case NtAddrs:
 		m = &MsgAddrs{}
-	case NT_INV:
+	case NtInv:
 		m = &MsgInv{}
-	case NT_TX:
+	case NvTx:
 		m = &MsgTx{}
-	case NT_BLOCK:
+	case NtBlock:
 		m = &MsgBlock{}
-	case NT_GET_INV:
+	case NtGetInv:
 		m = &MsgGetInv{}
-	case NT_GET_BLOCK:
+	case NtGetBlock:
 		m = &MsgGetBlock{}
-	case NT_HEADERS:
+	case NtHeaders:
 		m = &MsgHeaders{}
-	case NT_ERROR:
+	case NtError:
 		m = &MsgError{}
-	case NT_ALERT:
+	case NtAlert:
 		m = &MsgAlert{}
-	case NT_FILTER_CLEAR:
+	case NtFilterClear:
 		m = &MsgFilterClear{}
-	case NT_FILTER_ADD:
+	case NtFilterAdd:
 		m = &MsgFilterAdd{}
-	case NT_FILTER_LOAD:
+	case NtFilterLoad:
 		m = &MsgFilterLoad{}
-	case NT_GET_MERKLE:
+	case NtGetMerkle:
 		m = &MsgGetMerkle{}
-	case NT_TX_MERKLE:
+	case NtTxMerkle:
 		m = &MsgTxMerkle{}
-	case NT_GET_TXPOOL:
+	case NtGetTxPool:
 		m = &MsgGetTxPool{}
-	case NT_TXPOOL:
+	case NtTxPool:
 		m = &MsgTxPool{}
-	case NT_BROAD_ACK:
+	case NtBroadAck:
 		m = &MsgBroadAck{}
-	case NT_BROAD_PKG:
+	case NtBroadPkg:
 		m = &MsgBroadPkg{}
 	}
 	if m == nil {
@@ -64,31 +65,37 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 	return m, nil
 }
 
+//MsgGetAddrs 获取节点记录的其他节点地址
 type MsgGetAddrs struct {
 }
 
-func (e MsgGetAddrs) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 返回消息id
+func (m MsgGetAddrs) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
-func (e MsgGetAddrs) Encode(w IWriter) error {
+//Encode 编码消息
+func (m MsgGetAddrs) Encode(w IWriter) error {
 	return nil
 }
 
-func (e *MsgGetAddrs) Decode(r IReader) error {
+//Decode 解码消息
+func (m *MsgGetAddrs) Decode(r IReader) error {
 	return nil
 }
 
+//Type 获取消息类型
 func (m MsgGetAddrs) Type() NTType {
-	return NT_GET_ADDRS
+	return NtGetAddrs
 }
 
-//消息广播
+//MsgAlert 消息广播
 type MsgAlert struct {
-	Msg VarBytes //消息内容
+	Msg VarBytes
 	Sig VarBytes //消息签名可验证消息来自哪里
 }
 
+//NewMsgAlert 创建消息
 func NewMsgAlert(msg string, sig *SigValue) *MsgAlert {
 	m := &MsgAlert{}
 	m.Msg = []byte(msg)
@@ -99,11 +106,12 @@ func NewMsgAlert(msg string, sig *SigValue) *MsgAlert {
 	return m
 }
 
-func (m MsgAlert) Id() (MsgId, error) {
+//ID 消息ID
+func (m MsgAlert) ID() (MsgID, error) {
 	return md5.Sum(m.Msg), nil
 }
 
-//验证消息来源
+//Verify 验证消息来源
 func (m MsgAlert) Verify(pub *PublicKey) error {
 	hv := Hash256(m.Msg)
 	if m.Sig.Len() == 0 {
@@ -119,10 +127,12 @@ func (m MsgAlert) Verify(pub *PublicKey) error {
 	return nil
 }
 
+//Type 消息类型
 func (m MsgAlert) Type() NTType {
-	return NT_ALERT
+	return NtAlert
 }
 
+//Encode 编码消息
 func (m MsgAlert) Encode(w IWriter) error {
 	if err := m.Msg.Encode(w); err != nil {
 		return err
@@ -133,6 +143,7 @@ func (m MsgAlert) Encode(w IWriter) error {
 	return nil
 }
 
+//Decode 解码消息
 func (m *MsgAlert) Decode(r IReader) error {
 	if err := m.Msg.Decode(r); err != nil {
 		return err
@@ -143,19 +154,22 @@ func (m *MsgAlert) Decode(r IReader) error {
 	return nil
 }
 
-//
+//MsgAddrs 返回地址
 type MsgAddrs struct {
 	Addrs []NetAddr
 }
 
+//Type 消息类型
 func (m MsgAddrs) Type() NTType {
-	return NT_ADDRS
+	return NtAddrs
 }
 
-func (m MsgAddrs) Id() (MsgId, error) {
-	return ErrMsgId, NotIdErr
+//ID 消息ID
+func (m MsgAddrs) ID() (MsgID, error) {
+	return ErrMsgID, ErrNotID
 }
 
+//Encode 编码消息
 func (m MsgAddrs) Encode(w IWriter) error {
 	if err := VarInt(len(m.Addrs)).Encode(w); err != nil {
 		return err
@@ -169,7 +183,7 @@ func (m MsgAddrs) Encode(w IWriter) error {
 	return nil
 }
 
-//最多放2000个
+//Add 最多放2000个
 func (m *MsgAddrs) Add(a NetAddr) bool {
 	if !a.IsGlobalUnicast() {
 		return false
@@ -181,6 +195,7 @@ func (m *MsgAddrs) Add(a NetAddr) bool {
 	return false
 }
 
+//Decode 解码消息
 func (m *MsgAddrs) Decode(r IReader) error {
 	num := VarInt(0)
 	if err := num.Decode(r); err != nil {

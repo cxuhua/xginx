@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+//订阅消息类型
 const (
 	//矿工操作 MinerAct
 	NewMinerActTopic = "NewMinerAct"
@@ -18,13 +19,11 @@ const (
 	NewRecvBlockTopic = "NewRecvBlock"
 	//当交易池中的交易被移除时 txid
 	TxPoolDelTxTopic = "TxPoolDelTx"
-)
-
-const (
 	//每隔多少秒打印挖掘状态
-	MINER_LOG_SECONDS = 5
+	MinerLogSeconds = 5
 )
 
+//操作定义
 const (
 	//开始挖矿操作 args(uint32) = block ver
 	OptGenBlock = iota
@@ -34,7 +33,7 @@ const (
 	OptSendHeadBytes
 )
 
-//计算群组
+//MinerGroup 计算群组
 type MinerGroup struct {
 	hb    HeaderBytes
 	stop  bool
@@ -47,6 +46,7 @@ type MinerGroup struct {
 	exit  chan bool
 }
 
+//Times 返回hash次数
 func (g *MinerGroup) Times() uint64 {
 	return atomic.LoadUint64(&g.times)
 }
@@ -73,15 +73,18 @@ func (g *MinerGroup) docalc(cb HeaderBytes) {
 	g.Stop()
 }
 
+//Stop 停止工作量计算
 func (g *MinerGroup) Stop() {
 	g.stop = true
 }
 
+//StopAndWait 停止并等待结束
 func (g *MinerGroup) StopAndWait() {
 	g.stop = true
 	<-g.exit
 }
 
+//Run 启动工作量计算
 func (g *MinerGroup) Run() {
 	for i := 0; i < g.num; i++ {
 		g.wg.Add(1)
@@ -94,6 +97,7 @@ func (g *MinerGroup) Run() {
 	}()
 }
 
+//NewMinerGroup 新建一个计算任务
 func NewMinerGroup(hb HeaderBytes, bits uint32, num int) *MinerGroup {
 	m := &MinerGroup{
 		hb:   hb,
@@ -105,13 +109,13 @@ func NewMinerGroup(hb HeaderBytes, bits uint32, num int) *MinerGroup {
 	return m
 }
 
-//矿产操作
+//MinerAct 矿产操作
 type MinerAct struct {
 	Opt int
 	Arg interface{}
 }
 
-//矿工接口
+//IMiner 矿工接口
 type IMiner interface {
 	//开始工作
 	Start(ctx context.Context, lis IListener)
@@ -129,6 +133,7 @@ type IMiner interface {
 	TimeNow() uint32
 }
 
+//默认矿工处理
 var (
 	Miner = newMinerEngine()
 )
@@ -227,7 +232,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	defer mg.Stop()
 	mg.Run()
 	//打印定时器
-	dt := time.NewTimer(time.Second * MINER_LOG_SECONDS)
+	dt := time.NewTimer(time.Second * MinerLogSeconds)
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
@@ -240,9 +245,9 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			smt := mg.Times()
 			if ptime == 0 {
 				ptime = smt
-				ppv = ptime / MINER_LOG_SECONDS
+				ppv = ptime / MinerLogSeconds
 			} else {
-				ppv = (smt - ptime) / MINER_LOG_SECONDS
+				ppv = (smt - ptime) / MinerLogSeconds
 				ptime = smt
 			}
 			ts := time.Unix(int64(blk.Header.Time), 0).Format("2006-01-02 15:04:05")
@@ -256,7 +261,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 				conf.MinerNum,
 				bi.CacheSize(),
 			)
-			dt.Reset(time.Second * MINER_LOG_SECONDS)
+			dt.Reset(time.Second * MinerLogSeconds)
 		case <-mg.exit:
 			if mg.ok {
 				blk.Header = mg.bh

@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-// AES加密
+//AesEncrypt AES加密
 func AesEncrypt(block cipher.Block, data []byte) ([]byte, error) {
 	if block == nil {
 		return nil, errors.New("block nil")
@@ -53,7 +53,7 @@ func bytesEquInt(data []byte, n byte) bool {
 	return true
 }
 
-// AES解密
+//AesDecrypt AES解密
 func AesDecrypt(block cipher.Block, data []byte) ([]byte, error) {
 	if block == nil {
 		return nil, errors.New("block nil")
@@ -77,7 +77,7 @@ func AesDecrypt(block cipher.Block, data []byte) ([]byte, error) {
 	return dd, nil
 }
 
-//整理key为 16 24 or 32
+//TrimAESKey 整理key为 16 24 or 32
 func TrimAESKey(key []byte) ([]byte, error) {
 	size := len(key) / 8
 	if size <= 2 {
@@ -96,13 +96,13 @@ func TrimAESKey(key []byte) ([]byte, error) {
 	return ikey, nil
 }
 
-//创建加密算法
+//NewAESCipher 创建加密算法
 func NewAESCipher(key []byte) cipher.Block {
 	ikey, err := TrimAESKey(key)
 	if err != nil {
 		panic(err)
 	}
-	c,err := aes.NewCipher(ikey)
+	c, err := aes.NewCipher(ikey)
 	if err != nil {
 		panic(err)
 	}

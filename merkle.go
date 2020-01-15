@@ -4,6 +4,7 @@ import (
 	"errors"
 )
 
+//MerkleTree 默克尔树
 type MerkleTree struct {
 	trans int
 	vhash []HASH256
@@ -11,6 +12,7 @@ type MerkleTree struct {
 	bad   bool
 }
 
+//NewMerkleTree 创建数量为num的默克尔树
 func NewMerkleTree(num int) *MerkleTree {
 	v := &MerkleTree{}
 	v.trans = num
@@ -20,6 +22,7 @@ func NewMerkleTree(num int) *MerkleTree {
 	return v
 }
 
+//GetMerkleTree 从数据返回默克尔树
 func GetMerkleTree(num int, hashs []HASH256, vb *BitSet) *MerkleTree {
 	v := &MerkleTree{}
 	v.trans = num
@@ -32,14 +35,17 @@ func GetMerkleTree(num int, hashs []HASH256, vb *BitSet) *MerkleTree {
 	return v
 }
 
+//Trans 返回数量
 func (tree *MerkleTree) Trans() int {
 	return tree.trans
 }
 
+//Hashs 返回hash
 func (tree *MerkleTree) Hashs() []HASH256 {
 	return tree.vhash
 }
 
+//Bits 返回位标记
 func (tree *MerkleTree) Bits() *BitSet {
 	ret := NewBitSet(len(tree.bits))
 	for i, v := range tree.bits {
@@ -48,12 +54,14 @@ func (tree *MerkleTree) Bits() *BitSet {
 	return ret
 }
 
+//Hash 结算两个hash
 func (tree *MerkleTree) Hash(n1 HASH256, n2 HASH256) HASH256 {
 	v := append([]byte{}, n1[:]...)
 	v = append(v, n2[:]...)
 	return Hash256From(v)
 }
 
+//Height 返回树高度
 func (tree *MerkleTree) Height() int {
 	h := 0
 	for tree.TreeWidth(h) > 1 {
@@ -62,6 +70,7 @@ func (tree *MerkleTree) Height() int {
 	return h
 }
 
+//BuildMerkleTree 使用多个id创建默克尔树
 func BuildMerkleTree(ids []HASH256) *MerkleTree {
 	num := len(ids)
 	tree := NewMerkleTree(num)
@@ -71,10 +80,12 @@ func BuildMerkleTree(ids []HASH256) *MerkleTree {
 	return tree
 }
 
+//IsBad 是否是坏的
 func (tree MerkleTree) IsBad() bool {
 	return tree.bad
 }
 
+//Build 构建
 func (tree *MerkleTree) Build(ids []HASH256, vb *BitSet) *MerkleTree {
 	tree.bad = false
 	tree.vhash = []HASH256{}
@@ -102,6 +113,7 @@ func (tree *MerkleTree) build(h int, pos int, ids []HASH256, vb *BitSet) {
 	}
 }
 
+//ExtractRoot 导出默克尔根
 func (tree *MerkleTree) ExtractRoot() (HASH256, error) {
 	root := ZERO256
 	ids := make([]HASH256, 0)
@@ -131,6 +143,7 @@ func (tree *MerkleTree) ExtractRoot() (HASH256, error) {
 	return root, nil
 }
 
+//Extract 导出根和节点
 func (tree *MerkleTree) Extract() (HASH256, []HASH256, []int) {
 	hash := ZERO256
 	ids := make([]HASH256, 0)
@@ -179,24 +192,25 @@ func (tree *MerkleTree) extract(height int, pos int, nbits *int, nhash *int, ids
 			*idx = append(*idx, pos)
 		}
 		return hash
-	} else {
-		left, right := tree.extract(height-1, pos*2, nbits, nhash, ids, idx), HASH256{}
-		if pos*2+1 < tree.TreeWidth(height-1) {
-			right = tree.extract(height-1, pos*2+1, nbits, nhash, ids, idx)
-			if left.Equal(right) {
-				tree.bad = true
-			}
-		} else {
-			right = left
-		}
-		return tree.Hash(left, right)
 	}
+	left, right := tree.extract(height-1, pos*2, nbits, nhash, ids, idx), HASH256{}
+	if pos*2+1 < tree.TreeWidth(height-1) {
+		right = tree.extract(height-1, pos*2+1, nbits, nhash, ids, idx)
+		if left.Equal(right) {
+			tree.bad = true
+		}
+	} else {
+		right = left
+	}
+	return tree.Hash(left, right)
 }
 
+//TreeWidth 获取树宽度
 func (tree *MerkleTree) TreeWidth(height int) int {
 	return (tree.trans + (1 << height) - 1) >> height
 }
 
+//CalcHash 结算hash
 func (tree *MerkleTree) CalcHash(height int, pos int, ids []HASH256) HASH256 {
 	if len(ids) == 0 {
 		panic(errors.New("empty merkle array"))

@@ -10,6 +10,7 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
+// 消息订阅
 const (
 	//收到所有消息
 	NetMsgTopic = "NetMsg"
@@ -17,6 +18,7 @@ const (
 	NewTxTopic = "NewTx"
 )
 
+//AddrNode 地址节点
 type AddrNode struct {
 	addr      NetAddr
 	addTime   time.Time //加入时间
@@ -26,7 +28,7 @@ type AddrNode struct {
 	connErr   int       //连接错误次数
 }
 
-//是否需要连接
+//IsNeedConn 是否需要连接
 func (node AddrNode) IsNeedConn() bool {
 	if !node.addr.IsGlobalUnicast() {
 		return false
@@ -38,12 +40,13 @@ func (node AddrNode) IsNeedConn() bool {
 	return false
 }
 
-//地址表
+//AddrMap 地址表
 type AddrMap struct {
 	mu    sync.RWMutex
 	addrs map[string]*AddrNode
 }
 
+//IncErr 添加错误次数
 func (m *AddrMap) IncErr(a NetAddr) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -53,6 +56,7 @@ func (m *AddrMap) IncErr(a NetAddr) {
 	}
 }
 
+//Has 是否存在
 func (m *AddrMap) Has(a NetAddr) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -60,12 +64,14 @@ func (m *AddrMap) Has(a NetAddr) bool {
 	return has
 }
 
+//Get 获取地址
 func (m *AddrMap) Get(a NetAddr) *AddrNode {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.addrs[a.String()]
 }
 
+//Set 设置地址
 func (m *AddrMap) Set(a NetAddr) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -76,12 +82,14 @@ func (m *AddrMap) Set(a NetAddr) {
 	m.addrs[a.String()] = node
 }
 
+//NewAddrMap 创建地址集合
 func NewAddrMap() *AddrMap {
 	return &AddrMap{
 		addrs: map[string]*AddrNode{},
 	}
 }
 
+//IServer 服务器接口
 type IServer interface {
 	Start(ctx context.Context, lis IListener)
 	Stop()
@@ -93,11 +101,13 @@ type IServer interface {
 	Addrs() []*AddrNode
 }
 
+//默认服务
 var (
-	Server = NewTcpServer()
+	Server = NewTCPServer()
 )
 
-type TcpServer struct {
+//TCPServer 基于tcp的服务
+type TCPServer struct {
 	lptr   IListener
 	tcplis net.Listener
 	addr   *net.TCPAddr
@@ -115,13 +125,13 @@ type TcpServer struct {
 	pkgs   *cache.Cache //包数据缓存
 }
 
-//操作通道
-func (s *TcpServer) DoOpt(opt int) {
+//DoOpt 操作通道
+func (s *TCPServer) DoOpt(opt int) {
 	s.dopt <- opt
 }
 
-//获取节点保留的地址
-func (s *TcpServer) Addrs() []*AddrNode {
+//Addrs 获取节点保留的地址
+func (s *TCPServer) Addrs() []*AddrNode {
 	s.addrs.mu.RLock()
 	defer s.addrs.mu.RUnlock()
 	ds := []*AddrNode{}
@@ -131,8 +141,8 @@ func (s *TcpServer) Addrs() []*AddrNode {
 	return ds
 }
 
-//获取连接的客户端
-func (s *TcpServer) Clients() []*Client {
+//Clients 获取连接的客户端
+func (s *TCPServer) Clients() []*Client {
 	cs := []*Client{}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -142,15 +152,16 @@ func (s *TcpServer) Clients() []*Client {
 	return cs
 }
 
-//地址是否打开
-func (s *TcpServer) IsOpen(id uint64) bool {
+//IsOpen 地址是否打开
+func (s *TCPServer) IsOpen(id uint64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	_, has := s.cls[id]
 	return has
 }
 
-func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
+//NewMsgAddrs 创建地址列表消息
+func (s *TCPServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	s.addrs.mu.RLock()
 	defer s.addrs.mu.RUnlock()
 	msg := &MsgAddrs{}
@@ -166,8 +177,8 @@ func (s *TcpServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	return msg
 }
 
-//如果c不空不会广播给c
-func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
+//BroadMsg 如果c不空不会广播给c
+func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	//检测是否在忽略列表中
@@ -188,8 +199,8 @@ func (s *TcpServer) BroadMsg(m MsgIO, skips ...*Client) {
 	}
 }
 
-//地址是否已经链接
-func (s *TcpServer) IsAddrOpen(addr NetAddr) bool {
+//IsAddrOpen 地址是否已经链接
+func (s *TCPServer) IsAddrOpen(addr NetAddr) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, v := range s.cls {
@@ -200,7 +211,8 @@ func (s *TcpServer) IsAddrOpen(addr NetAddr) bool {
 	return false
 }
 
-func (s *TcpServer) HasClient(id uint64, c *Client) bool {
+//HasClient 是否存在客户端
+func (s *TCPServer) HasClient(id uint64, c *Client) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, ok := s.cls[id]
@@ -211,37 +223,44 @@ func (s *TcpServer) HasClient(id uint64, c *Client) bool {
 	return ok
 }
 
-func (s *TcpServer) DelClient(id uint64, c *Client) {
+//DelClient 删除客户端
+func (s *TCPServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.cls, id)
 }
 
-func (s *TcpServer) AddClient(id uint64, c *Client) {
+//AddClient 添加客户端
+func (s *TCPServer) AddClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.cls[id] = c
 }
 
-func (s *TcpServer) Stop() {
+//Stop 地址服务
+func (s *TCPServer) Stop() {
 	s.cfun()
 }
 
-func (s *TcpServer) Run() {
+//Run 启动服务
+func (s *TCPServer) Run() {
 	go s.run()
 }
 
-func (s *TcpServer) Wait() {
+//Wait 等待服务停止
+func (s *TCPServer) Wait() {
 	s.wg.Wait()
 }
 
-func (s *TcpServer) NewClientWithConn(conn net.Conn) *Client {
+//NewClientWithConn 从网络连接创建客户端
+func (s *TCPServer) NewClientWithConn(conn net.Conn) *Client {
 	c := s.NewClient()
 	c.NetStream = NewNetStream(conn)
 	return c
 }
 
-func (s *TcpServer) NewClient() *Client {
+//NewClient 创建客户端用来连接其他服务器
+func (s *TCPServer) NewClient() *Client {
 	c := &Client{ss: s}
 	c.cctx, c.cfun = context.WithCancel(s.cctx)
 	c.wc = make(chan MsgIO, 4)
@@ -252,14 +271,15 @@ func (s *TcpServer) NewClient() *Client {
 	return c
 }
 
-func (s *TcpServer) ConnNum() int {
+//ConnNum 活跃连接地址数量
+func (s *TCPServer) ConnNum() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.cls)
 }
 
 //开始连接一个地址
-func (s *TcpServer) openAddr(addr NetAddr) error {
+func (s *TCPServer) openAddr(addr NetAddr) error {
 	c := s.NewClient()
 	err := c.Open(addr)
 	if err == nil {
@@ -269,7 +289,7 @@ func (s *TcpServer) openAddr(addr NetAddr) error {
 }
 
 //收到地址列表，如果没有达到最大链接开始链接
-func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
+func (s *TCPServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 	if cl := s.ConnNum(); cl >= conf.MaxConn {
 		return fmt.Errorf("max conn=%d ,pause connect client", cl)
 	}
@@ -291,7 +311,7 @@ func (s *TcpServer) recvMsgAddrs(c *Client, msg *MsgAddrs) error {
 	return nil
 }
 
-func (s *TcpServer) recoverError() {
+func (s *TCPServer) recoverError() {
 	if *IsDebug {
 		s.cfun()
 	} else if err := recover(); err != nil {
@@ -302,7 +322,7 @@ func (s *TcpServer) recoverError() {
 	}
 }
 
-func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
+func (s *TCPServer) recvMsgTx(c *Client, msg *MsgTx) error {
 	bi := GetBlockIndex()
 	txp := bi.GetTxPool()
 	rsg := &MsgTx{}
@@ -323,11 +343,11 @@ func (s *TcpServer) recvMsgTx(c *Client, msg *MsgTx) error {
 }
 
 //获取一个可以获取此区块数据的连接
-func (s *TcpServer) findBlockClient(h uint32) *Client {
+func (s *TCPServer) findBlockClient(h uint32) *Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, c := range s.cls {
-		if c.Service&FULL_NODE == 0 {
+		if c.Service&FullNodeFlag == 0 {
 			continue
 		}
 		if c.Height == InvalidHeight {
@@ -342,7 +362,7 @@ func (s *TcpServer) findBlockClient(h uint32) *Client {
 }
 
 //收到区块头列表
-func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
+func (s *TCPServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
@@ -350,7 +370,7 @@ func (s *TcpServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 }
 
 //收到块数据
-func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
+func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	ps := GetPubSub()
@@ -370,7 +390,7 @@ func (s *TcpServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 }
 
 //下载块数据
-func (s *TcpServer) reqMsgGetBlock() {
+func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
@@ -386,7 +406,7 @@ func (s *TcpServer) reqMsgGetBlock() {
 }
 
 //尝试重新连接其他地址
-func (s *TcpServer) tryConnect() {
+func (s *TCPServer) tryConnect() {
 	//获取需要连接的地址
 	cs := []NetAddr{}
 	s.addrs.mu.RLock()
@@ -418,7 +438,7 @@ func (s *TcpServer) tryConnect() {
 	}
 }
 
-func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
+func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 	LogInfo("server dispatch startup", idx)
 	defer s.recoverError()
 	s.wg.Add(1)
@@ -428,7 +448,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 		case opt := <-s.dopt:
 			switch opt {
 			case 1:
-				s.loadSeedIp()
+				s.loadSeedIP()
 			case 2:
 				LogInfo(opt)
 			}
@@ -481,7 +501,7 @@ func (s *TcpServer) dispatch(idx int, ch chan interface{}) {
 }
 
 //加载seed域名ip地址
-func (s *TcpServer) loadSeedIp() {
+func (s *TCPServer) loadSeedIP() {
 	lipc := 0
 	sipc := 0
 	for _, v := range conf.Seeds {
@@ -508,7 +528,7 @@ func (s *TcpServer) loadSeedIp() {
 	LogInfof("load seed ip %d/%d", lipc, sipc)
 }
 
-func (s *TcpServer) run() {
+func (s *TCPServer) run() {
 	LogInfo(s.addr.Network(), "server startup", s.addr)
 	defer s.recoverError()
 	s.wg.Add(1)
@@ -555,8 +575,8 @@ func (s *TcpServer) run() {
 	}
 }
 
-//获取广播数据包
-func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
+//GetPkg 获取广播数据包
+func (s *TCPServer) GetPkg(id string) (MsgIO, bool) {
 	msg, has := s.pkgs.Get(id)
 	if !has {
 		return nil, false
@@ -564,13 +584,13 @@ func (s *TcpServer) GetPkg(id string) (MsgIO, bool) {
 	return msg.(MsgIO), true
 }
 
-//保存广播数据包
-func (s *TcpServer) SetPkg(id string, m MsgIO) {
+//SetPkg 保存广播数据包
+func (s *TCPServer) SetPkg(id string, m MsgIO) {
 	s.pkgs.Set(id, m, time.Minute*5)
 }
 
-//是否有广播数据包
-func (s *TcpServer) HasPkg(id string) bool {
+//HasPkg 是否有广播数据包
+func (s *TCPServer) HasPkg(id string) bool {
 	_, has := s.pkgs.Get(id)
 	if !has {
 		s.pkgs.Set(id, time.Now(), time.Minute*5)
@@ -578,10 +598,11 @@ func (s *TcpServer) HasPkg(id string) bool {
 	return has
 }
 
-func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
+//Start 启动服务
+func (s *TCPServer) Start(ctx context.Context, lptr IListener) {
 	s.lptr = lptr
 	s.cctx, s.cfun = context.WithCancel(ctx)
-	s.addr = conf.GetTcpListenAddr().ToTcpAddr()
+	s.addr = conf.GetTCPListenAddr().ToTCPAddr()
 	tcplis, err := net.ListenTCP(s.addr.Network(), s.addr)
 	if err != nil {
 		panic(err)
@@ -590,8 +611,9 @@ func (s *TcpServer) Start(ctx context.Context, lptr IListener) {
 	s.Run()
 }
 
-func NewTcpServer() IServer {
-	s := &TcpServer{}
+//NewTCPServer 创建TCp服务
+func NewTCPServer() IServer {
+	s := &TCPServer{}
 	s.cls = map[uint64]*Client{}
 	s.addrs = NewAddrMap()
 	s.dopt = make(chan int, 5)

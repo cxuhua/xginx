@@ -15,34 +15,40 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+//Batch 批量写入
 type Batch struct {
 	db DBImp
 	bt *leveldb.Batch
 	rb *Batch //事务回退日志
 }
 
+//GetRev 获取写入时的回退日志
 func (b *Batch) GetRev() *Batch {
 	return b.rb
 }
 
+//NewRev 设置回退并返回
 func (b *Batch) NewRev() *Batch {
 	b.rb = b.db.NewBatch()
 	return b.rb
 }
 
+//Load 加载日志
 func (b *Batch) Load(d []byte) error {
 	return b.bt.Load(d)
 }
 
+//Dump 导出日志
 func (b *Batch) Dump() []byte {
 	return b.bt.Dump()
 }
 
+//Len 日志长度
 func (b *Batch) Len() int {
 	return b.bt.Len()
 }
 
-//最后一个是数据，前面都是key
+//Put 最后一个是数据，前面都是key
 func (b *Batch) Put(ks ...[]byte) {
 	k, v := getDBKeyValue(ks...)
 	if b.rb != nil {
@@ -51,15 +57,18 @@ func (b *Batch) Put(ks ...[]byte) {
 	b.bt.Put(k, v)
 }
 
+//Del 删除
 func (b *Batch) Del(ks ...[]byte) {
 	k := getDBKey(ks...)
 	b.bt.Delete(k)
 }
 
+//GetBatch 获取leveldb日志
 func (b *Batch) GetBatch() *leveldb.Batch {
 	return b.bt
 }
 
+//Reset 重置
 func (b *Batch) Reset() {
 	b.bt.Reset()
 }
@@ -76,57 +85,71 @@ func newBatch() *Batch {
 	}
 }
 
+//Range 查询范围
 type Range struct {
 	r *util.Range
 }
 
+//NewRange 创建一个范围
 func NewRange(s []byte, l []byte) *Range {
 	return &Range{
 		r: &util.Range{Start: s, Limit: l},
 	}
 }
 
+//NewPrefix 创建按前缀的范围
 func NewPrefix(p []byte) *Range {
 	return &Range{
 		r: util.BytesPrefix(p),
 	}
 }
 
+//Iterator 查询迭代器
 type Iterator struct {
 	iter iterator.Iterator
 }
 
+//Close 关闭
 func (it *Iterator) Close() {
 	it.iter.Release()
 }
 
+//Next 下一个
 func (it *Iterator) Next() bool {
 	return it.iter.Next()
 }
 
+//First 第一个
 func (it *Iterator) First() bool {
 	return it.iter.First()
 }
+
+//Prev 上一个
 func (it *Iterator) Prev() bool {
 	return it.iter.Prev()
 }
 
+//Last 最后一个
 func (it *Iterator) Last() bool {
 	return it.iter.Last()
 }
 
+//Key 当前Key
 func (it *Iterator) Key() []byte {
 	return it.iter.Key()
 }
 
+//Value 当前值
 func (it *Iterator) Value() []byte {
 	return it.iter.Value()
 }
 
+//Valid 是否有效
 func (it *Iterator) Valid() bool {
 	return it.iter.Valid()
 }
 
+//Seek 定位到key
 func (it *Iterator) Seek(k []byte) bool {
 	return it.iter.Seek(k)
 }
@@ -135,10 +158,12 @@ type leveldbimp struct {
 	l *leveldb.DB
 }
 
+//NewDB 创建基于leveldb的数据库接口
 func NewDB(dbp *leveldb.DB) DBImp {
 	return &leveldbimp{l: dbp}
 }
 
+//LoadBatch 加载日志
 func (db *leveldbimp) LoadBatch(d []byte) (*Batch, error) {
 	bt, err := loadBatch(d)
 	if err != nil {
@@ -148,12 +173,14 @@ func (db *leveldbimp) LoadBatch(d []byte) (*Batch, error) {
 	return bt, nil
 }
 
+//NewBatch 创建日志
 func (db *leveldbimp) NewBatch() *Batch {
 	bt := newBatch()
 	bt.db = db
 	return bt
 }
 
+//Iterator 创建迭代器
 func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
@@ -321,6 +348,7 @@ type leveldbstore struct {
 	dir   string
 }
 
+//NewLevelDBStore 创建leveldb存储器
 func NewLevelDBStore(dir string) IBlkStore {
 	l := &leveldbstore{}
 	l.Init(dir)

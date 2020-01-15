@@ -4,8 +4,7 @@ import (
 	"errors"
 )
 
-// 00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-// Check whether a block hash satisfies the proof-of-work requirement specified by nBits
+// CheckProofOfWork whether a block hash satisfies the proof-of-work requirement specified by nBits
 func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	h := UINT256{}
 	n, o := h.SetCompact(bits)
@@ -25,13 +24,13 @@ func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	return ch.Cmp(h) <= 0
 }
 
-//Minimum difficulty
+//GetMinPowBits Minimum difficulty
 func GetMinPowBits() uint32 {
 	min := NewUINT256(conf.PowLimit)
 	return min.Compact(false)
 }
 
-//检测难度值是否正确
+//CheckProofOfWorkBits 检测难度值是否正确
 func CheckProofOfWorkBits(bits uint32) bool {
 	h := UINT256{}
 	n, o := h.SetCompact(bits)
@@ -47,6 +46,7 @@ func CheckProofOfWorkBits(bits uint32) bool {
 	return h.Cmp(conf.LimitHash) <= 0
 }
 
+//CalculateWorkRequired 计算工作难度
 //ct = lastBlock blockTime
 //pt = lastBlock - 2016 + 1 blockTime
 //pw = lastBlock's bits

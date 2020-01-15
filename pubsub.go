@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package pubsub implements a simple multi-topic pub-sub
+// Package xginx implements a simple multi-topic pub-sub
 // library.
 //
 // Topics must be strings and messages of any type can be
@@ -37,7 +37,7 @@ type cmd struct {
 	msg    interface{}
 }
 
-// New creates a new PubSub and starts a goroutine for handling operations.
+// NewPubSub creates a new PubSub and starts a goroutine for handling operations.
 // The capacity of the channels created by Sub and SubOnce will be as specified.
 func NewPubSub(capacity int) *PubSub {
 	ps := &PubSub{make(chan cmd), capacity}

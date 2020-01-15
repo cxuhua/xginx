@@ -10,7 +10,7 @@ import (
 
 //测试用接口
 
-//测试用监听器
+//TestLis 测试用监听器
 type TestLis struct {
 	Listener
 	addrs []Address
@@ -49,17 +49,19 @@ func newTestLis() *TestLis {
 	return lis
 }
 
+//TimeNow 测试用时间返回
 func (lis *TestLis) TimeNow() uint32 {
 	atomic.AddUint32(&lis.t, 1)
 	return atomic.LoadUint32(&lis.t)
 }
 
+//OnInit 测试用
 func (lis *TestLis) OnInit(bi *BlockIndex) error {
 	//测试每次清楚数据
 	return bi.RemoveBestValue()
 }
 
-//当账户没有私钥时调用此方法签名
+//OnSignTx 当账户没有私钥时调用此方法签名
 //singer 签名器
 func (lis *TestLis) OnSignTx(signer ISigner) error {
 	_, in, out, _ := signer.GetObjs()
@@ -107,14 +109,15 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 	}
 }
 
+//NewTestConfig 创建一个测试用的配置
 func NewTestConfig() {
 	conf = &Config{}
 	conf.nodeid = conf.GenUInt64()
 	conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
 	conf.MinerNum = 1
 	conf.Ver = 10000
-	conf.TcpPort = 9333
-	conf.TcpIp = "127.0.0.1"
+	conf.TCPPort = 9333
+	conf.TCPIp = "127.0.0.1"
 	conf.MaxConn = 50
 	conf.Halving = 210000
 	conf.PowLimit = "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
@@ -122,21 +125,23 @@ func NewTestConfig() {
 	conf.PowTime = 2016 * 60 * 10
 	conf.AddrPrefix = "st"
 	conf.Seeds = []string{"seed.xginx.com"}
-	conf.Flags = [4]byte{'T', 'E', 'S', 'T'}
+	conf.flags = [4]byte{'T', 'E', 'S', 'T'}
 	conf.LimitHash = NewUINT256(conf.PowLimit)
 }
 
+//CloseTestBlock 关闭测试用区块链
 func CloseTestBlock(bi *BlockIndex) {
 	bi.Close()
 	os.RemoveAll(conf.DataDir)
 }
 
+//GetTestAccount 获取测试用账号
 func GetTestAccount(bi *BlockIndex) []*Account {
 	lis := bi.lptr.(*TestLis)
 	return lis.ams
 }
 
-//从交易池获取交易打包区块
+//NewTestOneBlock 从交易池获取交易打包区块测试
 func NewTestOneBlock() error {
 	bi := GetBlockIndex()
 	blk, err := bi.NewBlock(1)
@@ -159,7 +164,7 @@ func NewTestOneBlock() error {
 	return nil
 }
 
-//创建一个测试用区块索引
+//NewTestBlockIndex 创建一个测试用区块索引
 //num创建num个区块
 func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
 	//测试配置文件

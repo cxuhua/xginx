@@ -11,18 +11,21 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
+//定义高度
 const (
-	InvalidHeight = ^uint32(0) //无效的块高度
+	// 无效的块高度
+	InvalidHeight = ^uint32(0)
 )
 
+//错误定义
 var (
-	//到达第一个
-	ArriveFirstBlock = errors.New("arrive first block")
-	//空链
-	EmptyBlockChain = errors.New("this is empty chain")
+	// 到达第一个
+	ErrArriveFirstBlock = errors.New("arrive first block")
+	// 空链
+	ErrEmptyBlockChain = errors.New("this is empty chain")
 )
 
-//索引头
+//TBEle 索引头
 type TBEle struct {
 	TBMeta
 	Height uint32
@@ -37,9 +40,9 @@ func (ele TBEle) String() string {
 	return id.String()
 }
 
-//从磁盘加载块头
+//LoadMeta 从磁盘加载块头
 func (ele *TBEle) LoadMeta(id HASH256) error {
-	hb, err := ele.bi.blkdb.Index().Get(BLOCK_PREFIX, id[:])
+	hb, err := ele.bi.blkdb.Index().Get(BlockPrefix, id[:])
 	if err != nil {
 		return err
 	}
@@ -55,6 +58,7 @@ func (ele *TBEle) LoadMeta(id HASH256) error {
 	return nil
 }
 
+//EmptyTBEle 创建一个空的链表结构
 func EmptyTBEle(h uint32, bh BlockHeader, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		Height: h,
@@ -65,6 +69,7 @@ func EmptyTBEle(h uint32, bh BlockHeader, bi *BlockIndex) *TBEle {
 	}
 }
 
+//NewTBEle 创建一个链表结构
 func NewTBEle(meta *TBMeta, height uint32, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		TBMeta: *meta,
@@ -73,13 +78,14 @@ func NewTBEle(meta *TBMeta, height uint32, bi *BlockIndex) *TBEle {
 	}
 }
 
-//区块链迭代器
+//BIndexIter 区块链迭代器
 type BIndexIter struct {
 	bi  *BlockIndex
 	cur *list.Element
 	ele *list.Element
 }
 
+//SeekHeight 定位到某个高度
 func (it *BIndexIter) SeekHeight(h uint32, skip ...int) bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -88,13 +94,13 @@ func (it *BIndexIter) SeekHeight(h uint32, skip ...int) bool {
 	return it.skipEle(skip...)
 }
 
-//当前区块高度
+//Height 当前区块高度
 func (it *BIndexIter) Height() uint32 {
 	ele := it.Curr()
 	return ele.Height
 }
 
-//当前区块id
+//ID 当前区块id
 func (it *BIndexIter) ID() HASH256 {
 	ele := it.Curr()
 	id, err := ele.ID()
@@ -105,7 +111,7 @@ func (it *BIndexIter) ID() HASH256 {
 	return id
 }
 
-// 获取当前
+//Curr 获取当前区块头
 func (it *BIndexIter) Curr() *TBEle {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -140,6 +146,7 @@ func (it *BIndexIter) skipEle(skip ...int) bool {
 	return it.ele != nil
 }
 
+//SeekID 定位到某个区块Id
 func (it *BIndexIter) SeekID(id HASH256, skip ...int) bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -148,6 +155,7 @@ func (it *BIndexIter) SeekID(id HASH256, skip ...int) bool {
 	return it.skipEle(skip...)
 }
 
+//Prev 上一个区块
 func (it *BIndexIter) Prev() bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -162,6 +170,7 @@ func (it *BIndexIter) Prev() bool {
 	return it.cur != nil
 }
 
+//Next 下一个区块
 func (it *BIndexIter) Next() bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -176,6 +185,7 @@ func (it *BIndexIter) Next() bool {
 	return it.cur != nil
 }
 
+//First 第一个区块
 func (it *BIndexIter) First(skip ...int) bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -184,6 +194,7 @@ func (it *BIndexIter) First(skip ...int) bool {
 	return it.skipEle(skip...)
 }
 
+//Last 最后一个区块
 func (it *BIndexIter) Last(skip ...int) bool {
 	it.bi.rwm.RLock()
 	defer it.bi.rwm.RUnlock()
@@ -192,13 +203,13 @@ func (it *BIndexIter) Last(skip ...int) bool {
 	return it.skipEle(skip...)
 }
 
-//区块发布交易参数
+//BlockEvent 区块发布交易参数
 type BlockEvent struct {
 	Idx *BlockIndex
 	Blk *BlockInfo
 }
 
-//交易发布订阅参数
+//TxEvent 交易发布订阅参数
 type TxEvent struct {
 	Idx *BlockIndex
 	Blk *BlockInfo //如果交易在块中blk != nil
@@ -212,7 +223,7 @@ var (
 	ponce sync.Once
 )
 
-//获取全局发布订阅
+//GetPubSub 获取全局发布订阅
 func GetPubSub() *PubSub {
 	ponce.Do(func() {
 		LogInfo("global pusbsub init cap=10")
@@ -221,7 +232,7 @@ func GetPubSub() *PubSub {
 	return pubv
 }
 
-//获取全局主链
+//GetBlockIndex 获取全局主链
 func GetBlockIndex() *BlockIndex {
 	if midx == nil {
 		panic(errors.New("block index not init"))
@@ -229,7 +240,7 @@ func GetBlockIndex() *BlockIndex {
 	return midx
 }
 
-//初始化主链
+//InitBlockIndex 初始化主链
 func InitBlockIndex(lis IListener) *BlockIndex {
 	if conf == nil {
 		panic(errors.New("config not init"))
@@ -244,9 +255,9 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 		err = bi.LoadAll(-1, func(pv uint) {
 			LogInfof("load block main chian progress = %d%%", pv)
 		})
-		if err == EmptyBlockChain {
+		if err == ErrEmptyBlockChain {
 			LogError(err)
-		} else if err == ArriveFirstBlock {
+		} else if err == ErrArriveFirstBlock {
 			LogError(err)
 		} else if err != nil {
 			panic(err)
@@ -256,7 +267,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 	return midx
 }
 
-//区块链索引
+//BlockIndex 区块链结构
 type BlockIndex struct {
 	txp   *TxPool                   //交易池
 	lptr  IListener                 //链监听器
@@ -268,7 +279,7 @@ type BlockIndex struct {
 	blkdb IBlkStore                 //区块存储和索引
 }
 
-//获取中间时间
+//GetMedianTime 获取中间时间
 //计算h之前的11个区块的中间时间
 func (bi *BlockIndex) GetMedianTime(h uint32) uint32 {
 	iter := bi.NewIter()
@@ -285,13 +296,13 @@ func (bi *BlockIndex) GetMedianTime(h uint32) uint32 {
 	return ts[len(ts)/2]
 }
 
-//返回某个交易的merkle验证树
+//NewMsgTxMerkle 返回某个交易的merkle验证树
 func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
 	txv, err := bi.LoadTxValue(id)
 	if err != nil {
 		return nil, err
 	}
-	blk, err := bi.LoadBlock(txv.BlkId)
+	blk, err := bi.LoadBlock(txv.BlkID)
 	if err != nil {
 		return nil, err
 	}
@@ -313,17 +324,19 @@ func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
 		return nil, errors.New("merkle tree bad")
 	}
 	msg := &MsgTxMerkle{}
-	msg.TxId = id
+	msg.TxID = id
 	msg.Hashs = tree.Hashs()
 	msg.Trans = VarInt(tree.Trans())
 	msg.Bits = tree.Bits().Bytes()
 	return msg, nil
 }
 
+//CacheSize 获取缓存大小
 func (bi *BlockIndex) CacheSize() int {
 	return bi.lru.Size()
 }
 
+//NewIter 创建一个区块链迭代器
 func (bi *BlockIndex) NewIter() *BIndexIter {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -359,14 +372,14 @@ func (bi *BlockIndex) calcBits(height uint32) uint32 {
 	return CalculateWorkRequired(ct, pt, last.Bits)
 }
 
-//计算当前区块高度对应的难度
+//CalcBits 计算当前区块高度对应的难度
 func (bi *BlockIndex) CalcBits(height uint32) uint32 {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
 	return bi.calcBits(height)
 }
 
-//创建下一个高度基本数据
+//NewBlock 创建下一个高度基本数据
 func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	blk := &BlockInfo{}
 	blk.Header.Ver = ver
@@ -378,7 +391,7 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 		blk.Header.Prev = ZERO256
 		blk.Header.Bits = GetMinPowBits()
 	} else {
-		blk.Header.Prev = bv.Id
+		blk.Header.Prev = bv.ID
 		blk.Header.Bits = bi.CalcBits(bv.Next())
 	}
 	if !CheckProofOfWorkBits(blk.Header.Bits) {
@@ -400,18 +413,19 @@ func (bi *BlockIndex) first() *TBEle {
 	return le.Value.(*TBEle)
 }
 
-// 最低块
+//First 最低块
 func (bi *BlockIndex) First() *TBEle {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
 	return bi.first()
 }
 
+//NextHeight 下一个块高度
 func (bi *BlockIndex) NextHeight() uint32 {
 	return bi.GetBestValue().Next()
 }
 
-//获取当前链高度
+//Height 获取当前链高度
 func (bi *BlockIndex) Height() uint32 {
 	last := bi.Last()
 	if last == nil {
@@ -420,6 +434,7 @@ func (bi *BlockIndex) Height() uint32 {
 	return last.Height
 }
 
+//BestHeight 保存的最新区块高度
 func (bi *BlockIndex) BestHeight() uint32 {
 	return bi.GetBestValue().Height
 }
@@ -432,7 +447,7 @@ func (bi *BlockIndex) lastHeight() uint32 {
 	return last.Height
 }
 
-//最高块
+//Last 最高块
 func (bi *BlockIndex) Last() *TBEle {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -448,14 +463,14 @@ func (bi *BlockIndex) last() *TBEle {
 	return le.Value.(*TBEle)
 }
 
-//链长度
+//Len 链长度
 func (bi *BlockIndex) Len() int {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
 	return bi.lis.Len()
 }
 
-//获取块头
+//GetBlockHeader 获取块头
 func (bi *BlockIndex) GetBlockHeader(id HASH256) (*TBEle, error) {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -466,7 +481,7 @@ func (bi *BlockIndex) GetBlockHeader(id HASH256) (*TBEle, error) {
 	return ele.Value.(*TBEle), nil
 }
 
-//获取区块的确认数
+//GetBlockConfirm 获取区块的确认数
 func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -483,16 +498,16 @@ func (bi *BlockIndex) GetBlockConfirm(id HASH256) int {
 	return int(lmeta.Height-cmeta.Height) + 1
 }
 
-//获取交易确认数(所属区块的确认数)
+//GetTxConfirm 获取交易确认数(所属区块的确认数)
 func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
 	txv, err := bi.LoadTxValue(id)
 	if err != nil {
 		return 0
 	}
-	return bi.GetBlockConfirm(txv.BlkId)
+	return bi.GetBlockConfirm(txv.BlkID)
 }
 
-//加载区块
+//LoadBlock 加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	var rerr error = nil
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
@@ -538,6 +553,7 @@ func (bi *BlockIndex) unlinkback() {
 	bi.lis.Remove(le)
 }
 
+//LinkBack 连接区块头
 func (bi *BlockIndex) LinkBack(e *TBEle) {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
@@ -565,7 +581,7 @@ func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
 	return e, nil
 }
 
-//加载所有链meta
+//LoadAll 加载所有链meta
 //f进度回调 0-100
 func (bi *BlockIndex) LoadAll(limit int, fn func(pv uint)) error {
 	LogInfo("start load main chain block header")
@@ -574,10 +590,10 @@ func (bi *BlockIndex) LoadAll(limit int, fn func(pv uint)) error {
 	//加载所有区块头
 	for i := 0; limit < 0 || i < limit; i++ {
 		ele, err := bi.LoadPrev()
-		if err == ArriveFirstBlock {
+		if err == ErrArriveFirstBlock {
 			break
 		}
-		if err == EmptyBlockChain {
+		if err == ErrEmptyBlockChain {
 			LogInfo("load finished, empty block chain")
 			break
 		}
@@ -627,11 +643,11 @@ func (bi *BlockIndex) LoadAll(limit int, fn func(pv uint)) error {
 		LogInfof("verify block success id = %v height = %d #%d", iter.ID(), iter.Height(), lnum-i)
 	}
 	bv := bi.GetBestValue()
-	LogInfof("load finished block , best height=%d,best id=%v", bv.Height, bv.Id)
+	LogInfof("load finished block , best height=%d,best id=%v", bv.Height, bv.ID)
 	return nil
 }
 
-//是否有需要下载的区块
+//HasSync 是否有需要下载的区块
 func (bi *BlockIndex) HasSync() bool {
 	last := bi.Last()
 	return last != nil && !last.HasBlk()
@@ -646,6 +662,7 @@ func (bi *BlockIndex) unlinkCount(id HASH256) (uint32, error) {
 	return bi.lastHeight() - ele.Height, nil
 }
 
+//UnlinkCount 返回需要断开的区块数量
 func (bi *BlockIndex) UnlinkCount(id HASH256) (uint32, error) {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -679,7 +696,7 @@ func (bi *BlockIndex) checkHeaders(hs []BlockHeader) error {
 	return nil
 }
 
-//根据证据区块链修正本地链,回退到一个指定id重新链接
+//Unlink 根据证据区块链修正本地链,回退到一个指定id重新链接
 func (bi *BlockIndex) Unlink(hds Headers) error {
 	if len(hds) == 0 {
 		return errors.New("empty headers")
@@ -729,7 +746,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	return bi.UnlinkTo(li)
 }
 
-//必须从最后开始断开，回退到指定id,不包括id
+//UnlinkTo 必须从最后开始断开，回退到指定id,不包括id
 func (bi *BlockIndex) UnlinkTo(id HASH256) error {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
@@ -753,7 +770,7 @@ func (bi *BlockIndex) loadtbele(id HASH256) (*TBEle, error) {
 	return ele, err
 }
 
-//向前加载一个区块数据头
+//LoadPrev 向前加载一个区块数据头
 func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 	first := bi.lis.Front()
 	var fele *TBEle = nil
@@ -763,9 +780,9 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		fele = first.Value.(*TBEle)
 		id = fele.Prev
 	} else if bv := bi.GetBestValue(); !bv.IsValid() {
-		return nil, EmptyBlockChain
+		return nil, ErrEmptyBlockChain
 	} else {
-		id = bv.Id
+		id = bv.ID
 		ih = bv.Height
 	}
 	cele, err := bi.loadtbele(id)
@@ -773,10 +790,10 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		return nil, err
 	}
 	//第一个必须是配置的
-	if cele.Prev.IsZero() && !conf.IsGenesisId(id) {
+	if cele.Prev.IsZero() && !conf.IsGenesisID(id) {
 		return nil, errors.New("genesis block miss")
 	}
-	if conf.IsGenesisId(id) {
+	if conf.IsGenesisID(id) {
 		//到达第一个
 		cele.Height = 0
 	} else if fele != nil {
@@ -789,10 +806,9 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 		return nil, err
 	}
 	if cele.Height == 0 {
-		return cele, ArriveFirstBlock
-	} else {
-		return cele, nil
+		return cele, ErrArriveFirstBlock
 	}
+	return cele, nil
 }
 
 //检测是否可以链入尾部,并返回当前高度和当前id
@@ -820,6 +836,7 @@ func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 	return ele.Height, id, true
 }
 
+//LoadTX 从链中获取一个交易
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	//从缓存和区块获取
 	hptr := bi.lru.Get(id, func() (size int, value Value) {
@@ -843,13 +860,15 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	return hptr.Value().(*TX), nil
 }
 
+//HasTxValue 是否存在交易
 func (bi *BlockIndex) HasTxValue(id HASH256) bool {
-	return bi.blkdb.Index().Has(TXS_PREFIX, id[:])
+	return bi.blkdb.Index().Has(TxsPrefix, id[:])
 }
 
+//LoadTxValue 获取交易入口
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vv := &TxValue{}
-	vb, err := bi.blkdb.Index().Get(TXS_PREFIX, id[:])
+	vb, err := bi.blkdb.Index().Get(TxsPrefix, id[:])
 	if err != nil {
 		return nil, err
 	}
@@ -860,6 +879,7 @@ func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	return vv, err
 }
 
+//NewMsgGetBlock 创建区块网络消息
 func (bi *BlockIndex) NewMsgGetBlock(id HASH256) MsgIO {
 	//从磁盘读取区块数据
 	bb, err := bi.ReadBlock(id)
@@ -870,9 +890,9 @@ func (bi *BlockIndex) NewMsgGetBlock(id HASH256) MsgIO {
 	return NewMsgBlockBytes(bb)
 }
 
-//读取区块数据
+//ReadBlock 读取区块数据
 func (bi *BlockIndex) ReadBlock(id HASH256) ([]byte, error) {
-	bk := GetDBKey(BLOCK_PREFIX, id[:])
+	bk := GetDBKey(BlockPrefix, id[:])
 	meta := &TBMeta{}
 	hb, err := bi.blkdb.Index().Get(bk)
 	if err != nil {
@@ -890,7 +910,7 @@ func (bi *BlockIndex) ReadBlock(id HASH256) ([]byte, error) {
 
 //加载块数据
 func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
-	bk := GetDBKey(BLOCK_PREFIX, id[:])
+	bk := GetDBKey(BlockPrefix, id[:])
 	meta := &TBMeta{}
 	hb, err := bi.blkdb.Index().Get(bk)
 	if err != nil {
@@ -925,6 +945,7 @@ func (bi *BlockIndex) cleancache(blk *BlockInfo) {
 	}
 }
 
+//UnlinkLast 断开最后一个区块
 func (bi *BlockIndex) UnlinkLast() error {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
@@ -985,7 +1006,7 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	}
 	//回退后会由回退数据设置bestvalue
 	//删除区块头
-	bt.Del(BLOCK_PREFIX, id[:])
+	bt.Del(BlockPrefix, id[:])
 	//恢复数据
 	err = bi.blkdb.Index().Write(bt)
 	if err != nil {
@@ -996,7 +1017,7 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	return nil
 }
 
-//返回证据区块头信息
+//NewMsgHeaders 创建证据区块头信息
 func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
 	iter := bi.NewIter()
 	rsg := &MsgHeaders{}
@@ -1012,7 +1033,7 @@ func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
 	return rsg
 }
 
-//获取最后的多少个区块头
+//LastHeaders 获取最后的多少个区块头
 func (bi *BlockIndex) LastHeaders(limit int) Headers {
 	iter := bi.NewIter()
 	hs := Headers{}
@@ -1026,11 +1047,12 @@ func (bi *BlockIndex) LastHeaders(limit int) Headers {
 	return hs
 }
 
+//RemoveBestValue 移除数据库中的最新区块信息
 func (bi *BlockIndex) RemoveBestValue() error {
 	return bi.blkdb.Index().Del(BestBlockKey)
 }
 
-//获取最高块信息
+//GetBestValue 获取最高块信息
 func (bi *BlockIndex) GetBestValue() BestValue {
 	bv := BestValue{}
 	b, err := bi.blkdb.Index().Get(BestBlockKey)
@@ -1043,9 +1065,9 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 	return bv
 }
 
-//获取一笔金额
+//GetCoin 获取一笔金额
 func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
-	key := GetDBKey(COINS_PREFIX, pkh[:], txid[:], idx.Bytes())
+	key := GetDBKey(CoinsPrefix, pkh[:], txid[:], idx.Bytes())
 	coin := &CoinKeyValue{}
 	val, err := bi.blkdb.Index().Get(key)
 	if err != nil {
@@ -1056,7 +1078,7 @@ func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyV
 	return coin, err
 }
 
-//加载第一个区块
+//WriteGenesis 加载写入第一个区块
 func (bi *BlockIndex) WriteGenesis() {
 	dat, err := ioutil.ReadFile("genesis.blk")
 	if err != nil {
@@ -1076,6 +1098,7 @@ func (bi *BlockIndex) WriteGenesis() {
 	LogInfof("write genesis block %v success", blk)
 }
 
+//ListCoins 获取某个地址账号的金额
 func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
@@ -1088,6 +1111,7 @@ func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, err
 	return ds.State(bi.NextHeight()), nil
 }
 
+//ListTxs 获取某个地址相关的交易
 func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
@@ -1096,9 +1120,9 @@ func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
 	return bi.ListTxsWithID(pkh)
 }
 
-//获取用户交易
+//ListTxsWithID 获取交易
 func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
-	prefix := GetDBKey(TXP_PREFIX, id[:])
+	prefix := GetDBKey(TxpPrefix, id[:])
 	idxs := TxIndexs{}
 	//从交易池获取
 	cvs, err := bi.txp.ListTxsWithID(bi, id)
@@ -1129,11 +1153,11 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 	return idxs, nil
 }
 
-//获取某个id的所有余额
+//ListCoinsWithID 获取某个id的所有余额
 //已经消费在内存中的不列出
 func (bi *BlockIndex) ListCoinsWithID(pkh HASH160, limit ...Amount) (Coins, error) {
 	tp := bi.GetTxPool()
-	prefix := getDBKey(COINS_PREFIX, pkh[:])
+	prefix := getDBKey(CoinsPrefix, pkh[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
@@ -1172,7 +1196,7 @@ func (bi *BlockIndex) ListCoinsWithID(pkh HASH160, limit ...Amount) (Coins, erro
 	return kvs, nil
 }
 
-//是否存在存在返回高度
+//HasBlock 是否存在存在返回高度
 func (bi *BlockIndex) HasBlock(id HASH256) (uint32, bool) {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -1184,6 +1208,7 @@ func (bi *BlockIndex) HasBlock(id HASH256) (uint32, bool) {
 	return bh, has
 }
 
+//GetEle 获取区块头元素
 func (bi *BlockIndex) GetEle(id HASH256) (*TBEle, error) {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
@@ -1214,7 +1239,7 @@ func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 	if !isok {
 		return fmt.Errorf("can't link to chain last, hash=%v", bid)
 	}
-	if pid.IsZero() && !conf.IsGenesisId(bid) {
+	if pid.IsZero() && !conf.IsGenesisID(bid) {
 		return errors.New("first blk must is genesis blk")
 	}
 	if pid.IsZero() {
@@ -1238,7 +1263,7 @@ func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 	return nil
 }
 
-//更新区块数据(需要区块头先链接好
+//LinkBlk 更新区块数据(需要区块头先链接好
 func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	err := bi.linkblk(blk)
 	if err != nil {
@@ -1268,12 +1293,12 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	return nil
 }
 
-//获取内存交易池
+//GetTxPool 获取内存交易池
 func (bi *BlockIndex) GetTxPool() *TxPool {
 	return bi.txp
 }
 
-//关闭链数据
+//Close 关闭链数据
 func (bi *BlockIndex) Close() {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
@@ -1286,7 +1311,7 @@ func (bi *BlockIndex) Close() {
 	bi.imap = nil
 }
 
-//有些交易可能会引用当前区块的中的交易
+//SetTx 有些交易可能会引用当前区块的中的交易
 //校验成功后会存储到这里给后面的引用到此交易的交易使用
 //这样在调用LoadTx的时候可以查询到
 func (bi *BlockIndex) SetTx(tx *TX) error {
@@ -1306,6 +1331,7 @@ func (bi *BlockIndex) SetTx(tx *TX) error {
 	return serr
 }
 
+//NewBlockIndex 创建区块链
 func NewBlockIndex(lis IListener) *BlockIndex {
 	return &BlockIndex{
 		txp:   NewTxPool(),

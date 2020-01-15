@@ -1,5 +1,6 @@
 package xginx
 
+//SipHash sip hash 算法
 func SipHash(k0, k1 uint64, p []byte) uint64 {
 	// Initialization.
 	v0 := k0 ^ 0x736f6d6570736575

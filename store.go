@@ -5,12 +5,12 @@ import (
 	"os"
 )
 
+//系统路径分隔符
 var (
-	//系统路径分隔符
 	Separator = string(os.PathSeparator)
 )
 
-//数据块存储
+//IChunkStore 数据块存储
 type IChunkStore interface {
 	Read(st BlkChunk) ([]byte, error)
 	Write(b []byte) (BlkChunk, error)
@@ -19,7 +19,7 @@ type IChunkStore interface {
 	Sync(id ...uint32)
 }
 
-//区块存储
+//IBlkStore 区块存储
 type IBlkStore interface {
 	//同步数据
 	Sync()
@@ -64,7 +64,7 @@ func getDBKey(ks ...[]byte) []byte {
 	return k
 }
 
-//事务接口
+//TRImp 事务接口
 type TRImp interface {
 	Has(ks ...[]byte) (bool, error)
 	Put(ks ...[]byte) error
@@ -76,7 +76,7 @@ type TRImp interface {
 	Discard()
 }
 
-//数据基本操作接口
+//DBImp 数据基本操作接口
 type DBImp interface {
 	Has(ks ...[]byte) bool
 	Put(ks ...[]byte) error
@@ -92,14 +92,16 @@ type DBImp interface {
 	LoadBatch(d []byte) (*Batch, error)
 }
 
+//数据前缀定义
 var (
-	BLOCK_PREFIX = []byte{1} //块头信息前缀 ->blkmeta
-	TXS_PREFIX   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
-	COINS_PREFIX = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
-	TXP_PREFIX   = []byte{4} //账户相关交易索引  pkh_height(big endian)_txid -> blkid+txidx
-	REFTX_PREFIX = []byte{5} //存放交易池中的交易引用的其他交易，只在交易池使用
+	BlockPrefix = []byte{1} //块头信息前缀 ->blkmeta
+	TxsPrefix   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
+	CoinsPrefix = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
+	TxpPrefix   = []byte{4} //账户相关交易索引  pkh_height(big endian)_txid -> blkid+txidx
+	RefTxPrefix = []byte{5} //存放交易池中的交易引用的其他交易，只在交易池使用
 )
 
+//GetDBKey 获取存储key
 func GetDBKey(p []byte, ids ...[]byte) []byte {
 	tk := append([]byte{}, p...)
 	for _, id := range ids {

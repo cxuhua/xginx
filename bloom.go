@@ -6,12 +6,14 @@ import (
 	"sync"
 )
 
+//布隆过滤器定义
 const (
-	MAX_BLOOM_FILTER_SIZE = 36000
-	MAX_HASH_FUNCS        = 50
-	LN2SQUARED            = 0.4804530139182014246671025263266649717305529515945455
+	MaxBloomFilterSize = 36000
+	MaxHashFuncs       = 50
+	Ln2Squared         = 0.4804530139182014246671025263266649717305529515945455
 )
 
+//BloomFilter 布隆过滤器
 type BloomFilter struct {
 	mu     sync.RWMutex
 	filter []byte
@@ -22,12 +24,11 @@ type BloomFilter struct {
 func uint32min(v1 uint32, v2 uint32) uint32 {
 	if v1 < v2 {
 		return v1
-	} else {
-		return v2
 	}
+	return v2
 }
 
-//结算需要的存储量和hash次数
+//CalcBloomFilterSize 结算需要的存储量和hash次数
 func CalcBloomFilterSize(elements int, fprate float64) (uint32, uint32) {
 	if fprate > 1.0 {
 		fprate = 1.0
@@ -36,20 +37,21 @@ func CalcBloomFilterSize(elements int, fprate float64) (uint32, uint32) {
 		fprate = 1e-9
 	}
 
-	dlen := uint32(-1 * float64(elements) * math.Log(fprate) / LN2SQUARED)
-	dlen = uint32min(dlen, MAX_BLOOM_FILTER_SIZE*8) / 8
+	dlen := uint32(-1 * float64(elements) * math.Log(fprate) / Ln2Squared)
+	dlen = uint32min(dlen, MaxBloomFilterSize*8) / 8
 
 	funcs := uint32(float64(dlen*8) / float64(elements) * math.Ln2)
-	funcs = uint32min(funcs, MAX_HASH_FUNCS)
+	funcs = uint32min(funcs, MaxHashFuncs)
 
 	return dlen, funcs
 }
 
+//NewBloomFilter 创建指定参数的布隆过滤器
 func NewBloomFilter(funcs uint32, tweak uint32, filter []byte) (*BloomFilter, error) {
-	if len(filter) > MAX_BLOOM_FILTER_SIZE {
+	if len(filter) > MaxBloomFilterSize {
 		return nil, errors.New("filter size too big")
 	}
-	if funcs > MAX_HASH_FUNCS {
+	if funcs > MaxHashFuncs {
 		return nil, errors.New("funcs too big")
 	}
 	if funcs == 0 {
@@ -63,7 +65,7 @@ func NewBloomFilter(funcs uint32, tweak uint32, filter []byte) (*BloomFilter, er
 	return b, nil
 }
 
-//获取一个过滤器加载消息
+//NewMsgFilterLoad 获取一个过滤器加载消息
 func (b *BloomFilter) NewMsgFilterLoad() *MsgFilterLoad {
 	m := &MsgFilterLoad{}
 	m.Filter = b.filter
@@ -72,11 +74,13 @@ func (b *BloomFilter) NewMsgFilterLoad() *MsgFilterLoad {
 	return m
 }
 
+//Hash 计算hash
 func (b *BloomFilter) Hash(n int, key []byte) uint32 {
 	mm := MurmurHash(uint32(n)*0xFBA4C795+b.tweak, key)
 	return mm % (uint32(len(b.filter)) << 3)
 }
 
+//Add  添加一个数据到过滤器
 func (b *BloomFilter) Add(key []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -86,18 +90,21 @@ func (b *BloomFilter) Add(key []byte) {
 	}
 }
 
+//SetFilter 设置过滤数据
 func (b *BloomFilter) SetFilter(filter []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.filter = filter
 }
 
+//GetFilter 获取过滤器数据
 func (b *BloomFilter) GetFilter() []byte {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.filter
 }
 
+//Has 检测是否存在指定的key数据
 func (b *BloomFilter) Has(key []byte) bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()

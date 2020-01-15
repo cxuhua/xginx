@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-//所有回调可能来自不同的协程
+//IListener 所有回调可能来自不同的协程
 type IListener interface {
 	//首次初始化时
 	OnInit(bi *BlockIndex) error
@@ -34,18 +34,21 @@ type IListener interface {
 	OnTxPoolRep(old *TX, new *TX)
 }
 
-//默认监听器
+//Listener 默认监听器
 type Listener struct {
 }
 
+//OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
 func (lis *Listener) OnTxPool(tx *TX) error {
 	return nil
 }
 
+//OnTxPoolRep 当交易被替换
 func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
 
 }
 
+//OnInit 首次启动初始化
 func (lis *Listener) OnInit(bi *BlockIndex) error {
 	LogInfo("MinerAddr =", conf.MinerAddr)
 	if bv := bi.GetBestValue(); !bv.IsValid() {
@@ -54,41 +57,49 @@ func (lis *Listener) OnInit(bi *BlockIndex) error {
 	return nil
 }
 
+//OnLinkBlock 区块链入时
 func (lis *Listener) OnLinkBlock(blk *BlockInfo) {
 
 }
 
+//OnClientMsg 收到网络信息
 func (lis *Listener) OnClientMsg(c *Client, msg MsgIO) {
 	//LogInfo(msg.Type())
 }
 
+//TimeNow 当前时间戳获取
 func (lis *Listener) TimeNow() uint32 {
 	return uint32(time.Now().Unix())
 }
 
+//OnUnlinkBlock 区块断开
 func (lis *Listener) OnUnlinkBlock(blk *BlockInfo) {
 
 }
 
+//OnStart 启动时
 func (lis *Listener) OnStart() {
 	LogInfo("xginx start")
 }
 
+//OnStop 停止
 func (lis *Listener) OnStop(sig os.Signal) {
 	LogInfo("xginx stop sig=", sig)
 }
 
-//当账户没有私钥时调用此方法签名
+//OnSignTx 当账户没有私钥时调用此方法签名
 //singer 签名器
 func (lis *Listener) OnSignTx(signer ISigner) error {
 	return errors.New("not imp OnSignTx")
 }
 
+//OnClose 区块链关闭
 func (lis *Listener) OnClose() {
 	LogInfo("xginx block index close")
 }
 
-//当块创建完毕
+//OnNewBlock 当块创建完毕
+//默认创建coinbase交易加入区块为区块第一个交易
 func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	conf := GetConfig()
 	//设置base out script
@@ -118,7 +129,8 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	return nil
 }
 
-//完成区块
+//OnFinished 完成区块
+//交易加入完成，在计算难度前
 func (lis *Listener) OnFinished(blk *BlockInfo) error {
 	//处理交易费用
 	if len(blk.Txs) == 0 {

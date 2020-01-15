@@ -9,16 +9,19 @@ import (
 	"time"
 )
 
+//连接类型
 const (
 	ClientIn  = 1
 	ClientOut = 2
 )
 
+//ClientMsg 是网络消息通道数据类型
 type ClientMsg struct {
 	c *Client
 	m MsgIO
 }
 
+//NewClientMsg 会创建一个新的网络通道数据
 func NewClientMsg(c *Client, m MsgIO) *ClientMsg {
 	return &ClientMsg{
 		c: c,
@@ -26,10 +29,12 @@ func NewClientMsg(c *Client, m MsgIO) *ClientMsg {
 	}
 }
 
+//属性名称
 const (
-	VMAP_KEY_FILTER = "BloomFilter"
+	MapKeyFilter = "BloomFilter"
 )
 
+//Client 连接客户端类型定义
 type Client struct {
 	*NetStream
 	typ     int
@@ -40,7 +45,7 @@ type Client struct {
 	Addr    NetAddr
 	id      uint64
 	err     interface{}
-	ss      *TcpServer
+	ss      *TCPServer
 	ping    int
 	pt      *time.Timer
 	vt      *time.Timer
@@ -51,7 +56,7 @@ type Client struct {
 	vmap    *sync.Map //属性存储器
 }
 
-//添加过滤数据
+//FilterAdd 添加过滤数据
 func (c *Client) FilterAdd(key []byte) error {
 	blm, has := c.GetFilter()
 	if !has {
@@ -61,13 +66,13 @@ func (c *Client) FilterAdd(key []byte) error {
 	return nil
 }
 
-//设置过滤器
+//LoadFilter 设置过滤器
 func (c *Client) LoadFilter(funcs uint32, tweak uint32, filter []byte) error {
 	blm, err := NewBloomFilter(funcs, tweak, filter)
 	if err != nil {
 		return err
 	}
-	ptr, _ := c.vmap.LoadOrStore(VMAP_KEY_FILTER, blm)
+	ptr, _ := c.vmap.LoadOrStore(MapKeyFilter, blm)
 	if ptr == nil {
 		return errors.New("VMAP_KEY_FILTER store or load error")
 	}
@@ -78,15 +83,15 @@ func (c *Client) LoadFilter(funcs uint32, tweak uint32, filter []byte) error {
 	return nil
 }
 
-//清除过滤器
+//FilterClear 清除过滤器
 func (c *Client) FilterClear() {
-	c.vmap.Delete(VMAP_KEY_FILTER)
+	c.vmap.Delete(MapKeyFilter)
 }
 
-//获取连接上的过滤器
+//GetFilter 获取连接上的过滤器
 //不存在返回nil,false
 func (c *Client) GetFilter() (*BloomFilter, bool) {
-	ptr, has := c.vmap.Load(VMAP_KEY_FILTER)
+	ptr, has := c.vmap.Load(MapKeyFilter)
 	if !has {
 		return nil, false
 	}
@@ -97,27 +102,26 @@ func (c *Client) GetFilter() (*BloomFilter, bool) {
 	return blm, true
 }
 
-//检测过滤器
+//FilterHas 检测过滤器是否存在
 func (c *Client) FilterHas(key []byte) bool {
 	if blm, isset := c.GetFilter(); isset {
 		return blm.Has(key)
-	} else {
-		//没设置过滤器都认为不过滤
-		return true
 	}
+	return true
 }
 
-//
+//Equal 是否是相同的客户端
+//检测节点id是否一致
 func (c *Client) Equal(b *Client) bool {
 	return c.id == b.id
 }
 
-//是否是连入的
+//IsIn 是否是连入的
 func (c *Client) IsIn() bool {
 	return c.typ == ClientIn
 }
 
-//是否是连出的
+//IsOut 是否是连出的
 func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
 }
@@ -133,7 +137,7 @@ func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 	}
 	nextid := iter.Curr().MustID()
 	//如果是第一个区块直接发送
-	if conf.IsGenesisId(nextid) {
+	if conf.IsGenesisID(nextid) {
 		rsg := bi.NewMsgGetBlock(nextid)
 		c.SendMsg(rsg)
 		return
@@ -160,90 +164,90 @@ func (c *Client) processMsg(m MsgIO) error {
 	bi := GetBlockIndex()
 	typ := m.Type()
 	switch typ {
-	case NT_BROAD_PKG:
+	case NtBroadPkg:
 		msg := m.(*MsgBroadPkg)
-		if c.ss.HasPkg(msg.MsgId.RecvKey()) {
+		if c.ss.HasPkg(msg.MsgID.RecvKey()) {
 			break
 		}
 		//只向最先到达的头发送数据应答
-		rsg := &MsgBroadAck{MsgId: msg.MsgId}
+		rsg := &MsgBroadAck{MsgID: msg.MsgID}
 		c.SendMsg(rsg)
-	case NT_BROAD_ACK:
+	case NtBroadAck:
 		msg := m.(*MsgBroadAck)
 		//收到应答，有数据就发送回去
-		if rsg, ok := c.ss.GetPkg(msg.MsgId.SendKey()); ok {
+		if rsg, ok := c.ss.GetPkg(msg.MsgID.SendKey()); ok {
 			c.SendMsg(rsg)
 		}
-	case NT_GET_BLOCK:
+	case NtGetBlock:
 		msg := m.(*MsgGetBlock)
 		c.reqMsgBlock(msg)
-	case NT_GET_TXPOOL:
+	case NtGetTxPool:
 		msg := m.(*MsgGetTxPool)
 		tp := bi.GetTxPool()
 		c.SendMsg(tp.NewMsgTxPool(msg))
-	case NT_TXPOOL:
+	case NtTxPool:
 		msg := m.(*MsgTxPool)
 		tp := bi.GetTxPool()
 		tp.PushTxs(bi, msg)
-	case NT_TX_MERKLE:
+	case NtTxMerkle:
 		msg := m.(*MsgTxMerkle)
 		err := msg.Verify(bi)
 		if err != nil {
 			LogError("verify txid merkle error", err)
 		}
-	case NT_GET_MERKLE:
+	case NtGetMerkle:
 		msg := m.(*MsgGetMerkle)
-		rsg, err := bi.NewMsgTxMerkle(msg.TxId)
+		rsg, err := bi.NewMsgTxMerkle(msg.TxID)
 		if err != nil {
 			esg := NewMsgError(ErrCodeTxMerkle, err)
-			esg.Ext = msg.TxId[:]
+			esg.Ext = msg.TxID[:]
 			c.SendMsg(esg)
 		} else {
 			c.SendMsg(rsg)
 		}
-	case NT_FILTER_LOAD:
+	case NtFilterLoad:
 		msg := m.(*MsgFilterLoad)
 		err := c.LoadFilter(msg.Funcs, msg.Tweak, msg.Filter)
 		if err != nil {
 			c.SendMsg(NewMsgError(ErrCodeFilterLoad, err))
 		}
-	case NT_FILTER_ADD:
+	case NtFilterAdd:
 		msg := m.(*MsgFilterAdd)
 		err := c.FilterAdd(msg.Key)
 		if err != nil {
 			c.SendMsg(NewMsgError(ErrCodeFilterMiss, err))
 		}
-	case NT_FILTER_CLEAR:
+	case NtFilterClear:
 		c.FilterClear()
-	case NT_ALERT:
+	case NtAlert:
 		msg := m.(*MsgAlert)
 		c.ss.BroadMsg(msg, c)
 		LogInfo("recv alert message:", msg.Msg.String())
-	case NT_ERROR:
+	case NtError:
 		msg := m.(*MsgError)
 		LogError("recv error msg code =", msg.Code, "error =", msg.Error, c.id)
-	case NT_GET_INV:
+	case NtGetInv:
 		msg := m.(*MsgGetInv)
 		if len(msg.Invs) == 0 {
 			break
 		}
 		bi.GetMsgGetInv(msg, c)
-	case NT_ADDRS:
+	case NtAddrs:
 		msg := m.(*MsgAddrs)
 		LogInfo("get addrs count =", len(msg.Addrs), "from", c.Addr)
-	case NT_GET_ADDRS:
+	case NtGetAddrs:
 		msg := c.ss.NewMsgAddrs(c)
 		c.SendMsg(msg)
-	case NT_PONG:
+	case NtPong:
 		msg := m.(*MsgPong)
 		c.Height = msg.Height
 		c.ping = msg.Ping()
-	case NT_PING:
+	case NtPing:
 		msg := m.(*MsgPing)
 		c.Height = msg.Height
 		rsg := msg.NewPong(bi.BestHeight())
 		c.SendMsg(rsg)
-	case NT_VERSION:
+	case NtVersion:
 		msg := m.(*MsgVersion)
 		//保存到地址列表
 		if msg.Addr.IsGlobalUnicast() {
@@ -299,13 +303,13 @@ func (c *Client) stop() {
 	LogInfo("client stop", c.Addr, "error=", c.err)
 }
 
-//连接到指定地址
+//Open 连接到指定地址
 func (c *Client) Open(addr NetAddr) error {
 	if addr.Equal(conf.GetNetAddr()) {
 		return errors.New("self connect self,ignore")
 	}
 	if c.ss.IsAddrOpen(addr) {
-		return errors.New("addr has client connected,ignore!")
+		return errors.New("addr has client connected,ignore")
 	}
 	return c.connect(addr)
 }
@@ -337,6 +341,7 @@ func (c *Client) connect(addr NetAddr) error {
 	return nil
 }
 
+//Loop 开始后台启动服务
 func (c *Client) Loop() {
 	go c.loop()
 }
@@ -379,12 +384,12 @@ func (c *Client) loop() {
 			bi := GetBlockIndex()
 			tp := bi.GetTxPool()
 			//获取对方地址列表
-			if c.Service&FULL_NODE != 0 {
+			if c.Service&FullNodeFlag != 0 {
 				msg := c.ss.NewMsgAddrs(c)
 				c.SendMsg(msg)
 			}
 			//同步双发交易池数据
-			if c.Service&FULL_NODE != 0 {
+			if c.Service&FullNodeFlag != 0 {
 				msg := tp.NewMsgGetTxPool()
 				c.SendMsg(msg)
 			}
@@ -402,21 +407,24 @@ func (c *Client) loop() {
 	}
 }
 
+//BroadMsg 广播消息
 func (c *Client) BroadMsg(m MsgIO) {
-	id, err := m.Id()
+	id, err := m.ID()
 	if err != nil {
 		panic(err)
 	}
 	c.ss.SetPkg(id.SendKey(), m)
 	//发送广播包头
-	msg := &MsgBroadPkg{MsgId: id}
+	msg := &MsgBroadPkg{MsgID: id}
 	c.wc <- msg
 }
 
+//SendMsg 发送消息
 func (c *Client) SendMsg(m MsgIO) {
 	c.wc <- m
 }
 
+//Close 关闭客户端
 func (c *Client) Close() {
 	c.cfun()
 }
