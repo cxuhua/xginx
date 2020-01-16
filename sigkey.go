@@ -545,18 +545,26 @@ func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 
 //EncodeAddress 编码地址
 func EncodeAddress(pkh HASH160) (Address, error) {
-	a, err := EncodeAddressWithPrefix(conf.AddrPrefix, pkh)
+	st := "st"
+	if conf != nil {
+		st = conf.AddrPrefix
+	}
+	a, err := EncodeAddressWithPrefix(st, pkh)
 	return Address(a), err
 }
 
 //DecodeAddress 解码地址
 func DecodeAddress(addr Address) (HASH160, error) {
+	st := "st"
+	if conf != nil {
+		st = conf.AddrPrefix
+	}
 	hv := HASH160{}
 	hrp, b, err := SegWitAddressDecode(string(addr))
 	if err != nil {
 		return hv, err
 	}
-	if hrp != conf.AddrPrefix {
+	if hrp != st {
 		return hv, errors.New("address prefix error")
 	}
 	if b[0] != 0 {
@@ -576,11 +584,6 @@ func (pk *PublicKey) Load(s string, pass ...string) (*PublicKey, error) {
 		return nil, err
 	}
 	return pk, pk.Decode(b)
-	// b, err := B58Decode(s, BitcoinAlphabet)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// return pk, pk.Decode(b[0 : len(b)-4])
 }
 
 //GetPks 获取公钥数据

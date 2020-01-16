@@ -505,9 +505,7 @@ func (blk *BlockInfo) CheckCoinbase() error {
 
 //EndianHeight 获取区块高度的二进制
 func (blk *BlockInfo) EndianHeight() []byte {
-	hb := []byte{0, 0, 0, 0}
-	binary.BigEndian.PutUint32(hb, blk.Meta.Height)
-	return hb
+	return EndianUInt32(blk.Meta.Height)
 }
 
 //WriteTxsIdx 写入交易索引

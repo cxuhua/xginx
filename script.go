@@ -226,18 +226,18 @@ func (ss *LockedScript) Decode(r IReader) error {
 }
 
 //NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, vbs ...[]byte) (Script, error) {
+func NewLockedScript(pkh HASH160, exts ...[]byte) (Script, error) {
 	std := &LockedScript{Ext: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
-	for _, vb := range vbs {
-		if len(vb) > MaxExtSize {
+	for _, ext := range exts {
+		if len(ext) > MaxExtSize {
 			return nil, errors.New("ext size > MAX_EXT_SIZE")
 		}
-		std.Ext = append(std.Ext, vb...)
-	}
-	if std.Ext.Len() > MaxExtSize {
-		return nil, errors.New("ext size > MAX_EXT_SIZE")
+		std.Ext = append(std.Ext, ext...)
+		if std.Ext.Len() > MaxExtSize {
+			return nil, errors.New("ext size > MAX_EXT_SIZE")
+		}
 	}
 	buf := NewWriter()
 	err := std.Encode(buf)

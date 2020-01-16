@@ -10,7 +10,14 @@ import (
 	"sync/atomic"
 )
 
-//HashDump b58,设定密码会加密
+//EndianUInt32 用于排序
+func EndianUInt32(u32 uint32) []byte {
+	hb := []byte{0, 0, 0, 0}
+	binary.BigEndian.PutUint32(hb, u32)
+	return hb
+}
+
+//HashDump 将数据导出并添加校验，pass存在将进行加密
 func HashDump(b []byte, pass ...string) (string, error) {
 	hash := Hash160(b)
 	data := append(b, hash...)
@@ -25,7 +32,7 @@ func HashDump(b []byte, pass ...string) (string, error) {
 	return B58Encode(data, BitcoinAlphabet), nil
 }
 
-//HashLoad b58 string
+//HashLoad HashDump 返回的进行解密和校验
 func HashLoad(s string, pass ...string) ([]byte, error) {
 	hl := len(HASH160{})
 	data, err := B58Decode(s, BitcoinAlphabet)

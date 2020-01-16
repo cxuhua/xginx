@@ -176,10 +176,10 @@ func (p *TxPool) checkRefs(bi *BlockIndex, tx *TX) error {
 }
 
 //设置内存消费金额索引
-func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
+func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 	txid, err := tx.ID()
 	if err != nil {
-		panic(err)
+		return err
 	}
 	tx.pool = add
 	refs := map[HASH256]bool{}
@@ -188,14 +188,14 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 	for _, in := range tx.Ins {
 		ref, out, err := p.loadTxOut(bi, in)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if ref.pool {
 			refs[ref.MustID()] = add
 		}
 		pkh, err := out.Script.GetPkh()
 		if err != nil {
-			panic(err)
+			return err
 		}
 		ckv := &CoinKeyValue{}
 		ckv.Index = in.OutIndex
@@ -209,7 +209,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 			err = p.mdb.Delete(ckv.SpentKey())
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 	//存储内存池中可用的金额
@@ -217,7 +217,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		ckv := &CoinKeyValue{}
 		pkh, err := out.Script.GetPkh()
 		if err != nil {
-			panic(err)
+			return err
 		}
 		ckv.Value = out.Value
 		ckv.CPkh = pkh
@@ -232,7 +232,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 			err = p.mdb.Delete(ckv.MustKey())
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 	//存储哪些交易引用到了当前交易
@@ -244,7 +244,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 			err = p.mdb.Delete(key)
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 	//写入账户相关的交易
@@ -256,7 +256,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 		}
 		vbys, err := vval.Bytes()
 		if err != nil {
-			panic(err)
+			return err
 		}
 		key := GetDBKey(TxpPrefix, pkh[:], []byte{0, 0, 0, 0}, txid[:])
 		if add {
@@ -265,9 +265,10 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) {
 			err = p.mdb.Delete(key)
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }
 
 //移除引用了此交易的交易，返回移除了的交易
@@ -296,7 +297,10 @@ func (p *TxPool) removeEle(bi *BlockIndex, refs *[]*TX, ele *list.Element) {
 	//引用了此交易的交易也应该被删除
 	p.removeRefsTxs(bi, refs, id)
 	//移除自己
-	p.setMemIdx(bi, tx, false)
+	err := p.setMemIdx(bi, tx, false)
+	if err != nil {
+		panic(err)
+	}
 	p.tlis.Remove(ele)
 	delete(p.tmap, id)
 	//广播交易从内存池移除
@@ -419,18 +423,32 @@ func (p *TxPool) HasCoin(coin *CoinKeyValue) bool {
 }
 
 //ListTxsWithID 获取spkh相关的交易
-func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160) (TxIndexs, error) {
+func (p *TxPool) ListTxsWithID(bi *BlockIndex, spkh HASH160, limit ...int) (TxIndexs, error) {
 	prefix := GetDBKey(TxpPrefix, spkh[:])
 	idxs := TxIndexs{}
 	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
 	defer iter.Release()
-	for iter.Next() {
+	if iter.Last() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
 		iv.pool = true
 		idxs = append(idxs, iv)
+		if len(limit) > 0 && len(idxs) >= limit[0] {
+			return idxs, nil
+		}
+	}
+	for iter.Prev() {
+		iv, err := NewTxIndex(iter.Key(), iter.Value())
+		if err != nil {
+			return nil, err
+		}
+		iv.pool = true
+		idxs = append(idxs, iv)
+		if len(limit) > 0 && len(idxs) >= limit[0] {
+			return idxs, nil
+		}
 	}
 	return idxs, nil
 }
@@ -580,7 +598,9 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	if _, has := p.tmap[id]; has {
 		return errors.New("tx exists")
 	}
-	p.setMemIdx(bi, tx, true)
+	if err := p.setMemIdx(bi, tx, true); err != nil {
+		return err
+	}
 	ele := p.tlis.PushBack(tx)
 	p.tmap[id] = ele
 	return nil

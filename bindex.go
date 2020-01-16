@@ -1112,27 +1112,33 @@ func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, err
 }
 
 //ListTxs 获取某个地址相关的交易
-func (bi *BlockIndex) ListTxs(addr Address) (TxIndexs, error) {
+func (bi *BlockIndex) ListTxs(addr Address, limit ...int) (TxIndexs, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	return bi.ListTxsWithID(pkh)
+	return bi.ListTxsWithID(pkh, limit...)
 }
 
 //ListTxsWithID 获取交易
-func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
+func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) {
 	prefix := GetDBKey(TxpPrefix, id[:])
 	idxs := TxIndexs{}
 	//从交易池获取
-	cvs, err := bi.txp.ListTxsWithID(bi, id)
+	cvs, err := bi.txp.ListTxsWithID(bi, id, limit...)
 	if err != nil {
 		return nil, err
 	}
 	for _, tv := range cvs {
 		idxs = append(idxs, tv)
 	}
-	//获取区块链中历史可用金额
+	if len(limit) > 0 {
+		limit[0] -= len(idxs)
+		if limit[0] <= 0 {
+			return idxs, nil
+		}
+	}
+	//获取区块链中可用的交易
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
 	//倒序获取
@@ -1142,6 +1148,9 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 			return nil, err
 		}
 		idxs = append(idxs, iv)
+		if len(limit) > 0 && len(idxs) >= limit[0] {
+			return idxs, nil
+		}
 	}
 	for iter.Prev() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
@@ -1149,6 +1158,9 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160) (TxIndexs, error) {
 			return nil, err
 		}
 		idxs = append(idxs, iv)
+		if len(limit) > 0 && len(idxs) >= limit[0] {
+			return idxs, nil
+		}
 	}
 	return idxs, nil
 }
