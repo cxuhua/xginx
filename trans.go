@@ -7,7 +7,7 @@ import (
 //ITransListener 转账监听器
 type ITransListener interface {
 	//获取金额对应的账户方法
-	GetAcc(ckv *CoinKeyValue) *Account
+	GetAcc(ckv *CoinKeyValue) (*Account, error)
 	//获取输出地址的扩展不同的地址可以返回不同的扩展信息
 	GetExt(addr Address) []byte
 	//获取使用的金额列表
@@ -72,9 +72,9 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 	//使用哪些金额
 	for _, ckv := range m.lis.GetCoins() {
 		//获取消费金额对应的账户
-		acc := m.lis.GetAcc(ckv)
-		if acc == nil {
-			return nil, errors.New("get account error for coin")
+		acc, err := m.lis.GetAcc(ckv)
+		if err != nil {
+			return nil, err
 		}
 		//生成待签名的输入
 		in, err := ckv.NewTxIn(acc)
