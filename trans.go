@@ -2,9 +2,12 @@ package xginx
 
 import (
 	"errors"
+	"fmt"
 )
 
 //ITransListener 转账监听器
+//先获取可使用的金额，然后获取金额相关的账户用来签名
+//根据转出地址获取扩展数据，剩下的金额转到找零地址
 type ITransListener interface {
 	//获取金额对应的账户方法
 	GetAcc(ckv *CoinKeyValue) (*Account, error)
@@ -105,6 +108,9 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 	if amt := -sum; amt > 0 {
 		//获取找零地址
 		addr := m.lis.GetKeep()
+		if addr == "" {
+			return nil, fmt.Errorf("keep address empty")
+		}
 		ext := m.lis.GetExt(addr)
 		out, err := addr.NewTxOut(amt, ext)
 		if err != nil {

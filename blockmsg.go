@@ -127,7 +127,7 @@ func (m MsgBlock) Type() NTType {
 	return NtBlock
 }
 
-//IsUseBytes 是否存储的是消息数据
+//IsUseBytes 是否存储的是原始数据
 func (m MsgBlock) IsUseBytes() bool {
 	return m.Flags&MsgBlockUseBytes != 0
 }

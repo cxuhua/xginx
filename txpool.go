@@ -258,7 +258,8 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 		if err != nil {
 			return err
 		}
-		key := GetDBKey(TxpPrefix, pkh[:], []byte{0, 0, 0, 0}, txid[:])
+		//交易池中的交易设置为无效的高度
+		key := GetDBKey(TxpPrefix, pkh[:], []byte{0xff, 0xff, 0xff, 0xff}, txid[:])
 		if add {
 			err = p.mdb.Put(key, vbys)
 		} else {
@@ -466,6 +467,7 @@ func (p *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue,
 }
 
 //ListCoins 获取pkh在交易池中可用的金额
+//这些金额一般是交易转账找零剩下的金额
 func (p *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -545,13 +547,14 @@ func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
 //如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	//如果tx已经可打包，忽略覆盖操作
+	now := bi.lptr.TimeNow()
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
 		if val, has := p.imap[in.OutKey()]; !has {
 			continue
-		} else if val.tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) { //原交易已经final就不能覆盖了
+		} else if val.tx.IsFinal(bi.NextHeight(), now) { //原交易已经final就不能覆盖了
 			return errors.New("tx is final,can't replace")
-		} else if tx.IsFinal(bi.NextHeight(), bi.lptr.TimeNow()) { //如果当前交易final直接覆盖
+		} else if tx.IsFinal(bi.NextHeight(), now) { //如果当前交易final直接覆盖
 			return p.replace(bi, val.tx, tx)
 		} else if in.IsReplace(val.in) { //如果最高位都设置了标记，比较大小覆盖
 			return p.replace(bi, val.tx, tx)

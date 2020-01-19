@@ -82,7 +82,7 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 }
 
 //VerifyAll 验证签名
-func (ap Account) VerifyAll(hv []byte, sigs []string) error {
+func (ap Account) VerifyAll(hv []byte, sigs []byte) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
 	if len(ap.Pubs) != num {
@@ -92,11 +92,7 @@ func (ap Account) VerifyAll(hv []byte, sigs []string) error {
 		return errors.New("pub num error,num must >= less")
 	}
 	for i, k := 0, 0; i < len(sigs) && k < len(ap.Pubs); {
-		sigb, err := B58Decode(sigs[i], BitcoinAlphabet)
-		if err != nil {
-			return err
-		}
-		sig, err := NewSigValue(sigb[:])
+		sig, err := NewSigValue(sigs[:])
 		if err != nil {
 			return err
 		}
@@ -121,15 +117,14 @@ func (ap Account) VerifyAll(hv []byte, sigs []string) error {
 }
 
 //SignAll 获取账号所有签名
-func (ap Account) SignAll(hv []byte) ([]string, error) {
-	rets := []string{}
+func (ap Account) SignAll(hv []byte) ([][]byte, error) {
+	rets := [][]byte{}
 	for idx := range ap.Pubs {
 		sig, err := ap.Sign(idx, hv)
 		if err != nil {
 			continue
 		}
-		ss := B58Encode(sig.Bytes(), BitcoinAlphabet)
-		rets = append(rets, ss)
+		rets = append(rets, sig.Bytes())
 	}
 	if len(rets) == 0 {
 		return nil, errors.New("miss sigs")
