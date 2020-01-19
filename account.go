@@ -82,7 +82,7 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 }
 
 //VerifyAll 验证签名
-func (ap Account) VerifyAll(hv []byte, sigs []byte) error {
+func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
 	if len(ap.Pubs) != num {
@@ -92,7 +92,7 @@ func (ap Account) VerifyAll(hv []byte, sigs []byte) error {
 		return errors.New("pub num error,num must >= less")
 	}
 	for i, k := 0, 0; i < len(sigs) && k < len(ap.Pubs); {
-		sig, err := NewSigValue(sigs[:])
+		sig, err := NewSigValue(sigs[i])
 		if err != nil {
 			return err
 		}
