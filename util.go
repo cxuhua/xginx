@@ -126,9 +126,9 @@ func Hash256(b []byte) []byte {
 
 //Rand ret >= min,ret <= max
 func Rand(min uint, max uint) uint {
-	v := uint(0)
+	v := uint32(0)
 	SetRandInt(&v)
-	return (min + v%(max+1-min))
+	return (min + uint(v)%(max+1-min))
 }
 
 //SetRandInt 读取随机值
