@@ -816,6 +816,7 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := blk.SetMerkle(); err != nil {
 		return err
 	}
+	//检测locktime
 	err := blk.CheckTxsLockTime(bi)
 	if err != nil {
 		return err
