@@ -762,13 +762,12 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex, csp bool) error {
 		if i == 0 && !tx.IsCoinBase() {
 			return errors.New("coinbase tx miss")
 		}
-		err := tx.Check(bi, csp)
-		if err != nil {
+		//检测每个交易
+		if err := tx.Check(bi, csp); err != nil {
 			return err
 		}
 		//存入缓存
-		err = bi.SetTx(tx)
-		if err != nil {
+		if err := bi.SetTx(tx); err != nil {
 			return err
 		}
 	}
