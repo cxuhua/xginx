@@ -166,6 +166,7 @@ func (c *Client) processMsg(m MsgIO) error {
 	switch typ {
 	case NtBroadPkg:
 		msg := m.(*MsgBroadPkg)
+		//如果已经有包就忽略
 		if c.ss.HasPkg(msg.MsgID.RecvKey()) {
 			break
 		}

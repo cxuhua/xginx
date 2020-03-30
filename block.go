@@ -745,6 +745,8 @@ func (blk *BlockInfo) GetIncome(bi *BlockIndex) (Amount, error) {
 }
 
 //CheckTxs 检查所有的交易
+//csp 是否检查消费金额是否存在，只有消费此输出得时候才检查，如果对应
+//的区块已经连接到主链，输出必定被消费了，只需要检查签名
 func (blk *BlockInfo) CheckTxs(bi *BlockIndex, csp bool) error {
 	//必须有交易
 	if len(blk.Txs) == 0 {
@@ -858,6 +860,7 @@ func (blk *BlockInfo) Verify(ele *TBEle, bi *BlockIndex) error {
 }
 
 //Check 检查区块数据
+//csp 是否检查消费输出
 func (blk *BlockInfo) Check(bi *BlockIndex, csp bool) error {
 	//检测工作难度
 	bits := bi.CalcBits(blk.Meta.Height)

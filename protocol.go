@@ -103,7 +103,7 @@ const (
 	//获取内存交易池
 	NtGetTxPool = NTType(19)
 	NtTxPool    = NTType(20)
-	//广播包头和响应
+	//广播包头和响应,当广播消息时只发送广播包头，收到包头如果确定无需要收取数据再请求包数据
 	NtBroadPkg = NTType(0xf0)
 	NtBroadAck = NTType(0xf1)
 )

@@ -1238,6 +1238,7 @@ func (bi *BlockIndex) getEle(id HASH256) (*TBEle, error) {
 func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 	bi.rwm.RLock()
 	defer bi.rwm.RUnlock()
+	//创建区块头
 	meta := &TBMeta{
 		BlockHeader: blk.Header,
 	}
@@ -1251,6 +1252,7 @@ func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 	if !isok {
 		return fmt.Errorf("can't link to chain last, hash=%v", bid)
 	}
+	//第一个必须是创世区块
 	if pid.IsZero() && !conf.IsGenesisID(bid) {
 		return errors.New("first blk must is genesis blk")
 	}
