@@ -24,6 +24,8 @@ type AccountJSON struct {
 type PrivatesMap map[HASH160]*PrivateKey
 
 //Account 账号地址
+//可以包含多个签名，但正确签名数量至少是less指定的数量
+//如果启用了仲裁功能，只需要仲裁签名正确也可以通过签名
 type Account struct {
 	Num  uint8        //总的密钥数量
 	Less uint8        //至少需要签名的数量
@@ -81,8 +83,8 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
-//VerifyAll 验证签名
-func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
+//VerifyAll 验证签名.返回正确的签名数量
+func (ap Account) VerifyAll(hv []byte, sigs []SigBytes) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
 	if len(ap.Pubs) != num {
@@ -91,18 +93,19 @@ func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
 	if num < less {
 		return errors.New("pub num error,num must >= less")
 	}
+	//逐个验证公钥
 	for i, k := 0, 0; i < len(sigs) && k < len(ap.Pubs); {
-		sig, err := NewSigValue(sigs[i])
+		sig, err := NewSigValue(sigs[i][:])
 		if err != nil {
 			return err
 		}
-		vok := ap.Pubs[i].Verify(hv, sig)
+		vok := ap.Pubs[k].Verify(hv, sig)
 		if vok {
 			less--
 			i++
 		}
-		//如果启用仲裁，并且当前仲裁验证成功立即返回
-		if vok && ap.IsEnableArb() && ap.Arb == uint8(k) {
+		//如果启用仲裁，并且当前仲裁验证成功立即返回,启用情况下必须是最后一个
+		if vok && ap.IsEnableArb() && ap.Arb == ap.Num-1 {
 			less = 0
 		}
 		if less == 0 {

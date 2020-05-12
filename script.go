@@ -257,6 +257,11 @@ type WitnessScript struct {
 	Sig  []SigBytes //签名
 }
 
+//ToAccount 转换为账户信息
+func (ss WitnessScript) ToAccount() (*Account, error) {
+	return NewAccountWithPks(ss.Num, ss.Less, ss.Arb != InvalidArb, ss.Pks)
+}
+
 //IsEnableArb 是否启用仲裁
 func (ss WitnessScript) IsEnableArb() bool {
 	return ss.Arb != InvalidArb

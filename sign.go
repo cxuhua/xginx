@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -84,47 +83,16 @@ func (sr *mulsigner) Verify() error {
 	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
 		return fmt.Errorf("hash equal error %w", err)
 	}
+	//获取签名hash
 	sigh, err := sr.GetSigHash()
 	if err != nil {
 		return err
 	}
-	//至少需要签名正确的数量
-	less := int(wits.Less)
-	//总的数量
-	num := int(wits.Num)
-	if len(wits.Pks) != num {
-		return errors.New("pub num error")
+	acc, err := wits.ToAccount()
+	if err != nil {
+		return err
 	}
-	if num < less {
-		return errors.New("pub num error,num must >= less")
-	}
-	for i, k := 0, 0; i < len(wits.Sig) && k < len(wits.Pks); {
-		sig, err := NewSigValue(wits.Sig[i][:])
-		if err != nil {
-			return err
-		}
-		pub, err := NewPublicKey(wits.Pks[k][:])
-		if err != nil {
-			return err
-		}
-		vok := pub.Verify(sigh, sig)
-		if vok {
-			less--
-			i++
-		}
-		//如果启用仲裁，并且当前仲裁验证成功立即返回
-		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
-			less = 0
-		}
-		if less == 0 {
-			break
-		}
-		k++
-	}
-	if less > 0 {
-		return errors.New("sig verify error")
-	}
-	return nil
+	return acc.VerifyAll(sigh, wits.Sig)
 }
 
 //OutputsHash outhash
