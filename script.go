@@ -15,6 +15,13 @@ const (
 //Script 脚本定义
 type Script []byte
 
+//Clone 复制脚本
+func (s Script) Clone() Script {
+	n := make(Script, s.Len())
+	copy(n, s)
+	return n
+}
+
 //Len 脚本长度
 func (s Script) Len() int {
 	return len(s)

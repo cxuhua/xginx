@@ -177,6 +177,13 @@ var (
 //HASH256 bit256 hash
 type HASH256 [32]byte
 
+//Clone 复制
+func (h HASH256) Clone() HASH256 {
+	n := HASH256{}
+	copy(n[:], h[:])
+	return n
+}
+
 //Encode encode
 func (h HASH256) Encode(w IWriter) error {
 	_, err := w.Write(h[:])

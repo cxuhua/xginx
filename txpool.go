@@ -548,13 +548,14 @@ func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	//如果tx已经可打包，忽略覆盖操作
 	now := bi.lptr.TimeNow()
+	ch := bi.Height()
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
 		if val, has := p.imap[in.OutKey()]; !has {
 			continue
-		} else if val.tx.IsFinal(bi.NextHeight(), now) { //原交易已经final就不能覆盖了
+		} else if val.tx.IsFinal(ch, now) { //原交易已经final就不能覆盖了
 			return errors.New("tx is final,can't replace")
-		} else if tx.IsFinal(bi.NextHeight(), now) { //如果当前交易final直接覆盖
+		} else if tx.IsFinal(ch, now) { //如果当前交易final直接覆盖
 			return p.replace(bi, val.tx, tx)
 		} else if in.IsReplace(val.in) { //如果最高位都设置了标记，比较大小覆盖
 			return p.replace(bi, val.tx, tx)

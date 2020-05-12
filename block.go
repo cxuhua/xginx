@@ -938,6 +938,16 @@ func NewTxIn() *TxIn {
 	}
 }
 
+//Clone 复制输入
+func (in TxIn) Clone() *TxIn {
+	n := NewTxIn()
+	n.OutHash = in.OutHash.Clone()
+	n.OutIndex = in.OutIndex
+	n.Script = in.Script.Clone()
+	n.Sequence = in.Sequence
+	return n
+}
+
 //IsReplace 如果比较seq可替换
 func (in *TxIn) IsReplace(sin *TxIn) bool {
 	return in.Sequence > sin.Sequence
@@ -1120,6 +1130,15 @@ type TxOut struct {
 	pool   bool   //是否来自交易池中的交易
 }
 
+//Clone 复制输入
+func (out TxOut) Clone() *TxOut {
+	n := &TxOut{}
+	n.Value = out.Value
+	n.Script = out.Script.Clone()
+	n.pool = out.pool
+	return n
+}
+
 //GetCoin 获取输入引用的输出和金额
 func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
 	pkh, err := out.Script.GetPkh()
@@ -1204,6 +1223,20 @@ func NewTx() *TX {
 	return tx
 }
 
+//Clone 复制交易
+func (tx TX) Clone() *TX {
+	n := NewTx()
+	n.Ver = tx.Ver
+	for _, in := range tx.Ins {
+		n.Ins = append(n.Ins, in.Clone())
+	}
+	for _, out := range tx.Outs {
+		n.Outs = append(n.Outs, out.Clone())
+	}
+	n.LockTime = tx.LockTime
+	return n
+}
+
 //IsPool 是否来自交易池
 func (tx TX) IsPool() bool {
 	return tx.pool
@@ -1222,7 +1255,7 @@ func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
 		if in.Sequence&SequenceDisableFlag != 0 {
 			continue
 		}
-		//获取当前引用的块高
+		//获取当前引用的输出交易的块高
 		ch := uint32(0)
 		coin, err := in.GetCoin(bi)
 		if err != nil {
