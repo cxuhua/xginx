@@ -5,6 +5,16 @@ import (
 	"fmt"
 )
 
+//ITransNotice 回调通知
+type ITransNotice interface {
+	//当输入创建好
+	OnNewTxIn(tx *TX, in *TxIn) error
+	//当输出创建好
+	OnNewTxOut(tx *TX, out *TxOut) error
+	//当交易创建完毕
+	OnNewTx(tx *TX) error
+}
+
 //ITransListener 转账监听器
 //先获取可使用的金额，然后获取金额相关的账户用来签名
 //根据转出地址获取扩展数据，剩下的金额转到找零地址
@@ -56,7 +66,7 @@ func (m *Trans) Check() error {
 
 //NewTx 生成交易,不签名，不放入交易池
 //lt = tx locktime
-func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
+func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
@@ -64,8 +74,8 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 		return nil, errors.New("fee error")
 	}
 	tx := NewTx()
-	if len(lt) > 0 {
-		tx.LockTime = lt[0]
+	if len(lts) >= 1 {
+		tx.LockTime = lts[0]
 	}
 	//输出总计
 	sum := m.Fee
@@ -84,6 +94,13 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 		if err != nil {
 			return nil, err
 		}
+		//回调通知
+		if np, ok := m.lis.(ITransNotice); ok {
+			err = np.OnNewTxIn(tx, in)
+		}
+		if err != nil {
+			return nil, err
+		}
 		tx.Ins = append(tx.Ins, in)
 		sum -= ckv.Value
 		if sum <= 0 {
@@ -99,6 +116,13 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 		dst := m.Dst[i]
 		ext := m.lis.GetExt(dst)
 		out, err := dst.NewTxOut(v, ext)
+		if err != nil {
+			return nil, err
+		}
+		//回调通知
+		if np, ok := m.lis.(ITransNotice); ok {
+			err = np.OnNewTxOut(tx, out)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +149,12 @@ func (m *Trans) NewTx(lt ...uint32) (*TX, error) {
 			return nil, err
 		}
 	}
-	return tx, nil
+	//回调通知
+	var err error = nil
+	if np, ok := m.lis.(ITransNotice); ok {
+		err = np.OnNewTx(tx)
+	}
+	return tx, err
 }
 
 //BroadTx 广播交易

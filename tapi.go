@@ -19,12 +19,12 @@ type TestLis struct {
 	t     uint32
 }
 
-func newTestLis() *TestLis {
+func newTestLis(accnum int) *TestLis {
 	lis := &TestLis{
 		t:   uint32(time.Now().Unix()),
 		acc: map[HASH160]*Account{},
 	}
-	for i := 0; i < 5; i++ {
+	for i := 0; i < accnum; i++ {
 		//创建5个1-1账号
 		acc, err := NewAccount(1, 1, false)
 		if err != nil {
@@ -47,6 +47,11 @@ func newTestLis() *TestLis {
 	}
 	LogInfo("create 5 test account")
 	return lis
+}
+
+//GetAccount 获取测试账户0-4
+func (lis *TestLis) GetAccount(i int) *Account {
+	return lis.ams[i]
 }
 
 //TimeNow 测试用时间返回
@@ -110,7 +115,7 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 }
 
 //NewTestConfig 创建一个测试用的配置
-func NewTestConfig() {
+func NewTestConfig() *Config {
 	conf = &Config{}
 	conf.nodeid = conf.GenUInt64()
 	conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
@@ -127,6 +132,7 @@ func NewTestConfig() {
 	conf.Seeds = []string{"seed.xginx.com"}
 	conf.flags = [4]byte{'T', 'E', 'S', 'T'}
 	conf.LimitHash = NewUINT256(conf.PowLimit)
+	return conf
 }
 
 //CloseTestBlock 关闭测试用区块链
@@ -165,11 +171,16 @@ func NewTestOneBlock() error {
 	return nil
 }
 
+//GetTestListener 获取测试监听
+func GetTestListener(bi *BlockIndex) *TestLis {
+	return bi.lptr.(*TestLis)
+}
+
 //NewTestBlockIndex 创建一个测试用区块索引
 //num创建num个区块
 func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
 	//测试配置文件
-	lis := newTestLis()
+	lis := newTestLis(5)
 	if len(miner) > 0 {
 		conf.MinerAddr = miner[0]
 	} else {

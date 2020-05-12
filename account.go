@@ -120,14 +120,14 @@ func (ap Account) VerifyAll(hv []byte, sigs []SigBytes) error {
 }
 
 //SignAll 获取账号所有签名
-func (ap Account) SignAll(hv []byte) ([][]byte, error) {
-	rets := [][]byte{}
+func (ap Account) SignAll(hv []byte) ([]SigBytes, error) {
+	rets := []SigBytes{}
 	for idx := range ap.Pubs {
 		sig, err := ap.Sign(idx, hv)
 		if err != nil {
 			continue
 		}
-		rets = append(rets, sig.Bytes())
+		rets = append(rets, sig)
 	}
 	if len(rets) == 0 {
 		return nil, errors.New("miss sigs")
