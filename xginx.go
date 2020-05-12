@@ -41,6 +41,7 @@ func Run(lis IListener) {
 
 	Miner.Start(ctx, lis)
 
+	//延迟回调
 	time.Sleep(time.Millisecond * 300)
 	lis.OnStart()
 

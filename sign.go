@@ -23,7 +23,7 @@ type ISigner interface {
 	Sign(lis ISignerListener, pass ...string) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
-	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的位置
+	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
 	GetObjs() (*TX, *TxIn, *TxOut, int)
 	//获取消费地址
 	GetAddress() Address

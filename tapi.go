@@ -25,7 +25,7 @@ func newTestLis() *TestLis {
 		acc: map[HASH160]*Account{},
 	}
 	for i := 0; i < 5; i++ {
-		//创建5个账号
+		//创建5个1-1账号
 		acc, err := NewAccount(1, 1, false)
 		if err != nil {
 			panic(err)
@@ -131,6 +131,7 @@ func NewTestConfig() {
 
 //CloseTestBlock 关闭测试用区块链
 func CloseTestBlock(bi *BlockIndex) {
+	LogInfof("remove temp dir = %s", conf.DataDir)
 	bi.Close()
 	os.RemoveAll(conf.DataDir)
 }
