@@ -28,22 +28,26 @@ type transListner struct {
 	dst *Account
 }
 
+func newTransListner(bi *BlockIndex, src *Account, dst *Account) *transListner {
+	return &transListner{bi: bi, src: src, dst: dst}
+}
+
 //获取金额对应的账户方法
 func (lis *transListner) GetAcc(ckv *CoinKeyValue) (*Account, error) {
 	return lis.src, nil
 }
 
-//获取输出地址的扩展不同的地址可以返回不同的扩展信息
-func (lis *transListner) GetExt(addr Address) []byte {
-	return nil
+func (lis *transListner) GetTxOutExec(addr Address) []byte {
+	return []byte{1, 2, 3}
+}
+
+//获取输入执行脚本 ckv消费的金额对象
+func (lis *transListner) GetTxInExec(ckv *CoinKeyValue) []byte {
+	return []byte{4, 5, 6}
 }
 
 //当输入创建好
 func (lis *transListner) OnNewTxIn(tx *TX, in *TxIn) error {
-	//为了使locktime生效
-	if tx.LockTime != 0 {
-		in.SetReplace(0)
-	}
 	return nil
 }
 
@@ -130,15 +134,14 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	daddr, err := dst.GetAddress()
 	req.NoError(err)
 
-	tlis := &transListner{bi: suite.bi, src: src, dst: dst}
+	tlis := newTransListner(suite.bi, src, dst)
 	//生成交易
 	mi := suite.bi.NewTrans(tlis)
 	//向dst转账1COIN
 	mi.Add(daddr, 1*Coin)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
-	//locktime = 300
-	tx, err := mi.NewTx(300)
+	tx, err := mi.NewTx()
 	req.NoError(err)
 	bp := suite.bi.GetTxPool()
 	req.NotNil(bp)
@@ -153,8 +156,8 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.NoError(err)
 	err = blk.AddTxs(suite.bi, txs)
 	req.NoError(err)
-	//交易池中的交易设置了locktime，没有进入区块，所以新区块中只有一个coinbase交易
-	req.Equal(1, len(blk.Txs))
+	//应该有两个交易
+	req.Equal(2, len(blk.Txs))
 	//完成区块设置准备链接到链
 	err = blk.Finish(suite.bi)
 	req.NoError(err)
@@ -169,51 +172,10 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.Equal(101, len(coins.All))
 	req.Equal(99, len(coins.Locks))
 	req.Equal(2, len(coins.Coins))
-	//可用的金额记录应该是2*50-2,因为被转走了1个，交易费1个，在交易池中
+	//可用的金额记录应该是2*50-2,因为被转走了1个，交易费1个
 	req.Equal((2*50-2)*Coin, coins.Coins.Balance())
-
-	//替换交易池中交易测试
-	cp := tx.Clone()
-	req.NotNil(cp)
-	for _, in := range cp.Ins {
-		in.SetReplace(1)
-	}
-	cp.LockTime = 0
-	//重新签名
-	err = cp.Sign(suite.bi, tlis)
-	req.NoError(err)
-	//原先有一个
-	req.Equal(1, bp.Len())
-	//加入交易池将替换原来的交易
-	err = bp.PushTx(suite.bi, cp)
-	req.NoError(err)
-	//替换后还是有一个
-	req.Equal(1, bp.Len())
-	txs = bp.AllTxs()
-	//应该有一个放入了交易池
-	req.Equal(1, len(txs))
-
-	//创建一个新区块,上面的交易locktime=100，这个新区块高度是101，应该可以进入区块了
-	blk, err = suite.bi.NewBlock(1)
-	req.NoError(err)
-	err = blk.AddTxs(suite.bi, txs)
-	req.NoError(err)
-	req.Equal(2, len(blk.Txs))
-	//完成区块设置准备链接到链
-	err = blk.Finish(suite.bi)
-	req.NoError(err)
-	//模拟计算工作量证明，测试环境下很容易
-	calcbits(suite.bi, blk)
-	//链接到测试链
-	err = suite.bi.LinkBlk(blk)
-	req.NoError(err)
-	//金额应该转到了目标账户中
 	coins, err = suite.bi.ListCoins(daddr)
 	req.NoError(err)
-	//目标地址可用的金额记录应该是1
-	req.Equal(1, len(coins.All))
-	req.Equal(0, len(coins.Locks))
-	req.Equal(1, len(coins.Coins))
 	req.Equal(1*Coin, coins.Coins.Balance())
 }
 

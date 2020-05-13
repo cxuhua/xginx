@@ -2,6 +2,8 @@ package xginx
 
 import (
 	"errors"
+
+	"github.com/qiniu/x/log"
 )
 
 //脚本类型定义
@@ -70,12 +72,12 @@ func (s Script) IsCoinBase() bool {
 
 //IsWitness 是否是隔离见证脚本
 func (s Script) IsWitness() bool {
-	return s.Len() >= witnessminsize && s.Len() < AccountKeyMaxSize*128 && s[0] == ScriptWitnessType
+	return s.Len() >= witnessminsize && s.Len() < (AccountKeyMaxSize*128+MaxExecSize) && s[0] == ScriptWitnessType
 }
 
 //IsLocked 是否是锁定脚本
 func (s Script) IsLocked() bool {
-	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxExtSize+4) && s[0] == ScriptLockedType
+	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxExecSize+4) && s[0] == ScriptLockedType
 }
 
 //GetAddress 从锁定脚本获取输出地址
@@ -181,6 +183,31 @@ func (s Script) ToWitness() (WitnessScript, error) {
 	return wit, nil
 }
 
+const (
+	//OptPushTxPool 当交易进入交易池
+	OptPushTxPool = 1
+	//OptAddToBlock 当交易加入区块
+	OptAddToBlock = 2
+	//OptPublishTx 发布交易到网络
+	OptPublishTx = 3
+)
+
+//ExecScript 返回错误会不加入交易池或者不进入区块
+//执行之前已经校验了签名
+func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
+	id, _ := tx.ID()
+	log.Println(id, "ExecScript = ", opt)
+	return nil
+}
+
+//ExecScript 执行签名交易脚本
+//执行之前签名已经通过
+func (sr mulsigner) ExecScript(wits WitnessScript, lcks LockedScript) error {
+	id, _ := sr.tx.ID()
+	log.Println(id, "ExecScript Verify Sign")
+	return nil
+}
+
 //NewCoinbaseScript 创建coinbase脚本
 func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
 	s := Script{ScriptCoinbaseType}
@@ -201,7 +228,7 @@ func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
 type LockedScript struct {
 	Type uint8
 	Pkh  HASH160
-	Ext  VarBytes
+	Exec VarBytes
 }
 
 //Encode 编码
@@ -212,7 +239,7 @@ func (ss LockedScript) Encode(w IWriter) error {
 	if err := ss.Pkh.Encode(w); err != nil {
 		return err
 	}
-	if err := ss.Ext.Encode(w); err != nil {
+	if err := ss.Exec.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -226,25 +253,22 @@ func (ss *LockedScript) Decode(r IReader) error {
 	if err := ss.Pkh.Decode(r); err != nil {
 		return err
 	}
-	if err := ss.Ext.Decode(r); err != nil {
+	if err := ss.Exec.Decode(r); err != nil {
 		return err
 	}
 	return nil
 }
 
 //NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, exts ...[]byte) (Script, error) {
-	std := &LockedScript{Ext: VarBytes{}}
+func NewLockedScript(pkh HASH160, execs ...[]byte) (Script, error) {
+	std := &LockedScript{Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
-	for _, ext := range exts {
-		if len(ext) > MaxExtSize {
-			return nil, errors.New("ext size > MAX_EXT_SIZE")
-		}
-		std.Ext = append(std.Ext, ext...)
-		if std.Ext.Len() > MaxExtSize {
-			return nil, errors.New("ext size > MAX_EXT_SIZE")
-		}
+	for _, ext := range execs {
+		std.Exec = append(std.Exec, ext...)
+	}
+	if std.Exec.Len() > MaxExecSize {
+		return nil, errors.New("execs size > MaxExecSize")
 	}
 	buf := NewWriter()
 	err := std.Encode(buf)
@@ -262,6 +286,7 @@ type WitnessScript struct {
 	Arb  uint8      //是否启用仲裁
 	Pks  []PKBytes  //公钥
 	Sig  []SigBytes //签名
+	Exec VarBytes   //执行脚本
 }
 
 //ToAccount 转换为账户信息
@@ -286,6 +311,9 @@ func (ss WitnessScript) ForID(w IWriter) error {
 		return err
 	}
 	if err := w.TWrite(ss.Arb); err != nil {
+		return err
+	}
+	if err := ss.Exec.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -322,6 +350,9 @@ func (ss WitnessScript) Encode(w IWriter) error {
 		if err := sig.Encode(w); err != nil {
 			return err
 		}
+	}
+	if err := ss.Exec.Encode(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -362,6 +393,9 @@ func (ss *WitnessScript) Decode(r IReader) error {
 			return err
 		}
 		ss.Sig[i] = sig
+	}
+	if err := ss.Exec.Decode(r); err != nil {
+		return err
 	}
 	return nil
 }

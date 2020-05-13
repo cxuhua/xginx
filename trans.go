@@ -6,6 +6,7 @@ import (
 )
 
 //ITransNotice 回调通知
+//返回错误会导致创建交易失败
 type ITransNotice interface {
 	//当输入创建好
 	OnNewTxIn(tx *TX, in *TxIn) error
@@ -21,8 +22,10 @@ type ITransNotice interface {
 type ITransListener interface {
 	//获取金额对应的账户方法
 	GetAcc(ckv *CoinKeyValue) (*Account, error)
-	//获取输出地址的扩展不同的地址可以返回不同的扩展信息
-	GetExt(addr Address) []byte
+	//获取输出执行脚本 addr 输出的地址
+	GetTxOutExec(addr Address) []byte
+	//获取输入执行脚本 ckv消费的金额对象
+	GetTxInExec(ckv *CoinKeyValue) []byte
 	//获取使用的金额列表
 	GetCoins() Coins
 	//获取找零地址
@@ -66,17 +69,14 @@ func (m *Trans) Check() error {
 
 //NewTx 生成交易,不签名，不放入交易池
 //lt = tx locktime
-func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
+func (m *Trans) NewTx(execs ...[]byte) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
 	if !m.Fee.IsRange() {
 		return nil, errors.New("fee error")
 	}
-	tx := NewTx()
-	if len(lts) >= 1 {
-		tx.LockTime = lts[0]
-	}
+	tx := NewTx(execs...)
 	//输出总计
 	sum := m.Fee
 	for _, v := range m.Amt {
@@ -89,12 +89,14 @@ func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
 		if err != nil {
 			return nil, err
 		}
+		//输入执行脚本
+		exec := m.lis.GetTxInExec(ckv)
 		//生成待签名的输入
-		in, err := ckv.NewTxIn(acc)
+		in, err := ckv.NewTxIn(acc, exec)
 		if err != nil {
 			return nil, err
 		}
-		//回调通知
+		//添加前回调通知
 		if np, ok := m.lis.(ITransNotice); ok {
 			err = np.OnNewTxIn(tx, in)
 		}
@@ -114,12 +116,12 @@ func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
 	//转出到其他账号的输出
 	for i, v := range m.Amt {
 		dst := m.Dst[i]
-		ext := m.lis.GetExt(dst)
-		out, err := dst.NewTxOut(v, ext)
+		exec := m.lis.GetTxOutExec(dst)
+		out, err := dst.NewTxOut(v, exec)
 		if err != nil {
 			return nil, err
 		}
-		//回调通知
+		//添加前回调通知
 		if np, ok := m.lis.(ITransNotice); ok {
 			err = np.OnNewTxOut(tx, out)
 		}
@@ -135,12 +137,21 @@ func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
 		if addr == "" {
 			return nil, fmt.Errorf("keep address empty")
 		}
-		ext := m.lis.GetExt(addr)
-		out, err := addr.NewTxOut(amt, ext)
+		//添加前回调通知
+		exec := m.lis.GetTxOutExec(addr)
+		out, err := addr.NewTxOut(amt, exec)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
+	}
+	//签名前回调通知
+	var err error = nil
+	if np, ok := m.lis.(ITransNotice); ok {
+		err = np.OnNewTx(tx)
+	}
+	if err != nil {
+		return nil, err
 	}
 	//如果lis实现了签名lis
 	if slis, ok := m.lis.(ISignerListener); ok {
@@ -149,16 +160,16 @@ func (m *Trans) NewTx(lts ...uint32) (*TX, error) {
 			return nil, err
 		}
 	}
-	//回调通知
-	var err error = nil
-	if np, ok := m.lis.(ITransNotice); ok {
-		err = np.OnNewTx(tx)
-	}
 	return tx, err
 }
 
-//BroadTx 广播交易
-func (m *Trans) BroadTx(tx *TX) {
+//BroadTx 广播链上交易
+func (m *Trans) BroadTx(bi *BlockIndex, tx *TX) {
+	//是否广播到网络
+	if err := tx.ExecScript(bi, OptPublishTx); err != nil {
+		return
+	}
+	//
 	ps := GetPubSub()
 	ps.Pub(tx, NewTxTopic)
 }

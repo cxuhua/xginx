@@ -151,7 +151,7 @@ func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 }
 
 //NewWitnessScript 生成未带有签名的脚本对象
-func (ap Account) NewWitnessScript() *WitnessScript {
+func (ap Account) NewWitnessScript(execs ...[]byte) *WitnessScript {
 	w := &WitnessScript{}
 	w.Type = ScriptWitnessType
 	w.Num = ap.Num
@@ -162,16 +162,22 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 		w.Pks = append(w.Pks, pub.GetPks())
 	}
 	w.Sig = []SigBytes{}
+	for _, ext := range execs {
+		w.Exec = append(w.Exec, ext...)
+	}
+	if w.Exec.Len() > MaxExecSize {
+		panic(errors.New("exec size > MaxExecSize"))
+	}
 	return w
 }
 
 //NewLockedScript 生成锁定脚本
-func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
+func (ap Account) NewLockedScript(exec ...[]byte) (Script, error) {
 	pkh, err := ap.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	return NewLockedScript(pkh, vbs...)
+	return NewLockedScript(pkh, exec...)
 }
 
 //

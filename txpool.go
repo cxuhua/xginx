@@ -368,20 +368,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 	for cur := p.tlis.Front(); cur != nil; cur = cur.Next() {
 		buf.Reset()
 		tx := cur.Value.(*TX)
-		//未到时间的交易忽略
-		if !blk.IsFinal(tx) {
-			continue
-		}
-		//如果被锁定
-		lck, err := tx.CheckSeqLocks(bi)
-		if err != nil {
-			res = append(res, cur)
-			continue
-		}
-		if lck {
-			continue
-		}
-		err = tx.Check(bi, true)
+		err := tx.Check(bi, true)
 		//检测失败的将会被删除，除了seq检查错误
 		if err != nil {
 			res = append(res, cur)
@@ -546,19 +533,10 @@ func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
 
 //如果有重复引用了同一笔输出，根据条件 Sequence 进行覆盖
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
-	//如果tx已经可打包，忽略覆盖操作
-	now := bi.lptr.TimeNow()
-	ch := bi.Height()
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
-		if val, has := p.imap[in.OutKey()]; !has {
+		if _, has := p.imap[in.OutKey()]; !has {
 			continue
-		} else if val.tx.IsFinal(ch, now) { //原交易已经final就不能覆盖了
-			return errors.New("tx is final,can't replace")
-		} else if tx.IsFinal(ch, now) { //如果当前交易final直接覆盖
-			return p.replace(bi, val.tx, tx)
-		} else if in.IsReplace(val.in) { //如果最高位都设置了标记，比较大小覆盖
-			return p.replace(bi, val.tx, tx)
 		}
 		//引用了相同的输出并且不能覆盖不能进入交易池
 		return errors.New("sequence < old seq error")
@@ -583,6 +561,10 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	}
 	//检测交易是否合法
 	if err := tx.Check(bi, true); err != nil {
+		return err
+	}
+	//执行失败不会进入交易池
+	if err := tx.ExecScript(bi, OptPushTxPool); err != nil {
 		return err
 	}
 	p.mu.Lock()

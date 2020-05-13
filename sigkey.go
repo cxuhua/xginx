@@ -502,7 +502,7 @@ func LoadPublicKey(s string, pass ...string) (*PublicKey, error) {
 type Address string
 
 //NewTxOut 创建一个输出
-func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
+func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
 		return nil, errors.New("amount error")
 	}
@@ -512,7 +512,7 @@ func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	script, err := NewLockedScript(pkh, ext...)
+	script, err := NewLockedScript(pkh, execs...)
 	if err != nil {
 		return nil, err
 	}

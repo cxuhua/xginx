@@ -12,21 +12,9 @@ const (
 	MaxBlockSize = 1024 * 1024 * 4
 	//最大日志大小
 	MaxLogSize = 1024 * 1024 * 2
-	//最大扩展数据
-	MaxExtSize = 128
-	//锁定时间分界值
-	LockTimeThreshold = uint32(500000000)
-	//如果所有输入都是SequenceFinal忽略locktime
-	SequenceFinal = uint32(0xffffffff)
-	//是否禁止sequencel规则
-	SequenceDisableFlag = uint32(1 << 31)
-	//设置此位表示相对时间，时间粒度为512
-	SequenceTypeFlag = uint32(1 << 22)
-	//相对时间mask
-	SequenceMask = uint32(0x0000ffff)
-	//粒度 2^9=512
-	SequenceGranularity = 9
-	//coinbase输出只能在当前区块高度100之后使用
+	//最大执行脚本长度
+	MaxExecSize = 1024 * 4
+	//coinbase需要100区块后可用
 	CoinbaseMaturity = 100
 )
 
@@ -394,22 +382,6 @@ func (blk *BlockInfo) GetTx(idx int) (*TX, error) {
 	return blk.Txs[idx], nil
 }
 
-//CheckTxsLockTime 检测交易seq和locktime
-func (blk *BlockInfo) CheckTxsLockTime(bi *BlockIndex) error {
-	for idx, tx := range blk.Txs {
-		//不允许未完成的交易进入区块
-		if !tx.IsFinal(blk.Meta.Height, blk.Meta.Time) {
-			return fmt.Errorf("tx %d:%v check final error", idx, tx)
-		}
-		//不允许输入被锁定的交易进入区块
-		lck, err := tx.CheckSeqLocks(bi)
-		if err != nil || lck {
-			return fmt.Errorf("tx %d:%v check seq error %w", idx, tx, err)
-		}
-	}
-	return nil
-}
-
 func (blk *BlockInfo) Write(bi *BlockIndex) error {
 	bid, err := blk.ID()
 	if err != nil {
@@ -465,11 +437,6 @@ func (blk BlockInfo) String() string {
 		panic(err)
 	}
 	return id.String()
-}
-
-//IsFinal 是否是最终区块
-func (blk *BlockInfo) IsFinal(tx *TX) bool {
-	return tx.IsFinal(blk.Meta.Height, blk.Meta.Time)
 }
 
 //CoinbaseScript 创建Cosinbase 脚本
@@ -614,14 +581,15 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 		if blk.HasTx(id) {
 			continue
 		}
-		if !blk.IsFinal(tx) {
-			continue
-		}
 		if err := blk.CheckRefsTx(bi, tx); err != nil {
 			return err
 		}
 		if err := tx.Check(bi, true); err != nil {
 			return err
+		}
+		//当进入区块时执行错误将忽略
+		if err := tx.ExecScript(bi, OptAddToBlock); err != nil {
+			continue
 		}
 		blk.Txs = append(blk.Txs, tx)
 	}
@@ -669,9 +637,6 @@ func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
 	//不能重复添加
 	if blk.HasTx(id) {
 		return nil
-	}
-	if !blk.IsFinal(tx) {
-		return errors.New("not final tx")
 	}
 	//检测引用的交易是否存在
 	if err := blk.CheckRefsTx(bi, tx); err != nil {
@@ -816,11 +781,6 @@ func (blk *BlockInfo) Finish(bi *BlockIndex) error {
 	if err := blk.SetMerkle(); err != nil {
 		return err
 	}
-	//检测locktime
-	err := blk.CheckTxsLockTime(bi)
-	if err != nil {
-		return err
-	}
 	return blk.Check(bi, true)
 }
 
@@ -928,14 +888,11 @@ type TxIn struct {
 	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //签名后填充脚本
-	Sequence uint32  //阻止后续交易入块，当前序交易达到某个块高度，或者到达某个相对时间，当前交易才能进区块
 }
 
 //NewTxIn 创建输入
 func NewTxIn() *TxIn {
-	return &TxIn{
-		Sequence: SequenceFinal,
-	}
+	return &TxIn{}
 }
 
 //Clone 复制输入
@@ -944,46 +901,7 @@ func (in TxIn) Clone() *TxIn {
 	n.OutHash = in.OutHash.Clone()
 	n.OutIndex = in.OutIndex
 	n.Script = in.Script.Clone()
-	n.Sequence = in.Sequence
 	return n
-}
-
-//IsReplace 如果比较seq可替换
-func (in *TxIn) IsReplace(sin *TxIn) bool {
-	return in.Sequence > sin.Sequence
-}
-
-//SetReplace 设置替换seq
-func (in *TxIn) SetReplace(seq uint32) {
-	in.Sequence = seq | SequenceDisableFlag
-}
-
-//IsTimeSeq 是否是按时间锁定的seq
-func (in *TxIn) IsTimeSeq() bool {
-	return in.Sequence&SequenceTypeFlag != 0
-}
-
-//ToTimeSeq 获取时间seq
-func (in *TxIn) ToTimeSeq() uint32 {
-	return (in.Sequence & SequenceMask) << SequenceGranularity
-}
-
-//ToHeightSeq 获取高度seq
-func (in *TxIn) ToHeightSeq() uint32 {
-	return in.Sequence & SequenceMask
-}
-
-//SetSeqTime 设置按时间的seq
-//tv是秒数
-func (in *TxIn) SetSeqTime(seconds uint32) {
-	seconds = seconds >> SequenceGranularity
-	seconds = seconds & SequenceMask
-	in.Sequence = seconds | SequenceTypeFlag
-}
-
-//SetSeqHeight 按高度锁定
-func (in *TxIn) SetSeqHeight(height uint32) {
-	in.Sequence = height & SequenceMask
 }
 
 //GetCoin 获取引用的coin
@@ -1078,9 +996,6 @@ func (in *TxIn) ForID(w IWriter) error {
 	if err := in.Script.ForID(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(in.Sequence); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1095,9 +1010,6 @@ func (in *TxIn) Encode(w IWriter) error {
 	if err := in.Script.Encode(w); err != nil {
 		return err
 	}
-	if err := w.TWrite(in.Sequence); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -1110,9 +1022,6 @@ func (in *TxIn) Decode(r IReader) error {
 		return err
 	}
 	if err := in.Script.Decode(r); err != nil {
-		return err
-	}
-	if err := r.TRead(&in.Sequence); err != nil {
 		return err
 	}
 	return nil
@@ -1203,23 +1112,28 @@ func (out *TxOut) Decode(r IReader) error {
 
 //TX 交易
 type TX struct {
-	Ver      VarUInt    //版本
-	Ins      []*TxIn    //输入
-	Outs     []*TxOut   //输出
-	LockTime uint32     //锁定时间或者区块
-	idcs     HashCacher //hash缓存
-	outs     HashCacher //签名hash缓存
-	pres     HashCacher //签名hash缓存
-	pool     bool       //是否来自内存池
+	Ver  VarUInt    //版本
+	Ins  []*TxIn    //输入
+	Outs []*TxOut   //输出
+	Exec Script     //执行脚本，执行失败不会进入交易池
+	idcs HashCacher //hash缓存
+	outs HashCacher //签名hash缓存
+	pres HashCacher //签名hash缓存
+	pool bool       //是否来自内存池
 }
 
 //NewTx 创建交易
-func NewTx() *TX {
+func NewTx(execs ...[]byte) *TX {
 	tx := &TX{}
 	tx.Ver = 1
 	tx.Outs = []*TxOut{}
 	tx.Ins = []*TxIn{}
-	tx.LockTime = 0
+	for _, exec := range execs {
+		tx.Exec = append(tx.Exec, exec...)
+	}
+	if tx.Exec.Len() > MaxExecSize {
+		panic(errors.New("exec size > MaxExecSize"))
+	}
 	return tx
 }
 
@@ -1233,85 +1147,13 @@ func (tx TX) Clone() *TX {
 	for _, out := range tx.Outs {
 		n.Outs = append(n.Outs, out.Clone())
 	}
-	n.LockTime = tx.LockTime
+	n.Exec = tx.Exec.Clone()
 	return n
 }
 
 //IsPool 是否来自交易池
 func (tx TX) IsPool() bool {
 	return tx.pool
-}
-
-//CheckSeqLocks 检测输入是否被锁定
-//返回true表示被锁住，无法进入区块
-func (tx *TX) CheckSeqLocks(bi *BlockIndex) (bool, error) {
-	best := bi.Height()
-	//如果链空忽略seq检测
-	if best == 0 || best == InvalidHeight {
-		return false, nil
-	}
-	minh, mint := int64(-1), int64(-1)
-	for _, in := range tx.Ins {
-		if in.Sequence&SequenceDisableFlag != 0 {
-			continue
-		}
-		//获取当前引用的输出交易的块高
-		ch := uint32(0)
-		coin, err := in.GetCoin(bi)
-		if err != nil {
-			return false, err
-		}
-		if coin.pool {
-			ch = best + 1
-		} else {
-			ch = coin.Height.ToUInt32()
-		}
-		//如果是按时间锁定
-		if in.IsTimeSeq() {
-			mtime := bi.GetMedianTime(ch - 1) //计算中间时间
-			vt := int64(mtime) + int64(in.ToTimeSeq()) - 1
-			if vt > mint {
-				mint = vt
-			}
-		} else {
-			//按高度锁定
-			vh := int64(ch) + int64(in.ToHeightSeq()) - 1
-			if vh > minh {
-				minh = vh
-			}
-		}
-	}
-	if minh > 0 && minh >= int64(best) {
-		return true, nil
-	}
-	if mint > 0 && mint >= int64(bi.GetMedianTime(best)) {
-		return true, nil
-	}
-	return false, nil
-}
-
-//IsFinal 当locktime ！=0 时，如果所有输入 Sequence==SEQUENCE_FINAL 交易及时生效
-//否则要达到自定高度或者时间交易才能生效
-//未生效前，输入可以被替换，也就是输入对应的输出可以被消费，这时原先的交易将被移除
-func (tx *TX) IsFinal(hv uint32, tv uint32) bool {
-	if tx.LockTime == 0 {
-		return true
-	}
-	lt := uint32(0)
-	if tx.LockTime < LockTimeThreshold {
-		lt = hv
-	} else {
-		lt = tv
-	}
-	if tx.LockTime < lt {
-		return true
-	}
-	for _, v := range tx.Ins {
-		if v.Sequence != SequenceFinal {
-			return false
-		}
-	}
-	return true
 }
 
 //ResetSign 重置缓存
@@ -1483,8 +1325,9 @@ func (tx *TX) ID() (HASH256, error) {
 			return id, err
 		}
 	}
-	//锁定时间
-	if err := buf.TWrite(tx.LockTime); err != nil {
+	//执行脚本
+	err = tx.Exec.Encode(buf)
+	if err != nil {
 		return id, err
 	}
 	return tx.idcs.Hash(buf.Bytes()), nil
@@ -1623,7 +1466,10 @@ func (tx *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
-	return w.TWrite(tx.LockTime)
+	if err := tx.Exec.Encode(w); err != nil {
+		return err
+	}
+	return nil
 }
 
 //Decode 解码交易数据
@@ -1657,5 +1503,8 @@ func (tx *TX) Decode(r IReader) error {
 		}
 		tx.Outs[i] = out
 	}
-	return r.TRead(&tx.LockTime)
+	if err := tx.Exec.Decode(r); err != nil {
+		return err
+	}
+	return nil
 }

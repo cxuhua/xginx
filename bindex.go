@@ -280,7 +280,8 @@ type BlockIndex struct {
 }
 
 //GetMedianTime 获取中间时间
-//计算h之前的11个区块的中间时间
+//计算h之前的11个区块的中间时间 来自BTC规则，不晓得为什么是11
+//这个时间将在Sequence锁定规则中用到
 func (bi *BlockIndex) GetMedianTime(h uint32) uint32 {
 	iter := bi.NewIter()
 	if !iter.SeekHeight(h) {
@@ -1280,11 +1281,6 @@ func (bi *BlockIndex) linkblk(blk *BlockInfo) error {
 //LinkBlk 更新区块数据(需要区块头先链接好
 func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	err := bi.linkblk(blk)
-	if err != nil {
-		return err
-	}
-	//检测sequence
-	err = blk.CheckTxsLockTime(bi)
 	if err != nil {
 		return err
 	}

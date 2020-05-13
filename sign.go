@@ -28,6 +28,8 @@ type ISigner interface {
 	GetAddress() Address
 	//获取交易id
 	GetTxID() HASH256
+	//签名脚本执行
+	ExecScript(wits WitnessScript, lcks LockedScript) error
 }
 
 //多重签名器
@@ -69,6 +71,7 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 
 //Verify 多重签名验证
 func (sr *mulsigner) Verify() error {
+	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
 		return err
@@ -76,11 +79,13 @@ func (sr *mulsigner) Verify() error {
 	if err := wits.Check(); err != nil {
 		return err
 	}
-	pkh, err := sr.out.Script.GetPkh()
+	//获取锁定脚本
+	locked, err := sr.out.Script.ToLocked()
 	if err != nil {
 		return err
 	}
-	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
+	//pkh一致才能通过
+	if hash, err := wits.Hash(); err != nil || !hash.Equal(locked.Pkh) {
 		return fmt.Errorf("hash equal error %w", err)
 	}
 	//获取签名hash
@@ -88,11 +93,18 @@ func (sr *mulsigner) Verify() error {
 	if err != nil {
 		return err
 	}
+	//转换统一校验签名
 	acc, err := wits.ToAccount()
 	if err != nil {
 		return err
 	}
-	return acc.VerifyAll(sigh, wits.Sig)
+	//多重签名校验
+	err = acc.VerifyAll(sigh, wits.Sig)
+	if err != nil {
+		return err
+	}
+	//执行脚本成
+	return sr.ExecScript(wits, locked)
 }
 
 //OutputsHash outhash
@@ -154,13 +166,7 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	if err := sr.out.Value.Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := buf.TWrite(sr.in.Sequence); err != nil {
-		return nil, err
-	}
 	if err := sr.OutputsHash().Encode(buf); err != nil {
-		return nil, err
-	}
-	if err := buf.TWrite(sr.tx.LockTime); err != nil {
 		return nil, err
 	}
 	return Hash256(buf.Bytes()), nil

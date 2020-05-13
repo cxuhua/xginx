@@ -103,11 +103,11 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 }
 
 //NewTxIn 创建一个消费输入
-func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
+func (tk CoinKeyValue) NewTxIn(acc *Account, execs ...[]byte) (*TxIn, error) {
 	in := NewTxIn()
 	in.OutHash = tk.TxID
 	in.OutIndex = tk.Index
-	script, err := acc.NewWitnessScript().ToScript()
+	script, err := acc.NewWitnessScript(execs...).ToScript()
 	if err != nil {
 		return nil, err
 	}
