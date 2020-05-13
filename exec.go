@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -38,6 +39,88 @@ func returnHttpError(l *lua.LState, err error) int {
 	return 2
 }
 
+//设置一个值
+func setAnyValue(l *lua.LState, key string, idx int, v jsoniter.Any, tbl *lua.LTable) {
+	if typ := v.ValueType(); typ == jsoniter.BoolValue {
+		if key != "" {
+			tbl.RawSetString(key, lua.LBool(v.ToBool()))
+		} else {
+			tbl.RawSetInt(idx, lua.LBool(v.ToBool()))
+		}
+	} else if typ == jsoniter.NilValue {
+		if key != "" {
+			tbl.RawSetString(key, lua.LNil)
+		} else {
+			tbl.RawSetInt(idx, lua.LNil)
+		}
+	} else if typ == jsoniter.StringValue {
+		if key != "" {
+			tbl.RawSetString(key, lua.LString(v.ToString()))
+		} else {
+			tbl.RawSetInt(idx, lua.LString(v.ToString()))
+		}
+	} else if typ == jsoniter.NumberValue {
+		if key != "" {
+			tbl.RawSetString(key, lua.LNumber(v.ToFloat64()))
+		} else {
+			tbl.RawSetInt(idx, lua.LNumber(v.ToFloat64()))
+		}
+	} else if typ == jsoniter.ArrayValue {
+		ntbl := l.NewTable()
+		setArrayTable(l, v, ntbl)
+		if key != "" {
+			tbl.RawSetString(key, ntbl)
+		} else {
+			tbl.RawSetInt(idx, ntbl)
+		}
+	} else if typ == jsoniter.ObjectValue {
+		ntbl := l.NewTable()
+		setObjectTable(l, v, ntbl)
+		if key != "" {
+			tbl.RawSetString(key, ntbl)
+		} else {
+			tbl.RawSetInt(idx, ntbl)
+		}
+	} else {
+		panic(fmt.Errorf("json type %d not process", typ))
+	}
+}
+
+//设置对象表格数据
+func setObjectTable(l *lua.LState, any jsoniter.Any, tbl *lua.LTable) {
+	for _, key := range any.Keys() {
+		v := any.Get(key)
+		setAnyValue(l, key, 0, v, tbl)
+	}
+}
+
+//设置数组表格数据
+func setArrayTable(l *lua.LState, any jsoniter.Any, tbl *lua.LTable) {
+	for i := 0; i < any.Size(); i++ {
+		v := any.Get(i)
+		setAnyValue(l, "", i, v, tbl)
+	}
+}
+
+//json转换为lua table
+func jsonToTable(l *lua.LState, jv []byte) (*lua.LTable, error) {
+	any := jsoniter.Get(jv)
+	tbl := l.NewTable()
+	if typ := any.ValueType(); typ == jsoniter.ObjectValue {
+		setObjectTable(l, any, tbl)
+	} else if typ == jsoniter.ArrayValue {
+		setArrayTable(l, any, tbl)
+	} else {
+		return nil, fmt.Errorf("json type %d not support", typ)
+	}
+	return tbl, nil
+}
+
+//table转换为json数据
+func tableToJsoin(l *lua.LState, tbl *lua.LTable) ([]byte, error) {
+	return nil, nil
+}
+
 //http_post(url,{a=1,b='aa'}) -> tbl,err
 func httpPost(l *lua.LState) int {
 	ctx := l.Context()
@@ -62,7 +145,7 @@ func httpGet(l *lua.LState) int {
 	if err != nil {
 		return returnHttpError(l, err)
 	}
-	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	client := http.Client{}
 	res, err := client.Do(req.WithContext(ctx))
 	if err != nil {

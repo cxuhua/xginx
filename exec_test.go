@@ -19,6 +19,24 @@ func init() {
 	`)
 }
 
+func TestJsonTable(t *testing.T) {
+	opts := lua.Options{
+		CallStackSize:       64,
+		MinimizeStackMemory: true,
+	}
+	l := lua.NewState(opts)
+	jv := `{"a":1,"b":"22","c":true,"d":1.1}`
+	tbl, err := jsonToTable(l, []byte(jv))
+	if err != nil {
+		panic(err)
+	}
+	jvv, err := tableToJsoin(l, tbl)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(string(jvv))
+}
+
 func TestLuaExec(t *testing.T) {
 	opts := lua.Options{
 		CallStackSize:       64,
