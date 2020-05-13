@@ -38,12 +38,12 @@ func (lis *transListner) GetAcc(ckv *CoinKeyValue) (*Account, error) {
 }
 
 func (lis *transListner) GetTxOutExec(addr Address) []byte {
-	return []byte{1, 2, 3}
+	return SuccessScript
 }
 
 //获取输入执行脚本 ckv消费的金额对象
 func (lis *transListner) GetTxInExec(ckv *CoinKeyValue) []byte {
-	return []byte{4, 5, 6}
+	return SuccessScript
 }
 
 //当输入创建好
@@ -141,7 +141,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	mi.Add(daddr, 1*Coin)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
-	tx, err := mi.NewTx()
+	tx, err := mi.NewTx(0, SuccessScript)
 	req.NoError(err)
 	bp := suite.bi.GetTxPool()
 	req.NotNil(bp)

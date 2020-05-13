@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"fmt"
+	"log"
 )
 
 //IGetSigBytes 获取签名数据接口
@@ -83,6 +84,9 @@ func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	locked, err := sr.out.Script.ToLocked()
 	if err != nil {
 		return err
+	}
+	if locked.Exec.Len() > 0 {
+		log.Println("a")
 	}
 	//pkh一致才能通过
 	if hash, err := wits.Hash(); err != nil || !hash.Equal(locked.Pkh) {
@@ -169,7 +173,7 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := sr.tx.Exec.Encode(buf); err != nil {
+	if err := sr.tx.Script.Encode(buf); err != nil {
 		return nil, err
 	}
 	return Hash256(buf.Bytes()), nil

@@ -435,6 +435,15 @@ func (bi *BlockIndex) Height() uint32 {
 	return last.Height
 }
 
+//Height 获取当前链高度
+func (bi *BlockIndex) Time() uint32 {
+	last := bi.Last()
+	if last == nil {
+		return bi.lptr.TimeNow()
+	}
+	return last.Time
+}
+
 //BestHeight 保存的最新区块高度
 func (bi *BlockIndex) BestHeight() uint32 {
 	return bi.GetBestValue().Height

@@ -14,6 +14,10 @@ const (
 	MaxLogSize = 1024 * 1024 * 2
 	//最大执行脚本长度
 	MaxExecSize = 1024 * 4
+	//默认5000毫秒执行时间 (ms)
+	DefaultExeTime = 5000
+	//最大执行时间
+	MaxExeTime = 60000
 	//coinbase需要100区块后可用
 	CoinbaseMaturity = 100
 )
@@ -1082,34 +1086,40 @@ func (out *TxOut) Decode(r IReader) error {
 
 //TX 交易
 type TX struct {
-	Ver  VarUInt    //版本
-	Ins  []*TxIn    //输入
-	Outs []*TxOut   //输出
-	Exec Script     //执行脚本，执行失败不会进入交易池
-	idcs HashCacher //hash缓存
-	outs HashCacher //签名hash缓存
-	pres HashCacher //签名hash缓存
-	pool bool       //是否来自内存池
+	Ver    VarUInt    //版本
+	Ins    []*TxIn    //输入
+	Outs   []*TxOut   //输出
+	Script Script     //执行脚本，执行失败不会进入交易池
+	idcs   HashCacher //hash缓存
+	outs   HashCacher //签名hash缓存
+	pres   HashCacher //签名hash缓存
+	pool   bool       //是否来自内存池
 }
 
 //NewTx 创建交易
-func NewTx(execs ...[]byte) *TX {
+//cpu 执行脚本限制时间,如果为0，默认为 DefaultCpuTime=
+func NewTx(exetime uint32, execs ...[]byte) *TX {
+	if exetime == 0 {
+		exetime = DefaultExeTime
+	}
+	if exetime > MaxExeTime {
+		exetime = MaxExeTime
+	}
 	tx := &TX{}
 	tx.Ver = 1
 	tx.Outs = []*TxOut{}
 	tx.Ins = []*TxIn{}
-	for _, exec := range execs {
-		tx.Exec = append(tx.Exec, exec...)
+	script, err := NewTxScript(exetime, execs...)
+	if err != nil {
+		panic(err)
 	}
-	if tx.Exec.Len() > MaxExecSize {
-		panic(errors.New("exec size > MaxExecSize"))
-	}
+	tx.Script = script
 	return tx
 }
 
 //Clone 复制交易
 func (tx TX) Clone() *TX {
-	n := NewTx()
+	n := NewTx(0)
 	n.Ver = tx.Ver
 	for _, in := range tx.Ins {
 		n.Ins = append(n.Ins, in.Clone())
@@ -1117,7 +1127,7 @@ func (tx TX) Clone() *TX {
 	for _, out := range tx.Outs {
 		n.Outs = append(n.Outs, out.Clone())
 	}
-	n.Exec = tx.Exec.Clone()
+	n.Script = tx.Script.Clone()
 	return n
 }
 
@@ -1296,7 +1306,7 @@ func (tx *TX) ID() (HASH256, error) {
 		}
 	}
 	//执行脚本
-	err = tx.Exec.Encode(buf)
+	err = tx.Script.Encode(buf)
 	if err != nil {
 		return id, err
 	}
@@ -1436,7 +1446,7 @@ func (tx *TX) Encode(w IWriter) error {
 			return err
 		}
 	}
-	if err := tx.Exec.Encode(w); err != nil {
+	if err := tx.Script.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -1473,7 +1483,7 @@ func (tx *TX) Decode(r IReader) error {
 		}
 		tx.Outs[i] = out
 	}
-	if err := tx.Exec.Decode(r); err != nil {
+	if err := tx.Script.Decode(r); err != nil {
 		return err
 	}
 	return nil

@@ -10,7 +10,70 @@ const (
 	ScriptCoinbaseType = uint8(0)  //coinbase script
 	ScriptLockedType   = uint8(1)  //标准锁定脚本
 	ScriptWitnessType  = uint8(2)  //隔离见证多重签名脚本
+	ScriptTxType       = uint8(3)  //交易脚本
 )
+
+//TxScript 交易脚本
+type TxScript struct {
+	Type    uint8
+	ExeTime uint32
+	Exec    VarBytes
+}
+
+//Encode 编码
+func (ss TxScript) Encode(w IWriter) error {
+	if err := w.TWrite(ss.Type); err != nil {
+		return err
+	}
+	if err := w.TWrite(ss.ExeTime); err != nil {
+		return err
+	}
+	if err := ss.Exec.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+//Decode 解码
+func (ss *TxScript) Decode(r IReader) error {
+	if err := r.TRead(&ss.Type); err != nil {
+		return err
+	}
+	if err := r.TRead(&ss.ExeTime); err != nil {
+		return err
+	}
+	if err := ss.Exec.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+//NewLockedScript 创建锁定脚本
+func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
+	std := &TxScript{Exec: VarBytes{}}
+	std.Type = ScriptTxType
+	std.ExeTime = exetime
+	for _, ext := range execs {
+		std.Exec = append(std.Exec, ext...)
+	}
+	if std.Exec.Len() > MaxExecSize {
+		return nil, errors.New("execs size > MaxExecSize")
+	}
+	buf := NewWriter()
+	err := std.Encode(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func gettxminsize() int {
+	x := TxScript{}
+	x.Type = ScriptTxType
+	buf := NewWriter()
+	_ = x.Encode(buf)
+	return buf.Len()
+}
 
 //Script 脚本定义
 type Script []byte
@@ -61,6 +124,7 @@ var (
 	lockedminsize  = getlockedminsize()
 	conbaseminsize = getcoinbaseminsize()
 	witnessminsize = getwitnessminsize()
+	txminsize      = gettxminsize()
 )
 
 //IsCoinBase 是否是coinbase脚本
@@ -76,6 +140,11 @@ func (s Script) IsWitness() bool {
 //IsLocked 是否是锁定脚本
 func (s Script) IsLocked() bool {
 	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxExecSize+4) && s[0] == ScriptLockedType
+}
+
+//IsTxScript 是否是交易脚本
+func (s Script) IsTxScript() bool {
+	return s.Len() >= txminsize && s.Len() < (txminsize+MaxExecSize) && s[0] == ScriptTxType
 }
 
 //GetAddress 从锁定脚本获取输出地址
@@ -151,6 +220,20 @@ func (s Script) ForVerify(w IWriter) error {
 //Decode 解码脚本
 func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
+}
+
+//ToLocked 如果是锁定脚本
+func (s Script) ToTxScript() (TxScript, error) {
+	rs := TxScript{}
+	if !s.IsTxScript() {
+		return rs, errors.New("script type error")
+	}
+	buf := NewReader(s)
+	err := rs.Decode(buf)
+	if err != nil {
+		return rs, err
+	}
+	return rs, nil
 }
 
 //ToLocked 如果是锁定脚本
