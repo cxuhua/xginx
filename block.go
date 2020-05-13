@@ -1246,7 +1246,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 		if err != nil {
 			return err
 		}
-		err = NewSigner(tx, out, in, idx).Verify()
+		err = NewSigner(tx, out, in, idx).Verify(bi)
 		if err != nil {
 			return fmt.Errorf("Verify in %d error %w", idx, err)
 		}
@@ -1273,7 +1273,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
 			return errors.New("sign tx, coin miss")
 		}
 		//对每个输入签名
-		err = NewSigner(tx, out, in, idx).Sign(lis, pass...)
+		err = NewSigner(tx, out, in, idx).Sign(bi, lis, pass...)
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

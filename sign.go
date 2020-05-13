@@ -17,9 +17,9 @@ type ISignerListener interface {
 //ISigner 签名验证接口
 type ISigner interface {
 	//签名校验
-	Verify() error
+	Verify(bi *BlockIndex) error
 	//签名生成解锁脚本
-	Sign(lis ISignerListener, pass ...string) error
+	Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
@@ -29,7 +29,7 @@ type ISigner interface {
 	//获取交易id
 	GetTxID() HASH256
 	//签名脚本执行
-	ExecScript(wits WitnessScript, lcks LockedScript) error
+	ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error
 }
 
 //多重签名器
@@ -70,7 +70,7 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 }
 
 //Verify 多重签名验证
-func (sr *mulsigner) Verify() error {
+func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
@@ -104,7 +104,7 @@ func (sr *mulsigner) Verify() error {
 		return err
 	}
 	//执行脚本成
-	return sr.ExecScript(wits, locked)
+	return sr.ExecScript(bi, wits, locked)
 }
 
 //OutputsHash outhash
@@ -176,6 +176,6 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 }
 
 //Sign 开始签名
-func (sr *mulsigner) Sign(lis ISignerListener, pass ...string) error {
+func (sr *mulsigner) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
 	return lis.SignTx(sr, pass...)
 }

@@ -15,14 +15,14 @@ const (
 //执行之前已经校验了签名
 func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	id, _ := tx.ID()
-	log.Println(id, "ExecScript = ", opt)
+	log.Println(id, "ExecScript = ", opt, bi.Height())
 	return nil
 }
 
 //ExecScript 执行签名交易脚本
 //执行之前签名已经通过
-func (sr mulsigner) ExecScript(wits WitnessScript, lcks LockedScript) error {
+func (sr mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error {
 	id, _ := sr.tx.ID()
-	log.Println(id, "ExecScript Verify Sign")
+	log.Println(id, "ExecScript Verify Sign", bi.Height())
 	return nil
 }
