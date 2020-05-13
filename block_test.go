@@ -38,12 +38,12 @@ func (lis *transListner) GetAcc(ckv *CoinKeyValue) (*Account, error) {
 }
 
 func (lis *transListner) GetTxOutExec(addr Address) []byte {
-	return SuccessScript
+	return nil
 }
 
 //获取输入执行脚本 ckv消费的金额对象
 func (lis *transListner) GetTxInExec(ckv *CoinKeyValue) []byte {
-	return SuccessScript
+	return nil
 }
 
 //当输入创建好

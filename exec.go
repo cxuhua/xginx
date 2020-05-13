@@ -3,6 +3,9 @@ package xginx
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"time"
 
 	lua "github.com/yuin/gopher-lua"
@@ -15,16 +18,73 @@ const (
 	OptAddToBlock = 2
 	//OptPublishTx 发布交易到网络
 	OptPublishTx = 3
-	//执行成功返回
+	//执行成功返回，脚本总要返回一个字符串
 	ExecOK = "OK"
+	//错误常量,不确定错误时返回
+	ExecErr = "ERROR"
 )
 
 var (
 	//是否调式脚本
 	DebugScript = false
 	//成功脚本
-	SuccessScript = []byte("result='OK';")
+	SuccessScript = []byte("return 'OK';")
 )
+
+//返回错误
+func returnHttpError(l *lua.LState, err error) int {
+	l.Push(lua.LNil)
+	l.Push(lua.LString(err.Error()))
+	return 2
+}
+
+//http_post(url,{a=1,b='aa'}) -> tbl,err
+func httpPost(l *lua.LState) int {
+	ctx := l.Context()
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	req.WithContext(ctx)
+	return 2
+}
+
+//http_get(url) -> tbl,err
+func httpGet(l *lua.LState) int {
+	path := l.ToString(1)
+	_, err := url.Parse(path)
+	if err != nil {
+		return returnHttpError(l, err)
+	}
+	ctx := l.Context()
+	req, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return returnHttpError(l, err)
+	}
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	client := http.Client{}
+	res, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		return returnHttpError(l, err)
+	}
+	defer res.Body.Close()
+	dat, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return returnHttpError(l, err)
+	}
+	l.Push(lua.LString(dat))
+	l.Push(lua.LNil)
+	return 2
+}
+
+//初始化http库支持方法
+func initHttpLuaEnv(l *lua.LState) {
+	mod := l.NewTable()
+	mod.RawSet(lua.LString("post"), l.NewFunction(httpPost))
+	mod.RawSet(lua.LString("get"), l.NewFunction(httpGet))
+	l.SetGlobal("http", mod)
+}
 
 //初始化脚本状态机
 func initLuaEnv(cpu time.Duration, tx *TX, bi *BlockIndex, opt int) (*lua.LState, context.CancelFunc) {
@@ -36,11 +96,19 @@ func initLuaEnv(cpu time.Duration, tx *TX, bi *BlockIndex, opt int) (*lua.LState
 	ctx, cancel := context.WithTimeout(context.Background(), cpu)
 	l := lua.NewState(opts)
 	l.SetContext(ctx)
-	//默认错误
-	l.SetGlobal("result", lua.LString("error"))
+	//成功常量
+	l.SetGlobal("ExecOK", lua.LString(ExecOK))
+	l.SetGlobal("ExecErr", lua.LString(ExecErr))
+	//操作常量
+	l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
+	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
+	l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
+	//交易id
+	id := tx.MustID()
+	l.SetGlobal("tx_id", lua.LString(id.String()))
 	//交易版本
 	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
-	//当前区块高度和世界OK
+	//当前区块高度和区块生成时间
 	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
 	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
 	//交易操作
@@ -69,18 +137,15 @@ func compileScript(l *lua.LState, codes ...[]byte) error {
 
 //执行脚本
 func execScript(l *lua.LState) error {
-	err := l.PCall(0, lua.MultRet, nil)
-	if err != nil {
+	if err := l.PCall(0, 1, nil); err != nil {
 		return err
-	}
-	result := l.GetGlobal("result")
-	if result.Type() != lua.LTString {
+	} else if result := l.Get(-1); result.Type() != lua.LTString {
 		return fmt.Errorf("script result type error")
-	}
-	if str := result.String(); str != ExecOK {
+	} else if str := lua.LVAsString(result); str != ExecOK {
 		return fmt.Errorf("script result error %s", str)
+	} else {
+		return nil
 	}
-	return nil
 }
 
 //ExecScript 返回错误会不加入交易池或者不进入区块
@@ -90,9 +155,10 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	if err != nil {
 		return err
 	}
-	//如果未设置就不执行了
-	if txs.Exec.Len() == 0 {
+	if l := txs.Exec.Len(); l == 0 {
 		return nil
+	} else if l > MaxExecSize {
+		return fmt.Errorf("tx exec script too big size = %d", l)
 	}
 	//交易脚本执行时间为cpu/2
 	tv := time.Duration(txs.ExeTime/2) * time.Millisecond
@@ -100,6 +166,8 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	l, cancel := initLuaEnv(tv, &tx, bi, opt)
 	defer cancel()
 	defer l.Close()
+	//
+	//编译脚本
 	err = compileScript(l, txs.Exec)
 	if err != nil {
 		return err
@@ -111,8 +179,11 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 //执行之前签名已经通过
 func (sr mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error {
 	//如果未设置就不执行了
-	if wits.Exec.Len()+lcks.Exec.Len() == 0 {
+	if l := wits.Exec.Len() + lcks.Exec.Len(); l == 0 {
 		return nil
+	} else if l > MaxExecSize*2 {
+		//脚本不能太大
+		return fmt.Errorf("witness exec script + locked exec script size too big size = %d", l)
 	}
 	txs, err := sr.tx.Script.ToTxScript()
 	if err != nil {
@@ -124,6 +195,10 @@ func (sr mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedSc
 	l, cancel := initLuaEnv(tv, sr.tx, bi, 0)
 	defer cancel()
 	defer l.Close()
+	//签名用常量
+	//输出金额
+	l.SetGlobal("out_value", lua.LNumber(sr.out.Value))
+	//编译脚本
 	err = compileScript(l, wits.Exec, lcks.Exec)
 	if err != nil {
 		return err

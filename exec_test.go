@@ -12,7 +12,11 @@ import (
 func init() {
 	//测试模式下开启
 	DebugScript = true
-	SuccessScript = []byte("result='OK';print(tx_ver);")
+	SuccessScript = []byte(`
+		print(out_value);
+		print(tx_opt == OptPushTxPool);
+		return ExecOK;
+	`)
 }
 
 func TestLuaExec(t *testing.T) {
@@ -25,6 +29,7 @@ func TestLuaExec(t *testing.T) {
 	l.SetContext(ctx)
 	defer cancel()
 	defer l.Close()
+	initHttpLuaEnv(l)
 	//最终结果 ERROR = "" 成功
 	l.SetGlobal("result", lua.LString("error"))
 	//交易版本
@@ -39,6 +44,9 @@ func TestLuaExec(t *testing.T) {
 	var err error = nil
 	log.Println(time.Now())
 	fn, err := l.LoadString(`
+		local obj,err = http.get('https://www.baidu.com');
+		if err ~= nil then return err; end
+		print(obj);
 		print('tx_ver=',tx_ver);
 		print('best_height=',best_height);
 		print('best_time=',best_time);
@@ -49,11 +57,8 @@ func TestLuaExec(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	log.Println(time.Now())
-
 	l.Push(fn)
-	err = l.PCall(0, lua.MultRet, nil)
 
-	log.Println(time.Now())
+	err = execScript(l)
 	log.Println(err)
 }
