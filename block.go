@@ -627,36 +627,6 @@ func (blk *BlockInfo) LoadTxs(bi *BlockIndex) error {
 	return blk.AddTxs(bi, txs)
 }
 
-//AddTx 添加单个交易
-//有重复消费输出将会失败
-func (blk *BlockInfo) AddTx(bi *BlockIndex, tx *TX) error {
-	id, err := tx.ID()
-	if err != nil {
-		return err
-	}
-	//不能重复添加
-	if blk.HasTx(id) {
-		return nil
-	}
-	//检测引用的交易是否存在
-	if err := blk.CheckRefsTx(bi, tx); err != nil {
-		return err
-	}
-	//保存旧的交易列表
-	otxs := blk.Txs
-	//检测交易是否可进行
-	if err := tx.Check(bi, true); err != nil {
-		return err
-	}
-	blk.Txs = append(blk.Txs, tx)
-	//不允许重复消费同一个输出
-	if err := blk.CheckRepCostTxOut(bi); err != nil {
-		blk.Txs = otxs
-		return err
-	}
-	return nil
-}
-
 //MustID 获取区块id
 func (blk *BlockInfo) MustID() HASH256 {
 	return blk.Header.MustID()
