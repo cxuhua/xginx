@@ -162,12 +162,11 @@ func (ap Account) NewWitnessScript(execs ...[]byte) *WitnessScript {
 		w.Pks = append(w.Pks, pub.GetPks())
 	}
 	w.Sig = []SigBytes{}
-	for _, ext := range execs {
-		w.Exec = append(w.Exec, ext...)
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		panic(err)
 	}
-	if w.Exec.Len() > MaxExecSize {
-		panic(errors.New("exec size > MaxExecSize"))
-	}
+	w.Exec = exec
 	return w
 }
 

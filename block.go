@@ -13,7 +13,7 @@ const (
 	//最大日志大小
 	MaxLogSize = 1024 * 1024 * 2
 	//最大执行脚本长度
-	MaxExecSize = 1024 * 4
+	MaxExecSize = 1024 * 2
 	//默认5000毫秒执行时间 (ms)
 	DefaultExeTime = 5000
 	//最大执行时间
@@ -1089,7 +1089,7 @@ type TX struct {
 	Ver    VarUInt    //版本
 	Ins    []*TxIn    //输入
 	Outs   []*TxOut   //输出
-	Script Script     //执行脚本，执行失败不会进入交易池
+	Script Script     //交易执行脚本，执行失败不会进入交易池
 	idcs   HashCacher //hash缓存
 	outs   HashCacher //签名hash缓存
 	pres   HashCacher //签名hash缓存
@@ -1097,7 +1097,7 @@ type TX struct {
 }
 
 //NewTx 创建交易
-//cpu 执行脚本限制时间,如果为0，默认为 DefaultCpuTime=
+//cpu 执行脚本限制时间,如果为0，默认为 DefaultExecTime=
 func NewTx(exetime uint32, execs ...[]byte) *TX {
 	if exetime == 0 {
 		exetime = DefaultExeTime
@@ -1128,6 +1128,7 @@ func (tx TX) Clone() *TX {
 		n.Outs = append(n.Outs, out.Clone())
 	}
 	n.Script = tx.Script.Clone()
+	n.pool = tx.pool
 	return n
 }
 

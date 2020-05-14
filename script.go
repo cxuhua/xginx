@@ -5,17 +5,19 @@ import (
 )
 
 //脚本类型定义
+//Script 第一个字节表示脚本类型
 const (
 	InvalidArb         = ^uint8(0) //无效的仲裁
 	ScriptCoinbaseType = uint8(0)  //coinbase script
-	ScriptLockedType   = uint8(1)  //标准锁定脚本
-	ScriptWitnessType  = uint8(2)  //隔离见证多重签名脚本
-	ScriptTxType       = uint8(3)  //交易脚本
+	ScriptLockedType   = uint8(1)  //标准锁定脚本 用于输出
+	ScriptWitnessType  = uint8(2)  //隔离见证多重签名脚本 用于输入
+	ScriptTxType       = uint8(3)  //交易脚本 用于控制交易是否打包进区块，是否进入交易池，是否发布上网
 )
 
 //TxScript 交易脚本
 type TxScript struct {
-	Type    uint8
+	Type uint8
+	//脚本最大执行时间
 	ExeTime uint32
 	Exec    VarBytes
 }
@@ -48,19 +50,30 @@ func (ss *TxScript) Decode(r IReader) error {
 	return nil
 }
 
+//MergeScript 合并脚本
+func MergeScript(execs ...[]byte) (VarBytes, error) {
+	result := VarBytes{}
+	for _, ext := range execs {
+		result = append(result, ext...)
+	}
+	if result.Len() > MaxExecSize {
+		return nil, errors.New("execs size > MaxExecSize")
+	}
+	return result, nil
+}
+
 //NewTxScript 创建锁定脚本
 func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
 	std := &TxScript{Exec: VarBytes{}}
 	std.Type = ScriptTxType
 	std.ExeTime = exetime
-	for _, ext := range execs {
-		std.Exec = append(std.Exec, ext...)
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		return nil, err
 	}
-	if std.Exec.Len() > MaxExecSize {
-		return nil, errors.New("execs size > MaxExecSize")
-	}
+	std.Exec = exec
 	buf := NewWriter()
-	err := std.Encode(buf)
+	err = std.Encode(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -320,14 +333,13 @@ func NewLockedScript(pkh HASH160, execs ...[]byte) (Script, error) {
 	std := &LockedScript{Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
-	for _, ext := range execs {
-		std.Exec = append(std.Exec, ext...)
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		return nil, err
 	}
-	if std.Exec.Len() > MaxExecSize {
-		return nil, errors.New("execs size > MaxExecSize")
-	}
+	std.Exec = exec
 	buf := NewWriter()
-	err := std.Encode(buf)
+	err = std.Encode(buf)
 	if err != nil {
 		return nil, err
 	}

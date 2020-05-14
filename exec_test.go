@@ -14,9 +14,20 @@ func init() {
 	DebugScript = true
 	SuccessScript = []byte(`
 		print(out_value);
-		print(tx_opt == OptPushTxPool);
+		print(coin_height);
 		return ExecOK;
 	`)
+}
+
+func TestCheckScript(t *testing.T) {
+	err := CheckScript(SuccessScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = CheckScript([]byte(`&763743`))
+	if err == nil {
+		t.Fatal("error script ")
+	}
 }
 
 func TestJsonTable(t *testing.T) {
@@ -25,6 +36,7 @@ func TestJsonTable(t *testing.T) {
 		MinimizeStackMemory: true,
 	}
 	l := lua.NewState(opts)
+
 	jv := `{"a":1,"b":"22","c":true,"d":1.1,"arr":[1,2,3,4,5,6]}`
 	tbl, err := jsonToTable(l, []byte(jv))
 	if err != nil {
@@ -54,6 +66,7 @@ func TestLuaExec(t *testing.T) {
 	defer cancel()
 	defer l.Close()
 	initHTTPLuaEnv(l)
+	initLuaMethodEnv(l)
 	//交易版本
 	l.SetGlobal("tx_ver", lua.LNumber(1))
 	//当前区块高度和世界OK
@@ -65,22 +78,19 @@ func TestLuaExec(t *testing.T) {
 	l.SetGlobal("sys_time", lua.LNumber(4))
 	var err error = nil
 	log.Println(time.Now())
-	fn, err := l.LoadString(`
-		local obj,err = http.post('http://127.0.0.1/manager/api/getCounter?id=test&sign=8830404b92f0f0fa2677cf53ece6b906&ts=1589423155&type=1',{a=1});
-		if err ~= nil then return err; end
-		print(obj.code,obj.msg);
-		print('tx_ver=',tx_ver);
-		print('best_height=',best_height);
-		print('best_time=',best_time);
-		print('tx_opt=',tx_opt);
-		print('sys_time=',sys_time);
+	codes := []byte(`
+		--local obj,err = http.get('http://127.0.0.1/manager/api/getCounter?id=test&sign=8830404b92f0f0fa2677cf53ece6b906&ts=1589423155&type=1');
+		--if err ~= nil then return err; end
+		--print(obj.code,obj.msg);
+		--print('tx_ver=',tx_ver);
+		--print('best_height=',best_height);
+		--print('best_time=',best_time);
+		--print('tx_opt=',tx_opt);
+		--print('sys_time=',sys_time);
+		print(Timestamp('2020-06-01 00:00:00'));
+		print(Timestamp('2020-06-01'));
 		return 'OK';
 	`)
-	if err != nil {
-		panic(err)
-	}
-	l.Push(fn)
-
-	err = execScript(l)
+	err = compileExecScript(l, "test", codes)
 	log.Println(err)
 }

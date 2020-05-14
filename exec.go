@@ -17,11 +17,11 @@ import (
 
 //如何时候脚本返回 如果不是ExecOK代表执行失败
 const (
-	//OptPushTxPool 当交易进入交易池
+	//OptPushTxPool 当交易进入交易池前
 	OptPushTxPool = 1
-	//OptAddToBlock 当交易加入区块
+	//OptAddToBlock 当交易加入区块前
 	OptAddToBlock = 2
-	//OptPublishTx 发布交易到网络
+	//OptPublishTx 发布交易到网络前
 	OptPublishTx = 3
 	//ExecOK 执行成功返回，脚本总要返回一个字符串
 	ExecOK = "OK"
@@ -303,6 +303,53 @@ func getEnvSinger(l *lua.LState) ISigner {
 	return vptr
 }
 
+//CheckScript 检测脚本是否有错
+func CheckScript(codes ...[]byte) error {
+	opts := lua.Options{
+		CallStackSize:       64,
+		MinimizeStackMemory: true,
+		SkipOpenLibs:        !DebugScript,
+	}
+	l := lua.NewState(opts)
+	defer l.Close()
+	buf := NewReadWriter()
+	for _, vb := range codes {
+		buf.WriteFull(vb)
+	}
+	_, err := l.Load(buf, "<main>")
+	if err != nil {
+		return fmt.Errorf("check script error %w", err)
+	}
+	return err
+}
+
+//转换时间戳
+//Timestamp('2006-01-02 15:04:05')
+func unixTimestamp(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		l.RaiseError("args error")
+		return 0
+	}
+	sfmt := "2006-01-02 15:04:05"
+	str := l.ToString(1)
+	if len(str) < len(sfmt) {
+		sfmt = "2006-01-02"
+	}
+	tv, err := time.ParseInLocation(sfmt, str, time.Local)
+	if err != nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	l.Push(lua.LNumber(tv.Unix()))
+	return 1
+}
+
+//初始化基本函数
+func initLuaMethodEnv(l *lua.LState) {
+	//获取字符串表示的时间戳
+	l.SetGlobal("Timestamp", l.NewFunction(unixTimestamp))
+}
+
 //初始化脚本状态机
 func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, opt int) (*lua.LState, context.CancelFunc) {
 	opts := lua.Options{
@@ -311,17 +358,7 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 		SkipOpenLibs:        !DebugScript,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), exectime)
-	if bi != nil {
-		ctx = context.WithValue(ctx, blockKey, bi)
-	}
-	if tx != nil {
-		ctx = context.WithValue(ctx, txKey, tx)
-	}
-	if signer != nil {
-		ctx = context.WithValue(ctx, signerKey, signer)
-	}
 	l := lua.NewState(opts)
-	l.SetContext(ctx)
 	//成功常量
 	l.SetGlobal("ExecOK", lua.LString(ExecOK))
 	l.SetGlobal("ExecErr", lua.LString(ExecErr))
@@ -329,22 +366,49 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 	l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
 	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
 	l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
-	//交易id
-	l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
-	//交易版本
-	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
-	//当前区块高度和区块生成时间
-	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
-	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
+	//可用方法
+	initLuaMethodEnv(l)
+	//
+	if bi != nil {
+		ctx = context.WithValue(ctx, blockKey, bi)
+		//当前区块高度和区块时间
+		l.SetGlobal("best_height", lua.LNumber(bi.Height()))
+		l.SetGlobal("best_time", lua.LNumber(bi.Time()))
+		//当前系统时间戳
+		l.SetGlobal("sys_time", lua.LNumber(bi.lptr.TimeNow()))
+	}
+	if tx != nil {
+		ctx = context.WithValue(ctx, txKey, tx)
+		//交易id
+		l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
+		//交易版本
+		l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
+	}
+	if signer != nil {
+		ctx = context.WithValue(ctx, signerKey, signer)
+		//获得签名对象
+		_, in, out, idx := signer.GetObjs()
+		//输入在交易中的索引 0开始
+		l.SetGlobal("in_index", lua.LNumber(idx))
+		//获取输出金额信息
+		coin, err := out.GetCoin(in, bi)
+		//签名后执行这里应该不会出错
+		if err != nil {
+			panic(err)
+		}
+		// 金额信息
+		l.SetGlobal("coin_value", lua.LNumber(coin.Value))
+		l.SetGlobal("coin_pool", lua.LBool(coin.IsPool()))
+		l.SetGlobal("coin_height", lua.LNumber(coin.Height))
+	}
 	//交易操作
 	l.SetGlobal("tx_opt", lua.LNumber(opt))
-	//当前系统时间
-	l.SetGlobal("sys_time", lua.LNumber(bi.lptr.TimeNow()))
+	l.SetContext(ctx)
 	return l, cancel
 }
 
 //编译脚本
-func compileScript(l *lua.LState, codes ...[]byte) error {
+func compileExecScript(l *lua.LState, name string, codes ...[]byte) error {
 	buf := NewReadWriter()
 	for _, vb := range codes {
 		buf.WriteFull(vb)
@@ -352,25 +416,19 @@ func compileScript(l *lua.LState, codes ...[]byte) error {
 	if DebugScript {
 		LogInfo(string(buf.Bytes()))
 	}
-	fn, err := l.Load(buf, "<main>")
+	fn, err := l.Load(buf, "<"+name+">")
 	if err != nil {
 		return err
 	}
 	l.Push(fn)
-	return nil
-}
-
-//执行脚本
-func execScript(l *lua.LState) error {
 	if err := l.PCall(0, 1, nil); err != nil {
 		return err
 	} else if result := l.Get(-1); result.Type() != lua.LTString {
 		return fmt.Errorf("script result type error")
 	} else if str := lua.LVAsString(result); str != ExecOK {
 		return fmt.Errorf("script result error %s", str)
-	} else {
-		return nil
 	}
+	return nil
 }
 
 //ExecScript 返回错误会不加入交易池或者不进入区块
@@ -392,11 +450,7 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	defer cancel()
 	defer l.Close()
 	//编译脚本
-	err = compileScript(l, txs.Exec)
-	if err != nil {
-		return err
-	}
-	return execScript(l)
+	return compileExecScript(l, "tx_main", txs.Exec)
 }
 
 //ExecScript 执行签名交易脚本
@@ -405,7 +459,7 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	//如果未设置就不执行了
 	if slen := wits.Exec.Len() + lcks.Exec.Len(); slen == 0 {
 		return nil
-	} else if slen > MaxExecSize*2 {
+	} else if slen > MaxExecSize {
 		//脚本不能太大
 		return fmt.Errorf("witness exec script + locked exec script size too big ,size = %d", slen)
 	}
@@ -419,13 +473,11 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	l, cancel := initLuaEnv(exectime, sr.tx, bi, sr, 0)
 	defer cancel()
 	defer l.Close()
-	//签名用常量
-	//输出金额
-	l.SetGlobal("out_value", lua.LNumber(sr.out.Value))
-	//编译脚本 输入，输出合并执行
-	err = compileScript(l, wits.Exec, lcks.Exec)
+	//编译输入脚本 执行错误返回
+	err = compileExecScript(l, "input_main", wits.Exec)
 	if err != nil {
 		return err
 	}
-	return execScript(l)
+	//编译输出脚本
+	return compileExecScript(l, "out_main", lcks.Exec)
 }

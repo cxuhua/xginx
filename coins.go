@@ -135,6 +135,11 @@ func (tk CoinKeyValue) IsPool() bool {
 	return tk.pool
 }
 
+//IsSpent 是否来自交易池
+func (tk CoinKeyValue) IsSpent() bool {
+	return tk.spent
+}
+
 //IsMatured 是否成熟可用
 //内存中的，非coinbase直接可用
 //coinbase输出必须在100个高度后才可消费

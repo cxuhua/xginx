@@ -107,7 +107,7 @@ func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	if err != nil {
 		return err
 	}
-	//执行脚本成
+	//执行脚本
 	return sr.ExecScript(bi, wits, locked)
 }
 
