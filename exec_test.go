@@ -12,11 +12,6 @@ import (
 func init() {
 	//测试模式下开启
 	DebugScript = true
-	SuccessScript = []byte(`
-		print(out_value);
-		print(coin_height);
-		return ExecOK;
-	`)
 }
 
 func TestCheckScript(t *testing.T) {

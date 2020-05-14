@@ -17,7 +17,8 @@ const (
 //TxScript 交易脚本
 type TxScript struct {
 	Type uint8
-	//脚本最大执行时间
+	//脚本最大执行时间，时间一半分配给交易脚本，一半分配给签名脚本
+	//签名脚本每个输入签名只有 n分之一的一半时间 n为输入数量
 	ExeTime uint32
 	Exec    VarBytes
 }

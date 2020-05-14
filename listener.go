@@ -119,7 +119,7 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	script, err := NewLockedScript(pkh)
+	script, err := NewLockedScript(pkh, DefaultLockedScript)
 	if err != nil {
 		return err
 	}

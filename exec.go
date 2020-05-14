@@ -34,6 +34,8 @@ var (
 	DebugScript = false
 	//SuccessScript 成功脚本
 	SuccessScript = []byte("return ExecOK;")
+	//DefaultLockedScript 默认锁定脚本
+	DefaultLockedScript = []byte("if HashEqu() and SignOK() then return ExecOK end return ExecErr")
 )
 
 //返回错误
@@ -187,7 +189,7 @@ func tableToJSON(tbl *lua.LTable) ([]byte, error) {
 //http_post(url,{a=1,b='aa'}) -> tbl,err
 func httpPost(l *lua.LState) int {
 	if l.GetTop() != 2 {
-		return returnHTTPError(l, errors.New("args error"))
+		return returnHTTPError(l, errors.New("args num error"))
 	}
 	path := l.ToString(1)
 	_, err := url.Parse(path)
@@ -350,6 +352,22 @@ func initLuaMethodEnv(l *lua.LState) {
 	l.SetGlobal("Timestamp", l.NewFunction(unixTimestamp))
 }
 
+//检测输入hash和锁定hash是否一致
+func checkHash(l *lua.LState) int {
+	signer := getEnvSinger(l)
+	err := signer.CheckHash()
+	l.Push(lua.LBool(err == nil))
+	return 1
+}
+
+//检测签名是否正确
+func checkSign(l *lua.LState) int {
+	signer := getEnvSinger(l)
+	err := signer.CheckSign()
+	l.Push(lua.LBool(err == nil))
+	return 1
+}
+
 //初始化脚本状态机
 func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, opt int) (*lua.LState, context.CancelFunc) {
 	opts := lua.Options{
@@ -400,6 +418,10 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 		l.SetGlobal("coin_value", lua.LNumber(coin.Value))
 		l.SetGlobal("coin_pool", lua.LBool(coin.IsPool()))
 		l.SetGlobal("coin_height", lua.LNumber(coin.Height))
+		//验证函数 如果hash一致返回true
+		l.SetGlobal("HashEqu", l.NewFunction(checkHash))
+		//签名正确返回 true
+		l.SetGlobal("SignOK", l.NewFunction(checkSign))
 	}
 	//交易操作
 	l.SetGlobal("tx_opt", lua.LNumber(opt))
@@ -415,6 +437,9 @@ func compileExecScript(l *lua.LState, name string, codes ...[]byte) error {
 	}
 	if DebugScript {
 		LogInfo(string(buf.Bytes()))
+	}
+	if buf.Len() == 0 {
+		return nil
 	}
 	fn, err := l.Load(buf, "<"+name+">")
 	if err != nil {
@@ -439,8 +464,10 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 		return err
 	}
 	if slen := txs.Exec.Len(); slen == 0 {
+		//无脚本不执行
 		return nil
 	} else if slen > MaxExecSize {
+		//脚本不能太大
 		return fmt.Errorf("tx exec script too big , size = %d", slen)
 	}
 	//交易脚本执行时间为cpu/2
@@ -458,6 +485,7 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error {
 	//如果未设置就不执行了
 	if slen := wits.Exec.Len() + lcks.Exec.Len(); slen == 0 {
+		//无脚本不执行
 		return nil
 	} else if slen > MaxExecSize {
 		//脚本不能太大
@@ -473,6 +501,7 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	l, cancel := initLuaEnv(exectime, sr.tx, bi, sr, 0)
 	defer cancel()
 	defer l.Close()
+	//消费地址hash，锁定
 	//编译输入脚本 执行错误返回
 	err = compileExecScript(l, "input_main", wits.Exec)
 	if err != nil {

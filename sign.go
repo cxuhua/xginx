@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"fmt"
-	"log"
 )
 
 //IGetSigBytes 获取签名数据接口
@@ -29,8 +28,10 @@ type ISigner interface {
 	GetAddress() Address
 	//获取交易id
 	GetTxID() HASH256
-	//签名脚本执行
-	ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error
+	//检测签名
+	CheckSign() error
+	//检测hash
+	CheckHash() error
 }
 
 //多重签名器
@@ -70,8 +71,32 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 	return sr.tx, sr.in, sr.out, sr.idx
 }
 
-//Verify 多重签名验证
-func (sr *mulsigner) Verify(bi *BlockIndex) error {
+//验证签名是否正确
+func (sr *mulsigner) CheckSign() error {
+	//获取输入脚本
+	wits, err := sr.in.Script.ToWitness()
+	if err != nil {
+		return err
+	}
+	if err := wits.Check(); err != nil {
+		return err
+	}
+	//获取签名hash
+	sigh, err := sr.GetSigHash()
+	if err != nil {
+		return err
+	}
+	//转换统一校验签名
+	acc, err := wits.ToAccount()
+	if err != nil {
+		return err
+	}
+	//多重签名校验
+	return acc.VerifyAll(sigh, wits.Sig)
+}
+
+//检测hash是否一致
+func (sr *mulsigner) CheckHash() error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
@@ -85,25 +110,25 @@ func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	if err != nil {
 		return err
 	}
-	if locked.Exec.Len() > 0 {
-		log.Println("a")
-	}
 	//pkh一致才能通过
 	if hash, err := wits.Hash(); err != nil || !hash.Equal(locked.Pkh) {
 		return fmt.Errorf("hash equal error %w", err)
 	}
-	//获取签名hash
-	sigh, err := sr.GetSigHash()
+	return nil
+}
+
+//Verify 多重签名脚本验证
+func (sr *mulsigner) Verify(bi *BlockIndex) error {
+	//获取输入脚本
+	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
 		return err
 	}
-	//转换统一校验签名
-	acc, err := wits.ToAccount()
-	if err != nil {
+	if err := wits.Check(); err != nil {
 		return err
 	}
-	//多重签名校验
-	err = acc.VerifyAll(sigh, wits.Sig)
+	//获取锁定脚本
+	locked, err := sr.out.Script.ToLocked()
 	if err != nil {
 		return err
 	}
