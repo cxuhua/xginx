@@ -151,12 +151,13 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 
-	// cp := tx.Clone(1)
-	// err = cp.Sign(suite.bi, tlis)
-	// req.NoError(err)
-	// err = bp.PushTx(suite.bi, cp)
-	// req.NoError(err)
+	cp := tx.Clone(1)
+	err = cp.Sign(suite.bi, tlis)
+	req.NoError(err)
+	err = bp.PushTx(suite.bi, cp)
+	req.NoError(err)
 
+	txs = bp.AllTxs()
 	//创建一个新区块
 	blk, err := suite.bi.NewBlock(1)
 	req.NoError(err)

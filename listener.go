@@ -45,7 +45,7 @@ func (lis *Listener) OnTxPool(tx *TX) error {
 
 //OnTxPoolRep 当交易被替换
 func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
-
+	LogInfof("TX = %v Replace %v", new.MustID(), old.MustID())
 }
 
 //OnInit 首次启动初始化
