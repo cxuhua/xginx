@@ -862,6 +862,7 @@ type TxIn struct {
 	OutHash  HASH256 //输出交易hash
 	OutIndex VarUInt //对应的输出索引
 	Script   Script  //签名后填充脚本
+	Sequence VarUInt //连续号
 }
 
 //NewTxIn 创建输入
@@ -870,11 +871,16 @@ func NewTxIn() *TxIn {
 }
 
 //Clone 复制输入
-func (in TxIn) Clone() *TxIn {
+func (in TxIn) Clone(seq ...uint) *TxIn {
 	n := NewTxIn()
 	n.OutHash = in.OutHash.Clone()
 	n.OutIndex = in.OutIndex
 	n.Script = in.Script.Clone()
+	if len(seq) > 0 {
+		n.Sequence = in.Sequence + VarUInt(seq[0])
+	} else {
+		n.Sequence = in.Sequence
+	}
 	return n
 }
 
@@ -970,6 +976,9 @@ func (in *TxIn) ForID(w IWriter) error {
 	if err := in.Script.ForID(w); err != nil {
 		return err
 	}
+	if err := in.Sequence.Encode(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -984,6 +993,9 @@ func (in *TxIn) Encode(w IWriter) error {
 	if err := in.Script.Encode(w); err != nil {
 		return err
 	}
+	if err := in.Sequence.Encode(w); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -996,6 +1008,9 @@ func (in *TxIn) Decode(r IReader) error {
 		return err
 	}
 	if err := in.Script.Decode(r); err != nil {
+		return err
+	}
+	if err := in.Sequence.Decode(r); err != nil {
 		return err
 	}
 	return nil
@@ -1117,12 +1132,31 @@ func NewTx(exetime uint32, execs ...[]byte) *TX {
 	return tx
 }
 
+//IsReplace 当前交易是否可替换原来的交易
+//这个替换只能交易池中执行,执行之前签名已经通过
+func (tx TX) IsReplace(old *TX) bool {
+	//输入数量必须一致
+	if len(tx.Ins) != len(old.Ins) {
+		return false
+	}
+	//每个输入的seq 比之前的大
+	for i := 0; i < len(tx.Ins); i++ {
+		cs := tx.Ins[i].Sequence.ToUInt32()
+		os := old.Ins[i].Sequence.ToUInt32()
+		if cs <= os {
+			return false
+		}
+	}
+	return true
+}
+
 //Clone 复制交易
-func (tx TX) Clone() *TX {
+//seq 如果需要自增输入的Sequence设置
+func (tx TX) Clone(seq ...uint) *TX {
 	n := NewTx(0)
 	n.Ver = tx.Ver
 	for _, in := range tx.Ins {
-		n.Ins = append(n.Ins, in.Clone())
+		n.Ins = append(n.Ins, in.Clone(seq...))
 	}
 	for _, out := range tx.Outs {
 		n.Outs = append(n.Outs, out.Clone())

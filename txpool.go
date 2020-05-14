@@ -535,11 +535,13 @@ func (p *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
 func (p *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
-		if _, has := p.imap[in.OutKey()]; !has {
+		if val, has := p.imap[in.OutKey()]; !has {
 			continue
+		} else if tx.IsReplace(val.tx) {
+			return p.replace(bi, val.tx, tx)
 		}
-		//引用了相同的输出并且不能覆盖不能进入交易池
-		return errors.New("sequence < old seq error")
+		//如果引用了相同的输出并且不能替换
+		return fmt.Errorf("tx ref exists and can't replace")
 	}
 	return nil
 }
@@ -563,16 +565,16 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	if err := tx.Check(bi, true); err != nil {
 		return err
 	}
-	//执行失败不会进入交易池
-	if err := tx.ExecScript(bi, OptPushTxPool); err != nil {
-		return err
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.tlis.Len() >= MaxTxPoolSize {
 		return errors.New("tx pool full,ignore push back")
 	}
 	if err := p.checkRefs(bi, tx); err != nil {
+		return err
+	}
+	//执行失败不会进入交易池
+	if err := tx.ExecScript(bi, OptPushTxPool); err != nil {
 		return err
 	}
 	if err := p.replaceTx(bi, tx); err != nil {

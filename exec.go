@@ -42,7 +42,7 @@ var (
 	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
 	//http.post 网络post 暂时不考虑使用
 	//http.get 网络get 暂时不考虑使用
-	//out_address 输出地址(指定谁消费)
+	//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
 	//in_address 输入地址(谁来消费对应的输出)
 
 	//DebugScript 是否调式脚本

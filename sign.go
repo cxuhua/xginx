@@ -200,6 +200,9 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	if err := sr.in.Script.ForVerify(buf); err != nil {
 		return nil, err
 	}
+	if err := sr.in.Sequence.Encode(buf); err != nil {
+		return nil, err
+	}
 	if err := sr.out.Script.Encode(buf); err != nil {
 		return nil, err
 	}
