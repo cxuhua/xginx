@@ -284,10 +284,10 @@ func httpGet(l *lua.LState) int {
 
 //初始化http库支持方法
 func initHTTPLuaEnv(l *lua.LState) {
-	mod := l.NewTable()
-	mod.RawSet(lua.LString("post"), l.NewFunction(httpPost))
-	mod.RawSet(lua.LString("get"), l.NewFunction(httpGet))
-	l.SetGlobal("http", mod)
+	tbl := l.NewTable()
+	tbl.RawSet(lua.LString("post"), l.NewFunction(httpPost))
+	tbl.RawSet(lua.LString("get"), l.NewFunction(httpGet))
+	l.SetGlobal("http", tbl)
 }
 
 var (
