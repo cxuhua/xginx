@@ -1,7 +1,10 @@
 package xginx
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -12,6 +15,7 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+//如何时候脚本返回 如果不是ExecOK代表执行失败
 const (
 	//OptPushTxPool 当交易进入交易池
 	OptPushTxPool = 1
@@ -19,51 +23,51 @@ const (
 	OptAddToBlock = 2
 	//OptPublishTx 发布交易到网络
 	OptPublishTx = 3
-	//执行成功返回，脚本总要返回一个字符串
+	//ExecOK 执行成功返回，脚本总要返回一个字符串
 	ExecOK = "OK"
-	//错误常量,不确定错误时返回
-	ExecErr = "ERROR"
+	//ExecErr 错误常量,不确定错误时返回
+	ExecErr = "ERR"
 )
 
 var (
-	//是否调式脚本
+	//DebugScript 是否调式脚本
 	DebugScript = false
-	//成功脚本
-	SuccessScript = []byte("return 'OK';")
+	//SuccessScript 成功脚本
+	SuccessScript = []byte("return ExecOK;")
 )
 
 //返回错误
-func returnHttpError(l *lua.LState, err error) int {
+func returnHTTPError(l *lua.LState, err error) int {
 	l.Push(lua.LNil)
 	l.Push(lua.LString(err.Error()))
 	return 2
 }
 
 //设置一个值
-func setAnyValue(l *lua.LState, key string, idx int, v jsoniter.Any, tbl *lua.LTable) {
+func setAnyValue(l *lua.LState, key string, v jsoniter.Any, tbl *lua.LTable) {
 	if typ := v.ValueType(); typ == jsoniter.BoolValue {
 		if key != "" {
 			tbl.RawSetString(key, lua.LBool(v.ToBool()))
 		} else {
-			tbl.RawSetInt(idx, lua.LBool(v.ToBool()))
+			tbl.Append(lua.LBool(v.ToBool()))
 		}
 	} else if typ == jsoniter.NilValue {
 		if key != "" {
 			tbl.RawSetString(key, lua.LNil)
 		} else {
-			tbl.RawSetInt(idx, lua.LNil)
+			tbl.Append(lua.LNil)
 		}
 	} else if typ == jsoniter.StringValue {
 		if key != "" {
 			tbl.RawSetString(key, lua.LString(v.ToString()))
 		} else {
-			tbl.RawSetInt(idx, lua.LString(v.ToString()))
+			tbl.Append(lua.LString(v.ToString()))
 		}
 	} else if typ == jsoniter.NumberValue {
 		if key != "" {
 			tbl.RawSetString(key, lua.LNumber(v.ToFloat64()))
 		} else {
-			tbl.RawSetInt(idx, lua.LNumber(v.ToFloat64()))
+			tbl.Append(lua.LNumber(v.ToFloat64()))
 		}
 	} else if typ == jsoniter.ArrayValue {
 		ntbl := l.NewTable()
@@ -71,7 +75,7 @@ func setAnyValue(l *lua.LState, key string, idx int, v jsoniter.Any, tbl *lua.LT
 		if key != "" {
 			tbl.RawSetString(key, ntbl)
 		} else {
-			tbl.RawSetInt(idx, ntbl)
+			tbl.Append(ntbl)
 		}
 	} else if typ == jsoniter.ObjectValue {
 		ntbl := l.NewTable()
@@ -79,10 +83,10 @@ func setAnyValue(l *lua.LState, key string, idx int, v jsoniter.Any, tbl *lua.LT
 		if key != "" {
 			tbl.RawSetString(key, ntbl)
 		} else {
-			tbl.RawSetInt(idx, ntbl)
+			tbl.Append(ntbl)
 		}
 	} else {
-		panic(fmt.Errorf("json type %d not process", typ))
+		LogErrorf("json type %d not process", typ)
 	}
 }
 
@@ -90,16 +94,24 @@ func setAnyValue(l *lua.LState, key string, idx int, v jsoniter.Any, tbl *lua.LT
 func setObjectTable(l *lua.LState, any jsoniter.Any, tbl *lua.LTable) {
 	for _, key := range any.Keys() {
 		v := any.Get(key)
-		setAnyValue(l, key, 0, v, tbl)
+		setAnyValue(l, key, v, tbl)
 	}
 }
 
 //设置数组表格数据
 func setArrayTable(l *lua.LState, any jsoniter.Any, tbl *lua.LTable) {
 	for i := 0; i < any.Size(); i++ {
-		v := any.Get(i)
-		setAnyValue(l, "", i, v, tbl)
+		setAnyValue(l, "", any.Get(i), tbl)
 	}
+}
+
+//对象转换为table
+func objectToTable(l *lua.LState, v interface{}) (*lua.LTable, error) {
+	jv, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return jsonToTable(l, jv)
 }
 
 //json转换为lua table
@@ -116,67 +128,198 @@ func jsonToTable(l *lua.LState, jv []byte) (*lua.LTable, error) {
 	return tbl, nil
 }
 
+//如果table是一个非空数组
+func tableIsArray(tbl *lua.LTable) bool {
+	max := tbl.MaxN()
+	return max > 0 && max == tbl.Len()
+}
+
+//获取
+func getTableValue(v lua.LValue) interface{} {
+	typ := v.Type()
+	if typ == lua.LTBool {
+		return lua.LVAsBool(v)
+	} else if typ == lua.LTString {
+		return lua.LVAsString(v)
+	} else if typ == lua.LTNumber {
+		return lua.LVAsNumber(v)
+	} else if typ == lua.LTTable {
+		return getTableJSON(v.(*lua.LTable))
+	} else {
+		return nil
+	}
+}
+
+//转换tbl到数组
+func getTableJSON(tbl *lua.LTable) interface{} {
+	if tableIsArray(tbl) {
+		arr := []interface{}{}
+		tbl.ForEach(func(k, v lua.LValue) {
+			vv := getTableValue(v)
+			if vv == nil {
+				return
+			}
+			arr = append(arr, vv)
+		})
+		return arr
+	}
+	arr := map[string]interface{}{}
+	tbl.ForEach(func(k, v lua.LValue) {
+		if k.Type() != lua.LTString {
+			return
+		}
+		kk := lua.LVAsString(k)
+		vv := getTableValue(v)
+		if vv == nil {
+			return
+		}
+		arr[kk] = vv
+	})
+	return arr
+}
+
 //table转换为json数据
-func tableToJsoin(l *lua.LState, tbl *lua.LTable) ([]byte, error) {
-	return nil, nil
+func tableToJSON(tbl *lua.LTable) ([]byte, error) {
+	arr := getTableJSON(tbl)
+	return json.Marshal(arr)
 }
 
 //http_post(url,{a=1,b='aa'}) -> tbl,err
 func httpPost(l *lua.LState) int {
-	ctx := l.Context()
-	req, err := http.NewRequest(http.MethodGet, "/", nil)
-	if err != nil {
-		panic(err)
+	if l.GetTop() != 2 {
+		return returnHTTPError(l, errors.New("args error"))
 	}
-	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-	req.WithContext(ctx)
-	return 2
-}
-
-//http_get(url) -> tbl,err
-func httpGet(l *lua.LState) int {
 	path := l.ToString(1)
 	_, err := url.Parse(path)
 	if err != nil {
-		return returnHttpError(l, err)
+		return returnHTTPError(l, err)
+	}
+	tbl := l.Get(2)
+	if tbl.Type() != lua.LTTable {
+		return returnHTTPError(l, errors.New("args 2 type error"))
+	}
+	jv, err := tableToJSON(tbl.(*lua.LTable))
+	if err != nil {
+		return returnHTTPError(l, err)
 	}
 	ctx := l.Context()
-	req, err := http.NewRequest(http.MethodGet, path, nil)
+	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader(jv))
 	if err != nil {
-		return returnHttpError(l, err)
+		return returnHTTPError(l, err)
 	}
 	req.Header.Set("Content-Type", "application/json;charset=utf-8")
 	client := http.Client{}
 	res, err := client.Do(req.WithContext(ctx))
 	if err != nil {
-		return returnHttpError(l, err)
+		return returnHTTPError(l, err)
 	}
 	defer res.Body.Close()
 	dat, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return returnHttpError(l, err)
+		return returnHTTPError(l, err)
 	}
-	l.Push(lua.LString(dat))
+	tbl, err = jsonToTable(l, dat)
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	l.Push(tbl)
+	l.Push(lua.LNil)
+	return 2
+}
+
+//http_get(url) -> tbl,err
+func httpGet(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		return returnHTTPError(l, errors.New("args error"))
+	}
+	path := l.ToString(1)
+	_, err := url.Parse(path)
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	ctx := l.Context()
+	req, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	req.Header.Set("Content-Type", "application/json;charset=utf-8")
+	client := http.Client{}
+	res, err := client.Do(req.WithContext(ctx))
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	defer res.Body.Close()
+	dat, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	tbl, err := jsonToTable(l, dat)
+	if err != nil {
+		return returnHTTPError(l, err)
+	}
+	l.Push(tbl)
 	l.Push(lua.LNil)
 	return 2
 }
 
 //初始化http库支持方法
-func initHttpLuaEnv(l *lua.LState) {
+func initHTTPLuaEnv(l *lua.LState) {
 	mod := l.NewTable()
 	mod.RawSet(lua.LString("post"), l.NewFunction(httpPost))
 	mod.RawSet(lua.LString("get"), l.NewFunction(httpGet))
 	l.SetGlobal("http", mod)
 }
 
+var (
+	blockKey  = struct{}{}
+	txKey     = struct{}{}
+	signerKey = struct{}{}
+)
+
+//返回主链对象
+func getEnvBlockIndex(l *lua.LState) *BlockIndex {
+	vptr, ok := l.Context().Value(blockKey).(*BlockIndex)
+	if !ok {
+		return nil
+	}
+	return vptr
+}
+
+//返回当前交易对象
+func getEnvTx(l *lua.LState) *TX {
+	vptr, ok := l.Context().Value(txKey).(*TX)
+	if !ok {
+		return nil
+	}
+	return vptr
+}
+
+//返回签名对象
+func getEnvSinger(l *lua.LState) ISigner {
+	vptr, ok := l.Context().Value(signerKey).(ISigner)
+	if !ok {
+		return nil
+	}
+	return vptr
+}
+
 //初始化脚本状态机
-func initLuaEnv(cpu time.Duration, tx *TX, bi *BlockIndex, opt int) (*lua.LState, context.CancelFunc) {
+func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, opt int) (*lua.LState, context.CancelFunc) {
 	opts := lua.Options{
 		CallStackSize:       64,
 		MinimizeStackMemory: true,
 		SkipOpenLibs:        !DebugScript,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), cpu)
+	ctx, cancel := context.WithTimeout(context.Background(), exectime)
+	if bi != nil {
+		ctx = context.WithValue(ctx, blockKey, bi)
+	}
+	if tx != nil {
+		ctx = context.WithValue(ctx, txKey, tx)
+	}
+	if signer != nil {
+		ctx = context.WithValue(ctx, signerKey, signer)
+	}
 	l := lua.NewState(opts)
 	l.SetContext(ctx)
 	//成功常量
@@ -187,8 +330,7 @@ func initLuaEnv(cpu time.Duration, tx *TX, bi *BlockIndex, opt int) (*lua.LState
 	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
 	l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
 	//交易id
-	id := tx.MustID()
-	l.SetGlobal("tx_id", lua.LString(id.String()))
+	l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
 	//交易版本
 	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
 	//当前区块高度和区块生成时间
@@ -210,7 +352,7 @@ func compileScript(l *lua.LState, codes ...[]byte) error {
 	if DebugScript {
 		LogInfo(string(buf.Bytes()))
 	}
-	fn, err := l.Load(buf, "<string>")
+	fn, err := l.Load(buf, "<main>")
 	if err != nil {
 		return err
 	}
@@ -238,18 +380,17 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	if err != nil {
 		return err
 	}
-	if l := txs.Exec.Len(); l == 0 {
+	if slen := txs.Exec.Len(); slen == 0 {
 		return nil
-	} else if l > MaxExecSize {
-		return fmt.Errorf("tx exec script too big size = %d", l)
+	} else if slen > MaxExecSize {
+		return fmt.Errorf("tx exec script too big , size = %d", slen)
 	}
 	//交易脚本执行时间为cpu/2
-	tv := time.Duration(txs.ExeTime/2) * time.Millisecond
-	//
-	l, cancel := initLuaEnv(tv, &tx, bi, opt)
+	exectime := time.Duration(txs.ExeTime/2) * time.Millisecond
+	//初始化执行环境
+	l, cancel := initLuaEnv(exectime, &tx, bi, nil, opt)
 	defer cancel()
 	defer l.Close()
-	//
 	//编译脚本
 	err = compileScript(l, txs.Exec)
 	if err != nil {
@@ -260,28 +401,28 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 
 //ExecScript 执行签名交易脚本
 //执行之前签名已经通过
-func (sr mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error {
+func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedScript) error {
 	//如果未设置就不执行了
-	if l := wits.Exec.Len() + lcks.Exec.Len(); l == 0 {
+	if slen := wits.Exec.Len() + lcks.Exec.Len(); slen == 0 {
 		return nil
-	} else if l > MaxExecSize*2 {
+	} else if slen > MaxExecSize*2 {
 		//脚本不能太大
-		return fmt.Errorf("witness exec script + locked exec script size too big size = %d", l)
+		return fmt.Errorf("witness exec script + locked exec script size too big ,size = %d", slen)
 	}
 	txs, err := sr.tx.Script.ToTxScript()
 	if err != nil {
 		return err
 	}
 	//每个输入的脚本执行时间为一半交易时间的平均数
-	tv := time.Duration(int(txs.ExeTime/2)/len(sr.tx.Ins)) * time.Millisecond
-	//
-	l, cancel := initLuaEnv(tv, sr.tx, bi, 0)
+	exectime := time.Duration(int(txs.ExeTime/2)/len(sr.tx.Ins)) * time.Millisecond
+	//初始化执行环境
+	l, cancel := initLuaEnv(exectime, sr.tx, bi, sr, 0)
 	defer cancel()
 	defer l.Close()
 	//签名用常量
 	//输出金额
 	l.SetGlobal("out_value", lua.LNumber(sr.out.Value))
-	//编译脚本
+	//编译脚本 输入，输出合并执行
 	err = compileScript(l, wits.Exec, lcks.Exec)
 	if err != nil {
 		return err

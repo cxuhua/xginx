@@ -435,7 +435,7 @@ func (bi *BlockIndex) Height() uint32 {
 	return last.Height
 }
 
-//Height 获取当前链高度
+//Time 获取当前链高度
 func (bi *BlockIndex) Time() uint32 {
 	last := bi.Last()
 	if last == nil {

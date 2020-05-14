@@ -48,7 +48,7 @@ func (ss *TxScript) Decode(r IReader) error {
 	return nil
 }
 
-//NewLockedScript 创建锁定脚本
+//NewTxScript 创建锁定脚本
 func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
 	std := &TxScript{Exec: VarBytes{}}
 	std.Type = ScriptTxType
@@ -222,7 +222,7 @@ func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
 }
 
-//ToLocked 如果是锁定脚本
+//ToTxScript 如果是锁定脚本
 func (s Script) ToTxScript() (TxScript, error) {
 	rs := TxScript{}
 	if !s.IsTxScript() {
