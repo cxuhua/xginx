@@ -25,13 +25,15 @@ type ISigner interface {
 	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
 	GetObjs() (*TX, *TxIn, *TxOut, int)
 	//获取消费地址
-	GetAddress() Address
+	GetOutAddress() Address
+	//获取输入地址
+	GetInAddress() Address
 	//获取交易id
 	GetTxID() HASH256
 	//检测签名
-	CheckSign() error
-	//检测hash
-	CheckHash() error
+	VerifySign() error
+	//验证地址
+	VerifyAddr() error
 }
 
 //多重签名器
@@ -57,9 +59,18 @@ func (sr *mulsigner) GetTxID() HASH256 {
 	return sr.tx.MustID()
 }
 
-//GetAddress 获取输出对应的地址
-func (sr *mulsigner) GetAddress() Address {
+//GetOutAddress 获取输出对应的地址
+func (sr *mulsigner) GetOutAddress() Address {
 	addr, err := sr.out.Script.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
+//GetInAddress 获取输入对应的地址
+func (sr *mulsigner) GetInAddress() Address {
+	addr, err := sr.in.Script.GetAddress()
 	if err != nil {
 		panic(err)
 	}
@@ -72,7 +83,7 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 }
 
 //验证签名是否正确
-func (sr *mulsigner) CheckSign() error {
+func (sr *mulsigner) VerifySign() error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
@@ -96,7 +107,7 @@ func (sr *mulsigner) CheckSign() error {
 }
 
 //检测hash是否一致
-func (sr *mulsigner) CheckHash() error {
+func (sr *mulsigner) VerifyAddr() error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {

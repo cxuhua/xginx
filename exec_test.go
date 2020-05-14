@@ -15,7 +15,7 @@ func init() {
 }
 
 func TestCheckScript(t *testing.T) {
-	err := CheckScript(SuccessScript)
+	err := CheckScript(DefaultInputScript)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +82,10 @@ func TestLuaExec(t *testing.T) {
 		--print('best_time=',best_time);
 		--print('tx_opt=',tx_opt);
 		--print('sys_time=',sys_time);
-		print(Timestamp('2020-06-01 00:00:00'));
-		print(Timestamp('2020-06-01'));
-		return 'OK';
+		print(timestamp('2020-06-01 00:00:00'));
+		print(timestamp('2020-06-01'));
+		error = 'set error';
+		return false;
 	`)
 	err = compileExecScript(l, "test", codes)
 	log.Println(err)

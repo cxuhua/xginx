@@ -15,7 +15,6 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
-//如何时候脚本返回 如果不是ExecOK代表执行失败
 const (
 	//OptPushTxPool 当交易进入交易池前
 	OptPushTxPool = 1
@@ -23,19 +22,37 @@ const (
 	OptAddToBlock = 2
 	//OptPublishTx 发布交易到网络前
 	OptPublishTx = 3
-	//ExecOK 执行成功返回，脚本总要返回一个字符串
-	ExecOK = "OK"
-	//ExecErr 错误常量,不确定错误时返回
-	ExecErr = "ERR"
 )
 
 var (
+	//脚本环境设定
+	//error = 'msg' 全局错误信息
+	//verify_addr() 验证消费地址 与输入地址hash是否一致
+	//verify_sign() 验证签名是否正确
+	//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳
+	//best_height 当前区块链高度
+	//best_time 最高的区块时间
+	//sys_time 当前系统时间戳
+	//tx_id 相关的交易id
+	//tx_ver 交易版本号
+	//in_index 签名验证时输入在交易中的索引
+	//coin_value 相关的金额
+	//coin_pool 金额是否在交易池
+	//coin_height 金额所在的区块高度
+	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
+	//http.post 网络post 暂时不考虑使用
+	//http.get 网络get 暂时不考虑使用
+	//out_address 输出地址(指定谁消费)
+	//in_address 输入地址(谁来消费对应的输出)
+
 	//DebugScript 是否调式脚本
 	DebugScript = false
-	//SuccessScript 成功脚本
-	SuccessScript = []byte("return ExecOK;")
+	//DefaultTxScript 默认交易脚本
+	DefaultTxScript = []byte(`return true`)
+	//DefaultInputScript 默认输入脚本
+	DefaultInputScript = []byte(`return true`)
 	//DefaultLockedScript 默认锁定脚本
-	DefaultLockedScript = []byte("if HashEqu() and SignOK() then return ExecOK end return ExecErr")
+	DefaultLockedScript = []byte(`return verify_addr() and verify_sign()`)
 )
 
 //返回错误
@@ -186,6 +203,7 @@ func tableToJSON(tbl *lua.LTable) ([]byte, error) {
 	return json.Marshal(arr)
 }
 
+//post json到url，返回也必须是json格式
 //http_post(url,{a=1,b='aa'}) -> tbl,err
 func httpPost(l *lua.LState) int {
 	if l.GetTop() != 2 {
@@ -346,24 +364,38 @@ func unixTimestamp(l *lua.LState) int {
 	return 1
 }
 
+//获取错误信息
+func getError(l *lua.LState) string {
+	v := l.GetGlobal("error")
+	return lua.LVAsString(v)
+}
+
 //初始化基本函数
 func initLuaMethodEnv(l *lua.LState) {
 	//获取字符串表示的时间戳
-	l.SetGlobal("Timestamp", l.NewFunction(unixTimestamp))
+	l.SetGlobal("timestamp", l.NewFunction(unixTimestamp))
 }
 
 //检测输入hash和锁定hash是否一致
-func checkHash(l *lua.LState) int {
+func verifyAddr(l *lua.LState) int {
 	signer := getEnvSinger(l)
-	err := signer.CheckHash()
+	if signer == nil {
+		l.RaiseError("checkHash signer nil")
+		return 0
+	}
+	err := signer.VerifyAddr()
 	l.Push(lua.LBool(err == nil))
 	return 1
 }
 
 //检测签名是否正确
-func checkSign(l *lua.LState) int {
+func verifySign(l *lua.LState) int {
 	signer := getEnvSinger(l)
-	err := signer.CheckSign()
+	if signer == nil {
+		l.RaiseError("checkSign signer nil")
+		return 0
+	}
+	err := signer.VerifySign()
 	l.Push(lua.LBool(err == nil))
 	return 1
 }
@@ -377,9 +409,6 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), exectime)
 	l := lua.NewState(opts)
-	//成功常量
-	l.SetGlobal("ExecOK", lua.LString(ExecOK))
-	l.SetGlobal("ExecErr", lua.LString(ExecErr))
 	//操作常量
 	l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
 	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
@@ -414,14 +443,18 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 		if err != nil {
 			panic(err)
 		}
+		//锁定脚本对应地址
+		l.SetGlobal("out_address", lua.LString(signer.GetOutAddress()))
+		//获取输入消费地址
+		l.SetGlobal("in_address", lua.LString(signer.GetInAddress()))
 		// 金额信息
 		l.SetGlobal("coin_value", lua.LNumber(coin.Value))
 		l.SetGlobal("coin_pool", lua.LBool(coin.IsPool()))
 		l.SetGlobal("coin_height", lua.LNumber(coin.Height))
 		//验证函数 如果hash一致返回true
-		l.SetGlobal("HashEqu", l.NewFunction(checkHash))
+		l.SetGlobal("verify_addr", l.NewFunction(verifyAddr))
 		//签名正确返回 true
-		l.SetGlobal("SignOK", l.NewFunction(checkSign))
+		l.SetGlobal("verify_sign", l.NewFunction(verifySign))
 	}
 	//交易操作
 	l.SetGlobal("tx_opt", lua.LNumber(opt))
@@ -447,11 +480,11 @@ func compileExecScript(l *lua.LState, name string, codes ...[]byte) error {
 	}
 	l.Push(fn)
 	if err := l.PCall(0, 1, nil); err != nil {
-		return err
-	} else if result := l.Get(-1); result.Type() != lua.LTString {
+		return fmt.Errorf("call script error %w", err)
+	} else if result := l.Get(-1); result.Type() != lua.LTBool {
 		return fmt.Errorf("script result type error")
-	} else if str := lua.LVAsString(result); str != ExecOK {
-		return fmt.Errorf("script result error %s", str)
+	} else if bok := lua.LVAsBool(result); !bok {
+		return fmt.Errorf("script result error : %s", getError(l))
 	}
 	return nil
 }
