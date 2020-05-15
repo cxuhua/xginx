@@ -40,8 +40,8 @@ var (
 	//coin_pool 金额是否在交易池
 	//coin_height 金额所在的区块高度
 	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
-	//http.post 网络post 暂时不考虑使用
-	//http.get 网络get 暂时不考虑使用
+	//http_post 网络post 暂时不考虑使用
+	//http_get 网络get 暂时不考虑使用
 	//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
 	//in_address 输入地址(谁来消费对应的输出)
 
@@ -284,10 +284,8 @@ func httpGet(l *lua.LState) int {
 
 //初始化http库支持方法
 func initHTTPLuaEnv(l *lua.LState) {
-	tbl := l.NewTable()
-	tbl.RawSet(lua.LString("post"), l.NewFunction(httpPost))
-	tbl.RawSet(lua.LString("get"), l.NewFunction(httpGet))
-	l.SetGlobal("http", tbl)
+	l.SetGlobal("http_post", l.NewFunction(httpPost))
+	l.SetGlobal("http_get", l.NewFunction(httpGet))
 }
 
 var (
