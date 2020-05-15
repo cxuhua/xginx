@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"time"
 
+	lua "github.com/cxuhua/gopher-lua"
 	jsoniter "github.com/json-iterator/go"
-	lua "github.com/yuin/gopher-lua"
 )
 
 const (
@@ -291,14 +291,14 @@ func initHTTPLuaEnv(l *lua.LState) {
 }
 
 var (
-	blockKey  = struct{}{}
-	txKey     = struct{}{}
-	signerKey = struct{}{}
+	blockKey  = &BlockIndex{}
+	txKey     = &TX{}
+	signerKey = &mulsigner{}
 )
 
 //返回主链对象
-func getEnvBlockIndex(l *lua.LState) *BlockIndex {
-	vptr, ok := l.Context().Value(blockKey).(*BlockIndex)
+func getEnvBlockIndex(ctx context.Context) *BlockIndex {
+	vptr, ok := ctx.Value(blockKey).(*BlockIndex)
 	if !ok {
 		return nil
 	}
@@ -306,8 +306,8 @@ func getEnvBlockIndex(l *lua.LState) *BlockIndex {
 }
 
 //返回当前交易对象
-func getEnvTx(l *lua.LState) *TX {
-	vptr, ok := l.Context().Value(txKey).(*TX)
+func getEnvTx(ctx context.Context) *TX {
+	vptr, ok := ctx.Value(txKey).(*TX)
 	if !ok {
 		return nil
 	}
@@ -315,8 +315,8 @@ func getEnvTx(l *lua.LState) *TX {
 }
 
 //返回签名对象
-func getEnvSinger(l *lua.LState) ISigner {
-	vptr, ok := l.Context().Value(signerKey).(ISigner)
+func getEnvSinger(ctx context.Context) ISigner {
+	vptr, ok := ctx.Value(signerKey).(ISigner)
 	if !ok {
 		return nil
 	}
@@ -378,7 +378,7 @@ func initLuaMethodEnv(l *lua.LState) {
 
 //检测输入hash和锁定hash是否一致
 func verifyAddr(l *lua.LState) int {
-	signer := getEnvSinger(l)
+	signer := getEnvSinger(l.Context())
 	if signer == nil {
 		l.RaiseError("checkHash signer nil")
 		return 0
@@ -390,7 +390,7 @@ func verifyAddr(l *lua.LState) int {
 
 //检测签名是否正确
 func verifySign(l *lua.LState) int {
-	signer := getEnvSinger(l)
+	signer := getEnvSinger(l.Context())
 	if signer == nil {
 		l.RaiseError("checkSign signer nil")
 		return 0
@@ -400,39 +400,45 @@ func verifySign(l *lua.LState) int {
 	return 1
 }
 
-//初始化脚本状态机
-func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, opt int) (*lua.LState, context.CancelFunc) {
-	opts := lua.Options{
-		CallStackSize:       64,
-		MinimizeStackMemory: true,
-		SkipOpenLibs:        !DebugScript,
+//编译脚本
+func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byte) error {
+	//检测必须的环境变量
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		return fmt.Errorf("lua env miss blockindex ")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), exectime)
+	tx := getEnvTx(ctx)
+	if tx == nil {
+		return fmt.Errorf("lua env miss tx ")
+	}
+	//初始化执行环境
+	opts := lua.Options{
+		CallStackSize:   16,
+		RegistrySize:    128,
+		RegistryMaxSize: 0,
+		SkipOpenLibs:    !DebugScript,
+	}
+	//初始化脚本环境
 	l := lua.NewState(opts)
+	l.SetContext(ctx)
+	defer l.Close()
 	//操作常量
 	l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
 	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
 	l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
 	//可用方法
 	initLuaMethodEnv(l)
-	//
-	if bi != nil {
-		ctx = context.WithValue(ctx, blockKey, bi)
-		//当前区块高度和区块时间
-		l.SetGlobal("best_height", lua.LNumber(bi.Height()))
-		l.SetGlobal("best_time", lua.LNumber(bi.Time()))
-		//当前系统时间戳
-		l.SetGlobal("sys_time", lua.LNumber(bi.lptr.TimeNow()))
-	}
-	if tx != nil {
-		ctx = context.WithValue(ctx, txKey, tx)
-		//交易id
-		l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
-		//交易版本
-		l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
-	}
-	if signer != nil {
-		ctx = context.WithValue(ctx, signerKey, signer)
+	//当前区块高度和区块时间
+	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
+	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
+	//当前系统时间戳
+	l.SetGlobal("sys_time", lua.LNumber(bi.lptr.TimeNow()))
+	//交易id
+	l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
+	//交易版本
+	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
+	//如果有签名环境
+	if signer := getEnvSinger(ctx); signer != nil {
 		//获得签名对象
 		_, in, out, idx := signer.GetObjs()
 		//输入在交易中的索引 0开始
@@ -458,12 +464,7 @@ func initLuaEnv(exectime time.Duration, tx *TX, bi *BlockIndex, signer ISigner, 
 	}
 	//交易操作
 	l.SetGlobal("tx_opt", lua.LNumber(opt))
-	l.SetContext(ctx)
-	return l, cancel
-}
-
-//编译脚本
-func compileExecScript(l *lua.LState, name string, codes ...[]byte) error {
+	//拼接代码
 	buf := NewReadWriter()
 	for _, vb := range codes {
 		buf.WriteFull(vb)
@@ -491,7 +492,7 @@ func compileExecScript(l *lua.LState, name string, codes ...[]byte) error {
 
 //ExecScript 返回错误会不加入交易池或者不进入区块
 //执行之前已经校验了签名
-func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
+func (tx *TX) ExecScript(bi *BlockIndex, opt int) error {
 	txs, err := tx.Script.ToTxScript()
 	if err != nil {
 		return err
@@ -505,12 +506,13 @@ func (tx TX) ExecScript(bi *BlockIndex, opt int) error {
 	}
 	//交易脚本执行时间为cpu/2
 	exectime := time.Duration(txs.ExeTime/2) * time.Millisecond
-	//初始化执行环境
-	l, cancel := initLuaEnv(exectime, &tx, bi, nil, opt)
+	//限制时间
+	ctx, cancel := context.WithTimeout(context.Background(), exectime)
 	defer cancel()
-	defer l.Close()
+	ctx = context.WithValue(ctx, blockKey, bi)
+	ctx = context.WithValue(ctx, txKey, tx)
 	//编译脚本
-	return compileExecScript(l, "tx_main", txs.Exec)
+	return compileExecScript(ctx, "tx_main", opt, txs.Exec)
 }
 
 //ExecScript 执行签名交易脚本
@@ -528,18 +530,22 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	if err != nil {
 		return err
 	}
-	//每个输入的脚本执行时间为一半交易时间的平均数
+	//每个输入的脚本执行时间为一半交易时间/输入总数
 	exectime := time.Duration(int(txs.ExeTime/2)/len(sr.tx.Ins)) * time.Millisecond
-	//初始化执行环境
-	l, cancel := initLuaEnv(exectime, sr.tx, bi, sr, 0)
+	//限制时间
+	ctx, cancel := context.WithTimeout(context.Background(), exectime)
 	defer cancel()
-	defer l.Close()
-	//消费地址hash，锁定
+	//
+	ctx = context.WithValue(ctx, blockKey, bi)
+	ctx = context.WithValue(ctx, txKey, sr.tx)
+	ctx = context.WithValue(ctx, signerKey, sr)
 	//编译输入脚本 执行错误返回
-	err = compileExecScript(l, "input_main", wits.Exec)
-	if err != nil {
+	if err := compileExecScript(ctx, "input_main", 0, wits.Exec); err != nil {
 		return err
 	}
 	//编译输出脚本
-	return compileExecScript(l, "out_main", lcks.Exec)
+	if err := compileExecScript(ctx, "out_main", 0, lcks.Exec); err != nil {
+		return err
+	}
+	return nil
 }
