@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"time"
@@ -15,6 +16,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
+//交易脚本可用
 const (
 	//OptPushTxPool 当交易进入交易池前
 	OptPushTxPool = 1
@@ -26,34 +28,52 @@ const (
 
 var (
 	//脚本环境设定
-	//error = 'msg' 全局错误信息
 	//verify_addr() 验证消费地址 与输入地址hash是否一致
 	//verify_sign() 验证签名是否正确
 	//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳
 	//best_height 当前区块链高度
 	//best_time 最高的区块时间
+	//median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
 	//sys_time 当前系统时间戳
 	//tx_id 相关的交易id
+	//tx_block() 交易所在的区块，返回一个table, b.height b.time
 	//tx_ver 交易版本号
 	//in_index 签名验证时输入在交易中的索引
+	//in_size 输入数量
+	//out_block() 引用的输出所在区块，返回table b.height b.time
 	//coin_value 相关的金额
 	//coin_pool 金额是否在交易池
 	//coin_height 金额所在的区块高度
 	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
-	//http_post 网络post 暂时不考虑使用
-	//http_get 网络get 暂时不考虑使用
+	//http_post 网络post 交易脚本可用 如果配置中启用了
+	//http_get 网络get 交易脚本可用 如果配置中启用了
 	//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
 	//in_address 输入地址(谁来消费对应的输出)
+	//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
+	//map_get 获取输入脚本中设置的值
 
 	//DebugScript 是否调式脚本
 	DebugScript = false
 	//DefaultTxScript 默认交易脚本
-	DefaultTxScript = []byte(`return true`)
+	DefaultTxScript = []byte(`print(has_http) return true`)
 	//DefaultInputScript 默认输入脚本
 	DefaultInputScript = []byte(`return true`)
 	//DefaultLockedScript 默认锁定脚本
 	DefaultLockedScript = []byte(`return verify_addr() and verify_sign()`)
 )
+
+//创建执行环境
+func newScriptEnv(ctx context.Context) *lua.LState {
+	opts := lua.Options{
+		CallStackSize:   16,
+		RegistrySize:    128,
+		RegistryMaxSize: 0,
+		SkipOpenLibs:    !DebugScript,
+	}
+	l := lua.NewState(opts)
+	l.SetContext(ctx)
+	return l
+}
 
 //返回错误
 func returnHTTPError(l *lua.LState, err error) int {
@@ -288,11 +308,66 @@ func initHTTPLuaEnv(l *lua.LState) {
 	l.SetGlobal("http_get", l.NewFunction(httpGet))
 }
 
+//用于将输入数据传递到输出
+//只支持四种类似 int float bool string
+type transOutMap struct {
+	ctx context.Context
+	kvs map[string]interface{}
+}
+
+func (tm *transOutMap) getValue(k string) (interface{}, bool) {
+	v, b := tm.kvs[k]
+	return v, b
+}
+
+func (tm *transOutMap) setInt(k string, v int64) {
+	if len(tm.kvs) >= mapMaxSize {
+		panic(errors.New("trans map element too many > mapMaxSize"))
+	}
+	tm.kvs[k] = v
+}
+
+func (tm *transOutMap) setFloat(k string, v float64) {
+	if len(tm.kvs) >= mapMaxSize {
+		panic(errors.New("trans map element too many > mapMaxSize"))
+	}
+	tm.kvs[k] = v
+}
+
+func (tm *transOutMap) setString(k string, v string) {
+	if len(tm.kvs) >= mapMaxSize {
+		panic(errors.New("trans map element too many > mapMaxSize"))
+	}
+	tm.kvs[k] = v
+}
+
+func (tm *transOutMap) setBool(k string, v bool) {
+	if len(tm.kvs) >= mapMaxSize {
+		panic(errors.New("trans map element too many > mapMaxSize"))
+	}
+	tm.kvs[k] = v
+}
+
+func newTransOutMap(ctx context.Context) *transOutMap {
+	return &transOutMap{ctx: ctx, kvs: map[string]interface{}{}}
+}
+
 var (
-	blockKey  = &BlockIndex{}
-	txKey     = &TX{}
-	signerKey = &mulsigner{}
+	blockKey   = &BlockIndex{}
+	txKey      = &TX{}
+	signerKey  = &mulsigner{}
+	transKey   = &transOutMap{}
+	mapMaxSize = 32
 )
+
+//返回map
+func getEnvTransMap(ctx context.Context) *transOutMap {
+	vptr, ok := ctx.Value(transKey).(*transOutMap)
+	if !ok {
+		return nil
+	}
+	return vptr
+}
 
 //返回主链对象
 func getEnvBlockIndex(ctx context.Context) *BlockIndex {
@@ -313,7 +388,7 @@ func getEnvTx(ctx context.Context) *TX {
 }
 
 //返回签名对象
-func getEnvSinger(ctx context.Context) ISigner {
+func getEnvSigner(ctx context.Context) ISigner {
 	vptr, ok := ctx.Value(signerKey).(ISigner)
 	if !ok {
 		return nil
@@ -323,12 +398,7 @@ func getEnvSinger(ctx context.Context) ISigner {
 
 //CheckScript 检测脚本是否有错
 func CheckScript(codes ...[]byte) error {
-	opts := lua.Options{
-		CallStackSize:       64,
-		MinimizeStackMemory: true,
-		SkipOpenLibs:        !DebugScript,
-	}
-	l := lua.NewState(opts)
+	l := newScriptEnv(context.Background())
 	defer l.Close()
 	buf := NewReadWriter()
 	for _, vb := range codes {
@@ -342,7 +412,7 @@ func CheckScript(codes ...[]byte) error {
 }
 
 //转换时间戳
-//Timestamp('2006-01-02 15:04:05')
+//timestamp('2006-01-02 15:04:05')
 func unixTimestamp(l *lua.LState) int {
 	if l.GetTop() != 1 {
 		l.RaiseError("args error")
@@ -362,21 +432,34 @@ func unixTimestamp(l *lua.LState) int {
 	return 1
 }
 
-//获取错误信息
-func getError(l *lua.LState) string {
-	v := l.GetGlobal("error")
-	return lua.LVAsString(v)
+//如果无参数就获取最近11个区块的中间时间
+//median_time() median_time(10)
+func blockMedianTime(l *lua.LState) int {
+	bi := getEnvBlockIndex(l.Context())
+	if bi == nil {
+		l.RaiseError("block index env miss")
+		return 0
+	}
+	h := bi.Height()
+	if l.GetTop() == 1 {
+		h = uint32(l.ToInt(1))
+	}
+	t := bi.GetMedianTime(h)
+	l.Push(lua.LNumber(t))
+	return 1
 }
 
 //初始化基本函数
-func initLuaMethodEnv(l *lua.LState) {
+func initLuaMethodEnv(l *lua.LState, typ int) {
 	//获取字符串表示的时间戳
 	l.SetGlobal("timestamp", l.NewFunction(unixTimestamp))
+	//获取最近11个区块中间时间，如果指定了参数就从指定区块向前推送
+	l.SetGlobal("median_time", l.NewFunction(blockMedianTime))
 }
 
 //检测输入hash和锁定hash是否一致
 func verifyAddr(l *lua.LState) int {
-	signer := getEnvSinger(l.Context())
+	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("checkHash signer nil")
 		return 0
@@ -388,7 +471,7 @@ func verifyAddr(l *lua.LState) int {
 
 //检测签名是否正确
 func verifySign(l *lua.LState) int {
-	signer := getEnvSinger(l.Context())
+	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("checkSign signer nil")
 		return 0
@@ -398,8 +481,167 @@ func verifySign(l *lua.LState) int {
 	return 1
 }
 
+//如果是整形返回整形，true
+func luaNumberIsInt(v lua.LNumber) (int64, bool) {
+	i, b := math.Modf(float64(v))
+	return int64(i), b == 0
+}
+
+//初始化传递api口,只用于输入脚本
+//map_set(k, v)
+func transMapValueSet(l *lua.LState) int {
+	if l.GetTop() != 2 {
+		l.RaiseError("args num error")
+		return 0
+	}
+	k := l.Get(1)
+	if k.Type() != lua.LTString {
+		l.RaiseError("args 1 type error")
+		return 0
+	}
+	key := lua.LVAsString(k)
+	if key == "" {
+		l.RaiseError("args 1 empty error")
+		return 0
+	}
+	tmap := getEnvTransMap(l.Context())
+	if tmap == nil {
+		l.RaiseError("trans map miss")
+		return 0
+	}
+	v := l.Get(2)
+	typ := v.Type()
+	if typ == lua.LTNumber {
+		val := lua.LVAsNumber(v)
+		iv, ok := luaNumberIsInt(val)
+		if ok {
+			tmap.setInt(key, iv)
+		} else {
+			tmap.setFloat(key, float64(val))
+		}
+	} else if typ == lua.LTBool {
+		tmap.setBool(key, lua.LVAsBool(v))
+	} else if typ == lua.LTString {
+		tmap.setString(key, lua.LVAsString(v))
+	} else {
+		l.RaiseError("args 2 type error")
+		return 0
+	}
+	return 0
+}
+
+//初始化传递api口,只用于输出脚本
+//map_get(k) -> v
+func transMapValueGet(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		l.RaiseError("args num error")
+		return 0
+	}
+	k := l.Get(1)
+	if k.Type() != lua.LTString {
+		l.RaiseError("args 1 type error")
+		return 0
+	}
+	key := lua.LVAsString(k)
+	if key == "" {
+		l.RaiseError("args 1 empty error")
+		return 0
+	}
+	tmap := getEnvTransMap(l.Context())
+	if tmap == nil {
+		l.RaiseError("trans map miss")
+		return 0
+	}
+	v, b := tmap.getValue(key)
+	if !b {
+		l.Push(lua.LNil)
+	} else {
+		switch v.(type) {
+		case int64:
+			l.Push(lua.LNumber(v.(int64)))
+		case float64:
+			l.Push(lua.LNumber(v.(float64)))
+		case bool:
+			l.Push(lua.LBool(v.(bool)))
+		case string:
+			l.Push(lua.LString(v.(string)))
+		default:
+			l.Push(lua.LNil)
+		}
+	}
+	l.Push(lua.LBool(b))
+	return 2
+}
+
+//设置属性字段
+func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, id HASH256) {
+	//查询交易所在的区块
+	v, err := bi.LoadTxValue(id)
+	//如果查找不到使用下个区块高度和当前时间
+	if err != nil {
+		tbl.RawSetString("height", lua.LNumber(bi.NextHeight()))
+		tbl.RawSetString("time", lua.LNumber(bi.lptr.TimeNow()))
+	} else if blk, err := bi.LoadBlock(v.BlkID); err != nil {
+		tbl.RawSetString("height", lua.LNumber(bi.NextHeight()))
+		tbl.RawSetString("time", lua.LNumber(bi.lptr.TimeNow()))
+	} else {
+		tbl.RawSetString("height", lua.LNumber(blk.Meta.Height))
+		tbl.RawSetString("time", lua.LNumber(blk.Meta.Time))
+	}
+}
+
+//获取交易所在的区块信息
+func txBlockMethod(l *lua.LState) int {
+	ctx := l.Context()
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		l.RaiseError("signer miss")
+		return 0
+	}
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		l.RaiseError("block index miss")
+		return 0
+	}
+	tbl := l.NewTable()
+	id := signer.GetTxID()
+	setBlockTable(l, tbl, bi, id)
+	l.Push(tbl)
+	return 1
+}
+
+//获取输出所在的区块信息
+func outblockMethod(l *lua.LState) int {
+	ctx := l.Context()
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		l.RaiseError("signer miss")
+		return 0
+	}
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		l.RaiseError("block index miss")
+		return 0
+	}
+	//输出所在交易就是输入的outhash对应的交易
+	_, in, _, _ := signer.GetObjs()
+	tbl := l.NewTable()
+	setBlockTable(l, tbl, bi, in.OutHash)
+	l.Push(tbl)
+	return 1
+}
+
+//初始化交易可用方法
+func initLuaTxMethod(l *lua.LState) {
+	l.SetGlobal("tx_block", l.NewFunction(txBlockMethod))
+	l.SetGlobal("out_block", l.NewFunction(outblockMethod))
+}
+
 //编译脚本
-func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byte) error {
+//typ = 0,tx script
+//typ = 1,input script
+//typ = 2,out script
+func compileExecScript(ctx context.Context, name string, opt int, typ int, codes ...[]byte) error {
 	//检测必须的环境变量
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
@@ -409,23 +651,30 @@ func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byt
 	if tx == nil {
 		return fmt.Errorf("lua env miss tx ")
 	}
-	//初始化执行环境
-	opts := lua.Options{
-		CallStackSize:   16,
-		RegistrySize:    128,
-		RegistryMaxSize: 0,
-		SkipOpenLibs:    !DebugScript,
-	}
 	//初始化脚本环境
-	l := lua.NewState(opts)
-	l.SetContext(ctx)
+	l := newScriptEnv(ctx)
 	defer l.Close()
+	//交易操作
+	l.SetGlobal("tx_opt", lua.LNumber(opt))
 	//操作常量
-	l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
-	l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
-	l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
+	if typ == 0 {
+		l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
+		l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
+		l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
+	}
+	//是否在交易脚本中启用http 接扣
+	l.SetGlobal("has_http", lua.LBool(conf.HTTPAPI))
 	//可用方法
-	initLuaMethodEnv(l)
+	initLuaMethodEnv(l, typ)
+	if typ == 0 && conf.HTTPAPI {
+		initHTTPLuaEnv(l)
+	} else if typ == 1 {
+		//输入脚本可用方法
+		l.SetGlobal("map_set", l.NewFunction(transMapValueSet))
+	} else if typ == 2 {
+		//输出脚本可用方法
+		l.SetGlobal("map_get", l.NewFunction(transMapValueGet))
+	}
 	//当前区块高度和区块时间
 	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
 	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
@@ -436,14 +685,20 @@ func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byt
 	//交易版本
 	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
 	//如果有签名环境
-	if signer := getEnvSinger(ctx); signer != nil {
+	if signer := getEnvSigner(ctx); signer != nil {
 		//获得签名对象
-		_, in, out, idx := signer.GetObjs()
+		stx, in, out, idx := signer.GetObjs()
+		//必须是同一个交易
+		if stx != tx {
+			panic(errors.New("tx error"))
+		}
+		//输入总数
+		l.SetGlobal("in_size", lua.LNumber(len(tx.Ins)))
 		//输入在交易中的索引 0开始
 		l.SetGlobal("in_index", lua.LNumber(idx))
 		//获取输出金额信息
 		coin, err := out.GetCoin(in, bi)
-		//签名后执行这里应该不会出错
+		//签名后执行这里应该不会出错，肯定存在coin
 		if err != nil {
 			panic(err)
 		}
@@ -459,9 +714,9 @@ func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byt
 		l.SetGlobal("verify_addr", l.NewFunction(verifyAddr))
 		//签名正确返回 true
 		l.SetGlobal("verify_sign", l.NewFunction(verifySign))
+		//交易可用方法
+		initLuaTxMethod(l)
 	}
-	//交易操作
-	l.SetGlobal("tx_opt", lua.LNumber(opt))
 	//拼接代码
 	buf := NewReadWriter()
 	for _, vb := range codes {
@@ -478,12 +733,13 @@ func compileExecScript(ctx context.Context, name string, opt int, codes ...[]byt
 		return err
 	}
 	l.Push(fn)
+	//只能有一个返回值 true 或者 false
 	if err := l.PCall(0, 1, nil); err != nil {
 		return fmt.Errorf("call script error %w", err)
 	} else if result := l.Get(-1); result.Type() != lua.LTBool {
 		return fmt.Errorf("script result type error")
 	} else if bok := lua.LVAsBool(result); !bok {
-		return fmt.Errorf("script result error : %s", getError(l))
+		return fmt.Errorf("script result error")
 	}
 	return nil
 }
@@ -510,7 +766,7 @@ func (tx *TX) ExecScript(bi *BlockIndex, opt int) error {
 	ctx = context.WithValue(ctx, blockKey, bi)
 	ctx = context.WithValue(ctx, txKey, tx)
 	//编译脚本
-	return compileExecScript(ctx, "tx_main", opt, txs.Exec)
+	return compileExecScript(ctx, "tx_main", opt, 0, txs.Exec)
 }
 
 //ExecScript 执行签名交易脚本
@@ -537,12 +793,15 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	ctx = context.WithValue(ctx, blockKey, bi)
 	ctx = context.WithValue(ctx, txKey, sr.tx)
 	ctx = context.WithValue(ctx, signerKey, sr)
+	//输入和输出锁定脚本在两个不同的环境中执行，使用这个map传递数据
+	//只用于签名脚本输入输出
+	ctx = context.WithValue(ctx, transKey, newTransOutMap(ctx))
 	//编译输入脚本 执行错误返回
-	if err := compileExecScript(ctx, "input_main", 0, wits.Exec); err != nil {
+	if err := compileExecScript(ctx, "input_main", 0, 1, wits.Exec); err != nil {
 		return err
 	}
 	//编译输出脚本
-	if err := compileExecScript(ctx, "out_main", 0, lcks.Exec); err != nil {
+	if err := compileExecScript(ctx, "out_main", 0, 2, lcks.Exec); err != nil {
 		return err
 	}
 	return nil

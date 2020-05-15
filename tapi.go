@@ -124,6 +124,7 @@ func NewTestConfig() *Config {
 	conf.TCPPort = 9333
 	conf.TCPIp = "127.0.0.1"
 	conf.MaxConn = 50
+	conf.HTTPAPI = true
 	conf.Halving = 210000
 	conf.PowLimit = "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	conf.PowSpan = 2016

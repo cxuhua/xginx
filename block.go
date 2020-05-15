@@ -1037,7 +1037,7 @@ func (out TxOut) Clone() *TxOut {
 	return n
 }
 
-//GetCoin 获取输入引用的输出和金额
+//GetCoin 获取输入引用的输出 这个输出相关的金额信息
 func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
 	pkh, err := out.Script.GetPkh()
 	if err != nil {
@@ -1053,7 +1053,7 @@ func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
 	return coin, err
 }
 
-//HasCoin in引用的coin状态是否正常
+//HasCoin 获取输入引用的输出 输出对应的coin状态是否正常可用
 func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 	pkh, err := out.Script.GetPkh()
 	if err != nil {

@@ -34,6 +34,7 @@ type Config struct {
 	Halving    int      `json:"halving"`     //210000减产配置
 	Ver        uint32   `json:"version"`     //节点版本
 	TCPPort    int      `json:"tcp_port"`    //服务端口和ip
+	HTTPAPI    bool     `json:"http_api"`    //是否允许http 脚本方法执行
 	TCPIp      string   `json:"tcp_ip"`      //节点远程连接ip
 	LimitHash  UINT256  `json:"-"`           //最小工作难度
 	flags      [4]byte  //协议标识

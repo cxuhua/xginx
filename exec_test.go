@@ -1,15 +1,21 @@
 package xginx
 
 import (
+	"context"
 	"log"
+	"math"
 	"testing"
-
-	lua "github.com/cxuhua/gopher-lua"
 )
 
 func init() {
 	//测试模式下开启
 	DebugScript = true
+}
+
+func TestFloatVal(t *testing.T) {
+	v := float64(1.000000000)
+	i, b := math.Modf(v)
+	log.Println(i, b == 0)
 }
 
 func TestCheckScript(t *testing.T) {
@@ -23,28 +29,52 @@ func TestCheckScript(t *testing.T) {
 	}
 }
 
-func TestJsonTable(t *testing.T) {
-	opts := lua.Options{
-		CallStackSize:   16,
-		RegistrySize:    128,
-		RegistryMaxSize: 0,
-		SkipOpenLibs:    !DebugScript,
-	}
-	l := lua.NewState(opts)
+func TestTransMap(t *testing.T) {
+	ctx = context.WithValue(context.Background(), transKey, newTransOutMap(ctx))
+	l := newScriptEnv(ctx)
+	defer l.Close()
 
+	l.SetGlobal("map_set", l.NewFunction(transMapValueSet))
+	l.SetGlobal("map_get", l.NewFunction(transMapValueGet))
+
+	err := l.DoString(`
+		map_set('k1',1);
+		map_set('k2',true);
+		map_set('k3','kstring');
+		map_set('k4',1.55);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = l.DoString(`map_set('k5',{});`)
+	if err == nil {
+		t.Fatal("map set table should error")
+	}
+	err = l.DoString(`
+		print(map_get('k1'));
+		print(map_get('k2'));
+		print(map_get('k3'));
+		print(map_get('k4'));
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJsonTable(t *testing.T) {
+	l := newScriptEnv(context.Background())
+	defer l.Close()
 	jv := `{"a":1,"b":"1234567890","c":true,"d":1.1,"arr":[1,2,3,4,5,6]}`
 	tbl, err := jsonToTable(l, []byte(jv))
 	if err != nil {
 		panic(err)
 	}
 	if tableIsArray(tbl) {
-		log.Println("isarray")
-	} else {
-		log.Println("not isarray")
+		t.Fatal("is object")
 	}
 	jvv, err := tableToJSON(tbl)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	log.Println(string(jvv))
 }
