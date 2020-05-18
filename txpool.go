@@ -150,8 +150,10 @@ func (p *TxPool) loadTxOut(bi *BlockIndex, in *TxIn) (*TX, *TxOut, error) {
 	return otx, out, nil
 }
 
-//GetRefsTxs 获取交易引用的交易id
-func (p *TxPool) GetRefsTxs(id HASH256) []HASH256 {
+//getRefsTxs 获取交易引用的其他交易id
+//一般消费交易池中的交易时会发生引用，这时如果加入区块,
+//引用的交易必须在这个交易之前加入区块
+func (p *TxPool) getRefsTxs(id HASH256) []HASH256 {
 	prefix := GetDBKey(RefTxPrefix, id[:])
 	iter := p.mdb.NewIterator(util.BytesPrefix(prefix))
 	defer iter.Release()
@@ -274,7 +276,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 
 //移除引用了此交易的交易，返回移除了的交易
 func (p *TxPool) removeRefsTxs(bi *BlockIndex, refs *[]*TX, id HASH256) {
-	ids := p.GetRefsTxs(id)
+	ids := p.getRefsTxs(id)
 	for _, id := range ids {
 		ele, has := p.tmap[id]
 		if !has {
@@ -330,6 +332,8 @@ func (p *TxPool) DelTxs(bi *BlockIndex, txs []*TX) {
 	//移除并返回删除了的交易
 	refs := p.GetDelTxs(bi, txs)
 	//这些被删除的引用是否恢复?反向恢复
+	//为什么重新加入交易池恢复：交易加入区块链后，引用这个交易的其他交易会变得可用
+	//所以可以重新加入交易池进行处理
 	for i := len(refs) - 1; i >= 0; i-- {
 		tx := refs[i]
 		err := tx.Check(bi, true)
@@ -369,7 +373,7 @@ func (p *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element,
 		buf.Reset()
 		tx := cur.Value.(*TX)
 		err := tx.Check(bi, true)
-		//检测失败的将会被删除，除了seq检查错误
+		//检测失败的将会被删除
 		if err != nil {
 			res = append(res, cur)
 			continue
@@ -570,6 +574,7 @@ func (p *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	if p.tlis.Len() >= MaxTxPoolSize {
 		return errors.New("tx pool full,ignore push back")
 	}
+	//如果引用了交易池中的必须存在
 	if err := p.checkRefs(bi, tx); err != nil {
 		return err
 	}
