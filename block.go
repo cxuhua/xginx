@@ -578,6 +578,8 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 	if len(txs) == 0 {
 		return errors.New("txs empty")
 	}
+	//过滤交易数据
+	txs = bi.lptr.OnLoadTxs(txs)
 	//保存旧的交易列表
 	otxs := blk.Txs
 	//加入多个交易到区块中

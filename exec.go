@@ -423,11 +423,12 @@ func CheckScript(codes ...[]byte) error {
 //转换时间戳
 //timestamp('2006-01-02 15:04:05')
 func unixTimestamp(l *lua.LState) int {
+	bi := getEnvBlockIndex(l.Context())
 	sfmt := "2006-01-02 15:04:05"
 	top := l.GetTop()
 	//无参数返回当前时间
 	if top == 0 {
-		l.Push(lua.LNumber(time.Now().Unix()))
+		l.Push(lua.LNumber(bi.lptr.TimeNow()))
 		return 1
 	}
 	var str string

@@ -26,7 +26,7 @@ func newTestLis(accnum int) *TestLis {
 	}
 	for i := 0; i < accnum; i++ {
 		//创建5个1-1账号
-		acc, err := NewAccount(1, 1, false)
+		acc, err := NewAccount(5, 1, true)
 		if err != nil {
 			panic(err)
 		}
@@ -66,8 +66,7 @@ func (lis *TestLis) OnInit(bi *BlockIndex) error {
 	return bi.RemoveBestValue()
 }
 
-//OnSignTx 当账户没有私钥时调用此方法签名
-//singer 签名器
+//OnSignTx 签名器
 func (lis *TestLis) OnSignTx(signer ISigner) error {
 	_, in, out, _ := signer.GetObjs()
 	pkh, err := out.Script.GetPkh()
@@ -115,10 +114,14 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 }
 
 //NewTestConfig 创建一个测试用的配置
-func NewTestConfig() *Config {
+func NewTestConfig(dir ...string) *Config {
 	conf = &Config{}
 	conf.nodeid = conf.GenUInt64()
-	conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
+	if len(dir) > 0 && dir[0] != "" {
+		conf.DataDir = dir[0]
+	} else {
+		conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
+	}
 	conf.MinerNum = 1
 	conf.Ver = 10000
 	conf.TCPPort = 9333
