@@ -2,16 +2,19 @@ package xginx
 
 import (
 	"errors"
+	"fmt"
+	"net"
 )
 
 //脚本类型定义
 //Script 第一个字节表示脚本类型
 const (
-	InvalidArb         = ^uint8(0) //无效的仲裁
-	ScriptCoinbaseType = uint8(0)  //coinbase script
-	ScriptLockedType   = uint8(1)  //标准锁定脚本 用于输出
-	ScriptWitnessType  = uint8(2)  //隔离见证多重签名脚本 用于输入
-	ScriptTxType       = uint8(3)  //交易脚本 用于控制交易是否打包进区块，是否进入交易池，是否发布上网
+	InvalidArb            = ^uint8(0) //无效的仲裁
+	ScriptCoinbaseType    = uint8(0)  //coinbase script
+	ScriptLockedType      = uint8(1)  //标准锁定脚本 用于输出
+	ScriptWitnessType     = uint8(2)  //隔离见证多重签名脚本 用于输入
+	ScriptTxType          = uint8(3)  //交易脚本 用于控制交易是否打包进区块，是否进入交易池，是否发布上网
+	MaxCoinbaseScriptSize = 256       //最大coinbase脚本长度
 )
 
 //TxScript 交易脚本
@@ -123,7 +126,7 @@ func getwitnessminsize() int {
 }
 
 func getcoinbaseminsize() int {
-	return NewCoinbaseScript(0, []byte{}).Len()
+	return NewCoinbaseScript(0, net.ParseIP("127.0.0.1")).Len()
 }
 
 func getlockedminsize() int {
@@ -143,7 +146,7 @@ var (
 
 //IsCoinBase 是否是coinbase脚本
 func (s Script) IsCoinBase() bool {
-	return s.Len() >= conbaseminsize && s.Len() <= 128 && s[0] == ScriptCoinbaseType
+	return s.Len() >= conbaseminsize && s.Len() <= MaxCoinbaseScriptSize && s[0] == ScriptCoinbaseType
 }
 
 //IsWitness 是否是隔离见证脚本
@@ -199,11 +202,6 @@ func (s Script) GetPkh() (HASH160, error) {
 	} else {
 		return pkh, errors.New("script typ not pkh")
 	}
-}
-
-//Height 获取coinbase中的区块高度
-func (s Script) Height() uint32 {
-	return Endian.Uint32(s[1:5])
 }
 
 //Encode 编码脚本
@@ -280,6 +278,9 @@ func (s Script) ToWitness() (WitnessScript, error) {
 
 //NewCoinbaseScript 创建coinbase脚本
 func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
+	if len(ip) != net.IPv6len {
+		panic(fmt.Errorf("ip length error %d", len(ip)))
+	}
 	s := Script{ScriptCoinbaseType}
 	hb := []byte{0, 0, 0, 0}
 	//当前块高度必须存在
@@ -291,7 +292,34 @@ func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
 	for _, v := range bs {
 		s = append(s, v...)
 	}
+	if s.Len() > MaxCoinbaseScriptSize {
+		panic(fmt.Errorf("coinbase script too long  length = %d", s.Len()))
+	}
 	return s
+}
+
+//Data 获取coinbase中的自定义数据
+func (s Script) Data() []byte {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return s[5+16:]
+}
+
+//IP 获取coinbase中的区块高度
+func (s Script) IP() []byte {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return s[5 : 5+16]
+}
+
+//Height 获取coinbase中的区块高度
+func (s Script) Height() uint32 {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return Endian.Uint32(s[1:5])
 }
 
 //LockedScript 标准锁定脚本

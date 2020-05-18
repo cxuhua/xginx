@@ -137,8 +137,8 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	tlis := newTransListner(suite.bi, src, dst)
 	//生成交易
 	mi := suite.bi.NewTrans(tlis)
-	//向dst转账1COIN
-	mi.Add(daddr, 1*Coin)
+	//向dst转账1COIN，使用默认解锁脚本
+	mi.Add(daddr, 1*Coin, DefaultLockedScript)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
 	tx, err := mi.NewTx(0, DefaultTxScript)

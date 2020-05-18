@@ -328,9 +328,8 @@ func (hs *Headers) Reverse() {
 	*hs = vs
 }
 
-//检测区块头
-//主要检测难度和merkle,id
-func (hs Headers) check(h uint32, bh BlockHeader, bi *BlockIndex) error {
+//检测区块头的工作量难度
+func (hs Headers) checkpow(h uint32, bh BlockHeader, bi *BlockIndex) error {
 	if bh.Merkle.IsZero() {
 		return errors.New("merkle id error")
 	}
@@ -353,18 +352,21 @@ func (hs Headers) Check(height uint32, bi *BlockIndex) error {
 	}
 	nexth := NextHeight(height)
 	prev := hs[0]
-	if err := hs.check(nexth, prev, bi); err != nil {
+	if err := hs.checkpow(nexth, prev, bi); err != nil {
 		return err
 	}
 	for i := 1; i < len(hs); i++ {
 		curr := hs[i]
+		//当前区块的prev指向上一个区块的ID
 		if !curr.Prev.Equal(prev.MustID()) {
 			return errors.New("prev hash != prev id")
 		}
+		//当前区块的时间戳必定比上一个区块的大
 		if curr.Time <= prev.Time {
 			return errors.New("time error")
 		}
-		if err := hs.check(nexth+uint32(i), curr, bi); err != nil {
+		//当前区块的难度检测
+		if err := hs.checkpow(nexth+uint32(i), curr, bi); err != nil {
 			return err
 		}
 		prev = curr

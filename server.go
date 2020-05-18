@@ -223,7 +223,7 @@ func (s *TCPServer) HasClient(id uint64, c *Client) bool {
 	return ok
 }
 
-//DelClient 删除客户端
+//DelClient 移除客户端
 func (s *TCPServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -389,14 +389,15 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	return nil
 }
 
-//下载块数据
+//定时向拥有更高区块的节点请求区块数据
 func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	bv := bi.GetBestValue()
 	//查询拥有这个高度的客户端
-	if c := s.findBlockClient(bv.Next()); c != nil {
+	c := s.findBlockClient(bv.Next())
+	if c != nil {
 		msg := &MsgGetBlock{
 			Next: bv.Next(),
 			Last: bv.LastID(),

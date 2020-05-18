@@ -2,8 +2,26 @@ package xginx
 
 import (
 	"bytes"
+	"net"
 	"testing"
 )
+
+func TestCoinbase(t *testing.T) {
+	ip := net.ParseIP("127.0.0.1")
+	vb := []byte{1, 2, 3, 4}
+	s := NewCoinbaseScript(10, ip, vb)
+	if s.Height() != 10 {
+		t.Fatal("set height error")
+	}
+	sip := s.IP()
+	if !bytes.Equal(ip, sip) {
+		t.Fatal("ip save error")
+	}
+	svb := s.Data()
+	if !bytes.Equal(vb, svb) {
+		t.Fatal("coinbase data save error")
+	}
+}
 
 func TestScriptSer(t *testing.T) {
 	s := Script([]byte{1, 2, 3, 4, 5})

@@ -26,37 +26,42 @@ const (
 	OptPublishTx = 3
 )
 
+//脚本环境设定
+//verify_addr() 验证消费地址 与输入地址hash是否一致
+//verify_sign() 验证签名是否正确
+//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳,无参数获取当前时间 = sys_time
+//best_height 当前区块链高度
+//best_time 最高的区块时间
+//median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
+//sys_time 当前系统时间戳
+//tx_id 相关的交易id
+//tx_block() 交易所在的区块，返回一个table, b.height b.time
+//tx_ver 交易版本号
+//in_index 签名验证时输入在交易中的索引
+//in_size 输入数量
+//out_block() 引用的输出所在区块，返回table b.height b.time
+//coin_value 相关的金额
+//coin_pool 金额是否在交易池
+//coin_height 金额所在的区块高度
+//out_size 交易中的输出数量
+//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
+//http_post 网络post 交易脚本可用 如果配置中启用了
+//http_get 网络get 交易脚本可用 如果配置中启用了
+//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
+//in_address 输入地址(谁来消费对应的输出)
+//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
+//map_get 获取输入脚本中设置的值
+
 var (
-	//脚本环境设定
-	//verify_addr() 验证消费地址 与输入地址hash是否一致
-	//verify_sign() 验证签名是否正确
-	//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳
-	//best_height 当前区块链高度
-	//best_time 最高的区块时间
-	//median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
-	//sys_time 当前系统时间戳
-	//tx_id 相关的交易id
-	//tx_block() 交易所在的区块，返回一个table, b.height b.time
-	//tx_ver 交易版本号
-	//in_index 签名验证时输入在交易中的索引
-	//in_size 输入数量
-	//out_block() 引用的输出所在区块，返回table b.height b.time
-	//coin_value 相关的金额
-	//coin_pool 金额是否在交易池
-	//coin_height 金额所在的区块高度
-	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
-	//http_post 网络post 交易脚本可用 如果配置中启用了
-	//http_get 网络get 交易脚本可用 如果配置中启用了
-	//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
-	//in_address 输入地址(谁来消费对应的输出)
-	//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
-	//map_get 获取输入脚本中设置的值
 
 	//DefaultTxScript 默认交易脚本
 	DefaultTxScript = []byte(`return true`)
+
 	//DefaultInputScript 默认输入脚本
 	DefaultInputScript = []byte(`return true`)
+
 	//DefaultLockedScript 默认锁定脚本
+	//验证地址和签名
 	DefaultLockedScript = []byte(`return verify_addr() and verify_sign()`)
 )
 
@@ -416,8 +421,8 @@ func CheckScript(codes ...[]byte) error {
 //timestamp('2006-01-02 15:04:05')
 func unixTimestamp(l *lua.LState) int {
 	if l.GetTop() != 1 {
-		l.RaiseError("args error")
-		return 0
+		l.Push(lua.LNumber(time.Now().Unix()))
+		return 1
 	}
 	sfmt := "2006-01-02 15:04:05"
 	str := l.ToString(1)
@@ -695,6 +700,8 @@ func compileExecScript(ctx context.Context, name string, opt int, typ int, codes
 		}
 		//输入总数
 		l.SetGlobal("in_size", lua.LNumber(len(tx.Ins)))
+		//输入总数
+		l.SetGlobal("out_size", lua.LNumber(len(tx.Outs)))
 		//输入在交易中的索引 0开始
 		l.SetGlobal("in_index", lua.LNumber(idx))
 		//获取输出金额信息
