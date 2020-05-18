@@ -9,7 +9,7 @@ import (
 
 func init() {
 	//测试模式下开启
-	DebugScript = true
+	*IsDebug = true
 }
 
 func TestFloatVal(t *testing.T) {

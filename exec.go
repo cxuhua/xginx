@@ -52,8 +52,6 @@ var (
 	//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
 	//map_get 获取输入脚本中设置的值
 
-	//DebugScript 是否调式脚本
-	DebugScript = false
 	//DefaultTxScript 默认交易脚本
 	DefaultTxScript = []byte(`return true`)
 	//DefaultInputScript 默认输入脚本
@@ -68,7 +66,7 @@ func newScriptEnv(ctx context.Context) *lua.LState {
 		CallStackSize:   16,
 		RegistrySize:    128,
 		RegistryMaxSize: 0,
-		SkipOpenLibs:    !DebugScript,
+		SkipOpenLibs:    !*IsDebug,
 	}
 	l := lua.NewState(opts)
 	l.SetContext(ctx)
@@ -404,9 +402,12 @@ func CheckScript(codes ...[]byte) error {
 	for _, vb := range codes {
 		buf.WriteFull(vb)
 	}
+	if buf.Len() > MaxExecSize {
+		return fmt.Errorf("script %s ,too big > %d", string(buf.Bytes()), MaxExecSize)
+	}
 	_, err := l.Load(buf, "<main>")
 	if err != nil {
-		return fmt.Errorf("check script error %w", err)
+		return fmt.Errorf("check script error, %w", err)
 	}
 	return err
 }
@@ -722,7 +723,7 @@ func compileExecScript(ctx context.Context, name string, opt int, typ int, codes
 	for _, vb := range codes {
 		buf.WriteFull(vb)
 	}
-	if DebugScript {
+	if *IsDebug {
 		LogInfo(string(buf.Bytes()))
 	}
 	if buf.Len() == 0 {

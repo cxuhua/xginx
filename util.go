@@ -47,6 +47,7 @@ func HashLoad(s string, pass ...string) ([]byte, error) {
 		}
 		data = d
 	}
+	//使用hash160作为校验
 	dl := len(data) - hl
 	if !bytes.Equal(Hash160(data[:dl]), data[dl:]) {
 		return nil, errors.New("checksum error")

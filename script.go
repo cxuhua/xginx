@@ -301,6 +301,15 @@ type LockedScript struct {
 	Exec VarBytes
 }
 
+//Address 获取地址
+func (ss LockedScript) Address() Address {
+	addr, err := EncodeAddress(ss.Pkh)
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
 //Encode 编码
 func (ss LockedScript) Encode(w IWriter) error {
 	if err := w.TWrite(ss.Type); err != nil {
@@ -472,6 +481,19 @@ func (ss *WitnessScript) Decode(r IReader) error {
 //Hash 结算hash
 func (ss WitnessScript) Hash() (HASH160, error) {
 	return HashPks(ss.Num, ss.Less, ss.Arb, ss.Pks)
+}
+
+//Address 获取地址
+func (ss WitnessScript) Address() Address {
+	pkh, err := ss.Hash()
+	if err != nil {
+		panic(err)
+	}
+	addr, err := EncodeAddress(pkh)
+	if err != nil {
+		panic(err)
+	}
+	return addr
 }
 
 //HashPks hash公钥。地址hash也将由这个方法生成
