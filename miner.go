@@ -323,6 +323,7 @@ func (m *minerEngine) SaveFirstBlock(blk *BlockInfo) {
 	if err != nil {
 		panic(err)
 	}
+	conf.genesis = blk.MustID()
 	LogInfof("save first block %v success,file = genesis.blk", blk)
 }
 

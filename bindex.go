@@ -1092,7 +1092,8 @@ func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyV
 func (bi *BlockIndex) WriteGenesis() {
 	dat, err := ioutil.ReadFile("genesis.blk")
 	if err != nil {
-		panic(err)
+		LogError("genesis.blk miss")
+		return
 	}
 	buf := NewReader(dat)
 	blk := &BlockInfo{}

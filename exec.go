@@ -55,7 +55,7 @@ var (
 	//DebugScript 是否调式脚本
 	DebugScript = false
 	//DefaultTxScript 默认交易脚本
-	DefaultTxScript = []byte(`print(has_http) return true`)
+	DefaultTxScript = []byte(`return true`)
 	//DefaultInputScript 默认输入脚本
 	DefaultInputScript = []byte(`return true`)
 	//DefaultLockedScript 默认锁定脚本

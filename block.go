@@ -140,7 +140,10 @@ func (b *HeaderBytes) Header() BlockHeader {
 func getblockheadersize() int {
 	buf := NewWriter()
 	b := BlockHeader{}
-	_ = b.Encode(buf)
+	err := b.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
 	return buf.Len()
 }
 
