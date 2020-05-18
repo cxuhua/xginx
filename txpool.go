@@ -188,10 +188,12 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 	vps := map[HASH160]bool{}
 	//存储已经消费的输出
 	for _, in := range tx.Ins {
+		//获取引用的交易
 		ref, out, err := p.loadTxOut(bi, in)
 		if err != nil {
 			return err
 		}
+		//如果引用的是交易池
 		if ref.pool {
 			refs[ref.MustID()] = add
 		}
@@ -214,7 +216,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 			return err
 		}
 	}
-	//存储内存池中可用的金额
+	//存储交易池中可用的金额
 	for idx, out := range tx.Outs {
 		ckv := &CoinKeyValue{}
 		pkh, err := out.Script.GetPkh()
@@ -226,7 +228,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 		ckv.Index = VarUInt(idx)
 		ckv.TxID = txid
 		ckv.Base = 0
-		ckv.Height = 0
+		ckv.Height = 0 //交易池中的金额始终为0
 		vps[pkh] = add
 		if add {
 			err = p.mdb.Put(ckv.MustKey(), ckv.MustValue()) //存储输出到内存池的金额
@@ -237,7 +239,7 @@ func (p *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 			return err
 		}
 	}
-	//存储哪些交易引用到了当前交易
+	//存储哪些交易引用到了当前交易池中的交易
 	for ref := range refs {
 		key := GetDBKey(RefTxPrefix, ref[:], txid[:])
 		if add {
