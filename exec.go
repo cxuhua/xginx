@@ -29,7 +29,10 @@ const (
 //脚本环境设定
 //verify_addr() 验证消费地址 与输入地址hash是否一致
 //verify_sign() 验证签名是否正确
+
 //timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳,无参数获取当前时间 = sys_time
+//默认使用 2006-01-02 15:04:05 格式，也可以 timestamp('2006-01-02','2001-02-03') 指定格式
+
 //best_height 当前区块链高度
 //best_time 最高的区块时间
 //median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
@@ -420,14 +423,24 @@ func CheckScript(codes ...[]byte) error {
 //转换时间戳
 //timestamp('2006-01-02 15:04:05')
 func unixTimestamp(l *lua.LState) int {
-	if l.GetTop() != 1 {
+	sfmt := "2006-01-02 15:04:05"
+	top := l.GetTop()
+	//无参数返回当前时间
+	if top == 0 {
 		l.Push(lua.LNumber(time.Now().Unix()))
 		return 1
 	}
-	sfmt := "2006-01-02 15:04:05"
-	str := l.ToString(1)
-	if len(str) < len(sfmt) {
-		sfmt = "2006-01-02"
+	var str string
+	//如果指定了，参数
+	if top >= 2 {
+		sfmt = l.ToString(1)
+		str = l.ToString(2)
+	} else {
+		str = l.ToString(1)
+	}
+	if str == "" {
+		l.RaiseError("args miss")
+		return 0
 	}
 	tv, err := time.ParseInLocation(sfmt, str, time.Local)
 	if err != nil {
