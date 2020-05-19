@@ -2,8 +2,15 @@ package xginx
 
 import (
 	"bytes"
+	"log"
 	"testing"
 )
+
+func TestLoadAccount(t *testing.T) {
+	file := "st1qwgpep2ge4jj6tkpmxq5dy0wjmlk5qdd7srrz3n"
+	acc, err := LoadAccountWithFile("f:/" + file)
+	log.Println(acc, err)
+}
 
 func TestArbSign(t *testing.T) {
 	a, err := NewAccount(3, 2, true)

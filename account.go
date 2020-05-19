@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 )
 
 // 账号最大的私钥数量
@@ -23,15 +24,27 @@ type AccountJSON struct {
 //PrivatesMap 私钥存储结构
 type PrivatesMap map[HASH160]*PrivateKey
 
+//PublicArray 公钥数据
+type PublicArray []*PublicKey
+
 //Account 账号地址
 //可以包含多个签名，但正确签名数量至少是less指定的数量
 //如果启用了仲裁功能，只需要仲裁签名正确也可以通过签名
 type Account struct {
-	Num  uint8        //总的密钥数量
-	Less uint8        //至少需要签名的数量
-	Arb  uint8        //仲裁，当less  < num时可启用，必须是最后一个公钥
-	Pubs []*PublicKey //所有的密钥公钥
-	Pris PrivatesMap  //公钥对应的私钥
+	Num  uint8       //总的密钥数量
+	Less uint8       //至少需要签名的数量
+	Arb  uint8       //仲裁，当less  < num时可启用，必须是最后一个公钥
+	Pubs PublicArray //所有的密钥公钥
+	Pris PrivatesMap //公钥对应的私钥
+}
+
+//LoadAccountWithFile 从文件加载证书
+func LoadAccountWithFile(file string, pass ...string) (*Account, error) {
+	dat, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	return LoadAccount(string(dat), pass...)
 }
 
 //LoadAccount 从导出的数据加载账号
@@ -202,7 +215,7 @@ func (ap *Account) Load(s string, pass ...string) error {
 	if err != nil {
 		return err
 	}
-	ap.Pubs = []*PublicKey{}
+	ap.Pubs = PublicArray{}
 	ap.Pris = PrivatesMap{}
 	aj := &AccountJSON{}
 	err = json.Unmarshal(data, aj)
@@ -233,7 +246,17 @@ func (ap *Account) Load(s string, pass ...string) error {
 	return ap.Check()
 }
 
+//DumpWithFile 导出到文件
+func (ap Account) DumpWithFile(file string, ispri bool, pass ...string) error {
+	body, err := ap.Dump(ispri, pass...)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(file, []byte(body), 0x666)
+}
+
 //Dump 导出账号信息
+//ispri 是否导出私钥
 func (ap Account) Dump(ispri bool, pass ...string) (string, error) {
 	aj := AccountJSON{
 		Num:  ap.Num,

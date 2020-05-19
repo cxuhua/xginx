@@ -7,10 +7,9 @@ import (
 
 //CoinsState 金额状态
 type CoinsState struct {
-	Locks Coins  //锁定的
-	Coins Coins  //当前可用
-	All   Coins  //所有
-	Sum   Amount //总和
+	Locks Coins //锁定的
+	Coins Coins //当前可用
+	All   Coins //所有
 }
 
 //Merge 拼合
@@ -18,11 +17,10 @@ func (s *CoinsState) Merge(v *CoinsState) {
 	s.Locks = append(s.Locks, v.Locks...)
 	s.Coins = append(s.Coins, v.Coins...)
 	s.All = append(s.All, v.All...)
-	s.Sum += v.Sum
 }
 
 func (s CoinsState) String() string {
-	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.Sum)
+	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.All.Balance())
 }
 
 //Coins 金额记录
@@ -31,18 +29,17 @@ type Coins []*CoinKeyValue
 //State 假设当前消费高度为 spent 获取金额状态
 func (c Coins) State(spent uint32) *CoinsState {
 	s := &CoinsState{All: c}
-	for _, v := range c {
+	for _, v := range s.All {
 		if !v.IsMatured(spent) {
 			s.Locks = append(s.Locks, v)
 		} else {
 			s.Coins = append(s.Coins, v)
 		}
-		s.Sum += v.Value
 	}
 	return s
 }
 
-//Sort 按高度排序
+//Sort 按高度升序排序
 func (c Coins) Sort() Coins {
 	sort.Slice(c, func(i, j int) bool {
 		return c[i].Height < c[j].Height
