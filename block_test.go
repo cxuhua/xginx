@@ -99,6 +99,7 @@ func (lis *transListner) GetCoins() Coins {
 	if err != nil {
 		panic(err)
 	}
+	//返回地址账户下可用的金额
 	return cs.Coins
 }
 
