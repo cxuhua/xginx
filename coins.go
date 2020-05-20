@@ -138,13 +138,20 @@ func (tk CoinKeyValue) IsSpent() bool {
 }
 
 //IsMatured 是否成熟可用
-//内存中的，非coinbase直接可用
-//coinbase输出必须在100个高度后才可消费
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
-	return tk.pool || tk.Base == 0 || spent-tk.Height.ToUInt32() >= CoinbaseMaturity
+	//交易池中的不能直接用了
+	if tk.pool {
+		return false
+	}
+	//非coinbase可用
+	if tk.Base == 0 {
+		return true
+	}
+	//coinbase输出必须在100个高度后才可消费
+	return spent-tk.Height.ToUInt32() >= CoinbaseMaturity
 }
 
-//SpentKey 消费key,用来记录输入对应的输出是否已经别消费
+//SpentKey 消费key,用来记录输入对应的输出是否已经被消费
 func (tk CoinKeyValue) SpentKey() []byte {
 	buf := NewWriter()
 	err := buf.WriteFull(CoinsPrefix)

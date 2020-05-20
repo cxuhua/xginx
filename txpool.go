@@ -130,34 +130,6 @@ func (pool *TxPool) loadTxOut(bi *BlockIndex, in *TxIn) (*TX, *TxOut, error) {
 	return otx, out, nil
 }
 
-//getRefsTxs ref
-func (pool *TxPool) getRefsTxs(ref HASH256) []HASH256 {
-	prefix := GetDBKey(RefTxPrefix, ref[:])
-	iter := pool.mdb.NewIterator(util.BytesPrefix(prefix))
-	defer iter.Release()
-	ids := []HASH256{}
-	for iter.Next() {
-		key := iter.Key()
-		if len(key) <= len(prefix) {
-			panic(fmt.Errorf("db key length error key len = %d", len(key)))
-		}
-		id := key[len(prefix):]
-		ids = append(ids, NewHASH256(id))
-	}
-	return ids
-}
-
-//检测引用的交易是否存在
-func (pool *TxPool) checkRefs(bi *BlockIndex, tx *TX) error {
-	for _, in := range tx.Ins {
-		_, _, err := pool.loadTxOut(bi, in)
-		if err != nil {
-			return fmt.Errorf("ref tx miss %w", err)
-		}
-	}
-	return nil
-}
-
 //设置内存消费金额索引
 func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 	txid, err := tx.ID()
@@ -165,7 +137,6 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 		return err
 	}
 	tx.pool = add
-	refs := map[HASH256]bool{}
 	vps := map[HASH160]bool{}
 	//存储已经消费的输出
 	for _, in := range tx.Ins {
@@ -174,9 +145,9 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 		if err != nil {
 			return err
 		}
-		//如果引用的是交易池
+		//如果引用的是交易池将失败
 		if ref.pool {
-			refs[ref.MustID()] = add
+			return fmt.Errorf("ref txpool tx error")
 		}
 		pkh, err := out.Script.GetPkh()
 		if err != nil {
@@ -221,19 +192,6 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 			return err
 		}
 	}
-	//存储交易被哪些交易引用到，删除交易的时候，被引用的也会被删除
-	//refs 是引用的交易，这些交易引用了当前交易关系都会被存储
-	for ref := range refs {
-		key := GetDBKey(RefTxPrefix, ref[:], txid[:])
-		if add {
-			err = pool.mdb.Put(key, VarUInt(len(refs)).Bytes())
-		} else {
-			err = pool.mdb.Delete(key)
-		}
-		if err != nil {
-			return err
-		}
-	}
 	//写入账户相关的交易
 	for pkh := range vps {
 		//pkh相关的内存中的交易
@@ -259,21 +217,6 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 	return nil
 }
 
-//移除引用了此交易的交易，返回移除了的交易
-func (pool *TxPool) removeRefsTxs(bi *BlockIndex, refs *[]*TX, id HASH256) {
-	ids := pool.getRefsTxs(id)
-	for _, id := range ids {
-		ele, has := pool.tmap[id]
-		if !has {
-			continue
-		}
-		pool.removeEle(bi, refs, ele)
-		if refs != nil {
-			*refs = append(*refs, ele.Value.(*TX))
-		}
-	}
-}
-
 //移除一个元素
 func (pool *TxPool) removeEle(bi *BlockIndex, refs *[]*TX, ele *list.Element) {
 	ps := GetPubSub()
@@ -282,8 +225,6 @@ func (pool *TxPool) removeEle(bi *BlockIndex, refs *[]*TX, ele *list.Element) {
 		panic(errors.New("txpool save type error"))
 	}
 	id := tx.MustID()
-	//引用了此交易的交易也应该被删除
-	pool.removeRefsTxs(bi, refs, id)
 	//移除自己
 	err := pool.setMemIdx(bi, tx, false)
 	if err != nil {
@@ -558,10 +499,6 @@ func (pool *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	defer pool.mu.Unlock()
 	if pool.tlis.Len() >= MaxTxPoolSize {
 		return errors.New("tx pool full,ignore push back")
-	}
-	//如果引用了交易池中的必须存在
-	if err := pool.checkRefs(bi, tx); err != nil {
-		return err
 	}
 	//执行失败不会进入交易池
 	if err := tx.ExecScript(bi, OptPushTxPool); err != nil {

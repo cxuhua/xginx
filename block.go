@@ -564,9 +564,9 @@ func (blk *BlockInfo) CheckRefsTx(bi *BlockIndex, tx *TX) error {
 		if err != nil {
 			return fmt.Errorf("out tx miss %w", err)
 		}
-		//如果是来自交易池，交易必须存在区块中
-		if out.pool && !blk.HasTx(in.OutHash) {
-			return errors.New("refs tx pool miss")
+		//不允许来自交易池
+		if out.pool {
+			return fmt.Errorf("refs tx pool error")
 		}
 	}
 	return nil
@@ -1035,6 +1035,11 @@ type TxOut struct {
 	pool   bool   //是否来自交易池中的交易
 }
 
+//IsPool 如果来自交易池
+func (out TxOut) IsPool() bool {
+	return out.pool
+}
+
 //Clone 复制输入
 func (out TxOut) Clone() *TxOut {
 	n := &TxOut{}
@@ -1141,6 +1146,7 @@ func NewTx(exetime uint32, execs ...[]byte) *TX {
 
 //IsReplace 当前交易是否可替换原来的交易
 //这个替换只能交易池中执行,执行之前签名已经通过
+//交易一但被打包到区块就不能替换了，但可能会回退
 func (tx TX) IsReplace(old *TX) bool {
 	//输入数量必须一致
 	if len(tx.Ins) != len(old.Ins) {
@@ -1148,9 +1154,9 @@ func (tx TX) IsReplace(old *TX) bool {
 	}
 	//每个输入的seq 比之前的大
 	for i := 0; i < len(tx.Ins); i++ {
-		cs := tx.Ins[i].Sequence.ToUInt32()
-		os := old.Ins[i].Sequence.ToUInt32()
-		if cs <= os {
+		l := tx.Ins[i].Sequence
+		r := old.Ins[i].Sequence
+		if l <= r {
 			return false
 		}
 	}
@@ -1432,12 +1438,15 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 		if err != nil {
 			return err
 		}
+		if out.IsPool() {
+			return fmt.Errorf("has txpool txout error")
+		}
 		if !out.Value.IsRange() {
-			return errors.New("ref'out value error")
+			return fmt.Errorf("ref'out value error")
 		}
 		//是否校验金额是否存在
 		if csp && !out.HasCoin(in, bi) {
-			return errors.New("coin miss")
+			return fmt.Errorf("coin miss")
 		}
 		itv += out.Value
 	}
@@ -1449,17 +1458,17 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 			return err
 		}
 		if !out.Value.IsRange() {
-			return errors.New("out value error")
+			return fmt.Errorf("out value error")
 		}
 		otv += out.Value
 	}
 	//金额必须在合理的范围
 	if !itv.IsRange() || !otv.IsRange() {
-		return errors.New("in or out amount error")
+		return fmt.Errorf("in or out amount error")
 	}
 	//每个交易的输出不能大于输入,差值会输出到coinbase交易当作交易费
 	if itv < 0 || otv < 0 || otv > itv {
-		return errors.New("ins amount must >= outs amount")
+		return fmt.Errorf("ins amount must >= outs amount")
 	}
 	//检查签名
 	return tx.Verify(bi)
