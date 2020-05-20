@@ -508,6 +508,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 		}
 		//交易对应的区块和位置
 		bt.Put(TxsPrefix, id[:], vbys)
+		//这里存储交易和哪些地址有关系
 		vps := map[HASH160]bool{}
 		//写入金额和索引
 		err = tx.writeTxIndex(bi, blk, vps, bt)
