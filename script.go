@@ -366,8 +366,18 @@ func (ss *LockedScript) Decode(r IReader) error {
 	return nil
 }
 
+//ToScript 转换为脚本存储
+func (ss LockedScript) ToScript() (Script, error) {
+	buf := NewWriter()
+	err := ss.Encode(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 //NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, execs ...[]byte) (Script, error) {
+func NewLockedScript(pkh HASH160, execs ...[]byte) (*LockedScript, error) {
 	std := &LockedScript{Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
@@ -376,12 +386,7 @@ func NewLockedScript(pkh HASH160, execs ...[]byte) (Script, error) {
 		return nil, err
 	}
 	std.Exec = exec
-	buf := NewWriter()
-	err = std.Encode(buf)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return std, nil
 }
 
 //WitnessScript 隔离见证脚本

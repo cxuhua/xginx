@@ -20,7 +20,7 @@ func (s *CoinsState) Merge(v *CoinsState) {
 }
 
 func (s CoinsState) String() string {
-	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.All.Balance())
+	return fmt.Sprintf("locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.All.Balance())
 }
 
 //Coins 金额记录
@@ -132,7 +132,7 @@ func (tk CoinKeyValue) IsPool() bool {
 	return tk.pool
 }
 
-//IsSpent 是否来自交易池
+//IsSpent 是否在交易池消费
 func (tk CoinKeyValue) IsSpent() bool {
 	return tk.spent
 }

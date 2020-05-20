@@ -126,7 +126,11 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	script, err := NewLockedScript(pkh, DefaultLockedScript)
+	lcks, err := NewLockedScript(pkh, DefaultLockedScript)
+	if err != nil {
+		return err
+	}
+	script, err := lcks.ToScript()
 	if err != nil {
 		return err
 	}

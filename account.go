@@ -189,7 +189,15 @@ func (ap Account) NewLockedScript(exec ...[]byte) (Script, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewLockedScript(pkh, exec...)
+	lcks, err := NewLockedScript(pkh, exec...)
+	if err != nil {
+		return nil, err
+	}
+	script, err := lcks.ToScript()
+	if err != nil {
+		return nil, err
+	}
+	return script, nil
 }
 
 //

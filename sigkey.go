@@ -512,7 +512,11 @@ func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	script, err := NewLockedScript(pkh, execs...)
+	lcks, err := NewLockedScript(pkh, execs...)
+	if err != nil {
+		return nil, err
+	}
+	script, err := lcks.ToScript()
 	if err != nil {
 		return nil, err
 	}
