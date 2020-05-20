@@ -65,7 +65,6 @@ type CoinKeyValue struct {
 	Base   uint8   //是否属于coinbase o or 1
 	Height VarUInt //所在区块高度
 	pool   bool    //是否来自内存池
-	spent  bool    //是否在内存池被消费了
 }
 
 //From 从kv获取数据
@@ -132,15 +131,10 @@ func (tk CoinKeyValue) IsPool() bool {
 	return tk.pool
 }
 
-//IsSpent 是否在交易池消费
-func (tk CoinKeyValue) IsSpent() bool {
-	return tk.spent
-}
-
 //IsMatured 是否成熟可用
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
 	//交易池中的不能直接用了
-	if tk.pool {
+	if tk.IsPool() {
 		return false
 	}
 	//非coinbase可用

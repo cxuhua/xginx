@@ -564,8 +564,8 @@ func (blk *BlockInfo) CheckRefsTx(bi *BlockIndex, tx *TX) error {
 		if err != nil {
 			return fmt.Errorf("out tx miss %w", err)
 		}
-		//不允许来自交易池
-		if out.pool {
+		//不允许来自交易池的输出
+		if out.IsPool() {
 			return fmt.Errorf("refs tx pool error")
 		}
 	}
@@ -941,9 +941,10 @@ func (in TxIn) OutKey() HASH256 {
 //LoadTxOut 获取输入引用的输出
 func (in *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 	if in.OutHash.IsZero() {
-		return nil, errors.New("zero hash id")
+		return nil, fmt.Errorf("zero hash id")
 	}
 	tp := bi.GetTxPool()
+	//在链中查找交易
 	otx, err := bi.LoadTX(in.OutHash)
 	if err != nil {
 		//如果在交易池中
@@ -968,7 +969,7 @@ func (in *TxIn) Check(bi *BlockIndex) error {
 	} else if in.Script.IsWitness() {
 		return nil
 	} else {
-		return errors.New("txin unlock script type error")
+		return fmt.Errorf("txin unlock script type error")
 	}
 }
 
@@ -1060,7 +1061,7 @@ func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
 		return nil, err
 	}
 	if !coin.IsMatured(bi.NextHeight()) {
-		return nil, errors.New("coin not matured")
+		return nil, fmt.Errorf("coin not matured")
 	}
 	return coin, err
 }
@@ -1081,12 +1082,12 @@ func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 //Check 检测输出是否正常
 func (out *TxOut) Check(bi *BlockIndex) error {
 	if !out.Value.IsRange() {
-		return errors.New("txout value error")
+		return fmt.Errorf("txout value error")
 	}
 	if out.Script.IsLocked() {
 		return nil
 	}
-	return errors.New("unknow script type")
+	return fmt.Errorf("unknow script type")
 }
 
 //Encode 编码输出
@@ -1213,9 +1214,9 @@ func (tx *TX) IsCoinBase() bool {
 func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool, bt *Batch) error {
 	rt := bt.GetRev()
 	if rt == nil {
-		return errors.New("batch miss rev")
+		return fmt.Errorf("batch miss rev")
 	}
-	base := tx.IsCoinBase()
+	cbase := tx.IsCoinBase()
 	//输入coin
 	for _, in := range tx.Ins {
 		if in.IsCoinBase() {
@@ -1234,7 +1235,7 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 			return err
 		}
 		if !coin.IsMatured(blk.Meta.Height) {
-			return errors.New("ref out coin not matured")
+			return fmt.Errorf("ref out coin not matured")
 		}
 		//被消费删除
 		bt.Del(coin.MustKey())
@@ -1251,7 +1252,7 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 		tk.CPkh = pkh
 		tk.Index = VarUInt(idx)
 		tk.TxID = tx.MustID()
-		if base {
+		if cbase {
 			tk.Base = 1
 		} else {
 			tk.Base = 0
@@ -1298,7 +1299,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
 			return err
 		}
 		if !out.HasCoin(in, bi) {
-			return errors.New("sign tx, coin miss")
+			return fmt.Errorf("sign tx, coin miss")
 		}
 		//对每个输入签名
 		err = NewSigner(tx, out, in, idx).Sign(bi, lis, pass...)
@@ -1364,14 +1365,14 @@ func (tx *TX) ID() (HASH256, error) {
 //CoinbaseFee 获取coinse out fee sum
 func (tx *TX) CoinbaseFee() (Amount, error) {
 	if !tx.IsCoinBase() {
-		return 0, errors.New("tx not coinbase")
+		return 0, fmt.Errorf("tx not coinbase")
 	}
 	fee := Amount(0)
 	for _, out := range tx.Outs {
 		fee += out.Value
 	}
 	if !fee.IsRange() {
-		return 0, errors.New("coinbase fee range error")
+		return 0, fmt.Errorf("coinbase fee range error")
 	}
 	return fee, nil
 }
@@ -1379,7 +1380,7 @@ func (tx *TX) CoinbaseFee() (Amount, error) {
 //GetTransFee 获取此交易交易费
 func (tx *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 	if tx.IsCoinBase() {
-		return 0, errors.New("coinbase not trans fee")
+		return 0, fmt.Errorf("coinbase not trans fee")
 	}
 	fee := Amount(0)
 	for _, in := range tx.Ins {
@@ -1393,7 +1394,7 @@ func (tx *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 		fee -= out.Value
 	}
 	if !fee.IsRange() {
-		return 0, errors.New("fee range error")
+		return 0, fmt.Errorf("fee range error")
 	}
 	return fee, nil
 }
@@ -1417,11 +1418,11 @@ func (tx *TX) HasRepTxIn(bi *BlockIndex, csp bool) bool {
 func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	//至少有一个交易
 	if len(tx.Ins) == 0 {
-		return errors.New("tx ins too slow")
+		return fmt.Errorf("tx ins too slow")
 	}
 	//检测输入是否重复引用了相同的输出
 	if tx.HasRepTxIn(bi, csp) {
-		return errors.New("txin repeat cost txout")
+		return fmt.Errorf("txin repeat cost txout")
 	}
 	//这里不检测coinbase交易
 	if tx.IsCoinBase() {

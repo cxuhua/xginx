@@ -141,12 +141,12 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 	//存储已经消费的输出
 	for _, in := range tx.Ins {
 		//获取引用的交易
-		ref, out, err := pool.loadTxOut(bi, in)
+		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err
 		}
 		//如果引用的是交易池将失败
-		if ref.pool {
+		if out.IsPool() {
 			return fmt.Errorf("ref txpool tx error")
 		}
 		pkh, err := out.Script.GetPkh()
@@ -157,13 +157,14 @@ func (pool *TxPool) setMemIdx(bi *BlockIndex, tx *TX, add bool) error {
 		ckv.Index = in.OutIndex
 		ckv.TxID = in.OutHash
 		vps[pkh] = add
+		skv := ckv.SpentKey()
 		if add {
 			pool.imap[in.OutKey()] = txpoolin{tx: tx, in: in} //存放in对应的tx和位置
-			err = pool.mdb.Put(ckv.SpentKey(), txid[:])       //存放消耗的金额
+			err = pool.mdb.Put(skv, txid[:])                  //存放消耗的金额
 		} else {
 			//移除时删除
 			delete(pool.imap, in.OutKey())
-			err = pool.mdb.Delete(ckv.SpentKey())
+			err = pool.mdb.Delete(skv)
 		}
 		if err != nil {
 			return err
@@ -385,29 +386,20 @@ func (pool *TxPool) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyVal
 
 //ListCoins 获取pkh在交易池中可用的金额
 //这些金额一般是交易转账找零剩下的金额
-func (pool *TxPool) ListCoins(spkh HASH160, limit ...Amount) (Coins, error) {
+func (pool *TxPool) ListCoins(spkh HASH160) (Coins, error) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	coins := Coins{}
-	if len(limit) > 0 && limit[0] <= 0 {
-		return coins, nil
-	}
 	key := GetDBKey(CoinsPrefix, spkh[:])
 	iter := pool.mdb.NewIterator(util.BytesPrefix(key))
 	defer iter.Release()
-	sum := Amount(0)
 	for iter.Next() {
 		ckv := &CoinKeyValue{pool: true}
 		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		ckv.spent = pool.mdb.Contains(ckv.SpentKey())
 		coins = append(coins, ckv)
-		sum += ckv.Value
-		if len(limit) > 0 && sum >= limit[0] {
-			return coins, nil
-		}
 	}
 	return coins, nil
 }
@@ -465,13 +457,15 @@ func (pool *TxPool) replace(bi *BlockIndex, old *TX, new *TX) error {
 func (pool *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 	for _, in := range tx.Ins {
 		//获取有相同引用的交易
-		if val, has := pool.imap[in.OutKey()]; !has {
+		val, has := pool.imap[in.OutKey()]
+		if !has {
 			continue
-		} else if tx.IsReplace(val.tx) {
+		}
+		if tx.IsReplace(val.tx) {
 			return pool.replace(bi, val.tx, tx)
 		}
-		//如果引用了相同的输出并且不能替换
-		return fmt.Errorf("tx ref exists and can't replace")
+		//如果不能替换就是引用重复了
+		return fmt.Errorf("ref out repeat error")
 	}
 	return nil
 }

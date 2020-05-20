@@ -38,7 +38,10 @@ const (
 //median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
 //sys_time 当前系统时间戳
 //tx_id 相关的交易id
+
 //tx_block() 交易所在的区块，返回一个table, b.height b.time
+//tx_block('txid') 获取指定交易id所在区块的高度和区块时间
+
 //tx_ver 交易版本号
 //in_index 签名验证时输入在交易中的索引
 //in_size 输入数量
@@ -624,7 +627,12 @@ func txBlockMethod(l *lua.LState) int {
 		return 0
 	}
 	tbl := l.NewTable()
-	id := signer.GetTxID()
+	var id HASH256
+	if sid := l.ToString(1); sid != "" {
+		id = NewHASH256(sid)
+	} else {
+		id = signer.GetTxID()
+	}
 	setBlockTable(l, tbl, bi, id)
 	l.Push(tbl)
 	return 1

@@ -1110,12 +1110,12 @@ func (bi *BlockIndex) WriteGenesis() {
 }
 
 //ListCoins 获取某个地址账号的金额
-func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, error) {
+func (bi *BlockIndex) ListCoins(addr Address) (*CoinsState, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	ds, err := bi.ListCoinsWithID(pkh, limit...)
+	ds, err := bi.ListCoinsWithID(pkh)
 	if err != nil {
 		return nil, err
 	}
@@ -1178,44 +1178,32 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 
 //ListCoinsWithID 获取某个id的所有余额
 //已经消费在内存中的不列出
-func (bi *BlockIndex) ListCoinsWithID(pkh HASH160, limit ...Amount) (Coins, error) {
+func (bi *BlockIndex) ListCoinsWithID(pkh HASH160) (Coins, error) {
 	tp := bi.GetTxPool()
 	prefix := getDBKey(CoinsPrefix, pkh[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
-	sum := Amount(0)
 	for iter.Next() {
 		ckv := &CoinKeyValue{}
 		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		ckv.spent = tp.IsSpentCoin(ckv)
-		if ckv.spent {
+		//如果在交易池消费了不显示
+		//消费剩余的会在交易池获取到
+		if tp.IsSpentCoin(ckv) {
 			continue
 		}
-		sum += ckv.Value
 		kvs = append(kvs, ckv)
-		if len(limit) > 0 && sum >= limit[0] {
-			return kvs, nil
-		}
-	}
-	if len(limit) > 0 {
-		limit[0] -= sum
 	}
 	//获取交易池中的用于id的金额
-	cvs, err := tp.ListCoins(pkh, limit...)
+	cvs, err := tp.ListCoins(pkh)
 	if err != nil {
 		return nil, err
 	}
-	for _, ckv := range cvs {
-		if ckv.spent {
-			continue
-		}
-		kvs = append(kvs, ckv)
-	}
+	kvs = append(kvs, cvs...)
 	return kvs, nil
 }
 
