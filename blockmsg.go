@@ -81,9 +81,9 @@ func (bi *BlockIndex) GetMsgBlock(id HASH256) (*MsgBlock, error) {
 const (
 	//如果是新出的区块设置此标记并广播
 	MsgBlockNewFlags = 1 << 0
-	//使用字节传输
+	//使用Bytes原始字节打包传输
 	MsgBlockUseBytes = 1 << 1
-	//使用对象传输
+	//使用Blk对象打包传输
 	MsgBlockUseBlk = 1 << 2
 )
 

@@ -236,6 +236,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
+	//订阅新区块和交易删除事件
 	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
 	for !genok {
@@ -269,6 +270,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 				goto finished
 			}
 		case mbv := <-m.mch:
+			//收到新区块头数据
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
 				mg.StopAndWait()
 				blk.Header = mbv.Header()
@@ -278,9 +280,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		case chv := <-bch:
 			//如果交易池中的交易被删除，或者收到新的区块检测是否停止区块生成
 			if rlk, ok := chv.(*BlockInfo); ok && rlk.Meta.Height >= blk.Meta.Height {
+				//如果收到比当前更好的区块重新计算新区块
 				mg.StopAndWait()
 				return errors.New("new block recv,stop gen block")
 			} else if tid, ok := chv.(HASH256); ok && blk.HasTx(tid) {
+				//如果区块中的交易被移除将要重新打包交易
 				mg.StopAndWait()
 				return errors.New("tx pool removed,stop gen block")
 			}
@@ -306,8 +310,9 @@ finished:
 	}
 	//广播更新了区块数据
 	ps.Pub(blk, NewLinkBlockTopic)
-	//广播区块
+	//广播区块数据
 	msg := NewMsgBlock(blk)
+	//设置标记为新区块
 	msg.AddFlags(MsgBlockNewFlags)
 	Server.BroadMsg(msg)
 	return nil
