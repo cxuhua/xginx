@@ -490,6 +490,7 @@ func (blk *BlockInfo) WriteTxsIdx(bi *BlockIndex, bt *Batch) error {
 	if err != nil {
 		return err
 	}
+	//当前区块高度作为排序key
 	hb := blk.EndianHeight()
 	//交易所在的区块信息和金额信息索引
 	for idx, tx := range blk.Txs {
@@ -1227,7 +1228,10 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 		if err != nil {
 			return err
 		}
-		pkh := out.Script.MustPkh()
+		pkh, err := out.Script.GetPkh()
+		if err != nil {
+			return err
+		}
 		vps[pkh] = true //交易相关的pkh
 		//引用的金额
 		coin, err := bi.GetCoin(pkh, in.OutHash, in.OutIndex)
@@ -1246,7 +1250,10 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 	}
 	//输出coin
 	for idx, out := range tx.Outs {
-		pkh := out.Script.MustPkh()
+		pkh, err := out.Script.GetPkh()
+		if err != nil {
+			return err
+		}
 		tk := &CoinKeyValue{}
 		tk.Value = out.Value
 		tk.CPkh = pkh

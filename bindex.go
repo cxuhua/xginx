@@ -1133,6 +1133,7 @@ func (bi *BlockIndex) ListTxs(addr Address, limit ...int) (TxIndexs, error) {
 
 //ListTxsWithID 获取交易
 func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) {
+	//和id相关的交易
 	prefix := GetDBKey(TxpPrefix, id[:])
 	idxs := TxIndexs{}
 	//从交易池获取
@@ -1140,10 +1141,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 	if err != nil {
 		return nil, err
 	}
-	for _, tv := range cvs {
-		idxs = append(idxs, tv)
-	}
-	if len(limit) > 0 {
+	if idxs = append(idxs, cvs...); len(limit) > 0 {
 		limit[0] -= len(idxs)
 		if limit[0] <= 0 {
 			return idxs, nil
@@ -1152,7 +1150,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 	//获取区块链中可用的交易
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
-	//倒序获取
+	//根据区块高度倒序获取
 	if iter.Last() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
@@ -1163,6 +1161,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 			return idxs, nil
 		}
 	}
+	//倒序获取
 	for iter.Prev() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
