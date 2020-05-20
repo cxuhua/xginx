@@ -116,7 +116,11 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	addr := conf.GetNetAddr()
 	//base tx
 	in := NewTxIn()
-	in.Script = blk.CoinbaseScript(addr.IP(), []byte(txt))
+	script, err := blk.CoinbaseScript(addr.IP(), []byte(txt))
+	if err != nil {
+		return err
+	}
+	in.Script = script
 	tx.Ins = []*TxIn{in}
 	//
 	out := &TxOut{}
@@ -130,7 +134,7 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	script, err := lcks.ToScript()
+	script, err = lcks.ToScript()
 	if err != nil {
 		return err
 	}

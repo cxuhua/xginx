@@ -449,7 +449,7 @@ func (blk BlockInfo) String() string {
 }
 
 //CoinbaseScript 创建Cosinbase 脚本
-func (blk *BlockInfo) CoinbaseScript(ip []byte, bs ...[]byte) Script {
+func (blk *BlockInfo) CoinbaseScript(ip []byte, bs ...[]byte) (Script, error) {
 	return NewCoinbaseScript(blk.Meta.Height, ip, bs...)
 }
 

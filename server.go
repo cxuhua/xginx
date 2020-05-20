@@ -230,13 +230,6 @@ func (s *TCPServer) DelClient(id uint64, c *Client) {
 	delete(s.cls, id)
 }
 
-//AddClient 添加客户端
-func (s *TCPServer) AddClient(id uint64, c *Client) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cls[id] = c
-}
-
 //Stop 地址服务
 func (s *TCPServer) Stop() {
 	s.cfun()
@@ -423,6 +416,10 @@ func (s *TCPServer) tryConnect() {
 		cs = append(cs, v.addr)
 	}
 	s.addrs.mu.RUnlock()
+	//到达连接上限
+	if s.ConnNum() >= conf.MaxConn {
+		return
+	}
 	//开始连接
 	for _, v := range cs {
 		c := s.NewClient()

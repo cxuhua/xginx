@@ -259,6 +259,7 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.ss.addrs.Set(msg.Addr)
 		}
 		//防止两节点重复连接，并且防止自己连接自己
+		//如果不存在将会加入连接列表
 		if c.ss.HasClient(msg.NodeID, c) {
 			c.Close()
 			return errors.New("has connection,closed")

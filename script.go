@@ -126,7 +126,11 @@ func getwitnessminsize() int {
 }
 
 func getcoinbaseminsize() int {
-	return NewCoinbaseScript(0, net.ParseIP("127.0.0.1")).Len()
+	s, err := NewCoinbaseScript(0, net.ParseIP("127.0.0.1"))
+	if err != nil {
+		panic(err)
+	}
+	return s.Len()
 }
 
 func getlockedminsize() int {
@@ -277,9 +281,9 @@ func (s Script) ToWitness() (WitnessScript, error) {
 }
 
 //NewCoinbaseScript 创建coinbase脚本
-func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
+func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) (Script, error) {
 	if len(ip) != net.IPv6len {
-		panic(fmt.Errorf("ip length error %d", len(ip)))
+		return nil, fmt.Errorf("ip length error %d", len(ip))
 	}
 	s := Script{ScriptCoinbaseType}
 	hb := []byte{0, 0, 0, 0}
@@ -293,9 +297,9 @@ func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
 		s = append(s, v...)
 	}
 	if s.Len() > MaxCoinbaseScriptSize {
-		panic(fmt.Errorf("coinbase script too long  length = %d", s.Len()))
+		return nil, fmt.Errorf("coinbase script too long  length = %d", s.Len())
 	}
-	return s
+	return s, nil
 }
 
 //Data 获取coinbase中的自定义数据
