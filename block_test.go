@@ -138,8 +138,8 @@ func (suite *BlockTestSuite) TestUnLink() {
 	a := len(coins.All)
 	l := len(coins.Locks)
 	c := len(coins.Coins)
-	num := 2
-	//回退2个区块
+	num := 22
+	//回退num个区块
 	for i := 0; i < num; i++ {
 		err = suite.bi.UnlinkLast()
 		req.NoError(err)
@@ -149,8 +149,13 @@ func (suite *BlockTestSuite) TestUnLink() {
 	//区块减少两个所以可用的也减少num
 	req.Equal(len(coins.All), a-num)
 	//锁定的维持不变
-	req.Equal(len(coins.Locks), l)
-	req.Equal(len(coins.Coins), c-num)
+	req.Equal(len(coins.Locks), l-num+c)
+	cc := c - num
+	//最少为0个
+	if cc < 0 {
+		cc = 0
+	}
+	req.Equal(len(coins.Coins), cc)
 	//创建两个区块
 	for i := 0; i < num; i++ {
 		suite.newLinkBlock()
