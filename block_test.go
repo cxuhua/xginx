@@ -112,6 +112,56 @@ func (lis *transListner) GetKeep() Address {
 	return addr
 }
 
+//创建并链接一个区块
+func (suite *BlockTestSuite) newLinkBlock() {
+	req := suite.Require()
+	blk, err := suite.bi.NewBlock(1)
+	req.NoError(err)
+	err = blk.Finish(suite.bi)
+	req.NoError(err)
+	calcbits(suite.bi, blk)
+	err = suite.bi.LinkBlk(blk)
+	req.NoError(err)
+}
+
+func (suite *BlockTestSuite) TestUnLink() {
+	req := suite.Require()
+	req.NotNil(suite.bi)
+	lis := GetTestListener(suite.bi)
+	//获取矿工账户
+	src := lis.GetAccount(0)
+	saddr, err := src.GetAddress()
+	req.NoError(err)
+	coins, err := suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	//记录回退前的数据
+	a := len(coins.All)
+	l := len(coins.Locks)
+	c := len(coins.Coins)
+	num := 2
+	//回退2个区块
+	for i := 0; i < num; i++ {
+		err = suite.bi.UnlinkLast()
+		req.NoError(err)
+	}
+	coins, err = suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	//区块减少两个所以可用的也减少num
+	req.Equal(len(coins.All), a-num)
+	//锁定的维持不变
+	req.Equal(len(coins.Locks), l)
+	req.Equal(len(coins.Coins), c-num)
+	//创建两个区块
+	for i := 0; i < num; i++ {
+		suite.newLinkBlock()
+	}
+	coins, err = suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	req.Equal(len(coins.All), a)
+	req.Equal(len(coins.Locks), l)
+	req.Equal(len(coins.Coins), c)
+}
+
 func (suite *BlockTestSuite) TestTxLockTime() {
 	req := suite.Require()
 	req.NotNil(suite.bi)
@@ -152,7 +202,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 
-	//seq+1复制交易
+	//seq+=1复制交易
 	cp := tx.Clone(1)
 	//重新签名
 	err = cp.Sign(suite.bi, tlis)

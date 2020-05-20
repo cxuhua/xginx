@@ -1239,15 +1239,14 @@ func (tx *TX) writeTxIndex(bi *BlockIndex, blk *BlockInfo, vps map[HASH160]bool,
 		if err != nil {
 			return err
 		}
+		//金额是否可用
 		if !coin.IsMatured(blk.Meta.Height) {
 			return fmt.Errorf("ref out coin not matured")
 		}
 		//被消费删除
 		bt.Del(coin.MustKey())
 		//添加回退日志用来恢复,如果是引用本区块的忽略
-		if !coin.pool {
-			rt.Put(coin.MustKey(), coin.MustValue())
-		}
+		rt.Put(coin.MustKey(), coin.MustValue())
 	}
 	//输出coin
 	for idx, out := range tx.Outs {
