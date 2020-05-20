@@ -87,10 +87,10 @@ func (sr *mulsigner) VerifySign() error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
-		return err
+		return fmt.Errorf("witness script miss %w", err)
 	}
 	if err := wits.Check(); err != nil {
-		return err
+		return fmt.Errorf("witness check error %w", err)
 	}
 	//获取签名hash
 	sigh, err := sr.GetSigHash()
@@ -111,15 +111,15 @@ func (sr *mulsigner) VerifyAddr() error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
-		return err
+		return fmt.Errorf("witness script miss %w", err)
 	}
 	if err := wits.Check(); err != nil {
-		return err
+		return fmt.Errorf("witness check error %w", err)
 	}
 	//获取锁定脚本
 	locked, err := sr.out.Script.ToLocked()
 	if err != nil {
-		return err
+		return fmt.Errorf("locked script miss %w", err)
 	}
 	//pkh一致才能通过
 	if hash, err := wits.Hash(); err != nil || !hash.Equal(locked.Pkh) {
@@ -133,15 +133,15 @@ func (sr *mulsigner) Verify(bi *BlockIndex) error {
 	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
-		return err
+		return fmt.Errorf("witness script miss %w", err)
 	}
 	if err := wits.Check(); err != nil {
-		return err
+		return fmt.Errorf("witness check error %w", err)
 	}
 	//获取锁定脚本
 	locked, err := sr.out.Script.ToLocked()
 	if err != nil {
-		return err
+		return fmt.Errorf("locked script miss %w", err)
 	}
 	//执行脚本
 	return sr.ExecScript(bi, wits, locked)

@@ -138,7 +138,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	tlis := newTransListner(suite.bi, src, dst)
 	//生成交易
 	mi := suite.bi.NewTrans(tlis)
-	//向dst转账1COIN，使用默认解锁脚本
+	//向dst转账1COIN，使用默认输出脚本
 	mi.Add(daddr, 1*Coin, DefaultLockedScript)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
@@ -152,7 +152,9 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 
+	//seq+1复制交易
 	cp := tx.Clone(1)
+	//重新签名
 	err = cp.Sign(suite.bi, tlis)
 	req.NoError(err)
 	err = bp.PushTx(suite.bi, cp)
@@ -164,7 +166,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.NoError(err)
 	err = blk.AddTxs(suite.bi, txs)
 	req.NoError(err)
-	//应该有两个交易
+	//应该有两个交易,其中一个coinbase交易
 	req.Equal(2, len(blk.Txs))
 	//完成区块设置准备链接到链
 	err = blk.Finish(suite.bi)
