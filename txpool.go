@@ -287,10 +287,11 @@ func (pool *TxPool) AllTxs() []*TX {
 	return txs
 }
 
-//获取需要打包的交易并返回需要移除的交易
-func (pool *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Element, error) {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
+//LoadTxsWithBlk 取出符合区块blk的交易，大小不能超过限制
+func (pool *TxPool) LoadTxsWithBlk(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	//获取交易
 	txs := []*TX{}
 	size := 0
 	buf := NewWriter()
@@ -305,9 +306,14 @@ func (pool *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Eleme
 			res = append(res, cur)
 			continue
 		}
+		//执行错误不会获取到，因为这里错误只是不会进入区块
+		err = tx.ExecScript(bi)
+		if err != nil {
+			continue
+		}
 		err = tx.Encode(buf)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		size += buf.Len()
 		if size > MaxBlockSize {
@@ -315,19 +321,7 @@ func (pool *TxPool) gettxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, []*list.Eleme
 		}
 		txs = append(txs, tx)
 	}
-	return txs, res, nil
-}
-
-//GetTxs 取出符合区块blk的交易，大小不能超过限制
-func (pool *TxPool) GetTxs(bi *BlockIndex, blk *BlockInfo) ([]*TX, error) {
-	//获取交易
-	txs, res, err := pool.gettxs(bi, blk)
-	if err != nil {
-		return nil, err
-	}
 	//移除检测失败的
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
 	for _, ele := range res {
 		pool.removeEle(bi, nil, ele)
 	}

@@ -900,6 +900,17 @@ func initLuaTxMethod(l *lua.LState) {
 //typ = 1,input script
 //typ = 2,out script
 func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byte) error {
+	//拼接代码
+	buf := NewReadWriter()
+	for _, vb := range codes {
+		buf.WriteFull(vb)
+	}
+	if *IsDebug {
+		LogInfo(string(buf.Bytes()))
+	}
+	if buf.Len() == 0 {
+		return nil
+	}
 	//检测必须的环境变量
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
@@ -940,17 +951,6 @@ func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byt
 	}
 	//交易可用方法
 	initLuaTxMethod(l)
-	//拼接代码
-	buf := NewReadWriter()
-	for _, vb := range codes {
-		buf.WriteFull(vb)
-	}
-	if *IsDebug {
-		LogInfo(string(buf.Bytes()))
-	}
-	if buf.Len() == 0 {
-		return nil
-	}
 	fn, err := l.Load(buf, "<"+name+">")
 	if err != nil {
 		return err
@@ -969,18 +969,15 @@ func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byt
 
 //ExecScript 返回错误交易不进入区块
 //执行之前已经校验了签名
-//AddTxs 时会执行这个交易脚本
+//AddTxs LinkBlk 时会执行这个交易脚本检测
 func (tx *TX) ExecScript(bi *BlockIndex) error {
 	txs, err := tx.Script.ToTxScript()
 	if err != nil {
 		return err
 	}
-	if slen := txs.Exec.Len(); slen == 0 {
+	if txs.Exec.Len() == 0 {
 		//无脚本不执行
 		return nil
-	} else if slen > MaxExecSize {
-		//脚本不能太大
-		return fmt.Errorf("tx exec script too big , size = %d", slen)
 	}
 	//交易脚本执行时间为cpu/2
 	exectime := time.Duration(txs.ExeTime/2) * time.Millisecond
@@ -1000,9 +997,6 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	if slen := wits.Exec.Len() + lcks.Exec.Len(); slen == 0 {
 		//无脚本不执行
 		return nil
-	} else if slen > MaxExecSize {
-		//脚本不能太大
-		return fmt.Errorf("witness exec script + locked exec script size too big ,size = %d", slen)
 	}
 	txs, err := sr.tx.Script.ToTxScript()
 	if err != nil {

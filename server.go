@@ -374,6 +374,7 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 		return err
 	}
 	LogInfo("update block ", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
+	//延迟获取下个区块
 	s.dt.Reset(time.Microsecond * 300)
 	//如果是新区块继续广播
 	if msg.IsNewBlock() {

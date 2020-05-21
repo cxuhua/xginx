@@ -632,7 +632,7 @@ func (blk *BlockInfo) HasTx(id HASH256) bool {
 
 //LoadTxs 从交易池加载可用的交易
 func (blk *BlockInfo) LoadTxs(bi *BlockIndex) error {
-	txs, err := bi.txp.GetTxs(bi, blk)
+	txs, err := bi.txp.LoadTxsWithBlk(bi, blk)
 	if err != nil {
 		return err
 	}
@@ -802,6 +802,17 @@ func (blk *BlockInfo) Verify(ele *TBEle, bi *BlockIndex) error {
 		return errors.New("check pow error")
 	}
 	return blk.Check(bi, false)
+}
+
+//ExecScript 执行脚本检测
+func (blk BlockInfo) ExecScript(bi *BlockIndex) error {
+	for _, tx := range blk.Txs {
+		err := tx.ExecScript(bi)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 //Check 检查区块数据

@@ -1286,6 +1286,11 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
+	//执行脚本检测,返回错误不能打包
+	err = blk.ExecScript(bi)
+	if err != nil {
+		return err
+	}
 	//写入数据库
 	err = blk.Write(bi)
 	if err != nil {

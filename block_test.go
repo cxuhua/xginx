@@ -204,6 +204,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	err = bp.PushTx(suite.bi, tx)
 	req.NoError(err)
 	txs := bp.AllTxs()
+
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 
@@ -215,9 +216,11 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	err = bp.PushTx(suite.bi, cp)
 	req.NoError(err)
 
-	txs = bp.AllTxs()
 	//创建一个新区块
 	blk, err := suite.bi.NewBlock(1)
+	req.NoError(err)
+	//获取可用的交易,并删除错误的交易
+	txs, err = bp.LoadTxsWithBlk(suite.bi, blk)
 	req.NoError(err)
 	err = blk.AddTxs(suite.bi, txs)
 	req.NoError(err)
