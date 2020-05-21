@@ -1,16 +1,12 @@
 package xginx
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
-	"net/http"
-	"net/url"
 	"time"
 
 	lua "github.com/cxuhua/gopher-lua"
@@ -41,10 +37,6 @@ import (
 
 //encode(tbl) json编码
 //decode(str) json解码
-
-//has_http  http接口是否可用
-//http_post 网络post 交易脚本可用 如果配置中启用了
-//http_get  网络get 交易脚本可用 如果配置中启用了
 
 //map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
 //map_has 是否存在
@@ -222,91 +214,6 @@ func getTableJSON(tbl *lua.LTable) interface{} {
 func tableToJSON(tbl *lua.LTable) ([]byte, error) {
 	arr := getTableJSON(tbl)
 	return json.Marshal(arr)
-}
-
-//post json到url，返回也必须是json格式
-//http_post(url,{a=1,b='aa'}) -> tbl,err
-func httpPost(l *lua.LState) int {
-	if l.GetTop() != 2 {
-		return returnHTTPError(l, errors.New("args num error"))
-	}
-	path := l.ToString(1)
-	_, err := url.Parse(path)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	tbl := l.Get(2)
-	if tbl.Type() != lua.LTTable {
-		return returnHTTPError(l, errors.New("args 2 type error"))
-	}
-	jv, err := tableToJSON(tbl.(*lua.LTable))
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	ctx := l.Context()
-	req, err := http.NewRequest(http.MethodPost, path, bytes.NewReader(jv))
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	req.Header.Set("Content-Type", "application/json;charset=utf-8")
-	client := http.Client{}
-	res, err := client.Do(req.WithContext(ctx))
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	defer res.Body.Close()
-	dat, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	tbl, err = jsonToTable(l, dat)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	l.Push(tbl)
-	l.Push(lua.LNil)
-	return 2
-}
-
-//http_get(url) -> tbl,err
-func httpGet(l *lua.LState) int {
-	if l.GetTop() != 1 {
-		return returnHTTPError(l, errors.New("args error"))
-	}
-	path := l.ToString(1)
-	_, err := url.Parse(path)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	ctx := l.Context()
-	req, err := http.NewRequest(http.MethodGet, path, nil)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	req.Header.Set("Content-Type", "application/json;charset=utf-8")
-	client := http.Client{}
-	res, err := client.Do(req.WithContext(ctx))
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	defer res.Body.Close()
-	dat, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	tbl, err := jsonToTable(l, dat)
-	if err != nil {
-		return returnHTTPError(l, err)
-	}
-	l.Push(tbl)
-	l.Push(lua.LNil)
-	return 2
-}
-
-//初始化http库支持方法
-func initHTTPLuaEnv(l *lua.LState) {
-	l.SetGlobal("http_post", l.NewFunction(httpPost))
-	l.SetGlobal("http_get", l.NewFunction(httpGet))
 }
 
 //用于将输入数据传递到输出
@@ -923,13 +830,9 @@ func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byt
 	//初始化脚本环境
 	l := newScriptEnv(ctx)
 	defer l.Close()
-	//是否在交易脚本中启用http 接扣
-	l.SetGlobal("has_http", lua.LBool(conf.HTTPAPI))
 	//可用方法
 	initLuaMethodEnv(l, typ)
-	if typ == 0 && conf.HTTPAPI {
-		initHTTPLuaEnv(l)
-	} else if typ == 1 {
+	if typ == 1 {
 		//可读写
 		l.SetGlobal("map_has", l.NewFunction(transMapValueHas))
 		l.SetGlobal("map_set", l.NewFunction(transMapValueSet))
