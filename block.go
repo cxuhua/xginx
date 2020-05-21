@@ -1385,9 +1385,10 @@ func (tx *TX) CoinbaseFee() (Amount, error) {
 }
 
 //GetTransFee 获取此交易交易费
+//如果是coinase返回coinbase输出金额
 func (tx *TX) GetTransFee(bi *BlockIndex) (Amount, error) {
 	if tx.IsCoinBase() {
-		return 0, fmt.Errorf("coinbase not trans fee")
+		return tx.CoinbaseFee()
 	}
 	fee := Amount(0)
 	for _, in := range tx.Ins {

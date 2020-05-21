@@ -3,6 +3,7 @@ package xginx
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,32 +31,35 @@ const (
 //verify_addr() 验证消费地址 与输入地址hash是否一致
 //verify_sign() 验证签名是否正确
 
-//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳,无参数获取当前时间 = sys_time
+//timestamp('2001-02-03 11:00:00') 返回指定时间的时间戳,无参数获取当前时间
 //默认使用 2006-01-02 15:04:05 格式，也可以 timestamp('2006-01-02','2001-02-03') 指定格式
 
 //best_height 当前区块链高度
 //best_time 最高的区块时间
-//median_time(h) h高度开始，向前最近11个区块的中间时间,如果参数不存在获取最新的11个区块的中间时间
-//sys_time 当前系统时间戳
-//tx_id 相关的交易id
 
-//tx_block() 交易所在的区块，返回一个table, b.height b.time
-//tx_block('txid') 获取指定交易id所在区块的高度和区块时间
+//get_tx() 获取当前环境交易对象
+//get_tx('txid') 获取指定交易信息
 
-//tx_ver 交易版本号
-//in_index 签名验证时输入在交易中的索引
-//in_size 输入数量
-//out_block() 引用的输出所在区块，返回table b.height b.time
-//coin_value 相关的金额
-//coin_pool 金额是否在交易池
-//coin_height 金额所在的区块高度
-//out_size 交易中的输出数量
+//v := get_tx()
+//v:get_in(idx)
+//v:get_out(idx)
+
+//v.sign_idx 签名输入位置 签名检测环境可用
+//v.sign_in 签名输入 签名检测环境可用
+//v.sign_out 签名输入引用的输出 签名检测环境可用
+//v.sign_hash 签名hash hex编码
+
+//encode(tbl) json编码
+//decode(str) json解码
+
 //tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
+
+//has_http  http接口是否可用
 //http_post 网络post 交易脚本可用 如果配置中启用了
-//http_get 网络get 交易脚本可用 如果配置中启用了
-//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
-//in_address 输入地址(谁来消费对应的输出)
+//http_get  网络get 交易脚本可用 如果配置中启用了
+
 //map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
+//map_has 是否存在
 //map_get 获取输入脚本中设置的值
 
 var (
@@ -455,29 +459,10 @@ func unixTimestamp(l *lua.LState) int {
 	return 1
 }
 
-//如果无参数就获取最近11个区块的中间时间
-//median_time() median_time(10)
-func blockMedianTime(l *lua.LState) int {
-	bi := getEnvBlockIndex(l.Context())
-	if bi == nil {
-		l.RaiseError("block index env miss")
-		return 0
-	}
-	h := bi.Height()
-	if l.GetTop() == 1 {
-		h = uint32(l.ToInt(1))
-	}
-	t := bi.GetMedianTime(h)
-	l.Push(lua.LNumber(t))
-	return 1
-}
-
 //初始化基本函数
 func initLuaMethodEnv(l *lua.LState, typ int) {
 	//获取字符串表示的时间戳
 	l.SetGlobal("timestamp", l.NewFunction(unixTimestamp))
-	//获取最近11个区块中间时间，如果指定了参数就从指定区块向前推送
-	l.SetGlobal("median_time", l.NewFunction(blockMedianTime))
 }
 
 //检测输入hash和锁定hash是否一致
@@ -553,6 +538,32 @@ func transMapValueSet(l *lua.LState) int {
 	return 0
 }
 
+//key是否存在
+func transMapValueHas(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		l.RaiseError("args num error")
+		return 0
+	}
+	k := l.Get(1)
+	if k.Type() != lua.LTString {
+		l.RaiseError("args 1 type error")
+		return 0
+	}
+	key := lua.LVAsString(k)
+	if key == "" {
+		l.RaiseError("args 1 empty error")
+		return 0
+	}
+	tmap := getEnvTransMap(l.Context())
+	if tmap == nil {
+		l.RaiseError("trans map miss")
+		return 0
+	}
+	_, b := tmap.kvs[key]
+	l.Push(lua.LBool(b))
+	return 1
+}
+
 //初始化传递api口,只用于输出脚本
 //map_get(k) -> v
 func transMapValueGet(l *lua.LState) int {
@@ -592,12 +603,18 @@ func transMapValueGet(l *lua.LState) int {
 			l.Push(lua.LNil)
 		}
 	}
-	l.Push(lua.LBool(b))
-	return 2
+	return 1
 }
 
 //设置属性字段
-func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, id HASH256) {
+func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error {
+	//获取交易id
+	id, err := tx.ID()
+	if err != nil {
+		return err
+	}
+	//交易id
+	tbl.RawSetString("id", lua.LString(id.String()))
 	//查询交易所在的区块
 	v, err := bi.LoadTxValue(id)
 	//如果查找不到使用下个区块高度和当前时间
@@ -611,58 +628,274 @@ func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, id HASH256) {
 		tbl.RawSetString("height", lua.LNumber(blk.Meta.Height))
 		tbl.RawSetString("time", lua.LNumber(blk.Meta.Time))
 	}
+	//是否是coinbase
+	tbl.RawSetString("base", lua.LBool(tx.IsCoinBase()))
+	//交易费,如果是coinbase，这个返回coinbase输出金额
+	fee, err := tx.GetTransFee(bi)
+	if err != nil {
+		return err
+	}
+	tbl.RawSetString("fee", lua.LNumber(fee))
+	//交易版本
+	tbl.RawSetString("ver", lua.LNumber(tx.Ver))
+	//输入总数
+	tbl.RawSetString("in_size", lua.LNumber(len(tx.Ins)))
+	//输出总数
+	tbl.RawSetString("out_size", lua.LNumber(len(tx.Outs)))
+	return nil
 }
 
-//获取交易所在的区块信息
-func txBlockMethod(l *lua.LState) int {
-	ctx := l.Context()
-	signer := getEnvSigner(ctx)
-	if signer == nil {
-		l.RaiseError("signer miss")
+//获取交易所在的信息
+//如果指定交易id则查询交易信息
+func getUpValueTx(l *lua.LState) (*TX, error) {
+	up := l.Get(lua.GlobalsIndex - 1)
+	if up.Type() != lua.LTUserData {
+		return nil, fmt.Errorf("upvalue miss")
+	}
+	tx, ok := up.(*lua.LUserData).Value.(*TX)
+	if !ok {
+		return nil, fmt.Errorf("upvalue type error")
+	}
+	return tx, nil
+}
+
+//设置输入属性
+func setInTable(tbl *lua.LTable, in *TxIn) {
+	tbl.RawSetString("out_index", lua.LNumber(in.OutIndex))
+	tbl.RawSetString("out_hash", lua.LString(in.OutHash.String()))
+	tbl.RawSetString("sequence", lua.LNumber(in.Sequence))
+}
+
+//必须指定参数
+func txGetInMethod(l *lua.LState) int {
+	top := l.GetTop()
+	if top != 2 {
+		l.RaiseError("args num error")
 		return 0
 	}
+	ctx := l.Context()
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
 		return 0
 	}
 	tbl := l.NewTable()
-	var id HASH256
-	if sid := l.ToString(1); sid != "" {
-		id = NewHASH256(sid)
-	} else {
-		id = signer.GetTxID()
+	tx, err := getUpValueTx(l)
+	if err != nil {
+		l.RaiseError("upvalue tx miss")
+		return 0
 	}
-	setBlockTable(l, tbl, bi, id)
+	iv := l.Get(2)
+	if iv.Type() != lua.LTNumber {
+		l.RaiseError("args 2 type error")
+		return 0
+	}
+	idx := int(lua.LVAsNumber(iv))
+	if idx < 0 || idx >= len(tx.Ins) {
+		l.RaiseError("args 1 index out bound")
+		return 0
+	}
+	in := tx.Ins[idx]
+	setInTable(tbl, in)
 	l.Push(tbl)
 	return 1
 }
 
-//获取输出所在的区块信息
-func outblockMethod(l *lua.LState) int {
-	ctx := l.Context()
-	signer := getEnvSigner(ctx)
-	if signer == nil {
-		l.RaiseError("signer miss")
+//设置输出属性
+func setOutTable(tbl *lua.LTable, out *TxOut) {
+	addr, err := out.Script.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	tbl.RawSetString("value", lua.LNumber(out.Value))
+	tbl.RawSetString("address", lua.LString(addr))
+}
+
+//获取输出信息
+func txGetOutMethod(l *lua.LState) int {
+	top := l.GetTop()
+	if top != 2 {
+		l.RaiseError("args num error")
 		return 0
 	}
+	ctx := l.Context()
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
 		return 0
 	}
-	//输出所在交易就是输入的outhash对应的交易
-	_, in, _, _ := signer.GetObjs()
 	tbl := l.NewTable()
-	setBlockTable(l, tbl, bi, in.OutHash)
+	tx, err := getUpValueTx(l)
+	if err != nil {
+		l.RaiseError("upvalue tx miss")
+		return 0
+	}
+	a1 := l.Get(2)
+	if a1.Type() != lua.LTNumber {
+		l.RaiseError("args 2 type error")
+		return 0
+	}
+	idx := int(lua.LVAsNumber(a1))
+	if idx < 0 || idx >= len(tx.Outs) {
+		l.RaiseError("args 1 index out bound")
+		return 0
+	}
+	out := tx.Outs[idx]
+	setOutTable(tbl, out)
+	l.Push(tbl)
+	return 1
+}
+
+//
+func txBlockMethod(l *lua.LState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		l.RaiseError("block index miss")
+		return 0
+	}
+	top := l.GetTop()
+	var tx *TX = nil
+	//如果指定了交易id
+	if top == 1 {
+		id := NewHASH256(l.ToString(1))
+		qtx, err := bi.LoadTX(id)
+		if err != nil {
+			l.RaiseError("find tx failed %s", err.Error())
+			return 0
+		}
+		tx = qtx
+	} else {
+		//获取当前环境的交易
+		tx = getEnvTx(ctx)
+	}
+	if tx == nil {
+		l.RaiseError("tx miss")
+		return 0
+	}
+	tbl := l.NewTable()
+	//设置交易所在的区块信息和交易信息
+	err := setBlockTable(l, tbl, bi, tx)
+	if err != nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	//设置方法
+	uptr := l.NewUserData()
+	uptr.Value = tx
+	tbl.RawSetString("get_in", l.NewClosure(txGetInMethod, uptr))
+	tbl.RawSetString("get_out", l.NewClosure(txGetOutMethod, uptr))
+	//如果是在签名环境中
+	if signer := getEnvSigner(ctx); signer != nil {
+		_, in, out, idx := signer.GetObjs()
+		//sign_idx 签名输入位置
+		tbl.RawSetString("sign_idx", lua.LNumber(idx))
+		//sign_in 签名输入
+		itbl := l.NewTable()
+		setInTable(itbl, in)
+		tbl.RawSetString("sign_in", itbl)
+		//sign_out 签名输入引用的输出
+		otbl := l.NewTable()
+		setOutTable(otbl, out)
+		tbl.RawSetString("sign_out", otbl)
+		//sign_hash 签名hash
+		hash, err := signer.GetSigHash()
+		if err != nil {
+			l.RaiseError(err.Error())
+			return 0
+		}
+		tbl.RawSetString("sign_hash", lua.LString(hex.EncodeToString(hash)))
+	}
+	l.Push(tbl)
+	return 1
+}
+
+//json_encode
+func jsonLuaEncode(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		l.RaiseError("args num error")
+		return 0
+	}
+	tbl := l.ToTable(1)
+	if tbl == nil {
+		l.Push(lua.LNil)
+		return 1
+	}
+	bv, err := tableToJSON(tbl)
+	if err != nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	l.Push(lua.LString(bv))
+	return 1
+}
+
+func jsonLuaDecode(l *lua.LState) int {
+	if l.GetTop() != 1 {
+		l.RaiseError("args num error")
+		return 0
+	}
+	str := l.ToString(1)
+	if str == "" {
+		l.Push(lua.LNil)
+		return 1
+	}
+	tbl, err := jsonToTable(l, []byte(str))
+	if err != nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	l.Push(tbl)
+	return 1
+}
+
+//当前输出
+func txOutMethod(l *lua.LState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		l.RaiseError("block index miss")
+		return 0
+	}
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		l.RaiseError("current signer miss")
+		return 0
+	}
+	tbl := l.NewTable()
+	tx, _, out, _ := signer.GetObjs()
+	if l.GetTop() == 1 {
+		a1 := l.Get(1)
+		if a1.Type() != lua.LTNumber {
+			l.RaiseError("args 1 type error")
+			return 0
+		}
+		idx := int(lua.LVAsNumber(a1))
+		if idx < 0 || idx >= len(tx.Outs) {
+			l.RaiseError("args 1 index out bound")
+			return 0
+		}
+		out = tx.Outs[idx]
+	}
+	tbl.RawSetString("value", lua.LNumber(out.Value))
+	addr, err := out.Script.GetAddress()
+	if err != nil {
+		l.RaiseError("get address error %s", err.Error())
+		return 0
+	}
+	tbl.RawSetString("address", lua.LString(addr))
 	l.Push(tbl)
 	return 1
 }
 
 //初始化交易可用方法
 func initLuaTxMethod(l *lua.LState) {
-	l.SetGlobal("tx_block", l.NewFunction(txBlockMethod))
-	l.SetGlobal("out_block", l.NewFunction(outblockMethod))
+	//encode(tbl) -> string
+	l.SetGlobal("encode", l.NewFunction(jsonLuaEncode))
+	//decode(str) -> tbl
+	l.SetGlobal("decode", l.NewFunction(jsonLuaDecode))
+	//tx()
+	l.SetGlobal("get_tx", l.NewFunction(txBlockMethod))
 }
 
 //编译脚本
@@ -697,56 +930,27 @@ func compileExecScript(ctx context.Context, name string, opt int, typ int, codes
 	if typ == 0 && conf.HTTPAPI {
 		initHTTPLuaEnv(l)
 	} else if typ == 1 {
-		//输入脚本可用方法
+		//可读写
+		l.SetGlobal("map_has", l.NewFunction(transMapValueHas))
 		l.SetGlobal("map_set", l.NewFunction(transMapValueSet))
+		l.SetGlobal("map_get", l.NewFunction(transMapValueGet))
 	} else if typ == 2 {
-		//输出脚本可用方法
+		//只读
+		l.SetGlobal("map_has", l.NewFunction(transMapValueHas))
 		l.SetGlobal("map_get", l.NewFunction(transMapValueGet))
 	}
 	//当前区块高度和区块时间
 	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
 	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
-	//当前系统时间戳
-	l.SetGlobal("sys_time", lua.LNumber(bi.lptr.TimeNow()))
-	//交易id
-	l.SetGlobal("tx_id", lua.LString(tx.MustID().String()))
-	//交易版本
-	l.SetGlobal("tx_ver", lua.LNumber(tx.Ver))
 	//如果有签名环境
 	if signer := getEnvSigner(ctx); signer != nil {
-		//获得签名对象
-		stx, in, out, idx := signer.GetObjs()
-		//必须是同一个交易
-		if stx != tx {
-			panic(errors.New("tx error"))
-		}
-		//输入总数
-		l.SetGlobal("in_size", lua.LNumber(len(tx.Ins)))
-		//输入总数
-		l.SetGlobal("out_size", lua.LNumber(len(tx.Outs)))
-		//输入在交易中的索引 0开始
-		l.SetGlobal("in_index", lua.LNumber(idx))
-		//获取输出金额信息
-		coin, err := out.GetCoin(in, bi)
-		//签名后执行这里应该不会出错，肯定存在coin
-		if err != nil {
-			panic(err)
-		}
-		//锁定脚本对应地址
-		l.SetGlobal("out_address", lua.LString(signer.GetOutAddress()))
-		//获取输入消费地址
-		l.SetGlobal("in_address", lua.LString(signer.GetInAddress()))
-		// 金额信息
-		l.SetGlobal("coin_value", lua.LNumber(coin.Value))
-		l.SetGlobal("coin_pool", lua.LBool(coin.IsPool()))
-		l.SetGlobal("coin_height", lua.LNumber(coin.Height))
 		//验证函数 如果hash一致返回true
 		l.SetGlobal("verify_addr", l.NewFunction(verifyAddr))
 		//签名正确返回 true
 		l.SetGlobal("verify_sign", l.NewFunction(verifySign))
-		//交易可用方法
-		initLuaTxMethod(l)
 	}
+	//交易可用方法
+	initLuaTxMethod(l)
 	//拼接代码
 	buf := NewReadWriter()
 	for _, vb := range codes {
