@@ -177,11 +177,6 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 
 //BroadTx 广播链上交易
 func (m *Trans) BroadTx(bi *BlockIndex, tx *TX) {
-	//是否广播到网络
-	if err := tx.ExecScript(bi, OptPublishTx); err != nil {
-		return
-	}
-	//
 	ps := GetPubSub()
 	ps.Pub(tx, NewTxTopic)
 }

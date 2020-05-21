@@ -20,6 +20,8 @@ const (
 	MaxExeTime = 60000
 	//coinbase需要100区块后可用
 	CoinbaseMaturity = 100
+	//如果所有的输入全是 >= FinalSequence，交易立即生效
+	FinalSequence = VarUInt(0xFFFFFF)
 )
 
 //TxIndex 用户交易索引
@@ -600,8 +602,8 @@ func (blk *BlockInfo) AddTxs(bi *BlockIndex, txs []*TX) error {
 		if err := tx.Check(bi, true); err != nil {
 			return err
 		}
-		//当进入区块时执行错误将忽略
-		if err := tx.ExecScript(bi, OptAddToBlock); err != nil {
+		//当加入区块时脚本执行错误将忽略
+		if err := tx.ExecScript(bi); err != nil {
 			continue
 		}
 		blk.Txs = append(blk.Txs, tx)
@@ -966,6 +968,9 @@ func (in *TxIn) LoadTxOut(bi *BlockIndex) (*TxOut, error) {
 
 //Check 检测输入是否正常
 func (in *TxIn) Check(bi *BlockIndex) error {
+	if err := in.Script.Check(); err != nil {
+		return err
+	}
 	if in.IsCoinBase() {
 		return nil
 	} else if in.Script.IsWitness() {
@@ -1083,6 +1088,9 @@ func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 
 //Check 检测输出是否正常
 func (out *TxOut) Check(bi *BlockIndex) error {
+	if err := out.Script.Check(); err != nil {
+		return err
+	}
 	if !out.Value.IsRange() {
 		return fmt.Errorf("txout value error")
 	}
@@ -1147,19 +1155,36 @@ func NewTx(exetime uint32, execs ...[]byte) *TX {
 	return tx
 }
 
+//IsFinal 返回true表示交易生效不能替换
+func (tx TX) IsFinal() bool {
+	for _, in := range tx.Ins {
+		if in.Sequence < FinalSequence {
+			return false
+		}
+	}
+	return true
+}
+
 //IsReplace 当前交易是否可替换原来的交易
 //这个替换只能交易池中执行,执行之前签名已经通过
 //交易一但被打包到区块就不能替换了，但可能会回退
 func (tx TX) IsReplace(old *TX) bool {
+	//原交易是final不能替换
+	if old.IsFinal() {
+		return false
+	}
+	//新交易是final立即替换
+	if tx.IsFinal() {
+		return true
+	}
 	//输入数量必须一致
 	if len(tx.Ins) != len(old.Ins) {
 		return false
 	}
 	//每个输入的seq 比之前的大
-	for i := 0; i < len(tx.Ins); i++ {
-		l := tx.Ins[i].Sequence
-		r := old.Ins[i].Sequence
-		if l <= r {
+	for i, in := range tx.Ins {
+		ov := old.Ins[i].Sequence
+		if in.Sequence <= ov {
 			return false
 		}
 	}
@@ -1427,6 +1452,10 @@ func (tx *TX) Check(bi *BlockIndex, csp bool) error {
 	//至少有一个交易
 	if len(tx.Ins) == 0 {
 		return fmt.Errorf("tx ins too slow")
+	}
+	//脚本不能太大
+	if err := tx.Script.Check(); err != nil {
+		return fmt.Errorf("script check error %w", err)
 	}
 	//检测输入是否重复引用了相同的输出
 	if tx.HasRepTxIn(bi, csp) {

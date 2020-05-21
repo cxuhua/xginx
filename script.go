@@ -107,6 +107,44 @@ func (s Script) Len() int {
 	return len(s)
 }
 
+//Check 检测脚本错误
+func (s Script) Check() error {
+	if s.IsCoinBase() {
+		return nil
+	}
+	if s.IsTxScript() {
+		txs, err := s.ToTxScript()
+		if err != nil {
+			return err
+		}
+		if txs.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("tx script too big")
+		}
+		return nil
+	}
+	if s.IsLocked() {
+		lcks, err := s.ToLocked()
+		if err != nil {
+			return err
+		}
+		if lcks.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("out script too big")
+		}
+		return nil
+	}
+	if s.IsWitness() {
+		wits, err := s.ToWitness()
+		if err != nil {
+			return err
+		}
+		if wits.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("in script too big")
+		}
+		return nil
+	}
+	return fmt.Errorf("script type error")
+}
+
 //Type 脚本类型
 func (s Script) Type() uint8 {
 	return s[0]

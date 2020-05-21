@@ -17,16 +17,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
-//交易脚本可用
-const (
-	//OptPushTxPool 当交易进入交易池前
-	OptPushTxPool = 1
-	//OptAddToBlock 当交易加入区块前
-	OptAddToBlock = 2
-	//OptPublishTx 发布交易到网络前
-	OptPublishTx = 3
-)
-
 //脚本环境设定
 //verify_addr() 验证消费地址 与输入地址hash是否一致
 //verify_sign() 验证签名是否正确
@@ -51,8 +41,6 @@ const (
 
 //encode(tbl) json编码
 //decode(str) json解码
-
-//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
 
 //has_http  http接口是否可用
 //http_post 网络post 交易脚本可用 如果配置中启用了
@@ -463,6 +451,10 @@ func unixTimestamp(l *lua.LState) int {
 func initLuaMethodEnv(l *lua.LState, typ int) {
 	//获取字符串表示的时间戳
 	l.SetGlobal("timestamp", l.NewFunction(unixTimestamp))
+	//encode(tbl) -> string json格式
+	l.SetGlobal("encode", l.NewFunction(jsonLuaEncode))
+	//decode(str) -> tbl json格式
+	l.SetGlobal("decode", l.NewFunction(jsonLuaDecode))
 }
 
 //检测输入hash和锁定hash是否一致
@@ -615,7 +607,7 @@ func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error
 	}
 	//交易id
 	tbl.RawSetString("id", lua.LString(id.String()))
-	//查询交易所在的区块
+	//查询交易所在的区块信息
 	v, err := bi.LoadTxValue(id)
 	//如果查找不到使用下个区块高度和当前时间
 	if err != nil {
@@ -664,6 +656,15 @@ func setInTable(tbl *lua.LTable, in *TxIn) {
 	tbl.RawSetString("out_index", lua.LNumber(in.OutIndex))
 	tbl.RawSetString("out_hash", lua.LString(in.OutHash.String()))
 	tbl.RawSetString("sequence", lua.LNumber(in.Sequence))
+	wits, err := in.Script.ToWitness()
+	if err != nil {
+		panic(err)
+	}
+	acc, err := wits.ToAccount()
+	if err != nil {
+		panic(err)
+	}
+	tbl.RawSetString("account", lua.LString(acc.String()))
 }
 
 //必须指定参数
@@ -790,7 +791,7 @@ func txBlockMethod(l *lua.LState) int {
 		_, in, out, idx := signer.GetObjs()
 		//sign_idx 签名输入位置
 		tbl.RawSetString("sign_idx", lua.LNumber(idx))
-		//sign_in 签名输入
+		//sign_in 当前签名输入
 		itbl := l.NewTable()
 		setInTable(itbl, in)
 		tbl.RawSetString("sign_in", itbl)
@@ -890,10 +891,6 @@ func txOutMethod(l *lua.LState) int {
 
 //初始化交易可用方法
 func initLuaTxMethod(l *lua.LState) {
-	//encode(tbl) -> string
-	l.SetGlobal("encode", l.NewFunction(jsonLuaEncode))
-	//decode(str) -> tbl
-	l.SetGlobal("decode", l.NewFunction(jsonLuaDecode))
 	//tx()
 	l.SetGlobal("get_tx", l.NewFunction(txBlockMethod))
 }
@@ -902,7 +899,7 @@ func initLuaTxMethod(l *lua.LState) {
 //typ = 0,tx script
 //typ = 1,input script
 //typ = 2,out script
-func compileExecScript(ctx context.Context, name string, opt int, typ int, codes ...[]byte) error {
+func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byte) error {
 	//检测必须的环境变量
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
@@ -915,14 +912,6 @@ func compileExecScript(ctx context.Context, name string, opt int, typ int, codes
 	//初始化脚本环境
 	l := newScriptEnv(ctx)
 	defer l.Close()
-	//交易操作
-	l.SetGlobal("tx_opt", lua.LNumber(opt))
-	//操作常量
-	if typ == 0 {
-		l.SetGlobal("OptPushTxPool", lua.LNumber(OptPushTxPool))
-		l.SetGlobal("OptAddToBlock", lua.LNumber(OptAddToBlock))
-		l.SetGlobal("OptPublishTx", lua.LNumber(OptPublishTx))
-	}
 	//是否在交易脚本中启用http 接扣
 	l.SetGlobal("has_http", lua.LBool(conf.HTTPAPI))
 	//可用方法
@@ -978,9 +967,10 @@ func compileExecScript(ctx context.Context, name string, opt int, typ int, codes
 	return nil
 }
 
-//ExecScript 返回错误会不加入交易池或者不进入区块
+//ExecScript 返回错误交易不进入区块
 //执行之前已经校验了签名
-func (tx *TX) ExecScript(bi *BlockIndex, opt int) error {
+//AddTxs 时会执行这个交易脚本
+func (tx *TX) ExecScript(bi *BlockIndex) error {
 	txs, err := tx.Script.ToTxScript()
 	if err != nil {
 		return err
@@ -1000,7 +990,7 @@ func (tx *TX) ExecScript(bi *BlockIndex, opt int) error {
 	ctx = context.WithValue(ctx, blockKey, bi)
 	ctx = context.WithValue(ctx, txKey, tx)
 	//编译脚本
-	return compileExecScript(ctx, "tx_main", opt, 0, txs.Exec)
+	return compileExecScript(ctx, "tx_main", 0, txs.Exec)
 }
 
 //ExecScript 执行签名交易脚本
@@ -1031,11 +1021,11 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits WitnessScript, lcks LockedS
 	//只用于签名脚本输入输出
 	ctx = context.WithValue(ctx, transKey, newTransOutMap(ctx))
 	//编译输入脚本 执行错误返回
-	if err := compileExecScript(ctx, "input_main", 0, 1, wits.Exec); err != nil {
+	if err := compileExecScript(ctx, "input_main", 1, wits.Exec); err != nil {
 		return err
 	}
 	//编译输出脚本
-	if err := compileExecScript(ctx, "out_main", 0, 2, lcks.Exec); err != nil {
+	if err := compileExecScript(ctx, "out_main", 2, lcks.Exec); err != nil {
 		return err
 	}
 	return nil

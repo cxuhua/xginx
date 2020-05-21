@@ -461,6 +461,7 @@ func (pool *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 		if !has {
 			continue
 		}
+		//如果可以被替换
 		if tx.IsReplace(val.tx) {
 			return pool.replace(bi, val.tx, tx)
 		}
@@ -493,10 +494,6 @@ func (pool *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 	defer pool.mu.Unlock()
 	if pool.tlis.Len() >= MaxTxPoolSize {
 		return errors.New("tx pool full,ignore push back")
-	}
-	//执行失败不会进入交易池
-	if err := tx.ExecScript(bi, OptPushTxPool); err != nil {
-		return err
 	}
 	if err := pool.replaceTx(bi, tx); err != nil {
 		return err
