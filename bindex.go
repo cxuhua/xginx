@@ -1028,11 +1028,11 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 }
 
 //NewMsgHeaders 创建证据区块头信息
-//默认获取10个区块头
+//默认获取64个区块头
 func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock, num ...int) *MsgHeaders {
 	iter := bi.NewIter()
 	rsg := &MsgHeaders{}
-	numv := 10
+	numv := 64
 	if len(num) > 0 {
 		numv = num[0]
 	}
