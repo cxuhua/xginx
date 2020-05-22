@@ -20,9 +20,16 @@ func init() {
 `)
 
 	DefaultLockedScript = []byte(`
+	--获取引用的交易
+	local rtx = get_rtx();
+	print(encode(rtx));
+	--获取当前交易
 	local tx = get_tx();
-	local otx = get_tx(tx.sign_in.out_hash);
+	--获取当前输入引用的输出交易
+	local otx = get_tx(tx.sign.inv.out_hash);
+	--打印测试
 	print(encode(otx));
+	--只有输入地址和输出地址一致并且签名正确才能解锁当前金额
 	return verify_addr() and verify_sign();
 `)
 

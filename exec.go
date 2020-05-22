@@ -29,6 +29,10 @@ import (
 //best_height 当前区块链高度
 //best_time 最高的区块时间
 
+//签名环境下获取当前引用的交易信息
+//get_rtx()
+//相当于 get_tx(get_tx().sign_in.out_hash)
+
 //获取交易信息
 //get_tx() 获取当前环境交易对象
 //get_tx('txid') 获取指定交易信息
@@ -45,25 +49,25 @@ import (
 //tx.blk.bits 区块难度
 //tx.blk.prev 上一个区块
 //tx.blk.merkle 默克尔树id
-//tx.base 是否是coinbase
+//tx.cbb 是否是coinbase
 //tx.fee 交易费,如果是coinbase，这个返回coinbase输出金额
 //tx.ver 交易版本
-//tx.in_size 输入总数
-//tx.out_size 输出总数
-//tx:get_in(idx)
-//tx:get_out(idx)
-//tx.sign_idx 签名输入位置 签名检测环境可用
-//tx.sign_in 签名输入 签名检测环境可用
-//tx.sign_out 签名输入引用的输出 签名检测环境可用
-//tx.sign_hash 签名hash hex编码 签名检测环境可用
-//tx.wits_num 公钥数量
-//tx.wits_less 最小签名数量
-//tx.wits_arb 是否启用仲裁 != 255 表示启用
-//tx.pub_size 公钥数量
-//tx.sig_size 签名数量
-//tx.get_pub(idx)  获取公钥 返回->string hex编码
-//tx.get_sig(idx) 获取签名返回 ->string hex编码
-//tx.verify(idx) 返回验证符合某个签名的公钥索引 返回-1表示没有符合签名的公钥
+//tx.ninv 输入总数
+//tx.nout 输出总数
+//tx:inv(idx)
+//tx:out(idx)
+//tx.sign.idx 签名输入位置 签名检测环境可用
+//tx.sign.inv 签名输入 签名检测环境可用
+//tx.sign.out 签名输入引用的输出 签名检测环境可用
+//tx.sign.hash 签名hash hex编码 签名检测环境可用
+//tx.wits.num 公钥数量
+//tx.wits.less 最小签名数量
+//tx.wits.arb 是否启用仲裁 != 255 表示启用
+//tx.wits.npub 公钥数量
+//tx.wits.nsig 签名数量
+//tx.wits.pub(idx)  获取公钥 返回->string hex编码
+//tx.wits.sig(idx) 获取签名返回 ->string hex编码
+//tx.wits.verify(idx) 返回验证符合某个签名的公钥索引 返回-1表示没有符合签名的公钥
 
 //in 的属性方法
 //in.out_hash 引用交易hash
@@ -574,8 +578,8 @@ func getBlockMethod(l *lua.LState) int {
 }
 
 //设置属性字段
-func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error {
-	//获取交易id
+//获取交易id
+func setTxBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error {
 	id, err := tx.ID()
 	if err != nil {
 		return err
@@ -596,7 +600,7 @@ func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error
 	}
 	tbl.RawSetString("blk", lblk)
 	//是否是coinbase
-	tbl.RawSetString("base", lua.LBool(tx.IsCoinBase()))
+	tbl.RawSetString("cbb", lua.LBool(tx.IsCoinBase()))
 	//交易费,如果是coinbase，这个返回coinbase输出金额
 	fee, err := tx.GetTransFee(bi)
 	if err != nil {
@@ -606,9 +610,14 @@ func setBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) error
 	//交易版本
 	tbl.RawSetString("ver", lua.LNumber(tx.Ver))
 	//输入总数
-	tbl.RawSetString("in_size", lua.LNumber(len(tx.Ins)))
+	tbl.RawSetString("ninv", lua.LNumber(len(tx.Ins)))
 	//输出总数
-	tbl.RawSetString("out_size", lua.LNumber(len(tx.Outs)))
+	tbl.RawSetString("nout", lua.LNumber(len(tx.Outs)))
+	//设置方法
+	uptr := l.NewUserData()
+	uptr.Value = tx
+	tbl.RawSetString("inv", l.NewClosure(txGetInMethod, uptr))
+	tbl.RawSetString("out", l.NewClosure(txGetOutMethod, uptr))
 	return nil
 }
 
@@ -828,6 +837,102 @@ func txGetOutMethod(l *lua.LState) int {
 	return 1
 }
 
+//设置交易信息
+func setTxLuaAttr(l *lua.LState, bi *BlockIndex, tx *TX, tbl *lua.LTable) error {
+	ctx := l.Context()
+	//设置交易所在的区块信息和交易信息
+	err := setTxBlockTable(l, tbl, bi, tx)
+	if err != nil {
+		return err
+	}
+	//如果是在签名环境中
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		return nil
+	}
+	//以下在签名环境下可用
+	_, in, out, idx := signer.GetObjs()
+	stbl := l.NewTable()
+	//sign_idx 签名输入位置
+	stbl.RawSetString("idx", lua.LNumber(idx))
+	//sign_in 当前签名输入
+	itbl := l.NewTable()
+	err = setInTable(l, itbl, in)
+	if err != nil {
+		return err
+	}
+	stbl.RawSetString("inv", itbl)
+	//sign_out 签名输入引用的输出
+	otbl := l.NewTable()
+	err = setOutTable(l, otbl, out)
+	if err != nil {
+		return err
+	}
+	stbl.RawSetString("out", otbl)
+	//sign_hash 签名hash
+	hash, err := signer.GetSigHash()
+	if err != nil {
+		return err
+	}
+	stbl.RawSetString("hash", lua.LString(hex.EncodeToString(hash)))
+	tbl.RawSetString("sign", stbl)
+	wits, err := in.Script.ToWitness()
+	if err != nil {
+		return err
+	}
+	up := l.NewUserData()
+	up.Value = wits
+	wtbl := l.NewTable()
+	//wits_num int
+	wtbl.RawSetString("num", lua.LNumber(wits.Num))
+	//wits_less int
+	wtbl.RawSetString("less", lua.LNumber(wits.Less))
+	//wits_arb bool
+	wtbl.RawSetString("arb", lua.LNumber(wits.Arb))
+	//pub_size
+	wtbl.RawSetString("npub", lua.LNumber(len(wits.Pks)))
+	//sig_size
+	wtbl.RawSetString("nsig", lua.LNumber(len(wits.Sig)))
+	//get_pub(idx) ->string hex编码
+	wtbl.RawSetString("pub", l.NewClosure(getWitsPubMethod, up))
+	//get_sig(idx) ->string hex编码
+	wtbl.RawSetString("sig", l.NewClosure(getWitsSigMethod, up))
+	//verity(sig idx) 验证签名,返回 符合的pub 索引
+	wtbl.RawSetString("verify", l.NewClosure(getWitsVerityMethod, up))
+	tbl.RawSetString("wits", wtbl)
+	return nil
+}
+
+//获取当前输入引用的交易信息
+func getTxInRefMethod(l *lua.LState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		l.RaiseError("blockindex env miss")
+		return 0
+	}
+	//如果是在签名环境中
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		l.RaiseError("signer env miss")
+		return 0
+	}
+	_, in, _, _ := signer.GetObjs()
+	tx, err := bi.LoadTX(in.OutHash)
+	if signer == nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	tbl := l.NewTable()
+	err = setTxBlockTable(l, tbl, bi, tx)
+	if err != nil {
+		l.RaiseError(err.Error())
+		return 0
+	}
+	l.Push(tbl)
+	return 1
+}
+
 //
 func txBlockMethod(l *lua.LState) int {
 	ctx := l.Context()
@@ -856,67 +961,10 @@ func txBlockMethod(l *lua.LState) int {
 	}
 	tbl := l.NewTable()
 	//设置交易所在的区块信息和交易信息
-	err := setBlockTable(l, tbl, bi, tx)
+	err := setTxLuaAttr(l, bi, tx, tbl)
 	if err != nil {
 		l.RaiseError(err.Error())
 		return 0
-	}
-	//设置方法
-	uptr := l.NewUserData()
-	uptr.Value = tx
-	tbl.RawSetString("get_in", l.NewClosure(txGetInMethod, uptr))
-	tbl.RawSetString("get_out", l.NewClosure(txGetOutMethod, uptr))
-	//如果是在签名环境中
-	if signer := getEnvSigner(ctx); signer != nil {
-		_, in, out, idx := signer.GetObjs()
-		//sign_idx 签名输入位置
-		tbl.RawSetString("sign_idx", lua.LNumber(idx))
-		//sign_in 当前签名输入
-		itbl := l.NewTable()
-		err = setInTable(l, itbl, in)
-		if err != nil {
-			l.RaiseError(err.Error())
-			return 0
-		}
-		tbl.RawSetString("sign_in", itbl)
-		//sign_out 签名输入引用的输出
-		otbl := l.NewTable()
-		err = setOutTable(l, otbl, out)
-		if err != nil {
-			l.RaiseError(err.Error())
-			return 0
-		}
-		tbl.RawSetString("sign_out", otbl)
-		//sign_hash 签名hash
-		hash, err := signer.GetSigHash()
-		if err != nil {
-			l.RaiseError(err.Error())
-			return 0
-		}
-		tbl.RawSetString("sign_hash", lua.LString(hex.EncodeToString(hash)))
-		wits, err := in.Script.ToWitness()
-		if err != nil {
-			l.RaiseError(err.Error())
-			return 0
-		}
-		up := l.NewUserData()
-		up.Value = wits
-		//wits_num int
-		tbl.RawSetString("wits_num", lua.LNumber(wits.Num))
-		//wits_less int
-		tbl.RawSetString("wits_less", lua.LNumber(wits.Less))
-		//wits_arb bool
-		tbl.RawSetString("wits_arb", lua.LNumber(wits.Arb))
-		//pub_size
-		tbl.RawSetString("pub_size", lua.LNumber(len(wits.Pks)))
-		//sig_size
-		tbl.RawSetString("sig_size", lua.LNumber(len(wits.Sig)))
-		//get_pub(idx) ->string hex编码
-		tbl.RawSetString("get_pub", l.NewClosure(getWitsPubMethod, up))
-		//get_sig(idx) ->string hex编码
-		tbl.RawSetString("get_sig", l.NewClosure(getWitsSigMethod, up))
-		//verity(sig idx) 验证签名,返回 符合的pub 索引
-		tbl.RawSetString("verify", l.NewClosure(getWitsVerityMethod, up))
 	}
 	l.Push(tbl)
 	return 1
@@ -1069,6 +1117,8 @@ func initLuaTxMethod(l *lua.LState, bi *BlockIndex, typ int) {
 	l.SetGlobal("get_tx", l.NewFunction(txBlockMethod))
 	//获取区块头信息
 	l.SetGlobal("get_block", l.NewFunction(getBlockMethod))
+	//获取当前引用的交易信息
+	l.SetGlobal("get_rtx", l.NewFunction(getTxInRefMethod))
 }
 
 //编译脚本
