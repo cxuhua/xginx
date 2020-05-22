@@ -5,9 +5,17 @@ import (
 	"errors"
 )
 
+//MsgGetBlock 获取区块消息
+type MsgGetBlock struct {
+	Last  HASH256
+	Next  uint32
+	Count uint32 //获取数量
+}
+
 //MsgHeaders 获取区块头网络结构
 type MsgHeaders struct {
 	Headers Headers
+	Info    MsgGetBlock
 }
 
 //ID 获取消息ID
@@ -22,18 +30,24 @@ func (m MsgHeaders) Type() NTType {
 
 //Encode 编码
 func (m MsgHeaders) Encode(w IWriter) error {
-	return m.Headers.Encode(w)
+	if err := m.Headers.Encode(w); err != nil {
+		return err
+	}
+	if err := m.Info.Encode(w); err != nil {
+		return err
+	}
+	return nil
 }
 
 //Decode 解码
 func (m *MsgHeaders) Decode(r IReader) error {
-	return m.Headers.Decode(r)
-}
-
-//MsgGetBlock 获取区块消息
-type MsgGetBlock struct {
-	Last HASH256
-	Next uint32
+	if err := m.Headers.Decode(r); err != nil {
+		return err
+	}
+	if err := m.Info.Decode(r); err != nil {
+		return err
+	}
+	return nil
 }
 
 //ID 消息ID
@@ -54,6 +68,9 @@ func (m MsgGetBlock) Encode(w IWriter) error {
 	if err := w.TWrite(m.Next); err != nil {
 		return err
 	}
+	if err := w.TWrite(m.Count); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -63,6 +80,9 @@ func (m *MsgGetBlock) Decode(r IReader) error {
 		return err
 	}
 	if err := r.TRead(&m.Next); err != nil {
+		return err
+	}
+	if err := r.TRead(&m.Count); err != nil {
 		return err
 	}
 	return nil

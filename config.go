@@ -36,6 +36,7 @@ type Config struct {
 	TCPPort    int      `json:"tcp_port"`    //服务端口和ip
 	TCPIp      string   `json:"tcp_ip"`      //节点远程连接ip
 	LimitHash  UINT256  `json:"-"`           //最小工作难度
+	Nodes      []string `json:"nodes"`       //配置的可用节点
 	flags      [4]byte  //协议标识
 	logFile    *os.File //日志文件
 	genesis    HASH256  //第一个区块id

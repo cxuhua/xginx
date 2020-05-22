@@ -23,6 +23,10 @@ var (
 	ErrArriveFirstBlock = errors.New("arrive first block")
 	// 空链
 	ErrEmptyBlockChain = errors.New("this is empty chain")
+	//ErrHeadersScope 当获取到的区块头在链中无法找到时
+	ErrHeadersScope = errors.New("all hds not in scope")
+	//ErrHeadersTooLow 证据区块头太少
+	ErrHeadersTooLow = errors.New("headers too low")
 )
 
 //TBEle 索引头
@@ -135,12 +139,18 @@ func (it *BIndexIter) skipEle(skip ...int) bool {
 		skipv = -skipv
 		rev = true
 	}
+	var ele *list.Element
 	for skipv > 0 && it.ele != nil {
 		if rev {
-			it.ele = it.ele.Prev()
+			ele = it.ele.Prev()
 		} else {
-			it.ele = it.ele.Next()
+			ele = it.ele.Next()
 		}
+		//如果移动到头或者尾
+		if ele == nil {
+			break
+		}
+		it.ele = ele
 		skipv--
 	}
 	return it.ele != nil
@@ -732,7 +742,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	}
 	//所有的区块头都不在链中
 	if lh == InvalidHeight || li.IsZero() {
-		return errors.New("all hds not in scope")
+		return ErrHeadersScope
 	}
 	//所有区块头都在链中
 	if len(ls) == 0 {
@@ -750,7 +760,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	}
 	//如果证据区块头不足
 	if num >= uint32(len(ls)) {
-		return errors.New("headers too low")
+		return ErrHeadersTooLow
 	}
 	//回退到指定的id
 	return bi.UnlinkTo(li)
@@ -1029,14 +1039,12 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 
 //NewMsgHeaders 创建证据区块头信息
 //默认获取30个区块头，如果分叉超过30个区块需要另外处理
-func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock, num ...int) *MsgHeaders {
+func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
 	iter := bi.NewIter()
-	rsg := &MsgHeaders{}
-	numv := 30
-	if len(num) > 0 {
-		numv = num[0]
-	}
-	//向前移动10个
+	//返回上次的参数
+	rsg := &MsgHeaders{Info: *msg}
+	numv := int(msg.Count)
+	//向前移动count个
 	if !iter.SeekHeight(msg.Next, -numv) {
 		return rsg
 	}

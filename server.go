@@ -359,7 +359,21 @@ func (s *TCPServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
-	return bi.Unlink(msg.Headers)
+	err := bi.Unlink(msg.Headers)
+	//所有区块都不在此链中扩大范围
+	if err == ErrHeadersScope {
+		nsg := msg.Info
+		nsg.Count += 6
+		c.SendMsg(&nsg)
+		s.dt.Reset(time.Second * 30)
+		return nil
+	}
+	if err == ErrHeadersTooLow {
+		s.dt.Reset(time.Second * 15)
+		return nil
+	}
+	s.dt.Reset(time.Second * 5)
+	return err
 }
 
 //收到块数据
@@ -384,18 +398,23 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	return nil
 }
 
+//请求count个区块头
+func (s *TCPServer) reqHeaders(count int) {
+
+}
+
 //定时向拥有更高区块的节点请求区块数据
 func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	bv := bi.GetBestValue()
-	//查询拥有这个高度的客户端
 	c := s.findBlockClient(bv.Next())
 	if c != nil {
 		msg := &MsgGetBlock{
-			Next: bv.Next(),
-			Last: bv.LastID(),
+			Next:  bv.Next(),
+			Last:  bv.LastID(),
+			Count: 6,
 		}
 		c.SendMsg(msg)
 	}
@@ -448,7 +467,7 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 		case opt := <-s.dopt:
 			switch opt {
 			case 1:
-				s.loadSeedIP()
+				s.loadIPS()
 			case 2:
 				LogInfo(opt)
 			}
@@ -500,10 +519,30 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 	}
 }
 
-//加载seed域名ip地址
-func (s *TCPServer) loadSeedIP() {
+//加载nodes ip 和seed域名 ip地址
+func (s *TCPServer) loadIPS() {
 	lipc := 0
-	sipc := 0
+	sipc := len(conf.Nodes)
+	//加载配置的节点
+	for _, v := range conf.Nodes {
+		addr := NetAddr{}
+		err := addr.From(v)
+		if err != nil {
+			continue
+		}
+		if !addr.IsGlobalUnicast() {
+			continue
+		}
+		//忽略自己
+		if addr.Equal(conf.GetNetAddr()) {
+			continue
+		}
+		s.addrs.Set(addr)
+		lipc++
+	}
+	LogInfof("load nodes ip %d/%d", lipc, sipc)
+	lipc = 0
+	sipc = 0
 	for _, v := range conf.Seeds {
 		ips, err := net.LookupIP(v)
 		if err != nil {
@@ -518,6 +557,7 @@ func (s *TCPServer) loadSeedIP() {
 			if !addr.IsGlobalUnicast() {
 				continue
 			}
+			//忽略自己
 			if addr.Equal(conf.GetNetAddr()) {
 				continue
 			}
