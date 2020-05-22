@@ -726,6 +726,7 @@ func getWitsVerityMethod(l *lua.LState) int {
 		l.RaiseError(err.Error())
 		return 0
 	}
+	//获取符合签名的公钥
 	for i := 0; i < len(wits.Pks); i++ {
 		pub, err := NewPublicKey(wits.Pks[i].Bytes())
 		if err != nil {
