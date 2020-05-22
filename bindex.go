@@ -1028,16 +1028,20 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 }
 
 //NewMsgHeaders 创建证据区块头信息
-func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
+//默认获取10个区块头
+func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock, num ...int) *MsgHeaders {
 	iter := bi.NewIter()
 	rsg := &MsgHeaders{}
-	num := 10
+	numv := 10
+	if len(num) > 0 {
+		numv = num[0]
+	}
 	//向前移动10个
-	if !iter.SeekHeight(msg.Next, -num) {
+	if !iter.SeekHeight(msg.Next, -numv) {
 		return rsg
 	}
 	//获取最多10个返回
-	for i := num; iter.Next() && i > 0; i-- {
+	for i := numv; iter.Next() && i > 0; i-- {
 		rsg.Headers.Add(iter.Curr().BlockHeader)
 	}
 	return rsg
