@@ -10,6 +10,22 @@ import (
 func init() {
 	//测试模式下开启
 	*IsDebug = true
+
+	DefaultTxScript = []byte(`
+	return true
+`)
+
+	DefaultInputScript = []byte(`
+	return true
+`)
+
+	DefaultLockedScript = []byte(`
+	local tx = get_tx();
+	local otx = get_tx(tx.sign_in.out_hash);
+	print(encode(otx));
+	return verify_addr() and verify_sign();
+`)
+
 }
 
 func TestFloatVal(t *testing.T) {

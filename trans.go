@@ -79,11 +79,13 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		return nil, errors.New("fee error")
 	}
 	tx := NewTx(exetime, execs...)
-	//输出总计
+	//输出金额总计
 	sum := m.Fee
 	for _, v := range m.Amt {
 		sum += v
 	}
+	//最后一个输入地址默认作为找零地址（如果有零）
+	var lout Address
 	//使用哪些金额
 	for _, ckv := range m.lis.GetCoins() {
 		//获取消费金额对应的账户
@@ -106,6 +108,11 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 			return nil, err
 		}
 		tx.Ins = append(tx.Ins, in)
+		//保存最后一个地址
+		lout, err = acc.GetAddress()
+		if err != nil {
+			return nil, err
+		}
 		sum -= ckv.Value
 		if sum <= 0 {
 			break
@@ -140,7 +147,11 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	if amt := -sum; amt > 0 {
 		//获取找零地址
 		addr := m.lis.GetKeep()
-		if addr == "" {
+		//如果没有设置找零地址
+		if addr == EmptyAddress {
+			addr = lout
+		}
+		if addr == EmptyAddress {
 			return nil, fmt.Errorf("keep address empty")
 		}
 		//添加前回调通知

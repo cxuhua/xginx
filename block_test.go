@@ -105,11 +105,7 @@ func (lis *transListner) GetCoins() Coins {
 
 //获取找零地址
 func (lis *transListner) GetKeep() Address {
-	addr, err := lis.src.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	return addr
+	return EmptyAddress
 }
 
 //创建并链接一个区块

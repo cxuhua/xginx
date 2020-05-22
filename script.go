@@ -22,6 +22,7 @@ type TxScript struct {
 	Type uint8
 	//脚本最大执行时间，时间一半分配给交易脚本，一半分配给签名脚本
 	//签名脚本每个输入签名只有 n分之一的一半时间 n为输入数量
+	//单位:毫秒
 	ExeTime uint32
 	Exec    VarBytes
 }
@@ -291,8 +292,8 @@ func (s Script) ToTxScript() (TxScript, error) {
 }
 
 //ToLocked 如果是锁定脚本
-func (s Script) ToLocked() (LockedScript, error) {
-	rs := LockedScript{}
+func (s Script) ToLocked() (*LockedScript, error) {
+	rs := &LockedScript{}
 	if !s.IsLocked() {
 		return rs, errors.New("script type error")
 	}
@@ -305,8 +306,8 @@ func (s Script) ToLocked() (LockedScript, error) {
 }
 
 //ToWitness 如果是隔离见证脚本
-func (s Script) ToWitness() (WitnessScript, error) {
-	wit := WitnessScript{}
+func (s Script) ToWitness() (*WitnessScript, error) {
+	wit := &WitnessScript{}
 	if !s.IsWitness() {
 		return wit, errors.New("witness error")
 	}
