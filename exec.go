@@ -44,7 +44,7 @@ var (
 	//coin_value 相关的金额
 	//coin_pool 金额是否在交易池
 	//coin_height 金额所在的区块高度
-	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx =0
+	//tx_opt 交易脚本操作类型 对应 OptPushTxPool  OptAddToBlock OptPublishTx
 	//http_post 网络post 交易脚本可用 如果配置中启用了
 	//http_get 网络get 交易脚本可用 如果配置中启用了
 	//out_address 输出地址(指定谁消费),最终谁可以消费主要看脚本执行情况
@@ -55,7 +55,7 @@ var (
 	//DebugScript 是否调式脚本
 	DebugScript = false
 	//DefaultTxScript 默认交易脚本
-	DefaultTxScript = []byte(`print(has_http) return true`)
+	DefaultTxScript = []byte(`return true`)
 	//DefaultInputScript 默认输入脚本
 	DefaultInputScript = []byte(`return true`)
 	//DefaultLockedScript 默认锁定脚本

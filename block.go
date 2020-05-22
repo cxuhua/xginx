@@ -899,7 +899,7 @@ func (in TxIn) GetCoin(bi *BlockIndex) (*CoinKeyValue, error) {
 	return bi.GetCoin(pkh, in.OutHash, in.OutIndex)
 }
 
-//SpentKey 消费key,用来记录输入对应的输出是否已经别消费
+//SpentKey 消费key,用来记录输入对应的输出是否已被消费
 func (in TxIn) SpentKey() []byte {
 	buf := NewWriter()
 	err := buf.WriteFull(CoinsPrefix)
