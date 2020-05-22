@@ -384,12 +384,10 @@ func unixTimestamp(l *lua.LState) int {
 	}
 	if str == "" {
 		l.RaiseError("args miss")
-		return 0
 	}
 	tv, err := time.ParseInLocation(sfmt, str, time.Local)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	l.Push(lua.LNumber(tv.Unix()))
 	return 1
@@ -400,7 +398,6 @@ func verifyAddr(l *lua.LState) int {
 	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("tx script env can't use")
-		return 0
 	}
 	err := signer.VerifyAddr()
 	l.Push(lua.LBool(err == nil))
@@ -412,7 +409,6 @@ func verifySign(l *lua.LState) int {
 	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("tx script env can't use")
-		return 0
 	}
 	err := signer.VerifySign()
 	l.Push(lua.LBool(err == nil))
@@ -430,22 +426,18 @@ func luaNumberIsInt(v lua.LNumber) (int64, bool) {
 func transMapValueSet(l *lua.LState) int {
 	if l.GetTop() != 2 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	k := l.Get(1)
 	if k.Type() != lua.LTString {
 		l.RaiseError("args 1 type error")
-		return 0
 	}
 	key := lua.LVAsString(k)
 	if key == "" {
 		l.RaiseError("args 1 empty error")
-		return 0
 	}
 	tmap := getEnvTransMap(l.Context())
 	if tmap == nil {
 		l.RaiseError("trans map miss")
-		return 0
 	}
 	v := l.Get(2)
 	typ := v.Type()
@@ -474,22 +466,18 @@ func transMapValueSet(l *lua.LState) int {
 func transMapValueHas(l *lua.LState) int {
 	if l.GetTop() != 1 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	k := l.Get(1)
 	if k.Type() != lua.LTString {
 		l.RaiseError("args 1 type error")
-		return 0
 	}
 	key := lua.LVAsString(k)
 	if key == "" {
 		l.RaiseError("args 1 empty error")
-		return 0
 	}
 	tmap := getEnvTransMap(l.Context())
 	if tmap == nil {
 		l.RaiseError("trans map miss")
-		return 0
 	}
 	_, b := tmap.kvs[key]
 	l.Push(lua.LBool(b))
@@ -501,22 +489,18 @@ func transMapValueHas(l *lua.LState) int {
 func transMapValueGet(l *lua.LState) int {
 	if l.GetTop() != 1 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	k := l.Get(1)
 	if k.Type() != lua.LTString {
 		l.RaiseError("args 1 type error")
-		return 0
 	}
 	key := lua.LVAsString(k)
 	if key == "" {
 		l.RaiseError("args 1 empty error")
-		return 0
 	}
 	tmap := getEnvTransMap(l.Context())
 	if tmap == nil {
 		l.RaiseError("trans map miss")
-		return 0
 	}
 	v, b := tmap.getValue(key)
 	if !b {
@@ -557,11 +541,9 @@ func getBlockMethod(l *lua.LState) int {
 	bi := getEnvBlockIndex(l.Context())
 	if bi == nil {
 		l.RaiseError("block env miss")
-		return 0
 	}
 	if l.GetTop() != 1 {
 		l.RaiseError("args num error get_block(id) ")
-		return 0
 	}
 	lblk := l.NewTable()
 	blkset := lblk.RawSetString
@@ -653,17 +635,14 @@ func getWitsPubMethod(l *lua.LState) int {
 	//参数1 是self
 	if l.GetTop() != 2 {
 		l.RaiseError("args error")
-		return 0
 	}
 	wits, err := getScriptWits(l)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	idx := l.ToInt(2)
 	if idx < 0 || idx >= len(wits.Pks) {
 		l.RaiseError("idx outbound")
-		return 0
 	}
 	str := hex.EncodeToString(wits.Pks[idx][:])
 	l.Push(lua.LString(str))
@@ -675,17 +654,14 @@ func getWitsSigMethod(l *lua.LState) int {
 	//参数1 是self
 	if l.GetTop() != 2 {
 		l.RaiseError("args error")
-		return 0
 	}
 	wits, err := getScriptWits(l)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	idx := l.ToInt(2)
 	if idx < 0 || idx >= len(wits.Sig) {
 		l.RaiseError("idx outbound")
-		return 0
 	}
 	str := hex.EncodeToString(wits.Sig[idx][:])
 	l.Push(lua.LString(str))
@@ -697,41 +673,34 @@ func getWitsVerityMethod(l *lua.LState) int {
 	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("env miss signer")
-		return 0
 	}
 	//参数1 是self
 	if l.GetTop() != 2 {
 		l.RaiseError("args error")
-		return 0
 	}
 	wits, err := getScriptWits(l)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	idx := l.ToInt(2)
 	if idx < 0 || idx >= len(wits.Sig) {
 		l.RaiseError("idx outbound")
-		return 0
 	}
 	sigb := wits.Sig[idx]
 	sig, err := NewSigValue(sigb.Bytes())
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	//获取签名hash
 	hash, err := signer.GetSigHash()
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	//获取符合签名的公钥
 	for i := 0; i < len(wits.Pks); i++ {
 		pub, err := NewPublicKey(wits.Pks[i].Bytes())
 		if err != nil {
 			l.RaiseError(err.Error())
-			return 0
 		}
 		if pub.Verify(hash, sig) {
 			l.Push(lua.LNumber(i))
@@ -755,35 +724,29 @@ func txGetInMethod(l *lua.LState) int {
 	top := l.GetTop()
 	if top != 2 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	ctx := l.Context()
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
-		return 0
 	}
 	tbl := l.NewTable()
 	tx, err := getUpValueTx(l)
 	if err != nil {
 		l.RaiseError("upvalue tx miss")
-		return 0
 	}
 	iv := l.Get(2)
 	if iv.Type() != lua.LTNumber {
 		l.RaiseError("args 2 type error")
-		return 0
 	}
 	idx := int(lua.LVAsNumber(iv))
 	if idx < 0 || idx >= len(tx.Ins) {
 		l.RaiseError("args 1 index out bound")
-		return 0
 	}
 	in := tx.Ins[idx]
 	err = setInTable(l, tbl, in)
 	if err != nil {
 		l.RaiseError("set in table error %s", err.Error())
-		return 0
 	}
 	l.Push(tbl)
 	return 1
@@ -805,35 +768,29 @@ func txGetOutMethod(l *lua.LState) int {
 	top := l.GetTop()
 	if top != 2 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	ctx := l.Context()
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
-		return 0
 	}
 	tbl := l.NewTable()
 	tx, err := getUpValueTx(l)
 	if err != nil {
 		l.RaiseError("upvalue tx miss")
-		return 0
 	}
 	a1 := l.Get(2)
 	if a1.Type() != lua.LTNumber {
 		l.RaiseError("args 2 type error")
-		return 0
 	}
 	idx := int(lua.LVAsNumber(a1))
 	if idx < 0 || idx >= len(tx.Outs) {
 		l.RaiseError("args 1 index out bound")
-		return 0
 	}
 	out := tx.Outs[idx]
 	err = setOutTable(l, tbl, out)
 	if err != nil {
 		l.RaiseError("set out table error %s", err.Error())
-		return 0
 	}
 	l.Push(tbl)
 	return 1
@@ -911,25 +868,21 @@ func getTxInRefMethod(l *lua.LState) int {
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("blockindex env miss")
-		return 0
 	}
 	//如果是在签名环境中
 	signer := getEnvSigner(ctx)
 	if signer == nil {
 		l.RaiseError("signer env miss")
-		return 0
 	}
 	_, in, _, _ := signer.GetObjs()
 	tx, err := bi.LoadTX(in.OutHash)
 	if signer == nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	tbl := l.NewTable()
 	err = setTxBlockTable(l, tbl, bi, tx)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	l.Push(tbl)
 	return 1
@@ -941,7 +894,6 @@ func txBlockMethod(l *lua.LState) int {
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
-		return 0
 	}
 	top := l.GetTop()
 	var tx *TX = nil
@@ -966,7 +918,6 @@ func txBlockMethod(l *lua.LState) int {
 	err := setTxLuaAttr(l, bi, tx, tbl)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	l.Push(tbl)
 	return 1
@@ -976,7 +927,6 @@ func txBlockMethod(l *lua.LState) int {
 func jsonLuaEncode(l *lua.LState) int {
 	if l.GetTop() != 1 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	tbl := l.ToTable(1)
 	if tbl == nil {
@@ -986,7 +936,6 @@ func jsonLuaEncode(l *lua.LState) int {
 	bv, err := tableToJSON(tbl)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	l.Push(lua.LString(bv))
 	return 1
@@ -995,7 +944,6 @@ func jsonLuaEncode(l *lua.LState) int {
 func jsonLuaDecode(l *lua.LState) int {
 	if l.GetTop() != 1 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	str := l.ToString(1)
 	if str == "" {
@@ -1005,7 +953,6 @@ func jsonLuaDecode(l *lua.LState) int {
 	tbl, err := jsonToTable(l, []byte(str))
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	l.Push(tbl)
 	return 1
@@ -1014,32 +961,26 @@ func jsonLuaDecode(l *lua.LState) int {
 func verifyLuaDecode(l *lua.LState) int {
 	if l.GetTop() != 3 {
 		l.RaiseError("args num error")
-		return 0
 	}
 	hb, err := hex.DecodeString(l.ToString(1))
 	if err != nil || len(hb) == 0 {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	pb, err := hex.DecodeString(l.ToString(2))
 	if err != nil || len(pb) == 0 {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	sb, err := hex.DecodeString(l.ToString(3))
 	if err != nil || len(sb) == 0 {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	pub, err := NewPublicKey(pb)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	sig, err := NewSigValue(sb)
 	if err != nil {
 		l.RaiseError(err.Error())
-		return 0
 	}
 	okb := pub.Verify(hb, sig)
 	l.Push(lua.LBool(okb))
@@ -1052,12 +993,10 @@ func txOutMethod(l *lua.LState) int {
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		l.RaiseError("block index miss")
-		return 0
 	}
 	signer := getEnvSigner(ctx)
 	if signer == nil {
 		l.RaiseError("current signer miss")
-		return 0
 	}
 	tbl := l.NewTable()
 	tx, _, out, _ := signer.GetObjs()
@@ -1065,12 +1004,10 @@ func txOutMethod(l *lua.LState) int {
 		a1 := l.Get(1)
 		if a1.Type() != lua.LTNumber {
 			l.RaiseError("args 1 type error")
-			return 0
 		}
 		idx := int(lua.LVAsNumber(a1))
 		if idx < 0 || idx >= len(tx.Outs) {
 			l.RaiseError("args 1 index out bound")
-			return 0
 		}
 		out = tx.Outs[idx]
 	}
@@ -1078,7 +1015,6 @@ func txOutMethod(l *lua.LState) int {
 	addr, err := out.Script.GetAddress()
 	if err != nil {
 		l.RaiseError("get address error %s", err.Error())
-		return 0
 	}
 	tbl.RawSetString("address", lua.LString(addr))
 	l.Push(tbl)
