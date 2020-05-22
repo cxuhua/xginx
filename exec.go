@@ -54,14 +54,14 @@ import (
 //tx.ver 交易版本
 //tx.ninv 输入总数
 //tx.nout 输出总数
-//tx:inv(idx)
-//tx:out(idx)
+//tx:inv(idx) 获取指定输入
+//tx:out(idx) 获取指定输出
 //tx.sign.idx 签名输入位置 签名检测环境可用
 //tx.sign.inv 签名输入 签名检测环境可用
 //tx.sign.out 签名输入引用的输出 签名检测环境可用
 //tx.sign.hash 签名hash hex编码 签名检测环境可用
 //tx.wits.num 公钥数量
-//tx.wits.less 最小签名数量
+//tx.wits.less 最小成功签名数量
 //tx.wits.arb 是否启用仲裁 != 255 表示启用
 //tx.wits.npub 公钥数量
 //tx.wits.nsig 签名数量
@@ -720,7 +720,8 @@ func getWitsVerityMethod(l *lua.LState) int {
 		l.RaiseError(err.Error())
 		return 0
 	}
-	hv, err := signer.GetSigHash()
+	//获取签名hash
+	hash, err := signer.GetSigHash()
 	if err != nil {
 		l.RaiseError(err.Error())
 		return 0
@@ -731,7 +732,7 @@ func getWitsVerityMethod(l *lua.LState) int {
 			l.RaiseError(err.Error())
 			return 0
 		}
-		if pub.Verify(hv, sig) {
+		if pub.Verify(hash, sig) {
 			l.Push(lua.LNumber(i))
 			return 1
 		}
