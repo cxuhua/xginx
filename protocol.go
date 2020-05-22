@@ -449,7 +449,7 @@ type MsgVersion struct {
 	Service uint32  //服务
 	Addr    NetAddr //节点外网地址
 	Height  uint32  //节点区块高度
-	NodeID  uint64  //节点随机id
+	NodeID  uint64  //节点id
 	Tps     VarUInt //交易池数量
 }
 

@@ -22,6 +22,8 @@ type IListener interface {
 	OnFinished(blk *BlockInfo) error
 	//当收到网络数据时,数据包根据类型转换成需要的包
 	OnClientMsg(c *Client, msg MsgIO)
+	//当加载交易列表时可用此方法过滤不加入区块的
+	OnLoadTxs(txs []*TX) []*TX
 	//链关闭时
 	OnClose()
 	//当服务启动后会调用一次
@@ -41,6 +43,11 @@ type Listener struct {
 //OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
 func (lis *Listener) OnTxPool(tx *TX) error {
 	return nil
+}
+
+//OnLoadTxs 当加载交易时,在AddTxs之前
+func (lis *Listener) OnLoadTxs(txs []*TX) []*TX {
+	return txs
 }
 
 //OnTxPoolRep 当交易被替换
@@ -109,7 +116,11 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	addr := conf.GetNetAddr()
 	//base tx
 	in := NewTxIn()
-	in.Script = blk.CoinbaseScript(addr.IP(), []byte(txt))
+	script, err := blk.CoinbaseScript(addr.IP(), []byte(txt))
+	if err != nil {
+		return err
+	}
+	in.Script = script
 	tx.Ins = []*TxIn{in}
 	//
 	out := &TxOut{}
@@ -119,7 +130,11 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	script, err := NewLockedScript(pkh, DefaultLockedScript)
+	lcks, err := NewLockedScript(pkh, DefaultLockedScript)
+	if err != nil {
+		return err
+	}
+	script, err = lcks.ToScript()
 	if err != nil {
 		return err
 	}

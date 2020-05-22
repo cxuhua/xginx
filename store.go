@@ -98,7 +98,6 @@ var (
 	TxsPrefix   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
 	CoinsPrefix = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
 	TxpPrefix   = []byte{4} //账户相关交易索引  pkh_height(big endian)_txid -> blkid+txidx
-	RefTxPrefix = []byte{5} //存放交易池中的交易引用的其他交易，只在交易池使用
 )
 
 //GetDBKey 获取存储key

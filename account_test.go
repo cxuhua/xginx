@@ -3,7 +3,18 @@ package xginx
 import (
 	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestLoadAccount(t *testing.T) {
+	body := "LAB5RqZfmx12P6jJaz51hu6iKphLcvJfVcTRSR9wGQMxBgQeet4EdHctWRoK84QYmfiuYAwBgdngToRyXqeZiWW1LSckdQFMp4yYX3o7CWMYTrPPifAXhGSK1ZJsUprjMGsFyvNDx4jN3sPqHYgq1HJmibkF3abVqZkRkY4zTtdpC3LN76nixegN3iuoZgkNqEY83of3SLA1kA3vTQtq2N5Cu2isXHFNX7S9eNq5XAjYMcC31XCBi5c4UaLVFuue6aaaCiez2NmNM5hByjqJjVYnnsDcRpwhdDGT3ttUoXtUQctV3G"
+	acc, err := LoadAccount(body)
+	require.NoError(t, err)
+	str, err := acc.Dump(true)
+	require.NoError(t, err)
+	require.Equal(t, str, body)
+}
 
 func TestArbSign(t *testing.T) {
 	a, err := NewAccount(3, 2, true)

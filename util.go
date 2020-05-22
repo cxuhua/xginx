@@ -10,6 +10,11 @@ import (
 	"sync/atomic"
 )
 
+var (
+	//ErrCheckSum 校验和错误，一般密码错误会出现这个问题
+	ErrCheckSum = errors.New("check sum error")
+)
+
 //EndianUInt32 用于排序
 func EndianUInt32(u32 uint32) []byte {
 	hb := []byte{0, 0, 0, 0}
@@ -47,9 +52,10 @@ func HashLoad(s string, pass ...string) ([]byte, error) {
 		}
 		data = d
 	}
+	//使用hash160作为校验
 	dl := len(data) - hl
 	if !bytes.Equal(Hash160(data[:dl]), data[dl:]) {
-		return nil, errors.New("checksum error")
+		return nil, ErrCheckSum
 	}
 	return data[:dl], nil
 }

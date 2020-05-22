@@ -99,16 +99,68 @@ func (lis *transListner) GetCoins() Coins {
 	if err != nil {
 		panic(err)
 	}
+	//返回地址账户下可用的金额
 	return cs.Coins
 }
 
 //获取找零地址
 func (lis *transListner) GetKeep() Address {
-	addr, err := lis.src.GetAddress()
-	if err != nil {
-		panic(err)
+	return EmptyAddress
+}
+
+//创建并链接一个区块
+func (suite *BlockTestSuite) newLinkBlock() {
+	req := suite.Require()
+	blk, err := suite.bi.NewBlock(1)
+	req.NoError(err)
+	err = blk.Finish(suite.bi)
+	req.NoError(err)
+	calcbits(suite.bi, blk)
+	err = suite.bi.LinkBlk(blk)
+	req.NoError(err)
+}
+
+func (suite *BlockTestSuite) TestUnLink() {
+	req := suite.Require()
+	req.NotNil(suite.bi)
+	lis := GetTestListener(suite.bi)
+	//获取矿工账户
+	src := lis.GetAccount(0)
+	saddr, err := src.GetAddress()
+	req.NoError(err)
+	coins, err := suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	//记录回退前的数据
+	a := len(coins.All)
+	l := len(coins.Locks)
+	c := len(coins.Coins)
+	num := 22
+	//回退num个区块
+	for i := 0; i < num; i++ {
+		err = suite.bi.UnlinkLast()
+		req.NoError(err)
 	}
-	return addr
+	coins, err = suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	//区块减少两个所以可用的也减少num
+	req.Equal(len(coins.All), a-num)
+	//锁定的维持不变
+	req.Equal(len(coins.Locks), l-num+c)
+	cc := c - num
+	//最少为0个
+	if cc < 0 {
+		cc = 0
+	}
+	req.Equal(len(coins.Coins), cc)
+	//创建两个区块
+	for i := 0; i < num; i++ {
+		suite.newLinkBlock()
+	}
+	coins, err = suite.bi.ListCoins(saddr)
+	req.NoError(err)
+	req.Equal(len(coins.All), a)
+	req.Equal(len(coins.Locks), l)
+	req.Equal(len(coins.Coins), c)
 }
 
 func (suite *BlockTestSuite) TestTxLockTime() {
@@ -137,8 +189,8 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	tlis := newTransListner(suite.bi, src, dst)
 	//生成交易
 	mi := suite.bi.NewTrans(tlis)
-	//向dst转账1COIN
-	mi.Add(daddr, 1*Coin)
+	//向dst转账1COIN，使用默认输出脚本
+	mi.Add(daddr, 1*Coin, DefaultLockedScript)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
 	tx, err := mi.NewTx(0, DefaultTxScript)
@@ -148,22 +200,27 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	err = bp.PushTx(suite.bi, tx)
 	req.NoError(err)
 	txs := bp.AllTxs()
+
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 
+	//seq+=1复制交易
 	cp := tx.Clone(1)
+	//重新签名
 	err = cp.Sign(suite.bi, tlis)
 	req.NoError(err)
 	err = bp.PushTx(suite.bi, cp)
 	req.NoError(err)
 
-	txs = bp.AllTxs()
 	//创建一个新区块
 	blk, err := suite.bi.NewBlock(1)
 	req.NoError(err)
+	//获取可用的交易,并删除错误的交易
+	txs, err = bp.LoadTxsWithBlk(suite.bi, blk)
+	req.NoError(err)
 	err = blk.AddTxs(suite.bi, txs)
 	req.NoError(err)
-	//应该有两个交易
+	//应该有两个交易,其中一个coinbase交易
 	req.Equal(2, len(blk.Txs))
 	//完成区块设置准备链接到链
 	err = blk.Finish(suite.bi)

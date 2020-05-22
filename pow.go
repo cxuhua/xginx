@@ -26,8 +26,7 @@ func CheckProofOfWork(hash HASH256, bits uint32) bool {
 
 //GetMinPowBits Minimum difficulty
 func GetMinPowBits() uint32 {
-	min := NewUINT256(conf.PowLimit)
-	return min.Compact(false)
+	return NewUINT256(conf.PowLimit).Compact(false)
 }
 
 //CheckProofOfWorkBits 检测难度值是否正确
@@ -52,7 +51,7 @@ func CheckProofOfWorkBits(bits uint32) bool {
 //pw = lastBlock's bits
 func CalculateWorkRequired(ct uint32, pt uint32, pw uint32) uint32 {
 	span := uint32(conf.PowTime)
-	limit := NewUINT256(conf.PowLimit)
+	limit := conf.LimitHash
 	sub := ct - pt
 	if sub <= 0 {
 		panic(errors.New("ct pt error"))

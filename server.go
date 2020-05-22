@@ -223,18 +223,11 @@ func (s *TCPServer) HasClient(id uint64, c *Client) bool {
 	return ok
 }
 
-//DelClient 删除客户端
+//DelClient 移除客户端
 func (s *TCPServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.cls, id)
-}
-
-//AddClient 添加客户端
-func (s *TCPServer) AddClient(id uint64, c *Client) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cls[id] = c
 }
 
 //Stop 地址服务
@@ -381,7 +374,9 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 		return err
 	}
 	LogInfo("update block ", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
+	//延迟获取下个区块
 	s.dt.Reset(time.Microsecond * 300)
+	//如果是新区块继续广播
 	if msg.IsNewBlock() {
 		s.BroadMsg(msg, c)
 	}
@@ -389,14 +384,15 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	return nil
 }
 
-//下载块数据
+//定时向拥有更高区块的节点请求区块数据
 func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	bv := bi.GetBestValue()
 	//查询拥有这个高度的客户端
-	if c := s.findBlockClient(bv.Next()); c != nil {
+	c := s.findBlockClient(bv.Next())
+	if c != nil {
 		msg := &MsgGetBlock{
 			Next: bv.Next(),
 			Last: bv.LastID(),
@@ -421,6 +417,10 @@ func (s *TCPServer) tryConnect() {
 		cs = append(cs, v.addr)
 	}
 	s.addrs.mu.RUnlock()
+	//到达连接上限
+	if s.ConnNum() >= conf.MaxConn {
+		return
+	}
 	//开始连接
 	for _, v := range cs {
 		c := s.NewClient()

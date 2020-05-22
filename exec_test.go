@@ -9,7 +9,30 @@ import (
 
 func init() {
 	//测试模式下开启
-	DebugScript = true
+	*IsDebug = true
+
+	DefaultTxScript = []byte(`
+	return true
+`)
+
+	DefaultInputScript = []byte(`
+	return true
+`)
+
+	DefaultLockedScript = []byte(`
+	--获取引用的交易
+	local rtx = get_rtx();
+	print(encode(rtx));
+	--获取当前交易
+	local tx = get_tx();
+	--获取当前输入引用的输出交易
+	local otx = get_tx(tx.sign.inv.out_hash);
+	--打印测试
+	print(encode(otx));
+	--只有输入地址和输出地址一致并且签名正确才能解锁当前金额
+	return verify_addr() and verify_sign();
+`)
+
 }
 
 func TestFloatVal(t *testing.T) {

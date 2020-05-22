@@ -28,17 +28,18 @@ type ITransListener interface {
 	GetTxInExec(ckv *CoinKeyValue) []byte
 	//获取使用的金额列表
 	GetCoins() Coins
-	//获取找零地址
+	//获取找零地址，当转账有剩余的金额转到这个地址
 	GetKeep() Address
 }
 
 //Trans 交易数据结构
 type Trans struct {
-	bi  *BlockIndex
-	lis ITransListener
-	Dst []Address //目标地址
-	Amt []Amount  //目标金额 大小与dst对应
-	Fee Amount    //交易费
+	bi   *BlockIndex
+	lis  ITransListener
+	Dst  []Address //目标地址
+	Amt  []Amount  //目标金额 大小与dst对应
+	Outs []Script  //对应输出脚本
+	Fee  Amount    //交易费
 }
 
 //Clean 清楚交易对象
@@ -48,9 +49,10 @@ func (m *Trans) Clean() {
 }
 
 //Add 设置一个转账对象
-func (m *Trans) Add(dst Address, amt Amount) {
+func (m *Trans) Add(dst Address, amt Amount, out Script) {
 	m.Dst = append(m.Dst, dst)
 	m.Amt = append(m.Amt, amt)
+	m.Outs = append(m.Outs, out)
 }
 
 //Check 检测参数
@@ -77,11 +79,13 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		return nil, errors.New("fee error")
 	}
 	tx := NewTx(exetime, execs...)
-	//输出总计
+	//输出金额总计
 	sum := m.Fee
 	for _, v := range m.Amt {
 		sum += v
 	}
+	//最后一个输入地址默认作为找零地址（如果有零）
+	var lout Address
 	//使用哪些金额
 	for _, ckv := range m.lis.GetCoins() {
 		//获取消费金额对应的账户
@@ -104,6 +108,11 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 			return nil, err
 		}
 		tx.Ins = append(tx.Ins, in)
+		//保存最后一个地址
+		lout, err = acc.GetAddress()
+		if err != nil {
+			return nil, err
+		}
 		sum -= ckv.Value
 		if sum <= 0 {
 			break
@@ -116,8 +125,12 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	//转出到其他账号的输出
 	for i, v := range m.Amt {
 		dst := m.Dst[i]
-		exec := m.lis.GetTxOutExec(dst)
-		out, err := dst.NewTxOut(v, exec)
+		outs := m.Outs[i]
+		//如果未设置从回调获取
+		if outs.Len() == 0 {
+			outs = m.lis.GetTxOutExec(dst)
+		}
+		out, err := dst.NewTxOut(v, outs)
 		if err != nil {
 			return nil, err
 		}
@@ -134,12 +147,22 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	if amt := -sum; amt > 0 {
 		//获取找零地址
 		addr := m.lis.GetKeep()
-		if addr == "" {
+		//如果没有设置找零地址
+		if addr == EmptyAddress {
+			addr = lout
+		}
+		if addr == EmptyAddress {
 			return nil, fmt.Errorf("keep address empty")
 		}
 		//添加前回调通知
 		exec := m.lis.GetTxOutExec(addr)
 		out, err := addr.NewTxOut(amt, exec)
+		if err != nil {
+			return nil, err
+		}
+		if np, ok := m.lis.(ITransNotice); ok {
+			err = np.OnNewTxOut(tx, out)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -165,11 +188,6 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 
 //BroadTx 广播链上交易
 func (m *Trans) BroadTx(bi *BlockIndex, tx *TX) {
-	//是否广播到网络
-	if err := tx.ExecScript(bi, OptPublishTx); err != nil {
-		return
-	}
-	//
 	ps := GetPubSub()
 	ps.Pub(tx, NewTxTopic)
 }
@@ -177,10 +195,11 @@ func (m *Trans) BroadTx(bi *BlockIndex, tx *TX) {
 //NewTrans 创建待回调的交易对象
 func (bi *BlockIndex) NewTrans(lis ITransListener) *Trans {
 	return &Trans{
-		bi:  bi,
-		lis: lis,
-		Dst: []Address{},
-		Amt: []Amount{},
-		Fee: 0,
+		bi:   bi,
+		lis:  lis,
+		Dst:  []Address{},
+		Amt:  []Amount{},
+		Outs: []Script{},
+		Fee:  0,
 	}
 }

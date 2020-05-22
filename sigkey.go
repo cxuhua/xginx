@@ -501,6 +501,11 @@ func LoadPublicKey(s string, pass ...string) (*PublicKey, error) {
 //Address 账号地址
 type Address string
 
+const (
+	//EmptyAddress 空地址定义
+	EmptyAddress Address = ""
+)
+
 //NewTxOut 创建一个输出
 func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
@@ -512,7 +517,11 @@ func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	script, err := NewLockedScript(pkh, execs...)
+	lcks, err := NewLockedScript(pkh, execs...)
+	if err != nil {
+		return nil, err
+	}
+	script, err := lcks.ToScript()
 	if err != nil {
 		return nil, err
 	}

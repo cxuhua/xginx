@@ -3,6 +3,7 @@ package xginx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"sync"
 	"sync/atomic"
@@ -236,6 +237,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	genok := false
 	ptime := uint64(0)
 	ps := GetPubSub()
+	//订阅新区块和交易删除事件
 	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
 	for !genok {
@@ -269,6 +271,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 				goto finished
 			}
 		case mbv := <-m.mch:
+			//收到新区块头数据
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
 				mg.StopAndWait()
 				blk.Header = mbv.Header()
@@ -278,9 +281,11 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 		case chv := <-bch:
 			//如果交易池中的交易被删除，或者收到新的区块检测是否停止区块生成
 			if rlk, ok := chv.(*BlockInfo); ok && rlk.Meta.Height >= blk.Meta.Height {
+				//如果收到比当前更好的区块重新计算新区块
 				mg.StopAndWait()
 				return errors.New("new block recv,stop gen block")
 			} else if tid, ok := chv.(HASH256); ok && blk.HasTx(tid) {
+				//如果区块中的交易被移除将要重新打包交易
 				mg.StopAndWait()
 				return errors.New("tx pool removed,stop gen block")
 			}
@@ -306,8 +311,9 @@ finished:
 	}
 	//广播更新了区块数据
 	ps.Pub(blk, NewLinkBlockTopic)
-	//广播区块
+	//广播区块数据
 	msg := NewMsgBlock(blk)
+	//设置标记为新区块
 	msg.AddFlags(MsgBlockNewFlags)
 	Server.BroadMsg(msg)
 	return nil
@@ -319,11 +325,13 @@ func (m *minerEngine) SaveFirstBlock(blk *BlockInfo) {
 	if err != nil {
 		panic(err)
 	}
+	//如果非debug环境保存第一个区块用于首次发布
 	err = ioutil.WriteFile("genesis.blk", buf.Bytes(), 0644)
 	if err != nil {
 		panic(err)
 	}
-	LogInfof("save first block %v success,file = genesis.blk", blk)
+	LogInfof("save first block ID=%v success,file = genesis.blk", blk)
+	panic(fmt.Errorf("system exit,please update config file,reboot system"))
 }
 
 //处理操作
@@ -361,6 +369,10 @@ func (m *minerEngine) recoverError() {
 	}
 }
 
+var (
+	AutoGenBlockTime = time.Second * 30
+)
+
 func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 	LogInfo("miner worker", i, "start")
 	defer m.recoverError()
@@ -381,7 +393,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			if err := m.genNewBlock(1); err != nil {
 				LogError("gen new block error", err)
 			}
-			dt.Reset(time.Second * 30)
+			dt.Reset(AutoGenBlockTime)
 		case <-m.cctx.Done():
 			return
 		}
@@ -393,10 +405,14 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	m.lptr = lis
 	ps := GetPubSub()
 	m.cctx, m.cfun = context.WithCancel(ctx)
+	//每隔多长时间自动创建新区块
+	if *IsDebug {
+		AutoGenBlockTime = time.Second * 5
+	}
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
 	//每隔30秒开始自动创建区块
-	dt := time.NewTimer(time.Second * 30)
+	dt := time.NewTimer(AutoGenBlockTime)
 	for i := 0; i < 2; i++ {
 		go m.loop(i, ch, dt)
 	}

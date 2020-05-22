@@ -155,12 +155,12 @@ func (it *Iterator) Seek(k []byte) bool {
 }
 
 type leveldbimp struct {
-	l *leveldb.DB
+	lptr *leveldb.DB
 }
 
 //NewDB 创建基于leveldb的数据库接口
 func NewDB(dbp *leveldb.DB) DBImp {
-	return &leveldbimp{l: dbp}
+	return &leveldbimp{lptr: dbp}
 }
 
 //LoadBatch 加载日志
@@ -191,16 +191,16 @@ func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
 		rptr = slice[0].r
 	}
 	return &Iterator{
-		iter: db.l.NewIterator(rptr, opts),
+		iter: db.lptr.NewIterator(rptr, opts),
 	}
 }
 
 func (db *leveldbimp) Compact(r *Range) error {
-	return db.l.CompactRange(*r.r)
+	return db.lptr.CompactRange(*r.r)
 }
 
 func (db *leveldbimp) Close() {
-	err := db.l.Close()
+	err := db.lptr.Close()
 	if err != nil {
 		log.Println("close db error", err)
 	}
@@ -212,7 +212,7 @@ func (db *leveldbimp) Has(ks ...[]byte) bool {
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
 	}
-	b, err := db.l.Has(k, opts)
+	b, err := db.lptr.Has(k, opts)
 	if err != nil {
 		panic(err)
 	}
@@ -225,7 +225,7 @@ func (db *leveldbimp) Put(ks ...[]byte) error {
 		NoWriteMerge: false,
 		Sync:         false,
 	}
-	return db.l.Put(k, v, opts)
+	return db.lptr.Put(k, v, opts)
 }
 
 func (db *leveldbimp) Get(ks ...[]byte) ([]byte, error) {
@@ -234,7 +234,7 @@ func (db *leveldbimp) Get(ks ...[]byte) ([]byte, error) {
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
 	}
-	return db.l.Get(k, opts)
+	return db.lptr.Get(k, opts)
 }
 
 func (db *leveldbimp) Del(ks ...[]byte) error {
@@ -243,11 +243,11 @@ func (db *leveldbimp) Del(ks ...[]byte) error {
 		NoWriteMerge: false,
 		Sync:         false,
 	}
-	return db.l.Delete(k, opts)
+	return db.lptr.Delete(k, opts)
 }
 
 func (db *leveldbimp) Transaction() (TRImp, error) {
-	tr, err := db.l.OpenTransaction()
+	tr, err := db.lptr.OpenTransaction()
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (db *leveldbimp) Transaction() (TRImp, error) {
 }
 
 func (db *leveldbimp) Sync() {
-	tr, err := db.l.OpenTransaction()
+	tr, err := db.lptr.OpenTransaction()
 	if err == nil {
 		_ = tr.Commit()
 	}
@@ -266,7 +266,7 @@ func (db *leveldbimp) Write(b *Batch, sync ...bool) error {
 		Sync:         len(sync) > 0 && sync[0],
 		NoWriteMerge: len(sync) > 1 && sync[1],
 	}
-	return db.l.Write(b.GetBatch(), opts)
+	return db.lptr.Write(b.GetBatch(), opts)
 }
 
 //
@@ -364,7 +364,10 @@ func (ss *leveldbstore) Sync() {
 //新建索引数据库
 func (ss *leveldbstore) newdb() (DBImp, error) {
 	opts := &opt.Options{
-		Filter: filter.NewBloomFilter(10),
+		OpenFilesCacheCapacity: 16,
+		BlockCacheCapacity:     16 / 2 * opt.MiB,
+		WriteBuffer:            16 / 4 * opt.MiB,
+		Filter:                 filter.NewBloomFilter(10),
 	}
 	sdb, err := leveldb.OpenFile(ss.dir, opts)
 	if err != nil {

@@ -738,7 +738,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	if len(ls) == 0 {
 		return nil
 	}
-	//检测见证区块头
+	//检测证据区块头是否合法
 	err := ls.Check(lh, bi)
 	if err != nil {
 		return err
@@ -1028,16 +1028,20 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 }
 
 //NewMsgHeaders 创建证据区块头信息
-func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
+//默认获取30个区块头，如果分叉超过30个区块需要另外处理
+func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock, num ...int) *MsgHeaders {
 	iter := bi.NewIter()
 	rsg := &MsgHeaders{}
-	num := 10
+	numv := 30
+	if len(num) > 0 {
+		numv = num[0]
+	}
 	//向前移动10个
-	if !iter.SeekHeight(msg.Next, -num) {
+	if !iter.SeekHeight(msg.Next, -numv) {
 		return rsg
 	}
 	//获取最多10个返回
-	for i := num; iter.Next() && i > 0; i-- {
+	for i := numv; iter.Next() && i > 0; i-- {
 		rsg.Headers.Add(iter.Curr().BlockHeader)
 	}
 	return rsg
@@ -1092,7 +1096,8 @@ func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyV
 func (bi *BlockIndex) WriteGenesis() {
 	dat, err := ioutil.ReadFile("genesis.blk")
 	if err != nil {
-		panic(err)
+		LogError("genesis.blk miss")
+		return
 	}
 	buf := NewReader(dat)
 	blk := &BlockInfo{}
@@ -1109,12 +1114,12 @@ func (bi *BlockIndex) WriteGenesis() {
 }
 
 //ListCoins 获取某个地址账号的金额
-func (bi *BlockIndex) ListCoins(addr Address, limit ...Amount) (*CoinsState, error) {
+func (bi *BlockIndex) ListCoins(addr Address) (*CoinsState, error) {
 	pkh, err := addr.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	ds, err := bi.ListCoinsWithID(pkh, limit...)
+	ds, err := bi.ListCoinsWithID(pkh)
 	if err != nil {
 		return nil, err
 	}
@@ -1132,6 +1137,7 @@ func (bi *BlockIndex) ListTxs(addr Address, limit ...int) (TxIndexs, error) {
 
 //ListTxsWithID 获取交易
 func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) {
+	//和id相关的交易
 	prefix := GetDBKey(TxpPrefix, id[:])
 	idxs := TxIndexs{}
 	//从交易池获取
@@ -1139,10 +1145,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 	if err != nil {
 		return nil, err
 	}
-	for _, tv := range cvs {
-		idxs = append(idxs, tv)
-	}
-	if len(limit) > 0 {
+	if idxs = append(idxs, cvs...); len(limit) > 0 {
 		limit[0] -= len(idxs)
 		if limit[0] <= 0 {
 			return idxs, nil
@@ -1151,7 +1154,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 	//获取区块链中可用的交易
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
-	//倒序获取
+	//根据区块高度倒序获取
 	if iter.Last() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
@@ -1162,6 +1165,7 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 			return idxs, nil
 		}
 	}
+	//倒序获取
 	for iter.Prev() {
 		iv, err := NewTxIndex(iter.Key(), iter.Value())
 		if err != nil {
@@ -1177,44 +1181,32 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 
 //ListCoinsWithID 获取某个id的所有余额
 //已经消费在内存中的不列出
-func (bi *BlockIndex) ListCoinsWithID(pkh HASH160, limit ...Amount) (Coins, error) {
+func (bi *BlockIndex) ListCoinsWithID(pkh HASH160) (Coins, error) {
 	tp := bi.GetTxPool()
 	prefix := getDBKey(CoinsPrefix, pkh[:])
 	kvs := Coins{}
 	//获取区块链中历史可用金额
 	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
 	defer iter.Close()
-	sum := Amount(0)
 	for iter.Next() {
 		ckv := &CoinKeyValue{}
 		err := ckv.From(iter.Key(), iter.Value())
 		if err != nil {
 			return nil, err
 		}
-		ckv.spent = tp.IsSpentCoin(ckv)
-		if ckv.spent {
+		//如果在交易池消费了不显示
+		//消费剩余的会在交易池获取到
+		if tp.IsSpentCoin(ckv) {
 			continue
 		}
-		sum += ckv.Value
 		kvs = append(kvs, ckv)
-		if len(limit) > 0 && sum >= limit[0] {
-			return kvs, nil
-		}
-	}
-	if len(limit) > 0 {
-		limit[0] -= sum
 	}
 	//获取交易池中的用于id的金额
-	cvs, err := tp.ListCoins(pkh, limit...)
+	cvs, err := tp.ListCoins(pkh)
 	if err != nil {
 		return nil, err
 	}
-	for _, ckv := range cvs {
-		if ckv.spent {
-			continue
-		}
-		kvs = append(kvs, ckv)
-	}
+	kvs = append(kvs, cvs...)
 	return kvs, nil
 }
 
@@ -1295,6 +1287,11 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	}
 	//检测区块数据
 	err = blk.Check(bi, true)
+	if err != nil {
+		return err
+	}
+	//执行脚本检测,返回错误不能打包
+	err = blk.ExecScript(bi)
 	if err != nil {
 		return err
 	}
