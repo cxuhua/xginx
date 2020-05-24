@@ -1,0 +1,19 @@
+{
+  "name":"debug config file",
+  "data_dir": "/Users/xuhua/datadir2",
+  "confirms": 6,
+  "miner_num": 0,
+  "miner_addr": "st1qwgpep2ge4jj6tkpmxq5dy0wjmlk5qdd7srrz3n",
+  "version":10000,
+  "tcp_port": 9334,
+  "tcp_ip": "192.168.1.48",
+  "max_conn": 50,
+  "halving": 210000,
+  "pow_limit": "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "pow_time":1209600,
+  "pow_span": 2016,
+  "addr_prefix": "st",
+  "nodes":["192.168.1.48:9333"],
+  "seeds":["seed.xginx.com"],
+  "genesis": "00061abd4ef6edec7fecd0a78d6178e5c90ac8b2d2d78028242346b1299a2f58"
+}
