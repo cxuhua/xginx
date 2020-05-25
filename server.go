@@ -365,11 +365,12 @@ func (s *TCPServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	//所有区块都不在此链中扩大范围
 	if err == ErrHeadersScope {
 		nsg := msg.Info
-		nsg.Count += 6
+		nsg.Count += conf.Confirms
 		c.SendMsg(&nsg)
 		s.dt.Reset(time.Second * 30)
 		return nil
 	}
+	//证据区块太少
 	if err == ErrHeadersTooLow {
 		s.dt.Reset(time.Second * 15)
 		return nil
@@ -401,11 +402,6 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	return nil
 }
 
-//请求count个区块头
-func (s *TCPServer) reqHeaders(count int) {
-
-}
-
 //定时向拥有更高区块的节点请求区块数据
 func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
@@ -417,7 +413,7 @@ func (s *TCPServer) reqMsgGetBlock() {
 		msg := &MsgGetBlock{
 			Next:  bv.Next(),
 			Last:  bv.LastID(),
-			Count: 6,
+			Count: conf.Confirms,
 		}
 		c.SendMsg(msg)
 	}

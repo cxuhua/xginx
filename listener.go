@@ -58,6 +58,7 @@ func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
 //OnInit 首次启动初始化
 func (lis *Listener) OnInit(bi *BlockIndex) error {
 	LogInfo("MinerAddr =", conf.MinerAddr)
+	//如果是空链需要写入第一个创世区块
 	if bv := bi.GetBestValue(); !bv.IsValid() {
 		bi.WriteGenesis()
 	}

@@ -20,7 +20,7 @@ var (
 //Config 配置加载后只读
 type Config struct {
 	Name       string   `json:"name"`        //配置文件名称
-	Confirms   uint32   `json:"confirms"`    //确认数 = 6
+	Confirms   uint32   `json:"confirms"`    //安全确认数 = 6
 	MinerNum   int      `json:"miner_num"`   //挖掘机数量,=0不会启动协程挖矿
 	MinerAddr  Address  `json:"miner_addr"`  //矿工默认地址
 	MaxConn    int      `json:"max_conn"`    //最大激活的连接，包括连入和连出的

@@ -5,6 +5,8 @@ import (
 	"log"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 type Time int64
@@ -44,6 +46,11 @@ func (t *MyTime) UnmarshalJSON(b []byte) error {
 	}
 	t.Time = Time(v.Unix())
 	return nil
+}
+
+func TestFinalSeq(t *testing.T) {
+	v := VarUInt(FinalSequence)
+	assert.Equal(t, len(v.Bytes()), 4)
 }
 
 func TestUseMaxMoney(t *testing.T) {

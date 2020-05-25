@@ -698,8 +698,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	}
 	iter := bi.NewIter()
 	//最后匹配的高度和id
-	lh := InvalidHeight
-	li := ZERO256
+	lp := NewInvalidBest()
 	//产生分叉后剩余的区块
 	ls := Headers{}
 	for i, v := range hds {
@@ -712,11 +711,11 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 			ls = hds[i:]
 			break
 		}
-		lh = iter.Curr().Height
-		li = id
+		lp.Height = iter.Curr().Height
+		lp.ID = id
 	}
 	//所有的区块头都不在链中
-	if lh == InvalidHeight || li.IsZero() {
+	if !lp.IsValid() {
 		return ErrHeadersScope
 	}
 	//所有区块头都在链中
@@ -724,12 +723,12 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 		return nil
 	}
 	//检测证据区块头是否合法
-	err := ls.Check(lh, bi)
+	err := ls.Check(lp.Height, bi)
 	if err != nil {
 		return err
 	}
 	//获取需要回退到id的数量
-	num, err := bi.UnlinkCount(li)
+	num, err := bi.UnlinkCount(lp.ID)
 	if err != nil {
 		return err
 	}
@@ -738,7 +737,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 		return ErrHeadersTooLow
 	}
 	//回退到指定的id
-	return bi.UnlinkTo(li)
+	return bi.UnlinkTo(lp.ID)
 }
 
 //UnlinkTo 必须从最后开始断开，回退到指定id,不包括id
@@ -1081,8 +1080,7 @@ func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyV
 func (bi *BlockIndex) WriteGenesis() {
 	dat, err := ioutil.ReadFile("genesis.blk")
 	if err != nil {
-		LogError("genesis.blk miss")
-		return
+		panic(fmt.Errorf("genesis.blk miss"))
 	}
 	buf := NewReader(dat)
 	blk := &BlockInfo{}
