@@ -176,12 +176,9 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	if err != nil {
 		return nil, err
 	}
-	//如果lis实现了签名lis
+	//如果lis实现了签名
 	if slis, ok := m.lis.(ISignerListener); ok {
-		err := tx.Sign(m.bi, slis)
-		if err != nil {
-			return nil, err
-		}
+		err = tx.Sign(m.bi, slis)
 	}
 	return tx, err
 }

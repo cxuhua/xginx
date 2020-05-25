@@ -14,10 +14,10 @@ const (
 	MaxLogSize = 1024 * 1024 * 2
 	//最大执行脚本长度
 	MaxExecSize = 1024 * 2
-	//默认5000毫秒执行时间 (ms)
-	DefaultExeTime = 5000
+	//默认1000毫秒执行时间 (ms)
+	DefaultExeTime = 1000
 	//最大执行时间
-	MaxExeTime = 60000
+	MaxExeTime = 30000
 	//coinbase需要100区块后可用
 	CoinbaseMaturity = 100
 	//如果所有的输入全是 >= FinalSequence，交易立即生效
@@ -1338,6 +1338,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
 		if in.IsCoinBase() {
 			continue
 		}
+		//获取引用的输出
 		out, err := in.LoadTxOut(bi)
 		if err != nil {
 			return err

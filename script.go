@@ -120,7 +120,10 @@ func (s Script) Check() error {
 			return err
 		}
 		if txs.Exec.Len() > MaxExecSize {
-			return fmt.Errorf("tx script too big")
+			return fmt.Errorf("tx script size too big")
+		}
+		if txs.ExeTime > MaxExeTime {
+			return fmt.Errorf("tx script exectime too big, ExeTime > %d", MaxExeTime)
 		}
 		return nil
 	}

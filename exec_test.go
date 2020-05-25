@@ -28,7 +28,7 @@ func init() {
 	--获取当前输入引用的输出交易
 	local otx = get_tx(tx.sign.inv.out_hash);
 	--打印测试
-	print(encode(otx));
+	--print(tx.sign.inv.address,tx.sign.out.address);
 	--只有输入地址和输出地址一致并且签名正确才能解锁当前金额
 	return verify_addr() and verify_sign();
 `)

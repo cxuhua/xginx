@@ -48,6 +48,8 @@ func (lis *transListner) GetTxInExec(ckv *CoinKeyValue) []byte {
 
 //当输入创建好
 func (lis *transListner) OnNewTxIn(tx *TX, in *TxIn) error {
+	//交易能够被覆盖
+	in.Sequence = 0
 	return nil
 }
 
@@ -142,9 +144,9 @@ func (suite *BlockTestSuite) TestUnLink() {
 	}
 	coins, err = suite.bi.ListCoins(saddr)
 	req.NoError(err)
-	//区块减少两个所以可用的也减少num
+	//区块减少num
 	req.Equal(len(coins.All), a-num)
-	//锁定的维持不变
+	//锁定的数量较少num
 	req.Equal(len(coins.Locks), l-num+c)
 	cc := c - num
 	//最少为0个

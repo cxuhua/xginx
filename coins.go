@@ -108,6 +108,7 @@ func (tk CoinKeyValue) NewTxIn(acc *Account, execs ...[]byte) (*TxIn, error) {
 		return nil, err
 	}
 	in.Script = script
+	in.Sequence = FinalSequence
 	return in, nil
 }
 

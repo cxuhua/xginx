@@ -460,7 +460,7 @@ func (pool *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 			return pool.replace(bi, val.tx, tx)
 		}
 		//如果不能替换就是引用重复了
-		return fmt.Errorf("ref out repeat error")
+		return fmt.Errorf("ref out repeat error out=%v", in.OutHash)
 	}
 	return nil
 }

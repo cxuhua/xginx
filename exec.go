@@ -73,6 +73,7 @@ import (
 //in.out_hash 引用交易hash
 //in.out_index 输出索引
 //in.sequence 序列号
+//in.address 输入地址
 
 //out 属性方法
 //out.value 输出金额
@@ -716,6 +717,11 @@ func setInTable(l *lua.LState, tbl *lua.LTable, in *TxIn) error {
 	tbl.RawSetString("out_index", lua.LNumber(in.OutIndex))
 	tbl.RawSetString("out_hash", lua.LString(in.OutHash.String()))
 	tbl.RawSetString("sequence", lua.LNumber(in.Sequence))
+	//获取输入地址
+	wits, err := in.Script.ToWitness()
+	if err == nil {
+		tbl.RawSetString("address", lua.LString(wits.Address()))
+	}
 	return nil
 }
 
