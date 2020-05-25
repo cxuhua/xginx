@@ -123,14 +123,14 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		return nil, errors.New("insufficient balance")
 	}
 	//转出到其他账号的输出
-	for i, v := range m.Amt {
+	for i, amt := range m.Amt {
 		dst := m.Dst[i]
 		outs := m.Outs[i]
 		//如果未设置从回调获取
 		if outs.Len() == 0 {
 			outs = m.lis.GetTxOutExec(dst)
 		}
-		out, err := dst.NewTxOut(v, outs)
+		out, err := dst.NewTxOut(amt, outs)
 		if err != nil {
 			return nil, err
 		}

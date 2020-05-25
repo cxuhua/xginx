@@ -276,9 +276,10 @@ func (c *NetAddr) From(s string) error {
 	c.ip = net.ParseIP(h)
 	i, err := strconv.ParseInt(p, 10, 32)
 	if err != nil {
-		return err
+		c.port = DefaultPort
+	} else {
+		c.port = uint16(i)
 	}
-	c.port = uint16(i)
 	return nil
 }
 

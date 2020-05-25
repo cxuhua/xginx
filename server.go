@@ -16,6 +16,8 @@ const (
 	NetMsgTopic = "NetMsg"
 	//创建了新的交易进入了交易池
 	NewTxTopic = "NewTx"
+	//默认端口
+	DefaultPort = uint16(9333)
 )
 
 //AddrNode 地址节点
@@ -476,10 +478,12 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			_ = s.tcplis.Close()
 			return
 		case cv := <-ch:
+			//收到交易信息
 			if tx, ok := cv.(*TX); ok {
 				s.BroadMsg(NewMsgTx(tx))
 				break
 			}
+			//收到客户端信息
 			m, ok := cv.(*ClientMsg)
 			if !ok {
 				break
@@ -505,13 +509,16 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))
 				}
 			}
+			//统一回调
 			if msg, ok := m.m.(MsgIO); ok {
 				s.lptr.OnClientMsg(m.c, msg)
 			}
 		case <-s.dt.C:
+			//定时请求区块数据
 			s.reqMsgGetBlock()
 			s.dt.Reset(time.Second * 5)
 		case <-s.pt.C:
+			//重连设置
 			if s.ConnNum() < conf.MaxConn {
 				s.tryConnect()
 			}
@@ -553,7 +560,7 @@ func (s *TCPServer) loadIPS() {
 			sipc++
 			addr := NetAddr{
 				ip:   ip,
-				port: uint16(9333), //使用默认端口
+				port: DefaultPort, //使用默认端口
 			}
 			if !addr.IsGlobalUnicast() {
 				continue
