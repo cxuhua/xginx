@@ -15,7 +15,8 @@ type MsgGetBlock struct {
 //MsgHeaders 获取区块头网络结构
 type MsgHeaders struct {
 	Headers Headers
-	Info    MsgGetBlock
+	//上次请求参数
+	Info MsgGetBlock
 }
 
 //ID 获取消息ID

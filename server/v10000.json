@@ -1,4 +1,5 @@
 {
+  "name":"release v1.0.0",
   "data_dir": "/Users/xuhua/datadir",
   "confirms": 6,
   "miner_num": 2,

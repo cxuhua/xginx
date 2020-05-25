@@ -133,7 +133,7 @@ func (tk CoinKeyValue) IsPool() bool {
 
 //IsMatured 是否成熟可用
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
-	//交易池中的不能直接用了
+	//交易池中的不能直接用了,如果要重新分配输出，需要覆盖之前的交易
 	if tk.IsPool() {
 		return false
 	}

@@ -24,7 +24,8 @@ type TxScript struct {
 	//签名脚本每个输入签名只有 n分之一的一半时间 n为输入数量
 	//单位:毫秒
 	ExeTime uint32
-	Exec    VarBytes
+	//执行脚本
+	Exec VarBytes
 }
 
 //Encode 编码
@@ -67,7 +68,7 @@ func MergeScript(execs ...[]byte) (VarBytes, error) {
 	return result, nil
 }
 
-//NewTxScript 创建锁定脚本
+//NewTxScript 创建交易脚本
 func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
 	std := &TxScript{Exec: VarBytes{}}
 	std.Type = ScriptTxType
@@ -98,7 +99,7 @@ type Script []byte
 
 //Clone 复制脚本
 func (s Script) Clone() Script {
-	n := make(Script, s.Len())
+	n := make(Script, len(s))
 	copy(n, s)
 	return n
 }
@@ -243,7 +244,7 @@ func (s Script) GetPkh() (HASH160, error) {
 		}
 		return ws.Hash()
 	} else {
-		return pkh, errors.New("script typ not pkh")
+		return pkh, errors.New("script not pkh")
 	}
 }
 
@@ -326,10 +327,10 @@ func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) (Script, error) {
 	}
 	s := Script{ScriptCoinbaseType}
 	hb := []byte{0, 0, 0, 0}
-	//当前块高度必须存在
+	//当前块区块高度
 	Endian.PutUint32(hb, h)
 	s = append(s, hb...)
-	//加入ip地址
+	//加入节点ip地址
 	s = append(s, ip...)
 	//自定义数据
 	for _, v := range bs {

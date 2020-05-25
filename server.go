@@ -385,6 +385,7 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	//尝试更新区块数据
 	if err := bi.LinkBlk(msg.Blk); err != nil {
 		LogError("link block error", err)
+		s.dt.Reset(time.Second * 30)
 		return err
 	}
 	LogInfo("update block ", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())

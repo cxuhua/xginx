@@ -370,6 +370,7 @@ func (m *minerEngine) recoverError() {
 }
 
 var (
+	//AutoGenBlockTime 自动创建区块时间
 	AutoGenBlockTime = time.Second * 30
 )
 
@@ -407,7 +408,8 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	m.cctx, m.cfun = context.WithCancel(ctx)
 	//每隔多长时间自动创建新区块
 	if *IsDebug {
-		AutoGenBlockTime = time.Second * 5
+		//调试模式下10-20秒直接创建一个区块
+		AutoGenBlockTime = time.Second * time.Duration((RandUInt32()%10)+10)
 	}
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)

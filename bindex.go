@@ -5,16 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"sort"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
-)
-
-//定义高度
-const (
-	// 无效的块高度
-	InvalidHeight = ^uint32(0)
 )
 
 //错误定义
@@ -67,9 +60,7 @@ func EmptyTBEle(h uint32, bh BlockHeader, bi *BlockIndex) *TBEle {
 	return &TBEle{
 		Height: h,
 		bi:     bi,
-		TBMeta: TBMeta{
-			BlockHeader: bh,
-		},
+		TBMeta: TBMeta{BlockHeader: bh},
 	}
 }
 
@@ -281,30 +272,12 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 type BlockIndex struct {
 	txp   *TxPool                   //交易池
 	lptr  IListener                 //链监听器
-	rwm   sync.RWMutex              //
+	rwm   sync.RWMutex              //读写锁
 	lis   *list.List                //区块头列表
 	hmap  map[uint32]*list.Element  //按高度缓存
 	imap  map[HASH256]*list.Element //按id缓存
 	lru   *IndexCacher              //lru缓存
 	blkdb IBlkStore                 //区块存储和索引
-}
-
-//GetMedianTime 获取中间时间
-//计算h之前的11个区块的中间时间 来自BTC规则，不晓得为什么是11
-//这个时间将在Sequence锁定规则中用到
-func (bi *BlockIndex) GetMedianTime(h uint32) uint32 {
-	iter := bi.NewIter()
-	if !iter.SeekHeight(h) {
-		panic(errors.New("h block miss"))
-	}
-	ts := []uint32{}
-	for i := 0; iter.Prev() && i < 11; i++ {
-		ts = append(ts, iter.Curr().Time)
-	}
-	sort.Slice(ts, func(i, j int) bool {
-		return ts[i] < ts[j]
-	})
-	return ts[len(ts)/2]
 }
 
 //NewMsgTxMerkle 返回某个交易的merkle验证树
@@ -356,6 +329,7 @@ func (bi *BlockIndex) NewIter() *BIndexIter {
 	return iter
 }
 
+//按高度获取区块
 func (bi *BlockIndex) gethele(h uint32) *TBEle {
 	ele, has := bi.hmap[h]
 	if !has {
@@ -399,16 +373,20 @@ func (bi *BlockIndex) NewBlock(ver uint32) (*BlockInfo, error) {
 	bv := bi.GetBestValue()
 	//设置当前难度
 	if !bv.IsValid() {
+		//创世区块
 		blk.Header.Prev = ZERO256
 		blk.Header.Bits = GetMinPowBits()
 	} else {
 		blk.Header.Prev = bv.ID
 		blk.Header.Bits = bi.CalcBits(bv.Next())
 	}
+	//检测工作难度
 	if !CheckProofOfWorkBits(blk.Header.Bits) {
 		return nil, errors.New("block bits check error")
 	}
+	//创建数据
 	blk.Meta = EmptyTBEle(bv.Next(), blk.Header, bi)
+	//回调处理
 	if err := bi.lptr.OnNewBlock(blk); err != nil {
 		return nil, err
 	}
@@ -445,7 +423,7 @@ func (bi *BlockIndex) Height() uint32 {
 	return last.Height
 }
 
-//Time 获取当前链高度
+//Time 获取当前链最高区块时间，空链获取当前时间
 func (bi *BlockIndex) Time() uint32 {
 	last := bi.Last()
 	if last == nil {
@@ -578,12 +556,9 @@ func (bi *BlockIndex) LinkBack(e *TBEle) {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
 	ele := bi.lis.PushBack(e)
+	id := e.MustID()
 	bi.hmap[e.Height] = ele
-	if id, err := e.ID(); err != nil {
-		panic(err)
-	} else {
-		bi.imap[id] = ele
-	}
+	bi.imap[id] = ele
 }
 
 func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
@@ -809,7 +784,7 @@ func (bi *BlockIndex) LoadPrev() (*TBEle, error) {
 	if err != nil {
 		return nil, err
 	}
-	//第一个必须是配置的
+	//第一个必须是配置的创世区块
 	if cele.Prev.IsZero() && !conf.IsGenesisID(id) {
 		return nil, errors.New("genesis block miss")
 	}
@@ -885,7 +860,7 @@ func (bi *BlockIndex) HasTxValue(id HASH256) bool {
 	return bi.blkdb.Index().Has(TxsPrefix, id[:])
 }
 
-//LoadTxValue 获取交易入口
+//LoadTxValue 获取交易所在的区块和位置
 func (bi *BlockIndex) LoadTxValue(id HASH256) (*TxValue, error) {
 	vv := &TxValue{}
 	vb, err := bi.blkdb.Index().Get(TxsPrefix, id[:])
@@ -953,13 +928,15 @@ func (bi *BlockIndex) loadTo(id HASH256, blk *BlockInfo) (*TBMeta, error) {
 
 //清除区块相关的缓存
 func (bi *BlockIndex) cleancache(blk *BlockInfo) {
+	//清除交易
 	for _, tv := range blk.Txs {
 		id, err := tv.ID()
 		if err != nil {
-			panic(err)
+			continue
 		}
 		bi.lru.Delete(id)
 	}
+	//清除区块
 	if id, err := blk.ID(); err == nil {
 		bi.lru.Delete(id)
 	}
@@ -1048,7 +1025,7 @@ func (bi *BlockIndex) NewMsgHeaders(msg *MsgGetBlock) *MsgHeaders {
 	if !iter.SeekHeight(msg.Next, -numv) {
 		return rsg
 	}
-	//获取最多10个返回
+	//获取最多numv个返回
 	for i := numv; iter.Next() && i > 0; i-- {
 		rsg.Headers.Add(iter.Curr().BlockHeader)
 	}

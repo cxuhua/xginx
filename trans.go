@@ -147,7 +147,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	if amt := -sum; amt > 0 {
 		//获取找零地址
 		addr := m.lis.GetKeep()
-		//如果没有设置找零地址
+		//如果没有设置找零地址使用最后一个输入地址
 		if addr == EmptyAddress {
 			addr = lout
 		}

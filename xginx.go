@@ -27,9 +27,7 @@ func Run(lis IListener) {
 	conf := InitConfig()
 	defer conf.Close()
 
-	if *IsDebug {
-		LogWarnf("xginx runing debug mode!")
-	}
+	LogInfof("xginx run config name = %s debug=%b", conf.Name, *IsDebug)
 
 	ps := GetPubSub()
 	defer ps.Shutdown()
