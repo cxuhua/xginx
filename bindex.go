@@ -537,17 +537,15 @@ func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 
 //断开最后一个内存中的头
 func (bi *BlockIndex) unlinkback() {
+	//获取最后一个对象
 	le := bi.lis.Back()
 	if le == nil {
 		return
 	}
 	tv := le.Value.(*TBEle)
+	//移除索引
 	delete(bi.hmap, tv.Height)
-	id, err := tv.ID()
-	if err != nil {
-		panic(err)
-	}
-	delete(bi.imap, id)
+	delete(bi.imap, tv.MustID())
 	bi.lis.Remove(le)
 }
 
@@ -556,9 +554,8 @@ func (bi *BlockIndex) LinkBack(e *TBEle) {
 	bi.rwm.Lock()
 	defer bi.rwm.Unlock()
 	ele := bi.lis.PushBack(e)
-	id := e.MustID()
 	bi.hmap[e.Height] = ele
-	bi.imap[id] = ele
+	bi.imap[e.MustID()] = ele
 }
 
 func (bi *BlockIndex) pushfront(e *TBEle) (*TBEle, error) {
@@ -639,7 +636,7 @@ func (bi *BlockIndex) LoadAll(limit int, fn func(pv uint)) error {
 	}
 	bv := bi.GetBestValue()
 	LogInfof("load finished block , best height=%d,best id=%v", bv.Height, bv.ID)
-	return nil
+	return bi.txp.Load(bi, TxPoolFile)
 }
 
 //HasSync 是否有需要下载的区块
@@ -722,7 +719,7 @@ func (bi *BlockIndex) Unlink(hds Headers) error {
 	if len(ls) == 0 {
 		return nil
 	}
-	//检测证据区块头是否合法
+	//从分叉高度开始检测证据区块头是否合法
 	err := ls.Check(lp.Height, bi)
 	if err != nil {
 		return err
@@ -1003,7 +1000,7 @@ func (bi *BlockIndex) unlink(bp *BlockInfo) error {
 	//回退后会由回退数据设置bestvalue
 	//删除区块头
 	bt.Del(BlockPrefix, id[:])
-	//恢复数据
+	//回退数据
 	err = bi.blkdb.Index().Write(bt)
 	if err != nil {
 		return err
@@ -1304,7 +1301,7 @@ func (bi *BlockIndex) Close() {
 	bi.lptr.OnClose()
 	bi.blkdb.Close()
 	bi.lis.Init()
-	_ = bi.lru.Close()
+	bi.lru.Close()
 	bi.txp.Close()
 	bi.hmap = nil
 	bi.imap = nil

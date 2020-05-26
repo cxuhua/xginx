@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -201,8 +202,16 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.NotNil(bp)
 	err = bp.PushTx(suite.bi, tx)
 	req.NoError(err)
-	txs := bp.AllTxs()
 
+	ntxp := NewTxPool()
+	err = bp.Dump("txp.dat")
+	req.NoError(err)
+	err = ntxp.Load(suite.bi, "txp.dat")
+	req.NoError(err)
+	os.Remove("txp.dat")
+	req.Equal(1, ntxp.Len())
+
+	txs := bp.AllTxs()
 	//应该有一个放入了交易池
 	req.Equal(1, len(txs))
 

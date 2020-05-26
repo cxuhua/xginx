@@ -2,8 +2,11 @@ package xginx
 
 import (
 	"container/list"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb/util"
@@ -15,7 +18,8 @@ import (
 
 //交易池最大数量
 const (
-	MaxTxPoolSize = 4096 * 4
+	MaxTxPoolSize = 4096 * 4     //最大数量
+	TxPoolFile    = "txpool.dat" //交易池数据保存文件
 )
 
 type txpoolin struct {
@@ -47,14 +51,11 @@ func NewTxPool() *TxPool {
 //Close 关闭交易池
 func (pool *TxPool) Close() {
 	pool.mdb.Reset()
+	pool.Dump(TxPoolFile)
 }
 
 func (pool *TxPool) deltx(bi *BlockIndex, tx *TX) {
-	id, err := tx.ID()
-	if err != nil {
-		panic(err)
-	}
-	pool.del(bi, id)
+	pool.del(bi, tx.MustID())
 }
 
 func (pool *TxPool) del(bi *BlockIndex, id HASH256) {
@@ -461,6 +462,89 @@ func (pool *TxPool) replaceTx(bi *BlockIndex, tx *TX) error {
 		}
 		//如果不能替换就是引用重复了
 		return fmt.Errorf("ref out repeat error out=%v", in.OutHash)
+	}
+	return nil
+}
+
+//Load 从数据文件加载
+func (pool *TxPool) Load(bi *BlockIndex, file string) error {
+	//如果文件不存在忽略
+	info, err := os.Stat(file)
+	if err != nil || info.Size() == 0 {
+		return nil
+	}
+	fd, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	for fd != nil {
+		bl := uint32(0)
+		err = binary.Read(fd, Endian, &bl)
+		//如果读取结束
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if bl == 0 {
+			return fmt.Errorf("file content error")
+		}
+		bb := make([]byte, bl)
+		err = ReadFull(fd, bb)
+		//如果读取结束
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		buf := NewReader(bb)
+		tx := &TX{}
+		err = tx.Decode(buf)
+		if err != nil {
+			return err
+		}
+		err = pool.PushTx(bi, tx)
+		if err != nil {
+			LogWarnf("load txpool tx error %v", tx)
+		}
+	}
+	return nil
+}
+
+//Dump 保存数据到文件
+func (pool *TxPool) Dump(file string) error {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+	if pool.tlis.Len() == 0 {
+		return nil
+	}
+	fd, err := os.OpenFile(file, os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	buf := NewWriter()
+	//获取用来打包区块的交易
+	for cur := pool.tlis.Front(); cur != nil; cur = cur.Next() {
+		buf.Reset()
+		tx := cur.Value.(*TX)
+		err := tx.Encode(buf)
+		if err != nil {
+			return err
+		}
+		bl := uint32(buf.Len())
+		bb := buf.Bytes()
+		err = binary.Write(fd, Endian, bl)
+		if err != nil {
+			return err
+		}
+		err = WriteFull(fd, bb)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
