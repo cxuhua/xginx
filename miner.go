@@ -407,9 +407,9 @@ func (m *minerEngine) Start(ctx context.Context, lis IListener) {
 	ps := GetPubSub()
 	m.cctx, m.cfun = context.WithCancel(ctx)
 	//每隔多长时间自动创建新区块
+	//调试模式下5-10秒直接创建一个区块
 	if *IsDebug {
-		//调试模式下10-20秒直接创建一个区块
-		AutoGenBlockTime = time.Second * time.Duration((RandUInt32()%10)+10)
+		AutoGenBlockTime = time.Second * time.Duration((RandUInt32()%5)+5)
 	}
 	//订阅矿工操作
 	ch := ps.Sub(NewMinerActTopic)
