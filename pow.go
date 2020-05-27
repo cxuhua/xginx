@@ -20,7 +20,7 @@ func CheckProofOfWork(hash HASH256, bits uint32) bool {
 	if h.Cmp(conf.LimitHash) > 0 {
 		return false
 	}
-	ch := hash.ToUHash()
+	ch := hash.ToU256()
 	return ch.Cmp(h) <= 0
 }
 
