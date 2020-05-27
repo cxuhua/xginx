@@ -7,7 +7,7 @@ import (
 )
 
 func TestMsgVersion(t *testing.T) {
-	conf = LoadConfig("test.json")
+	conf = NewTestConfig()
 	defer conf.Close()
 	msg := &MsgVersion{}
 	msg.Ver = 1
@@ -55,25 +55,6 @@ func TestVarBytes(t *testing.T) {
 		t.Error(err)
 	}
 	if !v1.Equal(v2) {
-		t.Errorf("test error")
-	}
-}
-
-func TestNetPackage(t *testing.T) {
-	buf := NewReadWriter()
-
-	p1 := NetPackage{Bytes: []byte{1, 2, 3, 4, 5, 6, 7, 8}}
-
-	err := p1.Encode(buf)
-	if err != nil {
-		t.Error(err)
-	}
-	p2 := NetPackage{}
-	err = p2.Decode(buf)
-	if err != nil {
-		t.Error(err)
-	}
-	if !p1.Bytes.Equal(p2.Bytes) {
 		t.Errorf("test error")
 	}
 }

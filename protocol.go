@@ -623,7 +623,7 @@ type NetPackage struct {
 	Flags [4]byte  //标识
 	Type  NTType   //包类型
 	Bytes VarBytes //数据长度
-	Sum   uint32
+	Sum   uint32   //校验和
 }
 
 //Encode 编码网络数据包
