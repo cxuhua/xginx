@@ -1214,6 +1214,7 @@ func (tx TX) Clone(seq ...uint) *TX {
 	for _, out := range tx.Outs {
 		n.Outs = append(n.Outs, out.Clone())
 	}
+	//交易脚本包含了exetime和脚本
 	n.Script = tx.Script.Clone()
 	n.pool = tx.pool
 	return n
