@@ -76,7 +76,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		return nil, err
 	}
 	if !m.Fee.IsRange() {
-		return nil, errors.New("fee error")
+		return nil, fmt.Errorf("fee %d error", m.Fee)
 	}
 	tx := NewTx(exetime, execs...)
 	//输出金额总计

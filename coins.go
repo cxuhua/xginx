@@ -56,6 +56,28 @@ func (c Coins) Balance() Amount {
 	return a
 }
 
+//Find 根据回调获取金额
+//回调返回true加入返回列表
+func (c Coins) Find(fn func(cp *CoinKeyValue) bool) Coins {
+	vs := Coins{}
+	for _, v := range c {
+		if fn(v) {
+			vs = append(vs, v)
+		}
+	}
+	return vs
+}
+
+//FindCoin 根据Id搜索金额
+func (c Coins) FindCoin(id string) (*CoinKeyValue, error) {
+	for _, v := range c {
+		if v.ID() == id {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("coin %s not found", id)
+}
+
 //CoinKeyValue 金额存储结构
 type CoinKeyValue struct {
 	CPkh   HASH160 //公钥hash
@@ -65,6 +87,11 @@ type CoinKeyValue struct {
 	Base   uint8   //是否属于coinbase o or 1
 	Height VarUInt //所在区块高度
 	pool   bool    //是否来自内存池
+}
+
+//ID 获取金额唯一ID
+func (tk CoinKeyValue) ID() string {
+	return fmt.Sprintf("%s%04d", tk.TxID.String(), tk.Index)
 }
 
 //From 从kv获取数据

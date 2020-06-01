@@ -420,6 +420,7 @@ func (c *Client) BroadMsg(m MsgIO) {
 	if err != nil {
 		panic(err)
 	}
+	//数据先保存在缓存
 	c.ss.SetPkg(id.SendKey(), m)
 	//发送广播包头
 	msg := &MsgBroadPkg{MsgID: id}
