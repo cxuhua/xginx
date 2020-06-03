@@ -49,8 +49,8 @@ func (a *Amount) Decode(r IReader) error {
 	return nil
 }
 
-//ParseMoney 解析金额
-func ParseMoney(str string) (Amount, error) {
+//ParseAmount 解析金额
+func ParseAmount(str string) (Amount, error) {
 	num, err := decimal.NewFromString(str)
 	if err != nil {
 		return 0, err

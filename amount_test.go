@@ -39,21 +39,21 @@ func TestAmountDecodeEncode(t *testing.T) {
 }
 
 func TestParseIntMoney(t *testing.T) {
-	num, err := ParseMoney("1.01")
+	num, err := ParseAmount("1.01")
 	if err != nil {
 		require.NoError(t, err)
 	}
 	require.Equal(t, num, Amount(1010))
 	require.Equal(t, "1.01", num.String())
 
-	num, err = ParseMoney("10.0")
+	num, err = ParseAmount("10.0")
 	if err != nil {
 		require.NoError(t, err)
 	}
 	require.Equal(t, num, Amount(10)*Coin)
 	require.Equal(t, "10", num.String())
 
-	num, err = ParseMoney("10.00001")
+	num, err = ParseAmount("10.00001")
 	if err != nil {
 		require.NoError(t, err)
 	}
