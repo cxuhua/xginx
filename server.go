@@ -6,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/patrickmn/go-cache"
 )
 
 // 消息订阅
@@ -124,7 +122,7 @@ type TCPServer struct {
 	dopt   chan int //获取线程做一些操作
 	dt     *time.Timer
 	pt     *time.Timer
-	pkgs   *cache.Cache //包数据缓存
+	pkgs   *Cache //包数据缓存
 }
 
 //DoOpt 操作通道
@@ -663,6 +661,6 @@ func NewTCPServer() IServer {
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
-	s.pkgs = cache.New(time.Minute*5, time.Minute*15)
+	s.pkgs = NewCache(time.Minute*5, time.Minute*15)
 	return s
 }

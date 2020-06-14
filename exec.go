@@ -1081,7 +1081,7 @@ func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byt
 	if buf.Len() == 0 {
 		return nil
 	}
-	//检测必须的环境变量
+	//获取必须的环境变量
 	bi := getEnvBlockIndex(ctx)
 	if bi == nil {
 		return fmt.Errorf("lua env miss blockindex ")
