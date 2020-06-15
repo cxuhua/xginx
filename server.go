@@ -661,6 +661,7 @@ func NewTCPServer() IServer {
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
-	s.pkgs = NewCache(time.Minute*5, time.Minute*15)
+	//默认过期5分钟，每10秒检测过期
+	s.pkgs = NewCache(time.Minute*5, time.Second*10)
 	return s
 }

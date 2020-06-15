@@ -22,9 +22,9 @@ import (
 //encode(tbl) json编码
 //decode(str) json解码
 //verify(hash,pub,sig) 校验指定的数据签名,成功返回 true
-//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到
-//map_has 是否存在指定的key
-//map_get 获取输入脚本中设置的值
+//map_set 输入脚本中设置一个值，在输出脚本中可以用map_get获取到(输入脚本可用)
+//map_has 是否存在指定的key(输出脚本可用)
+//map_get 获取输入脚本中设置的值(输出脚本可用)
 
 //best_height 当前区块链高度
 //best_time 最高的区块时间

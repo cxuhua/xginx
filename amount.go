@@ -10,18 +10,20 @@ import (
 
 //金额定义
 const (
+	//MaxCompressUInt 压缩金额可存储的最大数字
 	MaxCompressUInt = uint64(0b1111 << 57)
-	Coin            = Amount(1000)
+	//Coin 倍率
+	Coin = Amount(1000)
 	// MaxMoney < MaxCompressUInt
 	MaxMoney = 21000000 * Coin
 )
 
 var (
-	//1个coin可分割为1000份
+	//CoinSplit 1个coin可分割为1000份
 	CoinSplit = decimal.NewFromInt(int64(Coin))
 )
 
-//GetCoinbaseReward 结算当前奖励
+//GetCoinbaseReward 计算某高度下可获的奖励
 func GetCoinbaseReward(h uint32) Amount {
 	hlv := int(h) / conf.Halving
 	if hlv < 0 || hlv >= 64 {

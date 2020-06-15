@@ -18,10 +18,13 @@ import (
 
 //交易池最大数量
 const (
-	MaxTxPoolSize = 4096 * 4     //最大数量
-	TxPoolFile    = "txpool.dat" //交易池数据保存文件
+	//MaxTxPoolSize 交易池最大数量
+	MaxTxPoolSize = 4096 * 4
+	//TxPoolFile 交易池数据保存文件
+	TxPoolFile = "txpool.dat"
 )
 
+//交易输入引用的前置交易
 type txpoolin struct {
 	tx *TX
 	in *TxIn

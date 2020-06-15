@@ -35,7 +35,7 @@ type Account struct {
 	Less uint8       //至少需要签名的数量
 	Arb  uint8       //仲裁，当less  < num时可启用，必须是最后一个公钥
 	Pubs PublicArray //所有的密钥公钥
-	Pris PrivatesMap //公钥对应的私钥
+	Pris PrivatesMap //公钥对应的私钥,按公钥pkh锁应保存
 }
 
 //LoadAccountWithFile 从文件加载证书
