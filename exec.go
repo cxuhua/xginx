@@ -33,11 +33,12 @@ import (
 //get_rtx()
 //相当于 get_tx(get_tx().sign_in.out_hash)
 
-//获取交易信息
+//获取当前交易信息
 //get_tx() 获取当前环境交易对象
 //get_tx('txid') 获取指定交易信息
 
-//get_block('blkid') 获取区块头信息
+//get_blk('blkid') 获取指定区块的信息
+//get_blk() 获取最后一个区块的新
 
 //local tx = get_tx()
 //tx.id 交易id hex编码
@@ -56,13 +57,15 @@ import (
 //tx.nout 输出总数
 //tx:inv(idx) 获取指定输入
 //tx:out(idx) 获取指定输出
+//tx.sign 当前签名数据信息
 //tx.sign.idx 签名输入位置 签名检测环境可用
 //tx.sign.inv 签名输入 签名检测环境可用
 //tx.sign.out 签名输入引用的输出 签名检测环境可用
 //tx.sign.hash 签名hash hex编码 签名检测环境可用
+//tx.wits 当前证书信息
 //tx.wits.num 公钥数量
 //tx.wits.less 最小成功签名数量
-//tx.wits.arb 是否启用仲裁 != 255 表示启用
+//tx.wits.arb 是否启用仲裁 != 255 表示启用,表示哪个公钥是仲裁公钥
 //tx.wits.npub 公钥数量
 //tx.wits.nsig 签名数量
 //tx.wits.pub(idx)  获取公钥 返回->string hex编码
@@ -252,7 +255,7 @@ func tableToJSON(tbl *lua.LTable) ([]byte, error) {
 }
 
 //用于将输入数据传递到输出
-//只支持四种类似 int float bool string
+//只支持 int float bool string object
 type transOutMap struct {
 	ctx context.Context
 	kvs map[string]interface{}
@@ -303,10 +306,11 @@ func newTransOutMap(ctx context.Context) *transOutMap {
 }
 
 var (
-	blockKey   = &BlockIndex{}
-	txKey      = &TX{}
-	signerKey  = &mulsigner{}
-	transKey   = &transOutMap{}
+	blockKey  = &BlockIndex{}
+	txKey     = &TX{}
+	signerKey = &mulsigner{}
+	transKey  = &transOutMap{}
+	//transOutMap 最大可存储的数量
 	mapMaxSize = 32
 )
 
@@ -366,6 +370,7 @@ func CheckScript(codes ...[]byte) error {
 
 //转换时间戳
 //timestamp('2006-01-02 15:04:05')
+//timestamp() 返回当前系统时间戳
 func unixTimestamp(l *lua.LState) int {
 	bi := getEnvBlockIndex(l.Context())
 	sfmt := "2006-01-02 15:04:05"
@@ -376,7 +381,7 @@ func unixTimestamp(l *lua.LState) int {
 		return 1
 	}
 	var str string
-	//如果指定了，参数
+	//如果指定了格式
 	if top >= 2 {
 		sfmt = l.ToString(1)
 		str = l.ToString(2)
@@ -527,14 +532,15 @@ func transMapValueGet(l *lua.LState) int {
 
 //设置区块头属性
 func setBlockAttr(tbl *lua.LTable, blk *BlockInfo) {
-	tbl.RawSetString("miss", lua.LBool(false))
-	tbl.RawSetString("ver", lua.LNumber(blk.Meta.Ver))
-	tbl.RawSetString("id", lua.LString(blk.MustID().String()))
-	tbl.RawSetString("height", lua.LNumber(blk.Meta.Height))
-	tbl.RawSetString("time", lua.LNumber(blk.Meta.Time))
-	tbl.RawSetString("bits", lua.LNumber(blk.Meta.Bits))
-	tbl.RawSetString("prev", lua.LString(blk.Meta.Prev.String()))
-	tbl.RawSetString("merkle", lua.LString(blk.Meta.Merkle.String()))
+	kvs := tbl.RawSetString
+	kvs("miss", lua.LBool(false))
+	kvs("ver", lua.LNumber(blk.Meta.Ver))
+	kvs("id", lua.LString(blk.MustID().String()))
+	kvs("height", lua.LNumber(blk.Meta.Height))
+	kvs("time", lua.LNumber(blk.Meta.Time))
+	kvs("bits", lua.LNumber(blk.Meta.Bits))
+	kvs("prev", lua.LString(blk.Meta.Prev.String()))
+	kvs("merkle", lua.LString(blk.Meta.Merkle.String()))
 }
 
 //获取区块头信息
@@ -543,21 +549,34 @@ func getBlockMethod(l *lua.LState) int {
 	if bi == nil {
 		l.RaiseError("block env miss")
 	}
+	var id HASH256
 	if l.GetTop() != 1 {
-		l.RaiseError("args num error get_block(id) ")
+		id = bi.GetBestValue().LastID()
+	} else {
+		id = NewHASH256(l.ToString(1))
 	}
+	if id.IsZero() {
+		l.RaiseError("id %v error", id)
+	}
+	bi.Last().ID()
 	lblk := l.NewTable()
-	blkset := lblk.RawSetString
-	id := NewHASH256(l.ToString(1))
+	kvs := lblk.RawSetString
 	blk, err := bi.LoadBlock(id)
 	if err != nil {
-		blkset("miss", lua.LBool(true))
-		blkset("id", lua.LString(id.String()))
+		kvs("miss", lua.LBool(true))
+		kvs("id", lua.LString(id.String()))
 	} else {
 		setBlockAttr(lblk, blk)
 	}
 	l.Push(lblk)
 	return 1
+}
+
+//创建自定义数据
+func newUserData(l *lua.LState, vptr interface{}) *lua.LUserData {
+	uptr := l.NewUserData()
+	uptr.Value = vptr
+	return uptr
 }
 
 //设置属性字段
@@ -567,40 +586,41 @@ func setTxBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) err
 	if err != nil {
 		return err
 	}
+	kvs := tbl.RawSetString
 	//交易id
 	tbl.RawSetString("id", lua.LString(id.String()))
 	//查询交易所在的区块信息
 	v, err := bi.LoadTxValue(id)
 	//如果查找不到使用下个区块高度和当前时间
 	lblk := l.NewTable()
+	lkvs := lblk.RawSetString
 	if err != nil {
-		lblk.RawSetString("miss", lua.LBool(true))
+		lkvs("miss", lua.LBool(true))
 	} else if blk, err := bi.LoadBlock(v.BlkID); err != nil {
-		lblk.RawSetString("miss", lua.LBool(true))
-		lblk.RawSetString("id", lua.LString(v.BlkID.String()))
+		lkvs("miss", lua.LBool(true))
+		lkvs("id", lua.LString(v.BlkID.String()))
 	} else {
 		setBlockAttr(lblk, blk)
 	}
-	tbl.RawSetString("blk", lblk)
+	kvs("blk", lblk)
 	//是否是coinbase
-	tbl.RawSetString("cbb", lua.LBool(tx.IsCoinBase()))
+	kvs("cbb", lua.LBool(tx.IsCoinBase()))
 	//交易费,如果是coinbase，这个返回coinbase输出金额
 	fee, err := tx.GetTransFee(bi)
 	if err != nil {
 		return err
 	}
-	tbl.RawSetString("fee", lua.LNumber(fee))
+	kvs("fee", lua.LNumber(fee))
 	//交易版本
-	tbl.RawSetString("ver", lua.LNumber(tx.Ver))
+	kvs("ver", lua.LNumber(tx.Ver))
 	//输入总数
-	tbl.RawSetString("ninv", lua.LNumber(len(tx.Ins)))
+	kvs("ninv", lua.LNumber(len(tx.Ins)))
 	//输出总数
-	tbl.RawSetString("nout", lua.LNumber(len(tx.Outs)))
-	//设置方法
-	uptr := l.NewUserData()
-	uptr.Value = tx
-	tbl.RawSetString("inv", l.NewClosure(txGetInMethod, uptr))
-	tbl.RawSetString("out", l.NewClosure(txGetOutMethod, uptr))
+	kvs("nout", lua.LNumber(len(tx.Outs)))
+	//传递当前tx到闭合函数
+	uptr := newUserData(l, tx)
+	kvs("inv", l.NewClosure(txGetInMethod, uptr))
+	kvs("out", l.NewClosure(txGetOutMethod, uptr))
 	return nil
 }
 
@@ -714,13 +734,14 @@ func getWitsVerityMethod(l *lua.LState) int {
 
 //设置输入属性
 func setInTable(l *lua.LState, tbl *lua.LTable, in *TxIn) error {
-	tbl.RawSetString("out_index", lua.LNumber(in.OutIndex))
-	tbl.RawSetString("out_hash", lua.LString(in.OutHash.String()))
-	tbl.RawSetString("sequence", lua.LNumber(in.Sequence))
+	kvs := tbl.RawSetString
+	kvs("out_index", lua.LNumber(in.OutIndex))
+	kvs("out_hash", lua.LString(in.OutHash.String()))
+	kvs("sequence", lua.LNumber(in.Sequence))
 	//获取输入地址
 	wits, err := in.Script.ToWitness()
 	if err == nil {
-		tbl.RawSetString("address", lua.LString(wits.Address()))
+		kvs("address", lua.LString(wits.Address()))
 	}
 	return nil
 }
@@ -737,6 +758,7 @@ func txGetInMethod(l *lua.LState) int {
 		l.RaiseError("block index miss")
 	}
 	tbl := l.NewTable()
+	//从upvalue获取交易信息
 	tx, err := getUpValueTx(l)
 	if err != nil {
 		l.RaiseError("upvalue tx miss")
@@ -760,12 +782,13 @@ func txGetInMethod(l *lua.LState) int {
 
 //设置输出属性
 func setOutTable(l *lua.LState, tbl *lua.LTable, out *TxOut) error {
+	kvs := tbl.RawSetString
 	addr, err := out.Script.GetAddress()
 	if err != nil {
 		return err
 	}
-	tbl.RawSetString("value", lua.LNumber(out.Value))
-	tbl.RawSetString("address", lua.LString(addr))
+	kvs("value", lua.LNumber(out.Value))
+	kvs("address", lua.LString(addr))
 	return nil
 }
 
@@ -781,6 +804,7 @@ func txGetOutMethod(l *lua.LState) int {
 		l.RaiseError("block index miss")
 	}
 	tbl := l.NewTable()
+	//从upvalue获取交易信息
 	tx, err := getUpValueTx(l)
 	if err != nil {
 		l.RaiseError("upvalue tx miss")
@@ -805,6 +829,7 @@ func txGetOutMethod(l *lua.LState) int {
 //设置交易信息
 func setTxLuaAttr(l *lua.LState, bi *BlockIndex, tx *TX, tbl *lua.LTable) error {
 	ctx := l.Context()
+	kvs := tbl.RawSetString
 	//设置交易所在的区块信息和交易信息
 	err := setTxBlockTable(l, tbl, bi, tx)
 	if err != nil {
@@ -818,53 +843,54 @@ func setTxLuaAttr(l *lua.LState, bi *BlockIndex, tx *TX, tbl *lua.LTable) error 
 	//以下在签名环境下可用
 	_, in, out, idx := signer.GetObjs()
 	stbl := l.NewTable()
+	skvs := stbl.RawSetString
 	//sign_idx 签名输入位置
-	stbl.RawSetString("idx", lua.LNumber(idx))
+	skvs("idx", lua.LNumber(idx))
 	//sign_in 当前签名输入
 	itbl := l.NewTable()
 	err = setInTable(l, itbl, in)
 	if err != nil {
 		return err
 	}
-	stbl.RawSetString("inv", itbl)
+	skvs("inv", itbl)
 	//sign_out 签名输入引用的输出
 	otbl := l.NewTable()
 	err = setOutTable(l, otbl, out)
 	if err != nil {
 		return err
 	}
-	stbl.RawSetString("out", otbl)
+	skvs("out", otbl)
 	//sign_hash 签名hash
 	hash, err := signer.GetSigHash()
 	if err != nil {
 		return err
 	}
-	stbl.RawSetString("hash", lua.LString(hex.EncodeToString(hash)))
-	tbl.RawSetString("sign", stbl)
+	skvs("hash", lua.LString(hex.EncodeToString(hash)))
+	kvs("sign", stbl)
 	wits, err := in.Script.ToWitness()
 	if err != nil {
 		return err
 	}
-	up := l.NewUserData()
-	up.Value = wits
+	upptr := newUserData(l, wits)
 	wtbl := l.NewTable()
+	wkvs := wtbl.RawSetString
 	//wits_num int
-	wtbl.RawSetString("num", lua.LNumber(wits.Num))
+	wkvs("num", lua.LNumber(wits.Num))
 	//wits_less int
-	wtbl.RawSetString("less", lua.LNumber(wits.Less))
+	wkvs("less", lua.LNumber(wits.Less))
 	//wits_arb bool
-	wtbl.RawSetString("arb", lua.LNumber(wits.Arb))
+	wkvs("arb", lua.LNumber(wits.Arb))
 	//pub_size
-	wtbl.RawSetString("npub", lua.LNumber(len(wits.Pks)))
+	wkvs("npub", lua.LNumber(len(wits.Pks)))
 	//sig_size
-	wtbl.RawSetString("nsig", lua.LNumber(len(wits.Sig)))
+	wkvs("nsig", lua.LNumber(len(wits.Sig)))
 	//get_pub(idx) ->string hex编码
-	wtbl.RawSetString("pub", l.NewClosure(getWitsPubMethod, up))
+	wkvs("pub", l.NewClosure(getWitsPubMethod, upptr))
 	//get_sig(idx) ->string hex编码
-	wtbl.RawSetString("sig", l.NewClosure(getWitsSigMethod, up))
+	wkvs("sig", l.NewClosure(getWitsSigMethod, upptr))
 	//verity(sig idx) 验证签名,返回 符合的pub 索引
-	wtbl.RawSetString("verify", l.NewClosure(getWitsVerityMethod, up))
-	tbl.RawSetString("wits", wtbl)
+	wkvs("verify", l.NewClosure(getWitsVerityMethod, upptr))
+	kvs("wits", wtbl)
 	return nil
 }
 
@@ -1034,21 +1060,20 @@ func initLuaTxMethod(l *lua.LState, bi *BlockIndex, typ int) {
 		//可写 设置一个数据，在输出脚本中可获取到
 		l.SetGlobal("map_set", l.NewFunction(transMapValueSet))
 	}
-	//签名环境下
-	if typ != 0 {
+	//输出脚本map只读
+	if typ == 2 {
 		//只读 检测是否有指定的key
 		l.SetGlobal("map_has", l.NewFunction(transMapValueHas))
 		//只读 获取指定的key的值
 		l.SetGlobal("map_get", l.NewFunction(transMapValueGet))
+	}
+	//签名环境下
+	if typ != 0 {
 		//验证函数 如果hash一致返回true
 		l.SetGlobal("verify_addr", l.NewFunction(verifyAddr))
 		//签名正确返回 true
 		l.SetGlobal("verify_sign", l.NewFunction(verifySign))
 	}
-	//当前区块高度和区块时间
-	l.SetGlobal("best_height", lua.LNumber(bi.Height()))
-	//区块时间
-	l.SetGlobal("best_time", lua.LNumber(bi.Time()))
 	//获取字符串表示的时间戳
 	l.SetGlobal("timestamp", l.NewFunction(unixTimestamp))
 	//encode(tbl) -> string json格式
@@ -1060,7 +1085,7 @@ func initLuaTxMethod(l *lua.LState, bi *BlockIndex, typ int) {
 	//获取交易信息
 	l.SetGlobal("get_tx", l.NewFunction(txBlockMethod))
 	//获取区块头信息
-	l.SetGlobal("get_block", l.NewFunction(getBlockMethod))
+	l.SetGlobal("get_blk", l.NewFunction(getBlockMethod))
 	//获取当前引用的交易信息
 	l.SetGlobal("get_rtx", l.NewFunction(getTxInRefMethod))
 }

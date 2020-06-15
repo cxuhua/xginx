@@ -70,8 +70,8 @@ func TestTransMap(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = l.DoString(`map_set('k5',{});`)
-	if err == nil {
-		t.Fatal("map set table should error")
+	if err != nil {
+		t.Fatal(err)
 	}
 	err = l.DoString(`
 		print(map_get('k1'));
