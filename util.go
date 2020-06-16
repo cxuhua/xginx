@@ -8,12 +8,33 @@ import (
 	"encoding/hex"
 	"errors"
 	"sync/atomic"
+	"time"
 )
 
 var (
 	//ErrCheckSum 校验和错误，一般密码错误会出现这个问题
 	ErrCheckSum = errors.New("check sum error")
 )
+
+//TimeDays 获取天
+func TimeDays(d int) time.Duration {
+	return time.Hour * 24 * time.Duration(d)
+}
+
+//TimeHour 获取小时
+func TimeHour(d int) time.Duration {
+	return time.Hour * time.Duration(d)
+}
+
+//TimeMinute 获取分钟
+func TimeMinute(d int) time.Duration {
+	return time.Minute * time.Duration(d)
+}
+
+//TimeSecond 获取秒
+func TimeSecond(d int) time.Duration {
+	return time.Second * time.Duration(d)
+}
 
 //EndianUInt32 用于排序
 func EndianUInt32(u32 uint32) []byte {

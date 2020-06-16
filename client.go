@@ -407,7 +407,7 @@ func (c *Client) loop() {
 			bi := GetBlockIndex()
 			msg := NewMsgPing(bi.BestHeight())
 			c.SendMsg(msg)
-			c.pt.Reset(time.Second * time.Duration(Rand(40, 60)))
+			c.pt.Reset(TimeSecond(int(Rand(40, 60))))
 		case <-c.cctx.Done():
 			return
 		}
