@@ -7,7 +7,7 @@ import (
 
 func TestBaseBits(t *testing.T) {
 	conf = NewTestConfig()
-	limit := NewUINT256(conf.PowLimit)
+	limit := NewUINT256("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	if limit.Compact(false) != 0x1d00ffff {
 		t.Errorf("base bits error")
 	}

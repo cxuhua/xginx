@@ -97,7 +97,7 @@ var (
 	BlockPrefix = []byte{1} //块头信息前缀 ->blkmeta
 	TxsPrefix   = []byte{2} //tx 所在区块前缀 ->blkid+txidx
 	CoinsPrefix = []byte{3} //账户可用金额存储 pkh_txid_idx -> amount
-	TxpPrefix   = []byte{4} //账户相关交易索引  pkh_height(big endian)_txid -> blkid+txidx
+	TxpPrefix   = []byte{4} //账户相关交易索引 按高度排序  pkh_height(big endian)_txid -> blkid+txidx
 )
 
 //GetDBKey 获取存储key
