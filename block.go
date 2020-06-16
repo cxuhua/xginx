@@ -474,7 +474,7 @@ func (blk *BlockInfo) CheckCoinbase() error {
 	}
 	script := blk.Txs[0].Ins[0].Script
 	if !script.IsCoinBase() {
-		return errors.New("ins script type error,coinbase miss")
+		return errors.New("ins script type error,coinbase script miss")
 	}
 	if script.Height() != blk.Meta.Height {
 		return errors.New("coinbase height != meta height")
