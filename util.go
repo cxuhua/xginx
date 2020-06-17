@@ -13,7 +13,7 @@ import (
 
 var (
 	//ErrCheckSum 校验和错误，一般密码错误会出现这个问题
-	ErrCheckSum = errors.New("check sum error")
+	ErrCheckSum = errors.New("check sum error, maybe password error")
 )
 
 //TimeDays 获取天
