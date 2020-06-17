@@ -22,7 +22,8 @@ type IListener interface {
 	OnFinished(blk *BlockInfo) error
 	//当收到网络数据时,数据包根据类型转换成需要的包
 	OnClientMsg(c *Client, msg MsgIO)
-	//当加载交易列表时可用此方法过滤不加入区块的
+	//当加载交易列表到区块时可用此方法过滤不加入区块的
+	//调用 AddTxs 时会触发
 	OnLoadTxs(txs []*TX) []*TX
 	//链关闭时
 	OnClose()
@@ -32,12 +33,19 @@ type IListener interface {
 	OnStop(sig os.Signal)
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
-	//当交易池的交易因为seq设置被替换时
+	//当交易池的交易被替换时
 	OnTxPoolRep(old *TX, new *TX)
+	//返回矿工账号，如果返回将优先使用这个地址
+	MinerAddr() Address
 }
 
 //Listener 默认监听器
 type Listener struct {
+}
+
+//MinerAddr 返回矿工地址，默认返回配置中的
+func (lis Listener) MinerAddr() Address {
+	return conf.MinerAddr
 }
 
 //OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
@@ -57,7 +65,8 @@ func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
 
 //OnInit 首次启动初始化
 func (lis *Listener) OnInit(bi *BlockIndex) error {
-	LogInfo("MinerAddr =", conf.MinerAddr)
+	//
+	LogInfo("MinerAddr =", lis.MinerAddr())
 	//如果是空链需要写入第一个创世区块
 	if bv := bi.GetBestValue(); !bv.IsValid() {
 		bi.WriteGenesis()
@@ -127,7 +136,7 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 	out := &TxOut{}
 	out.Value = blk.CoinbaseReward()
 	//锁定到矿工账号
-	pkh, err := conf.MinerAddr.GetPkh()
+	pkh, err := lis.MinerAddr().GetPkh()
 	if err != nil {
 		return err
 	}

@@ -25,7 +25,7 @@ func newTestLis(accnum int) *TestLis {
 		acc: map[HASH160]*Account{},
 	}
 	for i := 0; i < accnum; i++ {
-		//创建5个1-1账号
+		//创建5-1账号，启用仲裁
 		acc, err := NewAccount(5, 1, true)
 		if err != nil {
 			panic(err)
@@ -42,10 +42,7 @@ func newTestLis(accnum int) *TestLis {
 		lis.addrs = append(lis.addrs, addr)
 		lis.ams = append(lis.ams, acc)
 	}
-	if len(lis.addrs) != 5 {
-		panic(errors.New("create test account error"))
-	}
-	LogInfo("create 5 test account")
+	LogInfof("create %d test account", accnum)
 	return lis
 }
 

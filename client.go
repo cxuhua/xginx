@@ -369,6 +369,7 @@ func (c *Client) loop() {
 			c.rc <- m
 		}
 	}()
+	//写和数据包处理
 	for {
 		select {
 		case wp := <-c.wc:
@@ -403,7 +404,7 @@ func (c *Client) loop() {
 			if !c.isopen {
 				break
 			}
-			//定时ping消息
+			//定时ping消息,通报区块高度
 			bi := GetBlockIndex()
 			msg := NewMsgPing(bi.BestHeight())
 			c.SendMsg(msg)
