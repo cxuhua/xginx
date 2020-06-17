@@ -586,6 +586,10 @@ func (s *TCPServer) run() {
 		//是否达到最大连接
 		if s.ConnNum() >= conf.MaxConn {
 			LogError("conn arrive max,ignore", conn)
+			//超过最大连接直接关闭
+			if err == nil {
+				conn.Close()
+			}
 			continue
 		}
 		if err == nil {
