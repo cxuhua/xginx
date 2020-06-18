@@ -38,7 +38,7 @@ import (
 //get_tx('txid') 获取指定交易信息
 
 //get_blk('blkid') 获取指定区块的信息
-//get_blk() 获取最后一个区块的新
+//get_blk() 获取最后一个区块信息
 
 //local tx = get_tx()
 //tx.id 交易id hex编码
@@ -550,15 +550,14 @@ func getBlockMethod(l *lua.LState) int {
 		l.RaiseError("block env miss")
 	}
 	var id HASH256
-	if l.GetTop() != 1 {
-		id = bi.GetBestValue().LastID()
+	if l.GetTop() == 0 {
+		id = bi.Last().MustID()
 	} else {
 		id = NewHASH256(l.ToString(1))
 	}
 	if id.IsZero() {
 		l.RaiseError("id %v error", id)
 	}
-	bi.Last().ID()
 	lblk := l.NewTable()
 	kvs := lblk.RawSetString
 	blk, err := bi.LoadBlock(id)
@@ -588,7 +587,7 @@ func setTxBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) err
 	}
 	kvs := tbl.RawSetString
 	//交易id
-	tbl.RawSetString("id", lua.LString(id.String()))
+	kvs("id", lua.LString(id.String()))
 	//查询交易所在的区块信息
 	v, err := bi.LoadTxValue(id)
 	//如果查找不到使用下个区块高度和当前时间
@@ -1182,10 +1181,10 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits *WitnessScript, lcks *Locke
 	ctx = context.WithValue(ctx, txKey, sr.tx)
 	ctx = context.WithValue(ctx, signerKey, sr)
 	//输入和输出锁定脚本在两个不同的环境中执行，使用这个map传递数据
-	//只用于签名脚本输入输出
+	//只用于签名脚本输入输出传递信息
 	ctx = context.WithValue(ctx, transKey, newTransOutMap(ctx))
 	//编译输入脚本 执行错误返回
-	if err := compileExecScript(ctx, "input_main", 1, wits.Exec); err != nil {
+	if err := compileExecScript(ctx, "in_main", 1, wits.Exec); err != nil {
 		return err
 	}
 	//编译输出脚本

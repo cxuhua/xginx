@@ -485,7 +485,7 @@ func (pool *TxPool) Load(bi *BlockIndex, file string) error {
 		bl := uint32(0)
 		err = binary.Read(fd, Endian, &bl)
 		//如果读取结束
-		if errors.Is(err, io.EOF) {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -497,7 +497,7 @@ func (pool *TxPool) Load(bi *BlockIndex, file string) error {
 		bb := make([]byte, bl)
 		err = ReadFull(fd, bb)
 		//如果读取结束
-		if errors.Is(err, io.EOF) {
+		if err != nil && errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

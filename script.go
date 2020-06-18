@@ -91,7 +91,7 @@ func gettxminsize() int {
 	x.Type = ScriptTxType
 	buf := NewWriter()
 	_ = x.Encode(buf)
-	return buf.Len()
+	return int(buf.Len())
 }
 
 //Script 脚本定义
@@ -165,7 +165,7 @@ func getwitnessminsize() int {
 	x.Pks = append(x.Pks, pri.PublicKey().GetPks())
 	buf := NewWriter()
 	_ = x.Encode(buf)
-	return buf.Len()
+	return int(buf.Len())
 }
 
 func getcoinbaseminsize() int {
@@ -181,7 +181,7 @@ func getlockedminsize() int {
 	x.Type = ScriptLockedType
 	buf := NewWriter()
 	_ = x.Encode(buf)
-	return buf.Len()
+	return int(buf.Len())
 }
 
 var (

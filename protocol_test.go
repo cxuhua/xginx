@@ -23,6 +23,43 @@ func TestMsgVersion(t *testing.T) {
 	pd := &NetPackage{
 		Flags: conf.flags,
 		Type:  msg.Type(),
+		Attr:  0,
+		Bytes: bb,
+	}
+	buf = NewWriter()
+	err := pd.Encode(buf)
+	if err != nil {
+		panic(err)
+	}
+
+	r := NewReader(buf.Bytes())
+
+	pd2 := &NetPackage{}
+	err = pd2.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(pd2.ToMsgIO())
+}
+
+func TestMsgVersionWitZip(t *testing.T) {
+	conf = NewTestConfig()
+	defer conf.Close()
+	msg := &MsgVersion{}
+	msg.Ver = 1
+	msg.Service = FullNodeFlag
+	msg.Addr = NetAddrForm("127.0.0.1:9000")
+
+	buf := NewWriter()
+	if err := msg.Encode(buf); err != nil {
+		panic(err)
+	}
+	bb := buf.Bytes()
+	log.Println(hex.EncodeToString(bb))
+	pd := &NetPackage{
+		Flags: conf.flags,
+		Type:  msg.Type(),
+		Attr:  PackageAttrZip,
 		Bytes: bb,
 	}
 	buf = NewWriter()

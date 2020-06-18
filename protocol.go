@@ -11,6 +11,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/cxuhua/lzma"
 )
 
 //NTType 消息类型
@@ -579,25 +581,38 @@ func (s *NetStream) TWrite(data interface{}) error {
 }
 
 //ReadMsg 从网络流读取数据包
-func (s *NetStream) ReadMsg() (MsgIO, error) {
+func (s *NetStream) ReadMsg(attr ...*uint8) (MsgIO, error) {
 	pd := &NetPackage{}
 	err := pd.Decode(s)
 	if err != nil {
 		return nil, fmt.Errorf("type=%d err=%w", pd.Type, err)
 	}
 	s.len += pd.Bytes.Len()
+	//读取数据包时可返回属性
+	if len(attr) > 0 && attr[0] != nil {
+		*attr[0] = pd.Attr
+	}
 	return pd.ToMsgIO()
 }
 
 //WriteMsg 写消息到网路
-func (s *NetStream) WriteMsg(m MsgIO) error {
+func (s *NetStream) WriteMsg(m MsgIO, attrs ...uint8) error {
 	buf := NewWriter()
 	if err := m.Encode(buf); err != nil {
 		return err
 	}
+	attr := uint8(0)
+	for _, av := range attrs {
+		attr |= av
+	}
+	// >2k 的数据启用压缩
+	if buf.Len() >= 2048 {
+		attr |= PackageAttrZip
+	}
 	pd := &NetPackage{
 		Flags: conf.flags,
 		Type:  m.Type(),
+		Attr:  attr,
 		Bytes: buf.Bytes(),
 	}
 	s.len += buf.Len()
@@ -618,11 +633,18 @@ func (s *NetStream) WriteByte(b byte) error {
 	return err
 }
 
+//数据包属性
+const (
+	//PackageAttrZip 数据是否启用压缩
+	PackageAttrZip = uint8(1 << 0)
+)
+
 //NetPackage 网络数据包定义
 type NetPackage struct {
 	Flags [4]byte  //标识
 	Type  NTType   //包类型
 	Bytes VarBytes //数据长度
+	Attr  uint8    //数据特性
 	Sum   uint32   //校验和
 }
 
@@ -634,7 +656,16 @@ func (v NetPackage) Encode(w IWriter) error {
 	if err := w.WriteByte(uint8(v.Type)); err != nil {
 		return err
 	}
-	if err := v.Bytes.Encode(w); err != nil {
+	if err := w.WriteByte(v.Attr); err != nil {
+		return err
+	}
+	var err error
+	if v.Attr&PackageAttrZip != 0 {
+		err = v.Bytes.Compress(w)
+	} else {
+		err = v.Bytes.Encode(w)
+	}
+	if err != nil {
 		return err
 	}
 	if err := w.TWrite(v.Sum32()); err != nil {
@@ -650,8 +681,8 @@ func (v *NetPackage) Sum32() uint32 {
 	if err != nil || n != 4 {
 		panic(err)
 	}
-	n, err = crc.Write([]byte{uint8(v.Type)})
-	if err != nil || n != 1 {
+	n, err = crc.Write([]byte{uint8(v.Type), v.Attr})
+	if err != nil || n != 2 {
 		panic(err)
 	}
 	n, err = crc.Write(v.Bytes)
@@ -667,12 +698,24 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err = r.ReadFull(v.Flags[:]); err != nil {
 		return err
 	}
+	//type
 	typ, err := r.ReadByte()
 	if err != nil {
 		return err
 	}
 	v.Type = NTType(typ)
-	if err = v.Bytes.Decode(r); err != nil {
+	//attr
+	attr, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
+	v.Attr = attr
+	if v.Attr&PackageAttrZip != 0 {
+		err = v.Bytes.Uncompress(r)
+	} else {
+		err = v.Bytes.Decode(r)
+	}
+	if err != nil {
 		return err
 	}
 	if err = r.TRead(&v.Sum); err != nil {
@@ -917,6 +960,30 @@ func (v VarBytes) String() string {
 //Equal 数据是否相同
 func (v VarBytes) Equal(b VarBytes) bool {
 	return bytes.Equal(v, b)
+}
+
+//Compress 压缩编码数据
+func (v VarBytes) Compress(w IWriter) error {
+	zv, err := lzma.Compress(v)
+	if err != nil {
+		return err
+	}
+	return VarBytes(zv).Encode(w)
+}
+
+//Uncompress 解压解码解码可变数据
+func (v *VarBytes) Uncompress(r IReader) error {
+	zv := VarBytes{}
+	err := zv.Decode(r)
+	if err != nil {
+		return err
+	}
+	vv, err := lzma.Uncompress(zv)
+	if err != nil {
+		return err
+	}
+	*v = vv
+	return nil
 }
 
 //Encode 编码可变数据
