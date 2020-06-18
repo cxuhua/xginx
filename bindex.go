@@ -1093,6 +1093,15 @@ func (bi *BlockIndex) WriteGenesis() {
 	LogInfof("write genesis block %v success", blk)
 }
 
+//ListCoinsWithAccount 根据账号获取金额
+func (bi *BlockIndex) ListCoinsWithAccount(acc *Account) (*CoinsState, error) {
+	addr, err := acc.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+	return bi.ListCoins(addr)
+}
+
 //ListCoins 获取某个地址账号的金额
 func (bi *BlockIndex) ListCoins(addr Address) (*CoinsState, error) {
 	pkh, err := addr.GetPkh()

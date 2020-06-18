@@ -8,6 +8,7 @@ import (
 	"time"
 
 	sentinel "github.com/alibaba/sentinel-golang/api"
+	"github.com/alibaba/sentinel-golang/core/base"
 	"github.com/alibaba/sentinel-golang/core/flow"
 	"github.com/alibaba/sentinel-golang/util"
 	"github.com/syndtr/goleveldb/leveldb/filter"
@@ -30,7 +31,7 @@ func TestSentine(t *testing.T) {
 	// 配置一条限流规则
 	_, err = flow.LoadRules([]*flow.FlowRule{
 		{
-			Resource:        "some-test",
+			Resource:        "/api/users/123",
 			MetricType:      flow.QPS,
 			Count:           10,
 			ControlBehavior: flow.Reject,
@@ -46,7 +47,9 @@ func TestSentine(t *testing.T) {
 		go func() {
 			for {
 				// 埋点逻辑，埋点资源名为 some-test
-				e, b := sentinel.Entry("some-test")
+				e, b := sentinel.Entry("/api/users/123",
+					sentinel.WithResourceType(base.ResTypeWeb),
+				)
 				if b != nil {
 					// 请求被拒绝，在此处进行处理
 					time.Sleep(time.Duration(rand.Uint64()%10) * time.Millisecond)

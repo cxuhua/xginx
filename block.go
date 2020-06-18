@@ -1330,7 +1330,7 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 
 //Sign 签名交易数据
 //cspent 是否检测输出金额是否存在
-func (tx *TX) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
+func (tx *TX) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
 	//重置签名数据
 	tx.ResetSign()
 	//签名每一个输入

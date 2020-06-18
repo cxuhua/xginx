@@ -9,8 +9,8 @@ type IGetSigBytes interface {
 	GetSigBytes() ([]byte, error)
 }
 
-//ISignerListener 签名交易
-type ISignerListener interface {
+//ISignTx 签名交易
+type ISignTx interface {
 	SignTx(singer ISigner, pass ...string) error
 }
 
@@ -19,7 +19,7 @@ type ISigner interface {
 	//签名校验
 	Verify(bi *BlockIndex) error
 	//签名生成解锁脚本
-	Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error
+	Sign(bi *BlockIndex, lis ISignTx, pass ...string) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
@@ -219,6 +219,6 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 }
 
 //Sign 开始签名
-func (sr *mulsigner) Sign(bi *BlockIndex, lis ISignerListener, pass ...string) error {
+func (sr *mulsigner) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
 	return lis.SignTx(sr, pass...)
 }
