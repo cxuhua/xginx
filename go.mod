@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/alibaba/sentinel-golang v0.3.0
 	github.com/cxuhua/gopher-lua v1.0.1
-	github.com/cxuhua/lzma v0.1.1
+	github.com/cxuhua/lzma v0.1.2
 	github.com/json-iterator/go v1.1.10
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.6.1

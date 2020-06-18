@@ -42,7 +42,7 @@ func TestMsgVersion(t *testing.T) {
 	log.Println(pd2.ToMsgIO())
 }
 
-func TestMsgVersionWitZip(t *testing.T) {
+func TestMsgVersionWithZip(t *testing.T) {
 	conf = NewTestConfig()
 	defer conf.Close()
 	msg := &MsgVersion{}
