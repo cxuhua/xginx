@@ -83,13 +83,10 @@ import (
 //out.address 输出地址
 
 var (
-
 	//DefaultTxScript 默认交易脚本 控制是否能进入区块
 	DefaultTxScript = []byte(`return true`)
-
 	//DefaultInputScript 默认输入脚本 控制是否能消费
 	DefaultInputScript = []byte(`return true`)
-
 	//DefaultLockedScript 默认锁定脚本 控制消费输出需要的条件
 	//验证地址和签名
 	DefaultLockedScript = []byte(`return verify_addr() and verify_sign()`)
