@@ -587,6 +587,7 @@ func (s *NetStream) ReadMsg(attr ...*uint8) (MsgIO, error) {
 	if err != nil {
 		return nil, fmt.Errorf("type=%d err=%w", pd.Type, err)
 	}
+	s.bytes = pd.Bytes
 	s.len += pd.Bytes.Len()
 	//读取数据包时可返回属性
 	if len(attr) > 0 && attr[0] != nil {
@@ -605,8 +606,8 @@ func (s *NetStream) WriteMsg(m MsgIO, attrs ...uint8) error {
 	for _, av := range attrs {
 		attr |= av
 	}
-	// >2k 的数据启用压缩
-	if buf.Len() >= 2048 {
+	// >1k 的数据启用压缩
+	if buf.Len() >= 1024 {
 		attr |= PackageAttrZip
 	}
 	pd := &NetPackage{
@@ -615,8 +616,12 @@ func (s *NetStream) WriteMsg(m MsgIO, attrs ...uint8) error {
 		Attr:  attr,
 		Bytes: buf.Bytes(),
 	}
-	s.len += buf.Len()
-	return pd.Encode(s)
+	err := pd.Encode(s)
+	if err == nil {
+		s.len += buf.Len()
+		s.bytes = buf.Bytes()
+	}
+	return err
 }
 
 //ReadByte 读取一个字节
@@ -648,19 +653,28 @@ type NetPackage struct {
 	Sum   uint32   //校验和
 }
 
+//IsZip 是否启用压缩, Attr 设置后可用
+func (v NetPackage) IsZip() bool {
+	return v.Attr&PackageAttrZip != 0
+}
+
 //Encode 编码网络数据包
 func (v NetPackage) Encode(w IWriter) error {
+	//flags
 	if err := w.WriteFull(v.Flags[:]); err != nil {
 		return err
 	}
+	//type
 	if err := w.WriteByte(uint8(v.Type)); err != nil {
 		return err
 	}
+	//attr
 	if err := w.WriteByte(v.Attr); err != nil {
 		return err
 	}
+	//bytes
 	var err error
-	if v.Attr&PackageAttrZip != 0 {
+	if v.IsZip() {
 		err = v.Bytes.Compress(w)
 	} else {
 		err = v.Bytes.Encode(w)
@@ -668,13 +682,14 @@ func (v NetPackage) Encode(w IWriter) error {
 	if err != nil {
 		return err
 	}
+	//sum
 	if err := w.TWrite(v.Sum32()); err != nil {
 		return err
 	}
 	return nil
 }
 
-//Sum32 结算校验和
+//Sum32 计算校验和
 func (v *NetPackage) Sum32() uint32 {
 	crc := crc32.New(crc32.IEEETable)
 	n, err := crc.Write(v.Flags[:])
@@ -695,8 +710,12 @@ func (v *NetPackage) Sum32() uint32 {
 //Decode 解码网络数据包
 func (v *NetPackage) Decode(r IReader) error {
 	var err error
+	//flags
 	if err = r.ReadFull(v.Flags[:]); err != nil {
 		return err
+	}
+	if !bytes.Equal(v.Flags[:], conf.flags[:]) {
+		return errors.New("flags error")
 	}
 	//type
 	typ, err := r.ReadByte()
@@ -709,8 +728,9 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err != nil {
 		return err
 	}
+	//bytes
 	v.Attr = attr
-	if v.Attr&PackageAttrZip != 0 {
+	if v.IsZip() {
 		err = v.Bytes.Uncompress(r)
 	} else {
 		err = v.Bytes.Decode(r)
@@ -718,11 +738,9 @@ func (v *NetPackage) Decode(r IReader) error {
 	if err != nil {
 		return err
 	}
+	//sum
 	if err = r.TRead(&v.Sum); err != nil {
 		return err
-	}
-	if !bytes.Equal(v.Flags[:], conf.flags[:]) {
-		return errors.New("flags not same")
 	}
 	if v.Sum32() != v.Sum {
 		return errors.New("check sum error")
