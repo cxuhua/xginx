@@ -105,13 +105,6 @@ func newScriptEnv(ctx context.Context) *lua.LState {
 	return l
 }
 
-//返回错误
-func returnHTTPError(l *lua.LState, err error) int {
-	l.Push(lua.LNil)
-	l.Push(lua.LString(err.Error()))
-	return 2
-}
-
 //设置一个值
 func setAnyValue(l *lua.LState, key string, v jsoniter.Any, tbl *lua.LTable) {
 	if typ := v.ValueType(); typ == jsoniter.BoolValue {
