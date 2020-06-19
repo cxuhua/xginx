@@ -370,6 +370,7 @@ func CheckScript(codes ...[]byte) error {
 //timestamp() 返回当前系统时间戳
 func unixTimestamp(l *lua.LState) int {
 	bi := getEnvBlockIndex(l.Context())
+	//默认的时间格式
 	sfmt := "2006-01-02 15:04:05"
 	top := l.GetTop()
 	//无参数返回当前时间
