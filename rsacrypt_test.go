@@ -40,9 +40,10 @@ func TestRSASignVerity(t *testing.T) {
 	r, err := NewRSAPrivateKey()
 	require.NoError(t, err)
 	p := r.PublicKey()
-	str1 := "ksjfksdfk(&838278234344"
+	str1 := "ksjfk---sdfk(&8382--78234344"
 	bb1, err := r.Sign([]byte(str1))
 	require.NoError(t, err)
+	assert.Equal(t, 256, len(bb1))
 	err = p.Verify([]byte(str1), bb1)
 	require.NoError(t, err)
 }
