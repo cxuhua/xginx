@@ -587,8 +587,11 @@ func (ss WitnessScript) Address() Address {
 //HashPkh hash公钥。地址hash也将由这个方法生成
 func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) {
 	id := ZERO160
+	if num < 1 || num > AccountKeyMaxSize {
+		return id, errors.New("num outbound")
+	}
 	if int(num) != len(pkhs) {
-		return id, errors.New("pub hash num error")
+		return id, errors.New("pub num error")
 	}
 	if less > num {
 		return id, errors.New("args less num error")

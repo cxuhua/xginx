@@ -10,6 +10,7 @@ require (
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.6.1
 	github.com/syndtr/goleveldb v1.0.0
+	gopkg.in/go-playground/assert.v1 v1.2.1
 )
 
 replace github.com/cxuhua/gopher-lua v1.0.1 => ../gopher-lua
