@@ -6,17 +6,11 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/pem"
-	"fmt"
 )
 
 const (
 	//RSABits 默认rsa加密强度
 	RSABits = 2048
-	//RSAPrivateType 私钥类型描述
-	RSAPrivateType = "RSA PRIVATE KEY"
-	//RSAPublicType 公钥类型描述
-	RSAPublicType = "RSA PUBLIC KEY"
 )
 
 //RSAPublicKey rsa公钥
@@ -24,7 +18,7 @@ type RSAPublicKey struct {
 	pp *rsa.PublicKey
 }
 
-//LoadRSAPublicKey 从树加载一个私钥
+//LoadRSAPublicKey 加载一个公钥
 func LoadRSAPublicKey(str string) (*RSAPublicKey, error) {
 	pp := &RSAPublicKey{}
 	err := pp.Load(str)
@@ -37,11 +31,7 @@ func (ptr *RSAPublicKey) Load(str string) error {
 	if err != nil {
 		return err
 	}
-	pb, _ := pem.Decode(bb)
-	if pb == nil {
-		return fmt.Errorf("pem decode error")
-	}
-	pp, err := x509.ParsePKCS1PublicKey(pb.Bytes)
+	pp, err := x509.ParsePKCS1PublicKey(bb)
 	if err != nil {
 		return err
 	}
@@ -65,16 +55,7 @@ func (ptr RSAPublicKey) Encrypt(bb []byte) ([]byte, error) {
 //Dump 导出公钥
 func (ptr RSAPublicKey) Dump() (string, error) {
 	bb := x509.MarshalPKCS1PublicKey(ptr.pp)
-	pb := &pem.Block{
-		Type:  RSAPublicType,
-		Bytes: bb,
-	}
-	buf := NewWriter()
-	err := pem.Encode(buf, pb)
-	if err != nil {
-		return "", err
-	}
-	return HashDump(buf.Bytes())
+	return HashDump(bb)
 }
 
 //RSAPrivateKey rsa私钥
@@ -82,7 +63,7 @@ type RSAPrivateKey struct {
 	pk *rsa.PrivateKey
 }
 
-//LoadRSAPrivateKey 从树加载一个私钥
+//LoadRSAPrivateKey 加载一个私钥
 func LoadRSAPrivateKey(str string, pass ...string) (*RSAPrivateKey, error) {
 	pk := &RSAPrivateKey{}
 	err := pk.Load(str, pass...)
@@ -95,11 +76,7 @@ func (ptr *RSAPrivateKey) Load(str string, pass ...string) error {
 	if err != nil {
 		return err
 	}
-	pb, _ := pem.Decode(bb)
-	if pb == nil {
-		return fmt.Errorf("pem decode error")
-	}
-	pk, err := x509.ParsePKCS1PrivateKey([]byte(pb.Bytes))
+	pk, err := x509.ParsePKCS1PrivateKey([]byte(bb))
 	if err != nil {
 		return err
 	}
@@ -132,16 +109,7 @@ func (ptr RSAPrivateKey) PublicKey() *RSAPublicKey {
 //Dump 导出密钥
 func (ptr RSAPrivateKey) Dump(pass ...string) (string, error) {
 	bb := x509.MarshalPKCS1PrivateKey(ptr.pk)
-	pb := &pem.Block{
-		Type:  RSAPrivateType,
-		Bytes: bb,
-	}
-	buf := NewWriter()
-	err := pem.Encode(buf, pb)
-	if err != nil {
-		return "", err
-	}
-	return HashDump(buf.Bytes(), pass...)
+	return HashDump(bb, pass...)
 }
 
 //NewRSAPrivateKey 创建一个rsa密钥对
