@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
-	"io"
 	"math/big"
 )
 
@@ -220,12 +221,16 @@ func NewPrivateKeyWithBytes(b []byte) (*PrivateKey, error) {
 //GenPrivateKey 自动生成私钥
 func GenPrivateKey() (k *big.Int, err error) {
 	params := curve.Params()
-	b := make([]byte, params.BitSize/8+8)
-	_, err = io.ReadFull(rand.Reader, b)
+	pk, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return
+		return nil, err
 	}
-	k = new(big.Int).SetBytes(b)
+	bb, err := x509.MarshalPKCS8PrivateKey(pk)
+	if err != nil {
+		return nil, err
+	}
+	hb := Hash256(bb)
+	k = new(big.Int).SetBytes(hb)
 	n := new(big.Int).Sub(params.N, one)
 	k.Mod(k, n)
 	k.Add(k, one)
