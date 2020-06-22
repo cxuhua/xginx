@@ -579,6 +579,9 @@ func (ss WitnessScript) Address() Address {
 //HashPks hash公钥。地址hash也将由这个方法生成
 func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	id := ZERO160
+	if num < 1 || num > AccountKeyMaxSize {
+		return id, errors.New("num outbound")
+	}
 	if int(num) != len(pks) {
 		return id, errors.New("pub num error")
 	}

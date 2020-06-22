@@ -371,18 +371,18 @@ func unixTimestamp(l *lua.LState) int {
 		l.Push(lua.LNumber(bi.lptr.TimeNow()))
 		return 1
 	}
-	var str string
+	var sstr string
 	//如果指定了格式
 	if top >= 2 {
 		sfmt = l.ToString(1)
-		str = l.ToString(2)
+		sstr = l.ToString(2)
 	} else {
-		str = l.ToString(1)
+		sstr = l.ToString(1)
 	}
-	if str == "" {
+	if sstr == "" {
 		l.RaiseError("args miss")
 	}
-	tv, err := time.ParseInLocation(sfmt, str, time.Local)
+	tv, err := time.ParseInLocation(sfmt, sstr, time.Local)
 	if err != nil {
 		l.RaiseError(err.Error())
 	}
