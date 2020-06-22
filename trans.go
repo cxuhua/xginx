@@ -130,7 +130,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		if outs.Len() == 0 {
 			outs = m.lis.GetTxOutExec(dst)
 		}
-		out, err := dst.NewTxOut(amt, outs)
+		out, err := dst.NewTxOut(amt, "", outs)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +156,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 		}
 		//添加前回调通知
 		exec := m.lis.GetTxOutExec(addr)
-		out, err := addr.NewTxOut(amt, exec)
+		out, err := addr.NewTxOut(amt, "", exec)
 		if err != nil {
 			return nil, err
 		}

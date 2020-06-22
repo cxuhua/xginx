@@ -81,6 +81,17 @@ import (
 //out 属性方法
 //out.value 输出金额
 //out.address 输出地址
+//out.meta 输出的meta数据
+
+//脚本类型
+const (
+	//交易脚本
+	ExecTypeTxMain = "TxMain"
+	//输\入脚本
+	ExecTypeInMain = "InMain"
+	//输出脚本
+	ExecTypeOutMain = "OutMain"
+)
 
 var (
 	//DefaultTxScript 默认交易脚本 控制是否能进入区块
@@ -773,12 +784,13 @@ func txGetInMethod(l *lua.LState) int {
 //设置输出属性
 func setOutTable(l *lua.LState, tbl *lua.LTable, out *TxOut) error {
 	kvs := tbl.RawSetString
-	addr, err := out.Script.GetAddress()
+	lcks, err := out.Script.ToLocked()
 	if err != nil {
 		return err
 	}
 	kvs("value", lua.LNumber(out.Value))
-	kvs("address", lua.LString(addr))
+	kvs("address", lua.LString(lcks.Address()))
+	kvs("meta", lua.LString(string(lcks.Meta)))
 	return nil
 }
 
@@ -1147,7 +1159,7 @@ func (tx *TX) ExecScript(bi *BlockIndex) error {
 	ctx = context.WithValue(ctx, blockKey, bi)
 	ctx = context.WithValue(ctx, txKey, tx)
 	//编译脚本
-	return compileExecScript(ctx, "tx_main", 0, txs.Exec)
+	return compileExecScript(ctx, ExecTypeTxMain, 0, txs.Exec)
 }
 
 //ExecScript 执行签名交易脚本
@@ -1175,11 +1187,11 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits *WitnessScript, lcks *Locke
 	//只用于签名脚本输入输出传递信息
 	ctx = context.WithValue(ctx, transKey, newTransOutMap(ctx))
 	//编译输入脚本 执行错误返回
-	if err := compileExecScript(ctx, "in_main", 1, wits.Exec); err != nil {
+	if err := compileExecScript(ctx, ExecTypeInMain, 1, wits.Exec); err != nil {
 		return err
 	}
 	//编译输出脚本
-	if err := compileExecScript(ctx, "out_main", 2, lcks.Exec); err != nil {
+	if err := compileExecScript(ctx, ExecTypeOutMain, 2, lcks.Exec); err != nil {
 		return err
 	}
 	return nil

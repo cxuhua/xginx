@@ -255,8 +255,8 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 }
 
 func (suite *BlockTestSuite) TestSequence() {
-}
 
+}
 func (suite *BlockTestSuite) TearDownTest() {
 
 }

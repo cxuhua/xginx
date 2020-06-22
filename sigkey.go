@@ -507,7 +507,7 @@ const (
 )
 
 //NewTxOut 创建一个输出
-func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
+func (a Address) NewTxOut(v Amount, meta string, execs ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
 		return nil, errors.New("amount error")
 	}
@@ -517,7 +517,7 @@ func (a Address) NewTxOut(v Amount, execs ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	lcks, err := NewLockedScript(pkh, execs...)
+	lcks, err := NewLockedScript(pkh, meta, execs...)
 	if err != nil {
 		return nil, err
 	}

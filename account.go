@@ -184,12 +184,12 @@ func (ap Account) NewWitnessScript(execs ...[]byte) *WitnessScript {
 }
 
 //NewLockedScript 生成锁定脚本
-func (ap Account) NewLockedScript(exec ...[]byte) (Script, error) {
+func (ap Account) NewLockedScript(meta string, exec ...[]byte) (Script, error) {
 	pkh, err := ap.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	lcks, err := NewLockedScript(pkh, exec...)
+	lcks, err := NewLockedScript(pkh, meta, exec...)
 	if err != nil {
 		return nil, err
 	}

@@ -203,7 +203,7 @@ func (s Script) IsWitness() bool {
 
 //IsLocked 是否是锁定脚本
 func (s Script) IsLocked() bool {
-	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxExecSize+4) && s[0] == ScriptLockedType
+	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxMetaSize+MaxExecSize+4) && s[0] == ScriptLockedType
 }
 
 //IsTxScript 是否是交易脚本
@@ -373,6 +373,7 @@ func (s Script) Height() uint32 {
 type LockedScript struct {
 	Type uint8
 	Pkh  HASH160
+	Meta VarBytes // len < MaxMetaSize
 	Exec VarBytes
 }
 
@@ -393,6 +394,9 @@ func (ss LockedScript) Encode(w IWriter) error {
 	if err := ss.Pkh.Encode(w); err != nil {
 		return err
 	}
+	if err := ss.Meta.Encode(w); err != nil {
+		return err
+	}
 	if err := ss.Exec.Encode(w); err != nil {
 		return err
 	}
@@ -405,6 +409,9 @@ func (ss *LockedScript) Decode(r IReader) error {
 		return err
 	}
 	if err := ss.Pkh.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.Meta.Decode(r); err != nil {
 		return err
 	}
 	if err := ss.Exec.Decode(r); err != nil {
@@ -424,10 +431,11 @@ func (ss LockedScript) ToScript() (Script, error) {
 }
 
 //NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, execs ...[]byte) (*LockedScript, error) {
-	std := &LockedScript{Exec: VarBytes{}}
+func NewLockedScript(pkh HASH160, meta string, execs ...[]byte) (*LockedScript, error) {
+	std := &LockedScript{Meta: VarBytes{}, Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
+	std.Meta = []byte(meta)
 	exec, err := MergeScript(execs...)
 	if err != nil {
 		return nil, err
@@ -576,11 +584,11 @@ func (ss WitnessScript) Address() Address {
 	return addr
 }
 
-//HashPks hash公钥。地址hash也将由这个方法生成
-func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
+//HashPkh hash公钥。地址hash也将由这个方法生成
+func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) {
 	id := ZERO160
-	if int(num) != len(pks) {
-		return id, errors.New("pub num error")
+	if int(num) != len(pkhs) {
+		return id, errors.New("pub hash num error")
 	}
 	if less > num {
 		return id, errors.New("args less num error")
@@ -601,14 +609,24 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	if err := w.TWrite(arb); err != nil {
 		return id, err
 	}
-	for _, pk := range pks {
-		err := w.TWrite(pk[:])
+	for _, pkh := range pkhs {
+		err := w.TWrite(pkh)
 		if err != nil {
 			return id, err
 		}
 	}
 	id = Hash160From(w.Bytes())
 	return id, nil
+}
+
+//HashPks hash公钥。地址hash也将由这个方法生成
+func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
+	pkhs := []HASH256{}
+	for _, pk := range pks {
+		pkh := Hash256From(pk[:])
+		pkhs = append(pkhs, pkh)
+	}
+	return HashPkh(num, less, arb, pkhs)
 }
 
 //ToScript 转换为脚本存储
