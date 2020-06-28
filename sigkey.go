@@ -479,6 +479,13 @@ func (pk *PublicKey) Decode(data []byte) error {
 	return nil
 }
 
+//ID 获取公钥ID
+func (pk *PublicKey) ID() (string, error) {
+	b := pk.Encode()
+	h := Hash256From(b)
+	return EncodePublicHash(h)
+}
+
 //Hash hash公钥
 func (pk *PublicKey) Hash() HASH160 {
 	b := pk.Encode()
@@ -555,6 +562,56 @@ func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 		return "", err
 	}
 	return addr, nil
+}
+
+//EncodePublicHash 编码公钥hash
+func EncodePublicHash(pkh HASH256) (string, error) {
+	ver := byte(0)
+	b := []byte{ver, byte(len(pkh))}
+	b = append(b, pkh[:]...)
+	addr, err := SegWitAddressEncode("pk", b)
+	if err != nil {
+		return "", err
+	}
+	return addr, nil
+}
+
+//DecodePublicHash 解码公钥hash
+func DecodePublicHash(addr string) (HASH256, error) {
+	st := "pk"
+	hv := HASH256{}
+	hrp, b, err := SegWitAddressDecode(addr)
+	if err != nil {
+		return hv, err
+	}
+	if hrp != st {
+		return hv, errors.New("public hash string prefix error")
+	}
+	if b[0] != 0 {
+		return hv, errors.New("ver error")
+	}
+	if int(b[1]) != len(b[2:]) {
+		return hv, errors.New("public hash  length error")
+	}
+	copy(hv[:], b[2:])
+	return hv, nil
+}
+
+//GetAddressWithID 根据多个公钥ID生成地址
+func GetAddressWithID(num uint8, less uint8, arb uint8, ids []string) (Address, error) {
+	pkhs := []HASH256{}
+	for _, id := range ids {
+		pkh, err := DecodePublicHash(id)
+		if err != nil {
+			return "", err
+		}
+		pkhs = append(pkhs, pkh)
+	}
+	hp, err := HashPkh(num, less, arb, pkhs)
+	if err != nil {
+		return "", err
+	}
+	return EncodeAddress(hp)
 }
 
 //EncodeAddress 编码地址

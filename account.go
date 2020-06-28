@@ -316,6 +316,14 @@ func (ap Account) GetPkhs() []HASH160 {
 	return pkhs
 }
 
+//获取公钥hash地址ID，当不想公开公钥生成一个收款地址时可以使用这个ID，因为生成地址时只需要公钥hash
+func (ap Account) GetPkhID(idx int) (string, error) {
+	if idx < 0 || idx >= len(ap.Pubs) {
+		return "", fmt.Errorf("idx = %d outbound", idx)
+	}
+	return ap.Pubs[idx].ID()
+}
+
 //GetPkh 获取账号地址
 func (ap Account) GetPkh() (HASH160, error) {
 	if err := ap.Check(); err != nil {

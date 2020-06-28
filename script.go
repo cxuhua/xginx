@@ -585,6 +585,7 @@ func (ss WitnessScript) Address() Address {
 }
 
 //HashPkh hash公钥。地址hash也将由这个方法生成
+//生成地址使用公钥hash256，不公开公钥生成收款地址可使用此方法
 func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) {
 	id := ZERO160
 	if num < 1 || num > AccountKeyMaxSize {

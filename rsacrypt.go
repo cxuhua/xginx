@@ -101,7 +101,7 @@ func (ptr RSAPrivateKey) Decrypt(bb []byte) ([]byte, error) {
 	return rsa.DecryptPKCS1v15(rand.Reader, ptr.pk, bb)
 }
 
-//PublicKey 获取公钥
+//PublicKey 获取对应的公钥
 func (ptr RSAPrivateKey) PublicKey() *RSAPublicKey {
 	return &RSAPublicKey{pp: &ptr.pk.PublicKey}
 }
