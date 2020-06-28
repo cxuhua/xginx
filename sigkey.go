@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/hex"
 	"errors"
-	"io"
 	"math/big"
 )
 
@@ -220,12 +221,16 @@ func NewPrivateKeyWithBytes(b []byte) (*PrivateKey, error) {
 //GenPrivateKey 自动生成私钥
 func GenPrivateKey() (k *big.Int, err error) {
 	params := curve.Params()
-	b := make([]byte, params.BitSize/8+8)
-	_, err = io.ReadFull(rand.Reader, b)
+	pk, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return
+		return nil, err
 	}
-	k = new(big.Int).SetBytes(b)
+	bb, err := x509.MarshalPKCS8PrivateKey(pk)
+	if err != nil {
+		return nil, err
+	}
+	hb := Hash256(bb)
+	k = new(big.Int).SetBytes(hb)
 	n := new(big.Int).Sub(params.N, one)
 	k.Mod(k, n)
 	k.Add(k, one)
@@ -501,8 +506,13 @@ func LoadPublicKey(s string, pass ...string) (*PublicKey, error) {
 //Address 账号地址
 type Address string
 
+const (
+	//EmptyAddress 空地址定义
+	EmptyAddress Address = ""
+)
+
 //NewTxOut 创建一个输出
-func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
+func (a Address) NewTxOut(v Amount, meta string, execs ...[]byte) (*TxOut, error) {
 	if !v.IsRange() {
 		return nil, errors.New("amount error")
 	}
@@ -512,7 +522,11 @@ func (a Address) NewTxOut(v Amount, ext ...[]byte) (*TxOut, error) {
 	if err != nil {
 		return nil, err
 	}
-	script, err := NewLockedScript(pkh, ext...)
+	lcks, err := NewLockedScript(pkh, meta, execs...)
+	if err != nil {
+		return nil, err
+	}
+	script, err := lcks.ToScript()
 	if err != nil {
 		return nil, err
 	}

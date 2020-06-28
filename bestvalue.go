@@ -1,5 +1,11 @@
 package xginx
 
+//定义高度
+const (
+	// 无效的块高度
+	InvalidHeight = ^uint32(0)
+)
+
 // 区块定义
 var (
 	BestBlockKey = []byte("BestBlockKey") //最高区块数据保存key

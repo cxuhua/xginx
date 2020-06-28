@@ -7,10 +7,9 @@ import (
 
 //CoinsState 金额状态
 type CoinsState struct {
-	Locks Coins  //锁定的
-	Coins Coins  //当前可用
-	All   Coins  //所有
-	Sum   Amount //总和
+	Locks Coins //锁定的
+	Coins Coins //当前可用
+	All   Coins //所有
 }
 
 //Merge 拼合
@@ -18,11 +17,10 @@ func (s *CoinsState) Merge(v *CoinsState) {
 	s.Locks = append(s.Locks, v.Locks...)
 	s.Coins = append(s.Coins, v.Coins...)
 	s.All = append(s.All, v.All...)
-	s.Sum += v.Sum
 }
 
 func (s CoinsState) String() string {
-	return fmt.Sprintf("Locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.Sum)
+	return fmt.Sprintf("locks = %d, coins = %d sum = %d", s.Locks.Balance(), s.Coins.Balance(), s.All.Balance())
 }
 
 //Coins 金额记录
@@ -31,23 +29,22 @@ type Coins []*CoinKeyValue
 //State 假设当前消费高度为 spent 获取金额状态
 func (c Coins) State(spent uint32) *CoinsState {
 	s := &CoinsState{All: c}
-	for _, v := range c {
+	for _, v := range s.All {
 		if !v.IsMatured(spent) {
 			s.Locks = append(s.Locks, v)
 		} else {
 			s.Coins = append(s.Coins, v)
 		}
-		s.Sum += v.Value
 	}
 	return s
 }
 
-//Sort 按高度排序
-func (c *Coins) Sort() Coins {
-	sort.Slice(*c, func(i, j int) bool {
-		return (*c)[i].Height < (*c)[j].Height
+//Sort 按高度升序排序
+func (c Coins) Sort() Coins {
+	sort.Slice(c, func(i, j int) bool {
+		return c[i].Height < c[j].Height
 	})
-	return *c
+	return c
 }
 
 //Balance 获取总金额
@@ -59,6 +56,28 @@ func (c Coins) Balance() Amount {
 	return a
 }
 
+//Find 根据回调获取金额
+//回调返回true加入返回列表
+func (c Coins) Find(fn func(cp *CoinKeyValue) bool) Coins {
+	vs := Coins{}
+	for _, v := range c {
+		if fn(v) {
+			vs = append(vs, v)
+		}
+	}
+	return vs
+}
+
+//FindCoin 根据Id搜索金额
+func (c Coins) FindCoin(id string) (*CoinKeyValue, error) {
+	for _, v := range c {
+		if v.ID() == id {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("coin %s not found", id)
+}
+
 //CoinKeyValue 金额存储结构
 type CoinKeyValue struct {
 	CPkh   HASH160 //公钥hash
@@ -68,7 +87,11 @@ type CoinKeyValue struct {
 	Base   uint8   //是否属于coinbase o or 1
 	Height VarUInt //所在区块高度
 	pool   bool    //是否来自内存池
-	spent  bool    //是否在内存池被消费了
+}
+
+//ID 获取金额唯一ID
+func (tk CoinKeyValue) ID() string {
+	return fmt.Sprintf("%s%04d", tk.TxID.String(), tk.Index)
 }
 
 //From 从kv获取数据
@@ -103,15 +126,16 @@ func (tk *CoinKeyValue) From(k []byte, v []byte) error {
 }
 
 //NewTxIn 创建一个消费输入
-func (tk CoinKeyValue) NewTxIn(acc *Account) (*TxIn, error) {
+func (tk CoinKeyValue) NewTxIn(acc *Account, execs ...[]byte) (*TxIn, error) {
 	in := NewTxIn()
 	in.OutHash = tk.TxID
 	in.OutIndex = tk.Index
-	script, err := acc.NewWitnessScript().ToScript()
+	script, err := acc.NewWitnessScript(execs...).ToScript()
 	if err != nil {
 		return nil, err
 	}
 	in.Script = script
+	in.Sequence = FinalSequence
 	return in, nil
 }
 
@@ -136,13 +160,20 @@ func (tk CoinKeyValue) IsPool() bool {
 }
 
 //IsMatured 是否成熟可用
-//内存中的，非coinbase直接可用
-//coinbase输出必须在100个高度后才可消费
 func (tk CoinKeyValue) IsMatured(spent uint32) bool {
-	return tk.pool || tk.Base == 0 || spent-tk.Height.ToUInt32() >= CoinbaseMaturity
+	//交易池中的不能直接用了,如果要重新分配输出，需要覆盖之前的交易
+	if tk.IsPool() {
+		return false
+	}
+	//非coinbase可用
+	if tk.Base == 0 {
+		return true
+	}
+	//coinbase输出必须在100个高度后才可消费
+	return spent-tk.Height.ToUInt32() >= CoinbaseMaturity
 }
 
-//SpentKey 消费key,用来记录输入对应的输出是否已经别消费
+//SpentKey 消费key,用来记录输入对应的输出是否已经被消费
 func (tk CoinKeyValue) SpentKey() []byte {
 	buf := NewWriter()
 	err := buf.WriteFull(CoinsPrefix)

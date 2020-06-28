@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -10,25 +9,31 @@ type IGetSigBytes interface {
 	GetSigBytes() ([]byte, error)
 }
 
-//ISignerListener 签名交易
-type ISignerListener interface {
+//ISignTx 签名交易
+type ISignTx interface {
 	SignTx(singer ISigner, pass ...string) error
 }
 
 //ISigner 签名验证接口
 type ISigner interface {
 	//签名校验
-	Verify() error
+	Verify(bi *BlockIndex) error
 	//签名生成解锁脚本
-	Sign(lis ISignerListener, pass ...string) error
+	Sign(bi *BlockIndex, lis ISignTx, pass ...string) error
 	//获取签名hash
 	GetSigHash() ([]byte, error)
-	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的位置
+	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
 	GetObjs() (*TX, *TxIn, *TxOut, int)
 	//获取消费地址
-	GetAddress() Address
+	GetOutAddress() Address
+	//获取输入地址
+	GetInAddress() Address
 	//获取交易id
 	GetTxID() HASH256
+	//检测签名
+	VerifySign() error
+	//验证地址
+	VerifyAddr() error
 }
 
 //多重签名器
@@ -54,9 +59,18 @@ func (sr *mulsigner) GetTxID() HASH256 {
 	return sr.tx.MustID()
 }
 
-//GetAddress 获取输出对应的地址
-func (sr *mulsigner) GetAddress() Address {
+//GetOutAddress 获取输出对应的地址
+func (sr *mulsigner) GetOutAddress() Address {
 	addr, err := sr.out.Script.GetAddress()
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
+//GetInAddress 获取输入对应的地址
+func (sr *mulsigner) GetInAddress() Address {
+	addr, err := sr.in.Script.GetAddress()
 	if err != nil {
 		panic(err)
 	}
@@ -68,63 +82,69 @@ func (sr *mulsigner) GetObjs() (*TX, *TxIn, *TxOut, int) {
 	return sr.tx, sr.in, sr.out, sr.idx
 }
 
-//Verify 多重签名验证
-func (sr *mulsigner) Verify() error {
+//验证签名是否正确
+func (sr *mulsigner) VerifySign() error {
+	//获取输入脚本
 	wits, err := sr.in.Script.ToWitness()
 	if err != nil {
-		return err
+		return fmt.Errorf("witness script miss %w", err)
 	}
 	if err := wits.Check(); err != nil {
-		return err
+		return fmt.Errorf("witness check error %w", err)
 	}
-	pkh, err := sr.out.Script.GetPkh()
-	if err != nil {
-		return err
-	}
-	if hash, err := wits.Hash(); err != nil || !hash.Equal(pkh) {
-		return fmt.Errorf("hash equal error %w", err)
-	}
+	//获取签名hash
 	sigh, err := sr.GetSigHash()
 	if err != nil {
 		return err
 	}
-	//至少需要签名正确的数量
-	less := int(wits.Less)
-	//总的数量
-	num := int(wits.Num)
-	if len(wits.Pks) != num {
-		return errors.New("pub num error")
+	//转换统一校验签名
+	acc, err := wits.ToAccount()
+	if err != nil {
+		return err
 	}
-	if num < less {
-		return errors.New("pub num error,num must >= less")
+	//多重签名校验
+	return acc.VerifyAll(sigh, wits.Sig)
+}
+
+//检测hash是否一致
+func (sr *mulsigner) VerifyAddr() error {
+	//获取输入脚本
+	wits, err := sr.in.Script.ToWitness()
+	if err != nil {
+		return fmt.Errorf("witness script miss %w", err)
 	}
-	for i, k := 0, 0; i < len(wits.Sig) && k < len(wits.Pks); {
-		sig, err := NewSigValue(wits.Sig[i][:])
-		if err != nil {
-			return err
-		}
-		pub, err := NewPublicKey(wits.Pks[k][:])
-		if err != nil {
-			return err
-		}
-		vok := pub.Verify(sigh, sig)
-		if vok {
-			less--
-			i++
-		}
-		//如果启用仲裁，并且当前仲裁验证成功立即返回
-		if vok && wits.IsEnableArb() && wits.Arb == uint8(k) {
-			less = 0
-		}
-		if less == 0 {
-			break
-		}
-		k++
+	if err := wits.Check(); err != nil {
+		return fmt.Errorf("witness check error %w", err)
 	}
-	if less > 0 {
-		return errors.New("sig verify error")
+	//获取锁定脚本
+	locked, err := sr.out.Script.ToLocked()
+	if err != nil {
+		return fmt.Errorf("locked script miss %w", err)
+	}
+	//pkh一致才能通过
+	if hash, err := wits.Hash(); err != nil || !hash.Equal(locked.Pkh) {
+		return fmt.Errorf("hash equal error %w", err)
 	}
 	return nil
+}
+
+//Verify 多重签名脚本验证
+func (sr *mulsigner) Verify(bi *BlockIndex) error {
+	//获取输入脚本
+	wits, err := sr.in.Script.ToWitness()
+	if err != nil {
+		return fmt.Errorf("witness script miss %w", err)
+	}
+	if err := wits.Check(); err != nil {
+		return fmt.Errorf("witness check error %w", err)
+	}
+	//获取锁定脚本
+	locked, err := sr.out.Script.ToLocked()
+	if err != nil {
+		return fmt.Errorf("locked script miss %w", err)
+	}
+	//执行脚本
+	return sr.ExecScript(bi, wits, locked)
 }
 
 //OutputsHash outhash
@@ -180,25 +200,25 @@ func (sr *mulsigner) GetSigHash() ([]byte, error) {
 	if err := sr.in.Script.ForVerify(buf); err != nil {
 		return nil, err
 	}
+	if err := sr.in.Sequence.Encode(buf); err != nil {
+		return nil, err
+	}
 	if err := sr.out.Script.Encode(buf); err != nil {
 		return nil, err
 	}
 	if err := sr.out.Value.Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := buf.TWrite(sr.in.Sequence); err != nil {
-		return nil, err
-	}
 	if err := sr.OutputsHash().Encode(buf); err != nil {
 		return nil, err
 	}
-	if err := buf.TWrite(sr.tx.LockTime); err != nil {
+	if err := sr.tx.Script.Encode(buf); err != nil {
 		return nil, err
 	}
 	return Hash256(buf.Bytes()), nil
 }
 
 //Sign 开始签名
-func (sr *mulsigner) Sign(lis ISignerListener, pass ...string) error {
+func (sr *mulsigner) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
 	return lis.SignTx(sr, pass...)
 }

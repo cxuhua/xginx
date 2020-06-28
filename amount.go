@@ -4,18 +4,26 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
+
+	"github.com/shopspring/decimal"
 )
 
 //金额定义
 const (
+	//MaxCompressUInt 压缩金额可存储的最大数字
 	MaxCompressUInt = uint64(0b1111 << 57)
-	Coin            = Amount(1000)
+	//Coin 倍率
+	Coin = Amount(1000)
 	// MaxMoney < MaxCompressUInt
 	MaxMoney = 21000000 * Coin
 )
 
-//GetCoinbaseReward 结算当前奖励
+var (
+	//CoinSplit 1个coin可分割为1000份
+	CoinSplit = decimal.NewFromInt(int64(Coin))
+)
+
+//GetCoinbaseReward 计算某高度下可获的奖励
 func GetCoinbaseReward(h uint32) Amount {
 	hlv := int(h) / conf.Halving
 	if hlv < 0 || hlv >= 64 {
@@ -43,44 +51,24 @@ func (a *Amount) Decode(r IReader) error {
 	return nil
 }
 
-//ParseIntMoney 解析金额
-func ParseIntMoney(str string) (Amount, error) {
-	i, err := strconv.ParseInt(str, 10, 64)
+//ParseAmount 解析金额
+func ParseAmount(str string) (Amount, error) {
+	num, err := decimal.NewFromString(str)
 	if err != nil {
 		return 0, err
 	}
-	return Amount(i), nil
-}
-
-//ParseMoney 解析金额
-func ParseMoney(str string) (Amount, error) {
-	f, err := strconv.ParseFloat(str, 64)
-	if err != nil {
-		return 0, err
+	num = num.Mul(CoinSplit)
+	amt := Amount(num.IntPart())
+	if !amt.IsRange() {
+		return 0, fmt.Errorf("%d out max amount", amt)
 	}
-	a := Amount(f * float64(Coin))
-	return a, nil
+	return amt, nil
 }
 
 func (a Amount) String() string {
-	abs := int64(a)
-	if abs < 0 {
-		abs = -abs
-	}
-	n := a / Coin
-	x := a % Coin
-	str := fmt.Sprintf("%d.%03d", n, x)
-	trim := 0
-	for i := len(str) - 1; str[i] == '0' && str[i-1] != '.'; i-- {
-		trim++
-	}
-	if trim > 0 {
-		str = str[:len(str)-trim]
-	}
-	if a < 0 {
-		return "-" + str
-	}
-	return str
+	num := decimal.NewFromInt(int64(a))
+	num = num.Div(CoinSplit)
+	return num.String()
 }
 
 //Bytes 压缩金额并生成二进制数据

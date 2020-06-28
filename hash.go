@@ -177,6 +177,13 @@ var (
 //HASH256 bit256 hash
 type HASH256 [32]byte
 
+//Clone 复制
+func (h HASH256) Clone() HASH256 {
+	n := HASH256{}
+	copy(n[:], h[:])
+	return n
+}
+
 //Encode encode
 func (h HASH256) Encode(w IWriter) error {
 	_, err := w.Write(h[:])
@@ -292,8 +299,8 @@ func (h HASH256) GetUint64(idx int) uint64 {
 	return Endian.Uint64(h[idx*8 : idx*8+8])
 }
 
-//ToUHash hash256转为大数
-func (h HASH256) ToUHash() UINT256 {
+//ToU256 hash256转为大数
+func (h HASH256) ToU256() UINT256 {
 	x := UINT256{}
 	for i := 0; i < UInt256Width; i++ {
 		x[i] = Endian.Uint32(h[i*4 : i*4+4])

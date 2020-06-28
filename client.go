@@ -126,10 +126,11 @@ func (c *Client) IsOut() bool {
 	return c.typ == ClientOut
 }
 
-//发送区块到远程节点
+//当收到新的区块请求时
 func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 	bi := GetBlockIndex()
 	iter := bi.NewIter()
+	//如果请求的下个区块不存在
 	if !iter.SeekHeight(msg.Next) {
 		rsg := NewMsgError(ErrCodeBlockMiss, fmt.Errorf("seek to next %d failed", msg.Next))
 		c.SendMsg(rsg)
@@ -155,6 +156,7 @@ func (c *Client) reqMsgBlock(msg *MsgGetBlock) {
 		c.SendMsg(rsg)
 		return
 	}
+	//获取下个区块数据返回
 	rsg := bi.NewMsgGetBlock(nextid)
 	c.SendMsg(rsg)
 }
@@ -166,6 +168,7 @@ func (c *Client) processMsg(m MsgIO) error {
 	switch typ {
 	case NtBroadPkg:
 		msg := m.(*MsgBroadPkg)
+		//如果已经有包就忽略
 		if c.ss.HasPkg(msg.MsgID.RecvKey()) {
 			break
 		}
@@ -239,10 +242,12 @@ func (c *Client) processMsg(m MsgIO) error {
 		msg := c.ss.NewMsgAddrs(c)
 		c.SendMsg(msg)
 	case NtPong:
+		//获取对方的区块高度
 		msg := m.(*MsgPong)
 		c.Height = msg.Height
 		c.ping = msg.Ping()
 	case NtPing:
+		//ping 并且播报自己的区块高度
 		msg := m.(*MsgPing)
 		c.Height = msg.Height
 		rsg := msg.NewPong(bi.BestHeight())
@@ -254,6 +259,7 @@ func (c *Client) processMsg(m MsgIO) error {
 			c.ss.addrs.Set(msg.Addr)
 		}
 		//防止两节点重复连接，并且防止自己连接自己
+		//如果不存在将会加入连接列表
 		if c.ss.HasClient(msg.NodeID, c) {
 			c.Close()
 			return errors.New("has connection,closed")
@@ -363,6 +369,7 @@ func (c *Client) loop() {
 			c.rc <- m
 		}
 	}()
+	//写和数据包处理
 	for {
 		select {
 		case wp := <-c.wc:
@@ -397,10 +404,11 @@ func (c *Client) loop() {
 			if !c.isopen {
 				break
 			}
+			//定时ping消息,通报区块高度
 			bi := GetBlockIndex()
 			msg := NewMsgPing(bi.BestHeight())
 			c.SendMsg(msg)
-			c.pt.Reset(time.Second * time.Duration(Rand(40, 60)))
+			c.pt.Reset(TimeSecond(int(Rand(40, 60))))
 		case <-c.cctx.Done():
 			return
 		}
@@ -413,6 +421,7 @@ func (c *Client) BroadMsg(m MsgIO) {
 	if err != nil {
 		panic(err)
 	}
+	//数据先保存在缓存
 	c.ss.SetPkg(id.SendKey(), m)
 	//发送广播包头
 	msg := &MsgBroadPkg{MsgID: id}

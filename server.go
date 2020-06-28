@@ -6,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/patrickmn/go-cache"
 )
 
 // 消息订阅
@@ -16,6 +14,8 @@ const (
 	NetMsgTopic = "NetMsg"
 	//创建了新的交易进入了交易池
 	NewTxTopic = "NewTx"
+	//默认端口
+	DefaultPort = uint16(9333)
 )
 
 //AddrNode 地址节点
@@ -122,7 +122,7 @@ type TCPServer struct {
 	dopt   chan int //获取线程做一些操作
 	dt     *time.Timer
 	pt     *time.Timer
-	pkgs   *cache.Cache //包数据缓存
+	pkgs   *Cache //包数据缓存
 }
 
 //DoOpt 操作通道
@@ -223,18 +223,11 @@ func (s *TCPServer) HasClient(id uint64, c *Client) bool {
 	return ok
 }
 
-//DelClient 删除客户端
+//DelClient 移除客户端
 func (s *TCPServer) DelClient(id uint64, c *Client) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.cls, id)
-}
-
-//AddClient 添加客户端
-func (s *TCPServer) AddClient(id uint64, c *Client) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.cls[id] = c
 }
 
 //Stop 地址服务
@@ -366,7 +359,22 @@ func (s *TCPServer) recvMsgHeaders(c *Client, msg *MsgHeaders) error {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
-	return bi.Unlink(msg.Headers)
+	err := bi.Unlink(msg.Headers)
+	//所有区块都不在此链中扩大范围
+	if err == ErrHeadersScope {
+		nsg := msg.Info
+		nsg.Count += conf.Confirms
+		c.SendMsg(&nsg)
+		s.dt.Reset(time.Second * 30)
+		return nil
+	}
+	//证据区块太少
+	if err == ErrHeadersTooLow {
+		s.dt.Reset(time.Second * 15)
+		return nil
+	}
+	s.dt.Reset(time.Second * 5)
+	return err
 }
 
 //收到块数据
@@ -378,10 +386,13 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	//尝试更新区块数据
 	if err := bi.LinkBlk(msg.Blk); err != nil {
 		LogError("link block error", err)
+		s.dt.Reset(time.Second * 30)
 		return err
 	}
 	LogInfo("update block ", msg.Blk, "height =", msg.Blk.Meta.Height, "cache =", bi.CacheSize())
+	//延迟获取下个区块
 	s.dt.Reset(time.Microsecond * 300)
+	//如果是新区块继续广播
 	if msg.IsNewBlock() {
 		s.BroadMsg(msg, c)
 	}
@@ -389,17 +400,18 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	return nil
 }
 
-//下载块数据
+//定时向拥有更高区块的节点请求区块数据
 func (s *TCPServer) reqMsgGetBlock() {
 	s.single.Lock()
 	defer s.single.Unlock()
 	bi := GetBlockIndex()
 	bv := bi.GetBestValue()
-	//查询拥有这个高度的客户端
-	if c := s.findBlockClient(bv.Next()); c != nil {
+	c := s.findBlockClient(bv.Next())
+	if c != nil {
 		msg := &MsgGetBlock{
-			Next: bv.Next(),
-			Last: bv.LastID(),
+			Next:  bv.Next(),
+			Last:  bv.LastID(),
+			Count: conf.Confirms,
 		}
 		c.SendMsg(msg)
 	}
@@ -421,6 +433,10 @@ func (s *TCPServer) tryConnect() {
 		cs = append(cs, v.addr)
 	}
 	s.addrs.mu.RUnlock()
+	//到达连接上限
+	if s.ConnNum() >= conf.MaxConn {
+		return
+	}
 	//开始连接
 	for _, v := range cs {
 		c := s.NewClient()
@@ -448,7 +464,7 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 		case opt := <-s.dopt:
 			switch opt {
 			case 1:
-				s.loadSeedIP()
+				s.loadIPS()
 			case 2:
 				LogInfo(opt)
 			}
@@ -456,10 +472,12 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			_ = s.tcplis.Close()
 			return
 		case cv := <-ch:
+			//收到交易信息
 			if tx, ok := cv.(*TX); ok {
 				s.BroadMsg(NewMsgTx(tx))
 				break
 			}
+			//收到客户端信息
 			m, ok := cv.(*ClientMsg)
 			if !ok {
 				break
@@ -485,13 +503,16 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))
 				}
 			}
+			//统一回调
 			if msg, ok := m.m.(MsgIO); ok {
 				s.lptr.OnClientMsg(m.c, msg)
 			}
 		case <-s.dt.C:
+			//定时请求区块数据
 			s.reqMsgGetBlock()
 			s.dt.Reset(time.Second * 5)
 		case <-s.pt.C:
+			//重连设置
 			if s.ConnNum() < conf.MaxConn {
 				s.tryConnect()
 			}
@@ -500,10 +521,30 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 	}
 }
 
-//加载seed域名ip地址
-func (s *TCPServer) loadSeedIP() {
+//加载nodes ip 和seed域名 ip地址
+func (s *TCPServer) loadIPS() {
 	lipc := 0
-	sipc := 0
+	sipc := len(conf.Nodes)
+	//加载配置的节点
+	for _, v := range conf.Nodes {
+		addr := NetAddr{}
+		err := addr.From(v)
+		if err != nil {
+			continue
+		}
+		if !addr.IsGlobalUnicast() {
+			continue
+		}
+		//忽略自己
+		if addr.Equal(conf.GetNetAddr()) {
+			continue
+		}
+		s.addrs.Set(addr)
+		lipc++
+	}
+	LogInfof("load nodes ip %d/%d", lipc, sipc)
+	lipc = 0
+	sipc = 0
 	for _, v := range conf.Seeds {
 		ips, err := net.LookupIP(v)
 		if err != nil {
@@ -513,11 +554,12 @@ func (s *TCPServer) loadSeedIP() {
 			sipc++
 			addr := NetAddr{
 				ip:   ip,
-				port: uint16(9333), //使用默认端口
+				port: DefaultPort, //使用默认端口
 			}
 			if !addr.IsGlobalUnicast() {
 				continue
 			}
+			//忽略自己
 			if addr.Equal(conf.GetNetAddr()) {
 				continue
 			}
@@ -544,6 +586,10 @@ func (s *TCPServer) run() {
 		//是否达到最大连接
 		if s.ConnNum() >= conf.MaxConn {
 			LogError("conn arrive max,ignore", conn)
+			//超过最大连接直接关闭
+			if err == nil {
+				conn.Close()
+			}
 			continue
 		}
 		if err == nil {
@@ -619,6 +665,7 @@ func NewTCPServer() IServer {
 	s.dopt = make(chan int, 5)
 	s.pt = time.NewTimer(time.Second)
 	s.dt = time.NewTimer(time.Second)
-	s.pkgs = cache.New(time.Minute*5, time.Minute*15)
+	//默认过期5分钟，每10秒检测过期
+	s.pkgs = NewCache(time.Minute*5, time.Second*10)
 	return s
 }

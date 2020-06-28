@@ -19,14 +19,14 @@ type TestLis struct {
 	t     uint32
 }
 
-func newTestLis() *TestLis {
+func newTestLis(accnum int) *TestLis {
 	lis := &TestLis{
 		t:   uint32(time.Now().Unix()),
 		acc: map[HASH160]*Account{},
 	}
-	for i := 0; i < 5; i++ {
-		//创建5个账号
-		acc, err := NewAccount(1, 1, false)
+	for i := 0; i < accnum; i++ {
+		//创建5-1账号，启用仲裁
+		acc, err := NewAccount(5, 1, true)
 		if err != nil {
 			panic(err)
 		}
@@ -42,11 +42,13 @@ func newTestLis() *TestLis {
 		lis.addrs = append(lis.addrs, addr)
 		lis.ams = append(lis.ams, acc)
 	}
-	if len(lis.addrs) != 5 {
-		panic(errors.New("create test account error"))
-	}
-	LogInfo("create 5 test account")
+	LogInfof("create %d test account", accnum)
 	return lis
+}
+
+//GetAccount 获取测试账户0-4
+func (lis *TestLis) GetAccount(i int) *Account {
+	return lis.ams[i]
 }
 
 //TimeNow 测试用时间返回
@@ -61,8 +63,7 @@ func (lis *TestLis) OnInit(bi *BlockIndex) error {
 	return bi.RemoveBestValue()
 }
 
-//OnSignTx 当账户没有私钥时调用此方法签名
-//singer 签名器
+//OnSignTx 签名器
 func (lis *TestLis) OnSignTx(signer ISigner) error {
 	_, in, out, _ := signer.GetObjs()
 	pkh, err := out.Script.GetPkh()
@@ -110,10 +111,14 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 }
 
 //NewTestConfig 创建一个测试用的配置
-func NewTestConfig() {
+func NewTestConfig(dir ...string) *Config {
 	conf = &Config{}
 	conf.nodeid = conf.GenUInt64()
-	conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
+	if len(dir) > 0 && dir[0] != "" {
+		conf.DataDir = dir[0]
+	} else {
+		conf.DataDir = os.TempDir() + Separator + fmt.Sprintf("%d", conf.nodeid)
+	}
 	conf.MinerNum = 1
 	conf.Ver = 10000
 	conf.TCPPort = 9333
@@ -127,10 +132,12 @@ func NewTestConfig() {
 	conf.Seeds = []string{"seed.xginx.com"}
 	conf.flags = [4]byte{'T', 'E', 'S', 'T'}
 	conf.LimitHash = NewUINT256(conf.PowLimit)
+	return conf
 }
 
 //CloseTestBlock 关闭测试用区块链
 func CloseTestBlock(bi *BlockIndex) {
+	LogInfof("remove temp dir = %s", conf.DataDir)
 	bi.Close()
 	os.RemoveAll(conf.DataDir)
 }
@@ -164,11 +171,16 @@ func NewTestOneBlock() error {
 	return nil
 }
 
+//GetTestListener 获取测试监听
+func GetTestListener(bi *BlockIndex) *TestLis {
+	return bi.lptr.(*TestLis)
+}
+
 //NewTestBlockIndex 创建一个测试用区块索引
 //num创建num个区块
 func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
 	//测试配置文件
-	lis := newTestLis()
+	lis := newTestLis(5)
 	if len(miner) > 0 {
 		conf.MinerAddr = miner[0]
 	} else {

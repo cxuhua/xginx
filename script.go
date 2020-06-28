@@ -2,22 +2,152 @@ package xginx
 
 import (
 	"errors"
+	"fmt"
+	"net"
 )
 
 //脚本类型定义
+//Script 第一个字节表示脚本类型
 const (
-	InvalidArb         = ^uint8(0) //无效的仲裁
-	ScriptCoinbaseType = uint8(0)  //coinbase script
-	ScriptLockedType   = uint8(1)  //标准锁定脚本
-	ScriptWitnessType  = uint8(2)  //隔离见证多重签名脚本
+	InvalidArb            = ^uint8(0) //无效的仲裁
+	ScriptCoinbaseType    = uint8(0)  //coinbase script
+	ScriptLockedType      = uint8(1)  //标准锁定脚本 用于输出
+	ScriptWitnessType     = uint8(2)  //隔离见证多重签名脚本 用于输入
+	ScriptTxType          = uint8(3)  //交易脚本 用于控制交易是否打包进区块，是否进入交易池，是否发布上网
+	MaxCoinbaseScriptSize = 256       //最大coinbase脚本长度
 )
+
+//TxScript 交易脚本
+type TxScript struct {
+	Type uint8
+	//脚本最大执行时间，时间一半分配给交易脚本，一半分配给签名脚本
+	//签名脚本每个输入签名只有 n分之一的一半时间 n为输入数量
+	//单位:毫秒
+	ExeTime uint32
+	//执行脚本
+	Exec VarBytes
+}
+
+//Encode 编码
+func (ss TxScript) Encode(w IWriter) error {
+	if err := w.TWrite(ss.Type); err != nil {
+		return err
+	}
+	if err := w.TWrite(ss.ExeTime); err != nil {
+		return err
+	}
+	if err := ss.Exec.Encode(w); err != nil {
+		return err
+	}
+	return nil
+}
+
+//Decode 解码
+func (ss *TxScript) Decode(r IReader) error {
+	if err := r.TRead(&ss.Type); err != nil {
+		return err
+	}
+	if err := r.TRead(&ss.ExeTime); err != nil {
+		return err
+	}
+	if err := ss.Exec.Decode(r); err != nil {
+		return err
+	}
+	return nil
+}
+
+//MergeScript 合并脚本
+func MergeScript(execs ...[]byte) (VarBytes, error) {
+	result := VarBytes{}
+	for _, ext := range execs {
+		result = append(result, ext...)
+	}
+	if result.Len() > MaxExecSize {
+		return nil, errors.New("execs size > MaxExecSize")
+	}
+	return result, nil
+}
+
+//NewTxScript 创建交易脚本
+func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
+	std := &TxScript{Exec: VarBytes{}}
+	std.Type = ScriptTxType
+	std.ExeTime = exetime
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		return nil, err
+	}
+	std.Exec = exec
+	buf := NewWriter()
+	err = std.Encode(buf)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func gettxminsize() int {
+	x := TxScript{}
+	x.Type = ScriptTxType
+	buf := NewWriter()
+	_ = x.Encode(buf)
+	return int(buf.Len())
+}
 
 //Script 脚本定义
 type Script []byte
 
+//Clone 复制脚本
+func (s Script) Clone() Script {
+	n := make(Script, len(s))
+	copy(n, s)
+	return n
+}
+
 //Len 脚本长度
 func (s Script) Len() int {
 	return len(s)
+}
+
+//Check 检测脚本错误
+func (s Script) Check() error {
+	if s.IsCoinBase() {
+		return nil
+	}
+	if s.IsTxScript() {
+		txs, err := s.ToTxScript()
+		if err != nil {
+			return err
+		}
+		if txs.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("tx script size too big")
+		}
+		if txs.ExeTime > MaxExeTime {
+			return fmt.Errorf("tx script exectime too big, ExeTime > %d", MaxExeTime)
+		}
+		return nil
+	}
+	if s.IsLocked() {
+		lcks, err := s.ToLocked()
+		if err != nil {
+			return err
+		}
+		if lcks.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("out script too big")
+		}
+		return nil
+	}
+	if s.IsWitness() {
+		wits, err := s.ToWitness()
+		if err != nil {
+			return err
+		}
+		if wits.Exec.Len() > MaxExecSize {
+			return fmt.Errorf("in script too big")
+		}
+		return nil
+	}
+	return fmt.Errorf("script type error")
 }
 
 //Type 脚本类型
@@ -35,11 +165,15 @@ func getwitnessminsize() int {
 	x.Pks = append(x.Pks, pri.PublicKey().GetPks())
 	buf := NewWriter()
 	_ = x.Encode(buf)
-	return buf.Len()
+	return int(buf.Len())
 }
 
 func getcoinbaseminsize() int {
-	return NewCoinbaseScript(0, []byte{}).Len()
+	s, err := NewCoinbaseScript(0, net.ParseIP("127.0.0.1"))
+	if err != nil {
+		panic(err)
+	}
+	return s.Len()
 }
 
 func getlockedminsize() int {
@@ -47,28 +181,34 @@ func getlockedminsize() int {
 	x.Type = ScriptLockedType
 	buf := NewWriter()
 	_ = x.Encode(buf)
-	return buf.Len()
+	return int(buf.Len())
 }
 
 var (
 	lockedminsize  = getlockedminsize()
 	conbaseminsize = getcoinbaseminsize()
 	witnessminsize = getwitnessminsize()
+	txminsize      = gettxminsize()
 )
 
 //IsCoinBase 是否是coinbase脚本
 func (s Script) IsCoinBase() bool {
-	return s.Len() >= conbaseminsize && s.Len() <= 128 && s[0] == ScriptCoinbaseType
+	return s.Len() >= conbaseminsize && s.Len() <= MaxCoinbaseScriptSize && s[0] == ScriptCoinbaseType
 }
 
 //IsWitness 是否是隔离见证脚本
 func (s Script) IsWitness() bool {
-	return s.Len() >= witnessminsize && s.Len() < AccountKeyMaxSize*128 && s[0] == ScriptWitnessType
+	return s.Len() >= witnessminsize && s.Len() < (AccountKeyMaxSize*128+MaxExecSize) && s[0] == ScriptWitnessType
 }
 
 //IsLocked 是否是锁定脚本
 func (s Script) IsLocked() bool {
-	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxExtSize+4) && s[0] == ScriptLockedType
+	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxMetaSize+MaxExecSize+4) && s[0] == ScriptLockedType
+}
+
+//IsTxScript 是否是交易脚本
+func (s Script) IsTxScript() bool {
+	return s.Len() >= txminsize && s.Len() < (txminsize+MaxExecSize) && s[0] == ScriptTxType
 }
 
 //GetAddress 从锁定脚本获取输出地址
@@ -107,13 +247,8 @@ func (s Script) GetPkh() (HASH160, error) {
 		}
 		return ws.Hash()
 	} else {
-		return pkh, errors.New("script typ not pkh")
+		return pkh, errors.New("script not pkh")
 	}
-}
-
-//Height 获取coinbase中的区块高度
-func (s Script) Height() uint32 {
-	return Endian.Uint32(s[1:5])
 }
 
 //Encode 编码脚本
@@ -146,9 +281,23 @@ func (s *Script) Decode(r IReader) error {
 	return (*VarBytes)(s).Decode(r)
 }
 
+//ToTxScript 如果是锁定脚本
+func (s Script) ToTxScript() (TxScript, error) {
+	rs := TxScript{}
+	if !s.IsTxScript() {
+		return rs, errors.New("script type error")
+	}
+	buf := NewReader(s)
+	err := rs.Decode(buf)
+	if err != nil {
+		return rs, err
+	}
+	return rs, nil
+}
+
 //ToLocked 如果是锁定脚本
-func (s Script) ToLocked() (LockedScript, error) {
-	rs := LockedScript{}
+func (s Script) ToLocked() (*LockedScript, error) {
+	rs := &LockedScript{}
 	if !s.IsLocked() {
 		return rs, errors.New("script type error")
 	}
@@ -161,8 +310,8 @@ func (s Script) ToLocked() (LockedScript, error) {
 }
 
 //ToWitness 如果是隔离见证脚本
-func (s Script) ToWitness() (WitnessScript, error) {
-	wit := WitnessScript{}
+func (s Script) ToWitness() (*WitnessScript, error) {
+	wit := &WitnessScript{}
 	if !s.IsWitness() {
 		return wit, errors.New("witness error")
 	}
@@ -175,26 +324,66 @@ func (s Script) ToWitness() (WitnessScript, error) {
 }
 
 //NewCoinbaseScript 创建coinbase脚本
-func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) Script {
+func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) (Script, error) {
+	if len(ip) != net.IPv6len {
+		return nil, fmt.Errorf("ip length error %d", len(ip))
+	}
 	s := Script{ScriptCoinbaseType}
 	hb := []byte{0, 0, 0, 0}
-	//当前块高度必须存在
+	//当前块区块高度
 	Endian.PutUint32(hb, h)
 	s = append(s, hb...)
-	//加入ip地址
+	//加入节点ip地址
 	s = append(s, ip...)
 	//自定义数据
 	for _, v := range bs {
 		s = append(s, v...)
 	}
-	return s
+	if s.Len() > MaxCoinbaseScriptSize {
+		return nil, fmt.Errorf("coinbase script too long  length = %d", s.Len())
+	}
+	return s, nil
+}
+
+//Data 获取coinbase中的自定义数据
+func (s Script) Data() []byte {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return s[5+16:]
+}
+
+//IP 获取coinbase中的区块高度
+func (s Script) IP() []byte {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return s[5 : 5+16]
+}
+
+//Height 获取coinbase中的区块高度
+func (s Script) Height() uint32 {
+	if !s.IsCoinBase() {
+		panic(errors.New("script not coinbase type"))
+	}
+	return Endian.Uint32(s[1:5])
 }
 
 //LockedScript 标准锁定脚本
 type LockedScript struct {
 	Type uint8
 	Pkh  HASH160
-	Ext  VarBytes
+	Meta VarBytes // len < MaxMetaSize
+	Exec VarBytes
+}
+
+//Address 获取地址
+func (ss LockedScript) Address() Address {
+	addr, err := EncodeAddress(ss.Pkh)
+	if err != nil {
+		panic(err)
+	}
+	return addr
 }
 
 //Encode 编码
@@ -205,7 +394,10 @@ func (ss LockedScript) Encode(w IWriter) error {
 	if err := ss.Pkh.Encode(w); err != nil {
 		return err
 	}
-	if err := ss.Ext.Encode(w); err != nil {
+	if err := ss.Meta.Encode(w); err != nil {
+		return err
+	}
+	if err := ss.Exec.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -219,32 +411,37 @@ func (ss *LockedScript) Decode(r IReader) error {
 	if err := ss.Pkh.Decode(r); err != nil {
 		return err
 	}
-	if err := ss.Ext.Decode(r); err != nil {
+	if err := ss.Meta.Decode(r); err != nil {
+		return err
+	}
+	if err := ss.Exec.Decode(r); err != nil {
 		return err
 	}
 	return nil
 }
 
-//NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, exts ...[]byte) (Script, error) {
-	std := &LockedScript{Ext: VarBytes{}}
-	std.Type = ScriptLockedType
-	std.Pkh = pkh
-	for _, ext := range exts {
-		if len(ext) > MaxExtSize {
-			return nil, errors.New("ext size > MAX_EXT_SIZE")
-		}
-		std.Ext = append(std.Ext, ext...)
-		if std.Ext.Len() > MaxExtSize {
-			return nil, errors.New("ext size > MAX_EXT_SIZE")
-		}
-	}
+//ToScript 转换为脚本存储
+func (ss LockedScript) ToScript() (Script, error) {
 	buf := NewWriter()
-	err := std.Encode(buf)
+	err := ss.Encode(buf)
 	if err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+//NewLockedScript 创建锁定脚本
+func NewLockedScript(pkh HASH160, meta string, execs ...[]byte) (*LockedScript, error) {
+	std := &LockedScript{Meta: VarBytes{}, Exec: VarBytes{}}
+	std.Type = ScriptLockedType
+	std.Pkh = pkh
+	std.Meta = []byte(meta)
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		return nil, err
+	}
+	std.Exec = exec
+	return std, nil
 }
 
 //WitnessScript 隔离见证脚本
@@ -255,6 +452,12 @@ type WitnessScript struct {
 	Arb  uint8      //是否启用仲裁
 	Pks  []PKBytes  //公钥
 	Sig  []SigBytes //签名
+	Exec VarBytes   //执行脚本
+}
+
+//ToAccount 转换为账户信息
+func (ss WitnessScript) ToAccount() (*Account, error) {
+	return NewAccountWithPks(ss.Num, ss.Less, ss.Arb != InvalidArb, ss.Pks)
 }
 
 //IsEnableArb 是否启用仲裁
@@ -274,6 +477,9 @@ func (ss WitnessScript) ForID(w IWriter) error {
 		return err
 	}
 	if err := w.TWrite(ss.Arb); err != nil {
+		return err
+	}
+	if err := ss.Exec.Encode(w); err != nil {
 		return err
 	}
 	return nil
@@ -310,6 +516,9 @@ func (ss WitnessScript) Encode(w IWriter) error {
 		if err := sig.Encode(w); err != nil {
 			return err
 		}
+	}
+	if err := ss.Exec.Encode(w); err != nil {
+		return err
 	}
 	return nil
 }
@@ -351,6 +560,9 @@ func (ss *WitnessScript) Decode(r IReader) error {
 		}
 		ss.Sig[i] = sig
 	}
+	if err := ss.Exec.Decode(r); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -359,10 +571,26 @@ func (ss WitnessScript) Hash() (HASH160, error) {
 	return HashPks(ss.Num, ss.Less, ss.Arb, ss.Pks)
 }
 
-//HashPks hash公钥。地址hash也将由这个方法生成
-func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
+//Address 获取地址
+func (ss WitnessScript) Address() Address {
+	pkh, err := ss.Hash()
+	if err != nil {
+		panic(err)
+	}
+	addr, err := EncodeAddress(pkh)
+	if err != nil {
+		panic(err)
+	}
+	return addr
+}
+
+//HashPkh hash公钥。地址hash也将由这个方法生成
+func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) {
 	id := ZERO160
-	if int(num) != len(pks) {
+	if num < 1 || num > AccountKeyMaxSize {
+		return id, errors.New("num outbound")
+	}
+	if int(num) != len(pkhs) {
 		return id, errors.New("pub num error")
 	}
 	if less > num {
@@ -384,14 +612,24 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	if err := w.TWrite(arb); err != nil {
 		return id, err
 	}
-	for _, pk := range pks {
-		err := w.TWrite(pk[:])
+	for _, pkh := range pkhs {
+		err := w.TWrite(pkh)
 		if err != nil {
 			return id, err
 		}
 	}
 	id = Hash160From(w.Bytes())
 	return id, nil
+}
+
+//HashPks hash公钥。地址hash也将由这个方法生成
+func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
+	pkhs := []HASH256{}
+	for _, pk := range pks {
+		pkh := Hash256From(pk[:])
+		pkhs = append(pkhs, pkh)
+	}
+	return HashPkh(num, less, arb, pkhs)
 }
 
 //ToScript 转换为脚本存储

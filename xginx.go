@@ -27,6 +27,8 @@ func Run(lis IListener) {
 	conf := InitConfig()
 	defer conf.Close()
 
+	LogInfof("xginx run config name = %s debug=%b", conf.Name, *IsDebug)
+
 	ps := GetPubSub()
 	defer ps.Shutdown()
 
@@ -41,6 +43,7 @@ func Run(lis IListener) {
 
 	Miner.Start(ctx, lis)
 
+	//延迟回调
 	time.Sleep(time.Millisecond * 300)
 	lis.OnStart()
 

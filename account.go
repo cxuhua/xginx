@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 )
 
 // 账号最大的私钥数量
@@ -23,13 +24,27 @@ type AccountJSON struct {
 //PrivatesMap 私钥存储结构
 type PrivatesMap map[HASH160]*PrivateKey
 
+//PublicArray 公钥数据
+type PublicArray []*PublicKey
+
 //Account 账号地址
+//可以包含多个签名，但正确签名数量至少是less指定的数量
+//如果启用了仲裁功能，只需要仲裁签名正确也可以通过签名
 type Account struct {
-	Num  uint8        //总的密钥数量
-	Less uint8        //至少需要签名的数量
-	Arb  uint8        //仲裁，当less  < num时可启用，必须是最后一个公钥
-	Pubs []*PublicKey //所有的密钥公钥
-	Pris PrivatesMap  //公钥对应的私钥
+	Num  uint8       //总的密钥数量
+	Less uint8       //至少需要签名的数量
+	Arb  uint8       //仲裁，当less  < num时可启用，必须是最后一个公钥
+	Pubs PublicArray //所有的密钥公钥
+	Pris PrivatesMap //公钥对应的私钥,按公钥pkh锁应保存
+}
+
+//LoadAccountWithFile 从文件加载证书
+func LoadAccountWithFile(file string, pass ...string) (*Account, error) {
+	dat, err := ioutil.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	return LoadAccount(string(dat), pass...)
 }
 
 //LoadAccount 从导出的数据加载账号
@@ -81,8 +96,8 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
-//VerifyAll 验证签名
-func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
+//VerifyAll 验证签名.返回正确的签名数量
+func (ap Account) VerifyAll(hv []byte, sigs []SigBytes) error {
 	less := int(ap.Less)
 	num := int(ap.Num)
 	if len(ap.Pubs) != num {
@@ -91,18 +106,19 @@ func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
 	if num < less {
 		return errors.New("pub num error,num must >= less")
 	}
+	//逐个验证公钥
 	for i, k := 0, 0; i < len(sigs) && k < len(ap.Pubs); {
-		sig, err := NewSigValue(sigs[i])
+		sig, err := NewSigValue(sigs[i][:])
 		if err != nil {
 			return err
 		}
-		vok := ap.Pubs[i].Verify(hv, sig)
+		vok := ap.Pubs[k].Verify(hv, sig)
 		if vok {
 			less--
 			i++
 		}
-		//如果启用仲裁，并且当前仲裁验证成功立即返回
-		if vok && ap.IsEnableArb() && ap.Arb == uint8(k) {
+		//如果启用仲裁，并且当前仲裁验证成功立即返回,启用情况下必须是最后一个
+		if vok && ap.IsEnableArb() && ap.Arb == ap.Num-1 {
 			less = 0
 		}
 		if less == 0 {
@@ -117,14 +133,14 @@ func (ap Account) VerifyAll(hv []byte, sigs [][]byte) error {
 }
 
 //SignAll 获取账号所有签名
-func (ap Account) SignAll(hv []byte) ([][]byte, error) {
-	rets := [][]byte{}
+func (ap Account) SignAll(hv []byte) ([]SigBytes, error) {
+	rets := []SigBytes{}
 	for idx := range ap.Pubs {
 		sig, err := ap.Sign(idx, hv)
 		if err != nil {
 			continue
 		}
-		rets = append(rets, sig.Bytes())
+		rets = append(rets, sig)
 	}
 	if len(rets) == 0 {
 		return nil, errors.New("miss sigs")
@@ -148,7 +164,7 @@ func (ap Account) Sign(pi int, hv []byte) (SigBytes, error) {
 }
 
 //NewWitnessScript 生成未带有签名的脚本对象
-func (ap Account) NewWitnessScript() *WitnessScript {
+func (ap Account) NewWitnessScript(execs ...[]byte) *WitnessScript {
 	w := &WitnessScript{}
 	w.Type = ScriptWitnessType
 	w.Num = ap.Num
@@ -159,16 +175,29 @@ func (ap Account) NewWitnessScript() *WitnessScript {
 		w.Pks = append(w.Pks, pub.GetPks())
 	}
 	w.Sig = []SigBytes{}
+	exec, err := MergeScript(execs...)
+	if err != nil {
+		panic(err)
+	}
+	w.Exec = exec
 	return w
 }
 
 //NewLockedScript 生成锁定脚本
-func (ap Account) NewLockedScript(vbs ...[]byte) (Script, error) {
+func (ap Account) NewLockedScript(meta string, exec ...[]byte) (Script, error) {
 	pkh, err := ap.GetPkh()
 	if err != nil {
 		return nil, err
 	}
-	return NewLockedScript(pkh, vbs...)
+	lcks, err := NewLockedScript(pkh, meta, exec...)
+	if err != nil {
+		return nil, err
+	}
+	script, err := lcks.ToScript()
+	if err != nil {
+		return nil, err
+	}
+	return script, nil
 }
 
 //
@@ -194,7 +223,7 @@ func (ap *Account) Load(s string, pass ...string) error {
 	if err != nil {
 		return err
 	}
-	ap.Pubs = []*PublicKey{}
+	ap.Pubs = PublicArray{}
 	ap.Pris = PrivatesMap{}
 	aj := &AccountJSON{}
 	err = json.Unmarshal(data, aj)
@@ -225,7 +254,17 @@ func (ap *Account) Load(s string, pass ...string) error {
 	return ap.Check()
 }
 
+//DumpWithFile 导出到文件
+func (ap Account) DumpWithFile(file string, ispri bool, pass ...string) error {
+	body, err := ap.Dump(ispri, pass...)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(file, []byte(body), 0x666)
+}
+
 //Dump 导出账号信息
+//ispri 是否导出私钥
 func (ap Account) Dump(ispri bool, pass ...string) (string, error) {
 	aj := AccountJSON{
 		Num:  ap.Num,
