@@ -12,7 +12,6 @@
   "pow_limit": "000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "pow_time":1209600,
   "pow_span": 2016,
-  "addr_prefix": "st",
   "seeds":["seed.xginx.com"],
   "genesis": "00061abd4ef6edec7fecd0a78d6178e5c90ac8b2d2d78028242346b1299a2f58"
 }

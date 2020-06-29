@@ -12,9 +12,9 @@ import (
 
 //错误定义
 var (
-	// 到达第一个
+	//ErrArriveFirstBlock 到达第一个
 	ErrArriveFirstBlock = errors.New("arrive first block")
-	// 空链
+	//ErrEmptyBlockChain 空链
 	ErrEmptyBlockChain = errors.New("this is empty chain")
 	//ErrHeadersScope 当获取到的区块头在链中无法找到时
 	ErrHeadersScope = errors.New("all hds not in scope")

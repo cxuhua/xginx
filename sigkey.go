@@ -13,9 +13,16 @@ import (
 
 //公钥定义
 const (
-	PublicKeySize  = 33
+	//公钥长度
+	PublicKeySize = 33
+	//偶数公钥前缀
 	P256PubKeyEven = byte(0x02)
-	P256PubKeyOdd  = byte(0x03)
+	//奇数公钥前缀
+	P256PubKeyOdd = byte(0x03)
+	//公钥ID前缀
+	PublicIDPrefix = "pk"
+	//地址前缀
+	AddressPrefix = "st"
 )
 
 //算法
@@ -569,7 +576,7 @@ func EncodePublicHash(pkh HASH256) (string, error) {
 	ver := byte(0)
 	b := []byte{ver, byte(len(pkh))}
 	b = append(b, pkh[:]...)
-	addr, err := SegWitAddressEncode("pk", b)
+	addr, err := SegWitAddressEncode(PublicIDPrefix, b)
 	if err != nil {
 		return "", err
 	}
@@ -578,13 +585,12 @@ func EncodePublicHash(pkh HASH256) (string, error) {
 
 //DecodePublicHash 解码公钥hash
 func DecodePublicHash(addr string) (HASH256, error) {
-	st := "pk"
 	hv := HASH256{}
 	hrp, b, err := SegWitAddressDecode(addr)
 	if err != nil {
 		return hv, err
 	}
-	if hrp != st {
+	if hrp != PublicIDPrefix {
 		return hv, errors.New("public hash string prefix error")
 	}
 	if b[0] != 0 {
@@ -616,26 +622,18 @@ func GetAddressWithID(num uint8, less uint8, arb uint8, ids []string) (Address, 
 
 //EncodeAddress 编码地址
 func EncodeAddress(pkh HASH160) (Address, error) {
-	st := "st"
-	if conf != nil {
-		st = conf.AddrPrefix
-	}
-	a, err := EncodeAddressWithPrefix(st, pkh)
+	a, err := EncodeAddressWithPrefix(AddressPrefix, pkh)
 	return Address(a), err
 }
 
 //DecodeAddress 解码地址
 func DecodeAddress(addr Address) (HASH160, error) {
-	st := "st"
-	if conf != nil {
-		st = conf.AddrPrefix
-	}
 	hv := HASH160{}
 	hrp, b, err := SegWitAddressDecode(string(addr))
 	if err != nil {
 		return hv, err
 	}
-	if hrp != st {
+	if hrp != AddressPrefix {
 		return hv, errors.New("address prefix error")
 	}
 	if b[0] != 0 {

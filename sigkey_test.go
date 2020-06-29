@@ -11,9 +11,9 @@ func TestPublicHash(t *testing.T) {
 	bb := []byte{1, 2, 3, 4}
 	hv1 := Hash256From(bb)
 	//pk1q3hj89c3ejcgt42nlsjzq237dgz2rfcclt5aaw8jdj3ljswr5l8qq9j7v4g
-	s, err := EncodePublicHash(hv1)
-	assert.NoError(t, err, s)
-	hv2, err := DecodePublicHash(s)
+	id, err := EncodePublicHash(hv1)
+	assert.NoError(t, err, id)
+	hv2, err := DecodePublicHash(id)
 	assert.NoError(t, err)
 	assert.Equal(t, hv1, hv2)
 }

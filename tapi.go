@@ -128,7 +128,6 @@ func NewTestConfig(dir ...string) *Config {
 	conf.PowLimit = "00ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	conf.PowSpan = 2016
 	conf.PowTime = 2016 * 60 * 10
-	conf.AddrPrefix = "st"
 	conf.Seeds = []string{"seed.xginx.com"}
 	conf.flags = [4]byte{'T', 'E', 'S', 'T'}
 	conf.LimitHash = NewUINT256(conf.PowLimit)
