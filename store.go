@@ -78,18 +78,18 @@ type TRImp interface {
 
 //DBImp 数据基本操作接口
 type DBImp interface {
-	Has(ks ...[]byte) bool
-	Put(ks ...[]byte) error
-	Get(ks ...[]byte) ([]byte, error)
-	Del(ks ...[]byte) error
-	Write(b *Batch, sync ...bool) error
-	Compact(r *Range) error
-	Close()
-	Iterator(slice ...*Range) *Iterator
-	Sync()
-	Transaction() (TRImp, error)
-	NewBatch() *Batch
-	LoadBatch(d []byte) (*Batch, error)
+	Has(ks ...[]byte) bool              //key是否存在
+	Put(ks ...[]byte) error             //添加键值
+	Get(ks ...[]byte) ([]byte, error)   //根据key获取值
+	Del(ks ...[]byte) error             //删除key
+	Write(b *Batch, sync ...bool) error //批量写
+	Compact(r *Range) error             //合并
+	Close()                             //关闭数据库
+	Iterator(slice ...*Range) *Iterator //搜索
+	Sync()                              //同步到磁盘
+	Transaction() (TRImp, error)        //创建事务
+	NewBatch() *Batch                   //创建批量
+	LoadBatch(d []byte) (*Batch, error) //加载批量数据
 }
 
 //数据前缀定义

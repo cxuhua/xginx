@@ -257,7 +257,10 @@ func (db *leveldbimp) Transaction() (TRImp, error) {
 func (db *leveldbimp) Sync() {
 	tr, err := db.lptr.OpenTransaction()
 	if err == nil {
-		_ = tr.Commit()
+		err = tr.Commit()
+	}
+	if err != nil {
+		LogError("sync error", err)
 	}
 }
 
@@ -341,11 +344,29 @@ func (db *leveldbtr) Discard() {
 }
 
 type leveldbstore struct {
-	index DBImp
-	blk   IChunkStore
-	rev   IChunkStore
-	once  sync.Once
-	dir   string
+	index DBImp       //区块索引
+	blk   IChunkStore //区块存储器
+	rev   IChunkStore //回退日志
+	once  sync.Once   //
+	dir   string      //存储路径
+}
+
+//NewDBImp 创建数据库接口
+func NewDBImp(dir string, opts ...*opt.Options) (DBImp, error) {
+	dopt := &opt.Options{
+		OpenFilesCacheCapacity: 16,
+		BlockCacheCapacity:     16 / 2 * opt.MiB,
+		WriteBuffer:            16 / 4 * opt.MiB,
+		Filter:                 filter.NewBloomFilter(10),
+	}
+	if len(opts) > 0 {
+		dopt = opts[0]
+	}
+	sdb, err := leveldb.OpenFile(dir, dopt)
+	if err != nil {
+		return nil, err
+	}
+	return NewDB(sdb), nil
 }
 
 //NewLevelDBStore 创建leveldb存储器
@@ -359,21 +380,6 @@ func (ss *leveldbstore) Sync() {
 	ss.index.Sync()
 	ss.blk.Sync()
 	ss.rev.Sync()
-}
-
-//新建索引数据库
-func (ss *leveldbstore) newdb() (DBImp, error) {
-	opts := &opt.Options{
-		OpenFilesCacheCapacity: 16,
-		BlockCacheCapacity:     16 / 2 * opt.MiB,
-		WriteBuffer:            16 / 4 * opt.MiB,
-		Filter:                 filter.NewBloomFilter(10),
-	}
-	sdb, err := leveldb.OpenFile(ss.dir, opts)
-	if err != nil {
-		return nil, err
-	}
-	return NewDB(sdb), nil
 }
 
 //新建存储数据库
@@ -394,7 +400,7 @@ func (ss *leveldbstore) Init(arg ...interface{}) {
 			panic(errors.New("args error"))
 		}
 		ss.dir = arg[0].(string)
-		if db, err := ss.newdb(); err != nil {
+		if db, err := NewDBImp(ss.dir); err != nil {
 			panic(err)
 		} else {
 			ss.index = db
