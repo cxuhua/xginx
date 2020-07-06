@@ -27,7 +27,7 @@ func Run(lis IListener) {
 	conf := InitConfig()
 	defer conf.Close()
 
-	LogInfof("xginx run config name = %s debug=%b", conf.Name, *IsDebug)
+	LogInfof("xginx run config name = %s", conf.Name)
 
 	ps := GetPubSub()
 	defer ps.Shutdown()

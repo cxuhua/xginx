@@ -69,7 +69,7 @@ func (lis *Listener) OnInit(bi *BlockIndex) error {
 	LogInfo("MinerAddr =", lis.MinerAddr())
 	//如果是空链需要写入第一个创世区块
 	if bv := bi.GetBestValue(); !bv.IsValid() {
-		bi.WriteGenesis()
+		//bi.WriteGenesis()
 	}
 	return nil
 }

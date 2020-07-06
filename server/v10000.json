@@ -2,7 +2,7 @@
   "name":"release v1.0.0",
   "data_dir": "/Users/xuhua/datadir",
   "confirms": 6,
-  "miner_num": 2,
+  "miner_num": 4,
   "miner_addr": "st1qwgpep2ge4jj6tkpmxq5dy0wjmlk5qdd7srrz3n",
   "version":10000,
   "tcp_port": 9333,
