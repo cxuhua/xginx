@@ -34,7 +34,7 @@ func (t NTType) String() string {
 		return "NT_INV"
 	case NtGetInv:
 		return "NT_GET_INV"
-	case NvTx:
+	case NtTx:
 		return "NT_TX"
 	case NtBlock:
 		return "NT_BLOCK"
@@ -84,7 +84,7 @@ const (
 	//获取交易或者区块
 	NtGetInv = NTType(7)
 	//获取交易的返回
-	NvTx = NTType(8)
+	NtTx = NTType(8)
 	//获取区块的返回
 	NtBlock = NTType(9)
 	//获取区块按高度
@@ -105,6 +105,8 @@ const (
 	//获取内存交易池
 	NtGetTxPool = NTType(19)
 	NtTxPool    = NTType(20)
+	//广播定制消息
+	NtBroadInfo = NTType(21)
 	//广播包头和响应,当广播消息时只发送广播包头，收到包头如果确定无需要收取数据再请求包数据
 	NtBroadPkg = NTType(0xf0)
 	NtBroadAck = NTType(0xf1)

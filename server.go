@@ -482,26 +482,37 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			if !ok {
 				break
 			}
-			if msg, ok := m.m.(*MsgAddrs); ok && len(msg.Addrs) > 0 {
-				err := s.recvMsgAddrs(m.c, msg)
-				if err != nil {
-					LogError(err)
+			typ := m.m.Type()
+			switch typ {
+			case NtAddrs:
+				msg := m.m.(*MsgAddrs);
+				if len(msg.Addrs) > 0 {
+					err := s.recvMsgAddrs(m.c, msg)
+					if err != nil {
+						LogError(err)
+					}
 				}
-			} else if msg, ok := m.m.(*MsgBlock); ok {
+			case NtBlock:
+				msg := m.m.(*MsgBlock)
 				err := s.recvMsgBlock(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvBlock, err))
 				}
-			} else if msg, ok := m.m.(*MsgTx); ok {
+			case NtTx:
+				msg := m.m.(*MsgTx)
 				err := s.recvMsgTx(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
 				}
-			} else if msg, ok := m.m.(*MsgHeaders); ok {
+			case NtHeaders:
+				msg :=  m.m.(*MsgHeaders)
 				err := s.recvMsgHeaders(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))
 				}
+			case NtBroadInfo:
+				msg := m.m.(*MsgBroadInfo)
+				s.BroadMsg(msg, m.c)
 			}
 			//统一回调
 			if msg, ok := m.m.(MsgIO); ok {

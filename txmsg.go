@@ -428,7 +428,7 @@ func (m MsgTx) ID() (MsgID, error) {
 
 //Type 消息类型
 func (m MsgTx) Type() NTType {
-	return NvTx
+	return NtTx
 }
 
 //Add 添加交易
