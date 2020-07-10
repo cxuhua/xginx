@@ -130,7 +130,7 @@ func (s *TCPServer) DoOpt(opt int) {
 	s.dopt <- opt
 }
 
-//Addrs 获取节点保留的地址
+//Addrs 获取节点保存的地址
 func (s *TCPServer) Addrs() []*AddrNode {
 	s.addrs.mu.RLock()
 	defer s.addrs.mu.RUnlock()
