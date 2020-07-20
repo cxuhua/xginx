@@ -396,6 +396,7 @@ func (s *TCPServer) recvMsgBlock(c *Client, msg *MsgBlock) error {
 	if msg.IsNewBlock() {
 		s.BroadMsg(msg, c)
 	}
+	//如果区块合法,发送新区块通知
 	ps.Pub(msg.Blk, NewRecvBlockTopic)
 	return nil
 }
@@ -482,8 +483,7 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			if !ok {
 				break
 			}
-			typ := m.m.Type()
-			switch typ {
+			switch  m.m.Type() {
 			case NtAddrs:
 				msg := m.m.(*MsgAddrs);
 				if len(msg.Addrs) > 0 {
@@ -523,7 +523,7 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			s.reqMsgGetBlock()
 			s.dt.Reset(time.Second * 5)
 		case <-s.pt.C:
-			//重连设置
+			//重连更新
 			if s.ConnNum() < conf.MaxConn {
 				s.tryConnect()
 			}
@@ -599,11 +599,12 @@ func (s *TCPServer) run() {
 			LogError("conn arrive max,ignore", conn)
 			//超过最大连接直接关闭
 			if err == nil {
-				conn.Close()
+				_ = conn.Close()
 			}
 			continue
 		}
 		if err == nil {
+			//开启新的协程处理新链接
 			delay = 0
 			c := s.NewClientWithConn(conn)
 			c.typ = ClientIn
@@ -625,6 +626,7 @@ func (s *TCPServer) run() {
 			time.Sleep(delay)
 			continue
 		} else {
+			//发生错误退出
 			s.err = err
 			s.cfun()
 			break

@@ -12,7 +12,7 @@ import (
 const (
 	//MaxCompressUInt 压缩金额可存储的最大数字
 	MaxCompressUInt = uint64(0b1111 << 57)
-	//Coin 倍率
+	//Coin 分割系数 1Coin 可分割1000份
 	Coin = Amount(1000)
 	// MaxMoney < MaxCompressUInt
 	MaxMoney = 21000000 * Coin

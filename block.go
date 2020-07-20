@@ -15,7 +15,7 @@ const (
 	//最大执行脚本长度
 	MaxExecSize = 1024 * 2
 	//最大meta数据长度
-	MaxMetaSize = 2014 * 4
+	MaxMetaSize = 1024 * 4
 	//默认1000毫秒执行时间 (ms)
 	DefaultExeTime = 1000
 	//最大执行时间
@@ -717,10 +717,6 @@ func (blk *BlockInfo) CheckTxs(bi *BlockIndex, csp bool) error {
 		}
 		//检测每个交易
 		if err := tx.Check(bi, csp); err != nil {
-			return err
-		}
-		//存入缓存
-		if err := bi.SetTx(tx); err != nil {
 			return err
 		}
 	}

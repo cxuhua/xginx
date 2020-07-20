@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru"
 	"io/ioutil"
 	"sync"
 
@@ -276,7 +277,7 @@ type BlockIndex struct {
 	lis   *list.List                //区块头列表
 	hmap  map[uint32]*list.Element  //按高度缓存
 	imap  map[HASH256]*list.Element //按id缓存
-	lru   *IndexCacher              //lru缓存
+	lru   *lru.Cache              //lru缓存
 	blkdb IBlkStore                 //区块存储和索引
 }
 
@@ -317,7 +318,7 @@ func (bi *BlockIndex) NewMsgTxMerkle(id HASH256) (*MsgTxMerkle, error) {
 
 //CacheSize 获取缓存大小
 func (bi *BlockIndex) CacheSize() int {
-	return bi.lru.Size()
+	return bi.lru.Len()
 }
 
 //NewIter 创建一个区块链迭代器
@@ -507,32 +508,26 @@ func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
 
 //LoadBlock 加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
-	var rerr error = nil
-	hptr := bi.lru.Get(id, func() (size int, value Value) {
-		ele, has := bi.imap[id]
-		if !has {
-			return 0, nil
-		}
-		smeta := ele.Value.(*TBEle)
-		bptr := &BlockInfo{}
-		lmeta, err := bi.loadTo(id, bptr)
-		if err != nil {
-			rerr = err
-			return 0, nil
-		}
-		if !lmeta.Hash().Equal(smeta.Hash()) {
-			return 0, nil
-		}
-		bptr.Meta = smeta
-		return smeta.Blk.Len.ToInt(), bptr
-	})
-	if rerr != nil {
-		return nil, rerr
+	hptr,ok := bi.lru.Get(id)
+	if ok {
+		return hptr.(*BlockInfo),nil
 	}
-	if hptr == nil {
-		return nil, errors.New("load block failed")
+	ele, has := bi.imap[id]
+	if !has {
+		return nil,fmt.Errorf("id %v miss",id)
 	}
-	return hptr.Value().(*BlockInfo), nil
+	smeta := ele.Value.(*TBEle)
+	bptr := &BlockInfo{}
+	lmeta, err := bi.loadTo(id, bptr)
+	if err != nil {
+		return nil,err
+	}
+	if !lmeta.Hash().Equal(smeta.Hash()) {
+		return nil,fmt.Errorf("load blockinfo err hash error")
+	}
+	bptr.Meta = smeta
+	bi.lru.Add(id,bptr)
+	return bptr,nil
 }
 
 //断开最后一个内存中的头
@@ -830,25 +825,20 @@ func (bi *BlockIndex) islinkback(meta *TBMeta) (uint32, HASH256, bool) {
 //LoadTX 从链中获取一个交易
 func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	//从缓存和区块获取
-	hptr := bi.lru.Get(id, func() (size int, value Value) {
-		txv, err := bi.LoadTxValue(id)
-		if err != nil {
-			return 0, nil
-		}
-		tx, err := txv.GetTX(bi)
-		if err != nil {
-			return 0, nil
-		}
-		buf := NewWriter()
-		if err := tx.Encode(buf); err != nil {
-			return 0, nil
-		}
-		return buf.Len(), tx
-	})
-	if hptr == nil {
-		return nil, errors.New("not found")
+	hptr, ok := bi.lru.Get(id)
+	if ok {
+		return hptr.(*TX),nil
 	}
-	return hptr.Value().(*TX), nil
+	txv, err := bi.LoadTxValue(id)
+	if err != nil {
+		return nil,err
+	}
+	tx, err := txv.GetTX(bi)
+	if err != nil {
+		return nil,err
+	}
+	bi.lru.Add(id,tx)
+	return tx,nil
 }
 
 //HasTxValue 是否存在交易
@@ -930,11 +920,11 @@ func (bi *BlockIndex) cleancache(blk *BlockInfo) {
 		if err != nil {
 			continue
 		}
-		bi.lru.Delete(id)
+		bi.lru.Remove(id)
 	}
 	//清除区块
 	if id, err := blk.ID(); err == nil {
-		bi.lru.Delete(id)
+		bi.lru.Remove(id)
 	}
 }
 
@@ -1310,34 +1300,17 @@ func (bi *BlockIndex) Close() {
 	bi.lptr.OnClose()
 	bi.blkdb.Close()
 	bi.lis.Init()
-	bi.lru.Close()
 	bi.txp.Close()
 	bi.hmap = nil
 	bi.imap = nil
 }
 
-//SetTx 有些交易可能会引用当前区块的中的交易
-//校验成功后会存储到这里给后面的引用到此交易的交易使用
-//这样在调用LoadTx的时候可以查询到
-func (bi *BlockIndex) SetTx(tx *TX) error {
-	id, serr := tx.ID()
-	if serr != nil {
-		return serr
-	}
-	bi.lru.Get(id, func() (size int, value Value) {
-		buf := NewWriter()
-		err := tx.Encode(buf)
-		if err != nil {
-			serr = err
-			return 0, nil
-		}
-		return buf.Len(), tx
-	})
-	return serr
-}
-
 //NewBlockIndex 创建区块链
 func NewBlockIndex(lis IListener) *BlockIndex {
+	lru,err := lru.New(256 * opt.MiB)
+	if err != nil {
+		panic(err)
+	}
 	return &BlockIndex{
 		txp:   NewTxPool(),
 		lptr:  lis,
@@ -1345,6 +1318,6 @@ func NewBlockIndex(lis IListener) *BlockIndex {
 		hmap:  map[uint32]*list.Element{},
 		imap:  map[HASH256]*list.Element{},
 		blkdb: NewLevelDBStore(conf.DataDir),
-		lru:   NewIndexCacher(256 * opt.MiB),
+		lru:   lru,
 	}
 }

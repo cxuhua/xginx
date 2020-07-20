@@ -240,7 +240,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	//订阅新区块和交易删除事件
 	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
-	for !genok {
+loop: for !genok {
 		select {
 		case <-dt.C:
 			ppv := uint64(0)
@@ -265,18 +265,19 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			)
 			dt.Reset(time.Second * MinerLogSeconds)
 		case <-mg.exit:
+			//挖矿停止,查看是否得到区块头
 			if mg.ok {
 				blk.Header = mg.bh
 				genok = true
-				goto finished
+				continue loop
 			}
 		case mbv := <-m.mch:
-			//收到新区块头数据
+			//收到新区块头数据验证成功停止当前挖矿进度
 			if id := mbv.Hash(); CheckProofOfWork(id, blk.Header.Bits) {
 				mg.StopAndWait()
 				blk.Header = mbv.Header()
 				genok = true
-				goto finished
+				continue loop
 			}
 		case chv := <-bch:
 			//如果交易池中的交易被删除，或者收到新的区块检测是否停止区块生成
@@ -297,7 +298,6 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 			return m.cctx.Err()
 		}
 	}
-finished:
 	//取消订阅
 	ps.Unsub(bch)
 	//保存第一个区块
@@ -338,12 +338,15 @@ func (m *minerEngine) SaveFirstBlock(blk *BlockInfo) {
 func (m *minerEngine) processOpt(opt MinerAct) {
 	switch opt.Opt {
 	case OptSendHeadBytes:
+		//收到区块头
 		if bh, ok := opt.Arg.(HeaderBytes); ok {
 			m.mch <- bh
 		}
 	case OptStopGenBlock:
+		//停止挖矿
 		m.sch <- true
 	case OptGenBlock:
+		//收到新的挖矿请求
 		ver, ok := opt.Arg.(uint32)
 		if !ok {
 			LogError("OptGetBlock args type error", opt.Arg)

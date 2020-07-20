@@ -2,6 +2,8 @@ package xginx
 
 import (
 	"fmt"
+	lru "github.com/hashicorp/golang-lru"
+	"github.com/stretchr/testify/require"
 	"log"
 	"math/rand"
 	"testing"
@@ -13,6 +15,23 @@ import (
 	"github.com/alibaba/sentinel-golang/util"
 	"github.com/syndtr/goleveldb/leveldb/filter"
 )
+
+func TestLRUCache(t *testing.T) {
+	c ,err:= lru.New(4096)
+	if err != nil {
+		require.NoError(t,err)
+	}
+	id1 := HASH256{1}
+	id11 := HASH256{1}
+	id2 := HASH256{2}
+	c.Add(id1,"1111")
+	v,ok := c.Get(id11)
+	require.True(t,ok)
+	require.Equal(t,v.(string),"1111")
+	v,ok = c.Get(id2)
+	require.False(t,ok)
+	require.Nil(t,v)
+}
 
 func TestBloom(t *testing.T) {
 	b := filter.NewBloomFilter(10)

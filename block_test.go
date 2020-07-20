@@ -208,7 +208,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.NoError(err)
 	err = ntxp.Load(suite.bi, "txp.dat")
 	req.NoError(err)
-	os.Remove("txp.dat")
+	_ = os.Remove("txp.dat")
 	req.Equal(1, ntxp.Len())
 
 	txs := bp.AllTxs()

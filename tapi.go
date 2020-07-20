@@ -138,7 +138,7 @@ func NewTestConfig(dir ...string) *Config {
 func CloseTestBlock(bi *BlockIndex) {
 	LogInfof("remove temp dir = %s", conf.DataDir)
 	bi.Close()
-	os.RemoveAll(conf.DataDir)
+	_ = os.RemoveAll(conf.DataDir)
 }
 
 //GetTestAccount 获取测试用账号
