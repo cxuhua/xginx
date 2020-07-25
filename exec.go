@@ -1100,7 +1100,7 @@ func compileExecScript(ctx context.Context, name string, typ int, codes ...[]byt
 	//拼接代码
 	buf := NewReadWriter()
 	for _, vb := range codes {
-		buf.WriteFull(vb)
+		_ = buf.WriteFull(vb)
 	}
 	if *IsDebug {
 		LogInfo(string(buf.Bytes()))

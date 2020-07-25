@@ -110,6 +110,13 @@ func calcbits(bi *BlockIndex, blk *BlockInfo) {
 	}
 }
 
+//NewTempDir 创建一个随机的临时目录
+func NewTempDir() string {
+	conf := &Config{}
+	rid := conf.GenUInt64()
+	return os.TempDir() + Separator + fmt.Sprintf("%d", rid)
+}
+
 //NewTestConfig 创建一个测试用的配置
 func NewTestConfig(dir ...string) *Config {
 	conf = &Config{}

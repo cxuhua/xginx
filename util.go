@@ -43,6 +43,13 @@ func EndianUInt32(u32 uint32) []byte {
 	return hb
 }
 
+//EndianUInt64 用于排序
+func EndianUInt64(u64 uint64) []byte {
+	hb := []byte{0, 0, 0, 0, 0, 0, 0, 0}
+	binary.BigEndian.PutUint64(hb, u64)
+	return hb
+}
+
 //HashDump 将数据导出并添加校验，pass存在将进行加密
 func HashDump(b []byte, pass ...string) (string, error) {
 	hash := Hash160(b)

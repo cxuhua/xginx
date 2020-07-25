@@ -107,6 +107,7 @@ func NewPrefix(p []byte) *Range {
 //Iterator 查询迭代器
 type Iterator struct {
 	iter iterator.Iterator
+	rptr *Range
 }
 
 //Close 关闭
@@ -190,9 +191,13 @@ func (db *leveldbimp) Iterator(slice ...*Range) *Iterator {
 	if len(slice) > 0 {
 		rptr = slice[0].r
 	}
-	return &Iterator{
+	iter := &Iterator{
 		iter: db.lptr.NewIterator(rptr, opts),
 	}
+	if len(slice) > 0 {
+		iter.rptr = slice[0]
+	}
+	return iter
 }
 
 func (db *leveldbimp) Compact(r *Range) error {

@@ -4,9 +4,10 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru"
 	"io/ioutil"
 	"sync"
+
+	lru "github.com/hashicorp/golang-lru"
 
 	"github.com/syndtr/goleveldb/leveldb/opt"
 )
@@ -277,7 +278,7 @@ type BlockIndex struct {
 	lis   *list.List                //区块头列表
 	hmap  map[uint32]*list.Element  //按高度缓存
 	imap  map[HASH256]*list.Element //按id缓存
-	lru   *lru.Cache              //lru缓存
+	lru   *lru.Cache                //lru缓存
 	blkdb IBlkStore                 //区块存储和索引
 }
 
@@ -508,26 +509,26 @@ func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
 
 //LoadBlock 加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
-	hptr,ok := bi.lru.Get(id)
+	hptr, ok := bi.lru.Get(id)
 	if ok {
-		return hptr.(*BlockInfo),nil
+		return hptr.(*BlockInfo), nil
 	}
 	ele, has := bi.imap[id]
 	if !has {
-		return nil,fmt.Errorf("id %v miss",id)
+		return nil, fmt.Errorf("id %v miss", id)
 	}
 	smeta := ele.Value.(*TBEle)
 	bptr := &BlockInfo{}
 	lmeta, err := bi.loadTo(id, bptr)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	if !lmeta.Hash().Equal(smeta.Hash()) {
-		return nil,fmt.Errorf("load blockinfo err hash error")
+		return nil, fmt.Errorf("load blockinfo err hash error")
 	}
 	bptr.Meta = smeta
-	bi.lru.Add(id,bptr)
-	return bptr,nil
+	bi.lru.Add(id, bptr)
+	return bptr, nil
 }
 
 //断开最后一个内存中的头
@@ -827,18 +828,18 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 	//从缓存和区块获取
 	hptr, ok := bi.lru.Get(id)
 	if ok {
-		return hptr.(*TX),nil
+		return hptr.(*TX), nil
 	}
 	txv, err := bi.LoadTxValue(id)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
 	tx, err := txv.GetTX(bi)
 	if err != nil {
-		return nil,err
+		return nil, err
 	}
-	bi.lru.Add(id,tx)
-	return tx,nil
+	bi.lru.Add(id, tx)
+	return tx, nil
 }
 
 //HasTxValue 是否存在交易
@@ -1269,7 +1270,7 @@ func (bi *BlockIndex) LinkBlk(blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	//执行脚本检测,返回错误不能打包
+	//执行交易脚本检测,返回错误不能打包
 	err = blk.ExecScript(bi)
 	if err != nil {
 		return err
@@ -1307,7 +1308,7 @@ func (bi *BlockIndex) Close() {
 
 //NewBlockIndex 创建区块链
 func NewBlockIndex(lis IListener) *BlockIndex {
-	lru,err := lru.New(256 * opt.MiB)
+	lru, err := lru.New(256 * opt.MiB)
 	if err != nil {
 		panic(err)
 	}
