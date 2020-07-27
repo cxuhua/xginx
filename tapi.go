@@ -12,7 +12,6 @@ import (
 
 //TestLis 测试用监听器
 type TestLis struct {
-	Listener
 	addrs []Address
 	acc   map[HASH160]*Account
 	ams   []*Account
@@ -44,6 +43,65 @@ func newTestLis(accnum int) *TestLis {
 	}
 	LogInfof("create %d test account", accnum)
 	return lis
+}
+func (lis *TestLis) OnUnlinkBlock(blk *BlockInfo) {
+
+}
+
+//更新区块数据成功时
+func (lis *TestLis) OnLinkBlock(blk *BlockInfo) {
+
+}
+
+//当块创建时，可以添加，修改块内信息
+func (lis *TestLis) OnNewBlock(blk *BlockInfo) error {
+	return DefaultNewBlock(lis, blk)
+}
+
+//完成区块，当检测完成调用,设置merkle之前
+func (lis *TestLis) OnFinished(blk *BlockInfo) error {
+	return DefaultkFinished(blk)
+}
+
+//当收到网络数据时,数据包根据类型转换成需要的包
+func (lis *TestLis) OnClientMsg(c *Client, msg MsgIO) {
+
+}
+
+//当加载交易列表到区块时可用此方法过滤不加入区块的
+//调用 AddTxs 时会触发
+func (lis *TestLis) OnLoadTxs(txs []*TX) []*TX {
+	return txs
+}
+
+//链关闭时
+func (lis *TestLis) OnClose() {
+
+}
+
+//当服务启动后会调用一次
+func (lis *TestLis) OnStart() {
+
+}
+
+//系统结束时
+func (lis *TestLis) OnStop() {
+
+}
+
+//当交易进入交易池之前，返回错误不会进入交易池
+func (lis *TestLis) OnTxPool(tx *TX) error {
+	return nil
+}
+
+//当交易池的交易被替换时
+func (lis *TestLis) OnTxPoolRep(old *TX, new *TX) {
+
+}
+
+//GetAccount 获取测试账户0-4
+func (lis *TestLis) MinerAddr() Address {
+	return lis.addrs[0]
 }
 
 //GetAccount 获取测试账户0-4
@@ -184,14 +242,9 @@ func GetTestListener(bi *BlockIndex) *TestLis {
 
 //NewTestBlockIndex 创建一个测试用区块索引
 //num创建num个区块
-func NewTestBlockIndex(num int, miner ...Address) *BlockIndex {
+func NewTestBlockIndex(num int) *BlockIndex {
 	//测试配置文件
 	lis := newTestLis(5)
-	if len(miner) > 0 {
-		conf.MinerAddr = miner[0]
-	} else {
-		conf.MinerAddr = lis.addrs[0] //0作为矿工账号
-	}
 	//测试区块索引
 	bi := InitBlockIndex(lis)
 	for i := 0; i < num; i++ {

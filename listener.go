@@ -38,85 +38,9 @@ type IListener interface {
 	MinerAddr() Address
 }
 
-//Listener 默认监听器
-type Listener struct {
-}
-
-//MinerAddr 返回矿工地址，默认返回配置中的
-func (lis Listener) MinerAddr() Address {
-	return conf.MinerAddr
-}
-
-//OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
-func (lis *Listener) OnTxPool(tx *TX) error {
-	return nil
-}
-
-//OnLoadTxs 当加载交易时,在AddTxs之前
-func (lis *Listener) OnLoadTxs(txs []*TX) []*TX {
-	return txs
-}
-
-//OnTxPoolRep 当交易被替换
-func (lis *Listener) OnTxPoolRep(old *TX, new *TX) {
-	LogInfof("TX = %v Replace %v", new.MustID(), old.MustID())
-}
-
-//OnInit 首次启动初始化
-func (lis *Listener) OnInit(bi *BlockIndex) error {
-	//
-	LogInfo("MinerAddr =", lis.MinerAddr())
-	//如果是空链需要写入第一个创世区块
-	if bv := bi.GetBestValue(); !bv.IsValid() {
-		bi.WriteGenesis()
-	}
-	return nil
-}
-
-//OnLinkBlock 区块链入时
-func (lis *Listener) OnLinkBlock(blk *BlockInfo) {
-
-}
-
-//OnClientMsg 收到网络信息
-func (lis *Listener) OnClientMsg(c *Client, msg MsgIO) {
-	//LogInfo(msg.Type())
-}
-
-//TimeNow 当前时间戳获取
-func (lis *Listener) TimeNow() uint32 {
-	return uint32(time.Now().Unix())
-}
-
-//OnUnlinkBlock 区块断开
-func (lis *Listener) OnUnlinkBlock(blk *BlockInfo) {
-
-}
-
-//OnStart 启动时
-func (lis *Listener) OnStart() {
-	LogInfo("xginx start")
-}
-
-//OnStop 停止
-func (lis *Listener) OnStop() {
-
-}
-
-//OnSignTx 当账户没有私钥时调用此方法签名
-//singer 签名器
-func (lis *Listener) OnSignTx(signer ISigner) error {
-	return errors.New("not imp OnSignTx")
-}
-
-//OnClose 区块链关闭
-func (lis *Listener) OnClose() {
-	LogInfo("xginx block index close")
-}
-
 //OnNewBlock 当块创建完毕
 //默认创建coinbase交易加入区块为区块第一个交易
-func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
+func DefaultNewBlock(lis IListener, blk *BlockInfo) error {
 	conf := GetConfig()
 	//设置base out script
 	//创建coinbase tx
@@ -155,7 +79,7 @@ func (lis *Listener) OnNewBlock(blk *BlockInfo) error {
 
 //OnFinished 完成区块
 //交易加入完成，在计算难度前
-func (lis *Listener) OnFinished(blk *BlockInfo) error {
+func DefaultkFinished(blk *BlockInfo) error {
 	//处理交易费用
 	if len(blk.Txs) == 0 {
 		return errors.New("coinbase tx miss")

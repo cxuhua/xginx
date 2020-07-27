@@ -19,24 +19,23 @@ var (
 
 //Config 配置加载后只读
 type Config struct {
-	Name      string   `json:"name"`       //配置文件名称
-	Confirms  uint32   `json:"confirms"`   //安全确认数 = 6
-	MinerNum  int      `json:"miner_num"`  //挖掘机数量,=0不会启动协程挖矿
-	MinerAddr Address  `json:"miner_addr"` //矿工默认地址
-	MaxConn   int      `json:"max_conn"`   //最大激活的连接，包括连入和连出的
-	Seeds     []string `json:"seeds"`      //dns seed服务器
-	DataDir   string   `json:"data_dir"`   //数据路径
-	Genesis   string   `json:"genesis"`    //第一个区块
-	LogFile   string   `json:"log_file"`   //日志文件路径
-	PowTime   uint     `json:"pow_time"`   //14 * 24 * 60 * 60=1209600
-	PowLimit  string   `json:"pow_limit"`  //最小难度设置
-	PowSpan   uint32   `json:"pow_span"`   //难度计算间隔 2016
-	Halving   int      `json:"halving"`    //210000减产配置
-	Ver       uint32   `json:"version"`    //节点版本
-	TCPPort   int      `json:"tcp_port"`   //服务端口和ip
-	TCPIp     string   `json:"tcp_ip"`     //节点远程连接ip
-	LimitHash UINT256  `json:"-"`          //最小工作难度
-	Nodes     []string `json:"nodes"`      //配置的可用节点
+	Name      string   `json:"name"`      //配置文件名称
+	Confirms  uint32   `json:"confirms"`  //安全确认数 = 6
+	MinerNum  int      `json:"miner_num"` //挖掘机数量,=0不会启动协程挖矿
+	MaxConn   int      `json:"max_conn"`  //最大激活的连接，包括连入和连出的
+	Seeds     []string `json:"seeds"`     //dns seed服务器
+	DataDir   string   `json:"data_dir"`  //数据路径
+	Genesis   string   `json:"genesis"`   //第一个区块
+	LogFile   string   `json:"log_file"`  //日志文件路径
+	PowTime   uint     `json:"pow_time"`  //14 * 24 * 60 * 60=1209600
+	PowLimit  string   `json:"pow_limit"` //最小难度设置
+	PowSpan   uint32   `json:"pow_span"`  //难度计算间隔 2016
+	Halving   int      `json:"halving"`   //210000减产配置
+	Ver       uint32   `json:"version"`   //节点版本
+	TCPPort   int      `json:"tcp_port"`  //服务端口和ip
+	TCPIp     string   `json:"tcp_ip"`    //节点远程连接ip
+	LimitHash UINT256  `json:"-"`         //最小工作难度
+	Nodes     []string `json:"nodes"`     //配置的可用节点
 	flags     [4]byte  //协议标识
 	logFile   *os.File //日志文件
 	genesis   HASH256  //第一个区块id
