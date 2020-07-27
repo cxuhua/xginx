@@ -843,7 +843,7 @@ func (bi *BlockIndex) LoadTX(id HASH256) (*TX, error) {
 }
 
 //HasTxValue 是否存在交易
-func (bi *BlockIndex) HasTxValue(id HASH256) bool {
+func (bi *BlockIndex) HasTxValue(id HASH256) (bool, error) {
 	return bi.blkdb.Index().Has(TxsPrefix, id[:])
 }
 
@@ -1318,7 +1318,7 @@ func NewBlockIndex(lis IListener) *BlockIndex {
 		lis:   list.New(),
 		hmap:  map[uint32]*list.Element{},
 		imap:  map[HASH256]*list.Element{},
-		blkdb: NewLevelDBStore(conf.DataDir),
+		blkdb: NewLevelDBStore(conf.DataDir + "/blks"),
 		lru:   lru,
 	}
 }

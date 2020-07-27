@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"regexp"
+
+	"github.com/cxuhua/lzma"
 )
 
 //Document 文档关键字查询存储系统
@@ -25,14 +27,55 @@ func (doc Document) TimeBytes() []byte {
 
 func (doc Document) Encode() []byte {
 	w := NewWriter()
-	_ = w.WriteFull(GetTimeBytes(doc.Time))
-	_ = w.WriteFull(doc.Body)
-	return w.Bytes()
+	//压缩标记
+	_, err := w.Write([]byte{0})
+	if err != nil {
+		panic(err)
+	}
+	err = w.WriteFull(GetTimeBytes(doc.Time))
+	if err != nil {
+		panic(err)
+	}
+	err = w.WriteFull(doc.Body)
+	if err != nil {
+		panic(err)
+	}
+	bb := w.Bytes()
+	if len(bb) < 1024 {
+		return bb
+	}
+	//启用1klzma压缩
+	zb, err := lzma.Compress(bb[1:])
+	if err != nil {
+		panic(err)
+	}
+	bb[0] = 1
+	return append(bb[:1], zb...)
+}
+
+//使用内容和时间自动创建id
+func (doc *Document) HashID() HASH160 {
+	doc.ID = Hash160From(doc.Encode())
+	return doc.ID
 }
 
 func (doc *Document) Decode(b []byte) {
-	doc.Time = int64(binary.BigEndian.Uint64(b))
-	doc.Body = b[8:]
+	if len(b) < 1 {
+		panic(fmt.Errorf("body zip flags  error"))
+	}
+	rb := b[1:]
+	if b[0] == 1 {
+		bb, err := lzma.Uncompress(b[1:])
+		if err != nil {
+			panic(err)
+		}
+		rb = bb
+	}
+	if len(rb) < 8 {
+		panic(fmt.Errorf("body bytes error"))
+	}
+	doc.Time = int64(binary.BigEndian.Uint64(rb))
+	doc.Body = rb[8:]
 }
 
 type IDocIter interface {
@@ -44,9 +87,9 @@ type IDocIter interface {
 	Limit(skip int) IDocIter
 	//是否查询包含的所有tags 有损一点性能
 	Tags(v bool) IDocIter
-	//向下迭代
+	//ByTime向下迭代
 	ByNext() IDocIter
-	//向上迭代
+	//ByTime向上迭代
 	ByPrev() IDocIter
 }
 
@@ -64,15 +107,19 @@ type IDocSystem interface {
 	Update(doc ...*Document) error
 	//根据id获取文档内容 qtag是否查询tags
 	Get(id HASH160, qtag ...bool) (*Document, error)
+	//文档是否存在
+	Has(id HASH160) (bool, error)
 	//固定key查询
 	Find(key string) IDocIter
 	//按前缀查询文档
 	Prefix(key string) IDocIter
 	//模糊查询文档使用正则
-	Like(str string) IDocIter
+	Regex(str string) IDocIter
+	//写入磁盘
+	Sync()
 	//关闭文件系统
 	Close()
-	//按时间索引迭代 v = 0 从小到大 v = -1 从大到小
+	//按时间索引迭代
 	ByTime(v ...int64) IDocIter
 }
 
@@ -87,14 +134,16 @@ type leveldbdocsystem struct {
 	db DBImp
 }
 
+func (sys *leveldbdocsystem) Sync() {
+	sys.db.Sync()
+}
+
 func (sys *leveldbdocsystem) Close() {
-	if sys.db != nil {
-		sys.db.Close()
-	}
+	sys.db.Close()
 }
 
 //检测id文档是否存在
-func (sys *leveldbdocsystem) exists(id HASH160) bool {
+func (sys *leveldbdocsystem) Has(id HASH160) (bool, error) {
 	return sys.db.Has(ckprefix, id[:])
 }
 
@@ -103,16 +152,15 @@ func (sys *leveldbdocsystem) AddTag(id HASH160, tags ...string) error {
 	if id.Equal(ZERO160) {
 		return fmt.Errorf("id error nil")
 	}
-	if !sys.exists(id) {
+	if has, err := sys.Has(id); err != nil {
+		return err
+	} else if !has {
 		return fmt.Errorf("doc %v not exists", id)
 	}
 	bt := sys.db.NewBatch()
 	//添加索引
 	for _, tag := range tags {
-		//正向索引key prefix_tag_id ->id
-		bt.Put(fkprefix, []byte(tag), id[:], id[:])
-		//反向索引key prefix_id_tag -> tag
-		bt.Put(bkprefix, id[:], []byte(tag), []byte(tag))
+		sys.settag(bt, tag, id, false)
 	}
 	return sys.db.Write(bt)
 }
@@ -131,13 +179,15 @@ func (sys *leveldbdocsystem) DelTag(id HASH160, tags ...string) error {
 	if id.Equal(ZERO160) {
 		return fmt.Errorf("id error nil")
 	}
-	if !sys.exists(id) {
+	if has, err := sys.Has(id); err != nil {
+		return err
+	} else if !has {
 		return fmt.Errorf("doc %v not exists", id)
 	}
 	bt := sys.db.NewBatch()
 	//删除索引
 	bp := GetDBKey(bkprefix, id[:])
-	//可从方向索引推导出正向索引tag
+	//可从反向索引推导出正向索引tag
 	iter := sys.db.Iterator(NewPrefix(bp))
 	for iter.Next() {
 		tag := iter.Value()
@@ -171,7 +221,9 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	if doc.ID.Equal(ZERO160) {
 		return fmt.Errorf("id error nil")
 	}
-	if sys.exists(doc.ID) {
+	if has, err := sys.Has(doc.ID); err != nil {
+		return err
+	} else if has {
 		return fmt.Errorf("doc %v exists", doc.ID)
 	}
 	//添加索引
@@ -341,6 +393,7 @@ func (sys *leveldbdocsystem) Update(ndoc ...*Document) error {
 	return sys.db.Write(bt)
 }
 
+//查询迭代处理
 type dociter struct {
 	sys     *leveldbdocsystem
 	qprefix bool //前缀查询
@@ -384,14 +437,14 @@ func (it *dociter) Tags(v bool) IDocIter {
 }
 
 //正向获取
-func (it *dociter) newfkdoc(keys []string, id HASH160) (*Document, error) {
+func (it *dociter) newfkdoc(tags []string, id HASH160) (*Document, error) {
 	body, err := it.sys.db.Get(ckprefix, id[:])
 	if err != nil {
 		return nil, err
 	}
 	doc := &Document{}
 	doc.ID = id
-	doc.Tags = keys
+	doc.Tags = tags
 	doc.Decode(body)
 	return doc, nil
 }
@@ -462,7 +515,7 @@ func (it *dociter) eachbytime(fn func(doc *Document) error) error {
 			}
 		}
 		hid := NewHASH160(iter.Value())
-		//前缀和模糊查询时记录反向tags
+		//是否查询相关tags
 		keys := []string{}
 		if it.stags != nil && *it.stags {
 			keys = it.sys.gettags(hid)
@@ -473,7 +526,7 @@ func (it *dociter) eachbytime(fn func(doc *Document) error) error {
 		}
 		doc, err := it.newfkdoc(keys, hid)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if it.limit != nil && limit >= *it.limit {
 			break
@@ -486,10 +539,7 @@ func (it *dociter) eachbytime(fn func(doc *Document) error) error {
 	return nil
 }
 
-func (it *dociter) Each(fn func(doc *Document) error) error {
-	if it.bytime {
-		return it.eachbytime(fn)
-	}
+func (it *dociter) eachquery(fn func(doc *Document) error) error {
 	var fp []byte
 	if it.qfind || it.qprefix {
 		fp = GetDBKey(fkprefix, []byte(it.key))
@@ -524,8 +574,8 @@ func (it *dociter) Each(fn func(doc *Document) error) error {
 		if _, has := gmap[hid]; has {
 			continue
 		}
+		//是否查询相关tags
 		keys := []string{string(kkey)}
-		//前缀和模糊查询时记录反向tags
 		if it.stags != nil && *it.stags {
 			keys = it.sys.gettags(hid)
 		}
@@ -536,7 +586,7 @@ func (it *dociter) Each(fn func(doc *Document) error) error {
 		}
 		doc, err := it.newfkdoc(keys, hid)
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if it.limit != nil && limit >= *it.limit {
 			break
@@ -547,6 +597,13 @@ func (it *dociter) Each(fn func(doc *Document) error) error {
 		limit++
 	}
 	return nil
+}
+
+func (it *dociter) Each(fn func(doc *Document) error) error {
+	if it.bytime {
+		return it.eachbytime(fn)
+	}
+	return it.eachquery(fn)
 }
 
 //按前缀查询文档
@@ -591,7 +648,7 @@ func (sys *leveldbdocsystem) Prefix(key string) IDocIter {
 }
 
 //模糊查询文档
-func (sys *leveldbdocsystem) Like(str string) IDocIter {
+func (sys *leveldbdocsystem) Regex(str string) IDocIter {
 	return &dociter{
 		sys:     sys,
 		qprefix: false,

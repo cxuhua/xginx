@@ -84,7 +84,7 @@ func (lis *transListner) SignTx(singer ISigner, pass ...string) error {
 		return err
 	}
 	wits.Sig = sigs
-	script, err := wits.ToScript()
+	script, err := wits.Final()
 	if err != nil {
 		return err
 	}

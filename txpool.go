@@ -560,8 +560,10 @@ func (pool *TxPool) PushTx(bi *BlockIndex, tx *TX) error {
 		return err
 	}
 	//如果交易已经在区块中忽略
-	if bi.HasTxValue(id) {
-		return errors.New("tx in block idnex")
+	if has, err := bi.HasTxValue(id); err != nil {
+		return err
+	} else if has {
+		return errors.New("tx in block index")
 	}
 	//coinbase不允许进入交易池
 	if tx.IsCoinBase() {

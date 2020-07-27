@@ -100,7 +100,7 @@ type MsgAlert struct {
 //MsgBroadInfo 定制的消息广播
 type MsgBroadInfo struct {
 	Action int8
-	Msg VarBytes
+	Msg    VarBytes
 }
 
 //Type 消息类型
@@ -132,9 +132,7 @@ func (m *MsgBroadInfo) Decode(r IReader) error {
 
 //ID 消息ID
 func (m MsgBroadInfo) ID() (MsgID, error) {
-	w := NewReadWriter()
-	_ = m.Encode(w)
-	return md5.Sum(w.Bytes()), nil
+	return GetDefautMsgID(&m)
 }
 
 //NewMsgAlert 创建消息

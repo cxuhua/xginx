@@ -15,8 +15,8 @@ var (
 )
 
 //GetContext 获取区块链服务context
-func GetContext() (context.Context, context.CancelFunc) {
-	return ctx, cancel
+func GetContext() context.Context {
+	return ctx
 }
 
 //Run 启动区块链服务
@@ -46,12 +46,12 @@ func Run(lis IListener) {
 	//延迟回调
 	time.Sleep(time.Millisecond * 300)
 	lis.OnStart()
+	//必定停止
+	defer lis.OnStop()
 
 	//等候关闭信号
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
-
-	lis.OnStop(sig)
 
 	cancel()
 	LogInfo("recv sig :", sig, ",system start exit")

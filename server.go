@@ -95,7 +95,8 @@ type IServer interface {
 	Stop()
 	Wait()
 	NewClient() *Client
-	BroadMsg(m MsgIO, skips ...*Client)
+	//广播消息,返回发送的目标数量
+	BroadMsg(m MsgIO, skips ...*Client) int
 	DoOpt(opt int)
 	Clients() []*Client
 	Addrs() []*AddrNode
@@ -177,11 +178,12 @@ func (s *TCPServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	return msg
 }
 
-//BroadMsg 如果c不空不会广播给c
-func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) {
+//BroadMsg 如果skips不空不会广播给skips中的链接
+func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	//检测是否在忽略列表中
+	count := 0
 	skipf := func(v *Client) bool {
 		for _, cc := range skips {
 			if cc.Equal(v) {
@@ -196,7 +198,9 @@ func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) {
 			continue
 		}
 		c.BroadMsg(m)
+		count++
 	}
+	return count
 }
 
 //IsAddrOpen 地址是否已经链接
@@ -483,9 +487,9 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 			if !ok {
 				break
 			}
-			switch  m.m.Type() {
+			switch m.m.Type() {
 			case NtAddrs:
-				msg := m.m.(*MsgAddrs);
+				msg := m.m.(*MsgAddrs)
 				if len(msg.Addrs) > 0 {
 					err := s.recvMsgAddrs(m.c, msg)
 					if err != nil {
@@ -505,7 +509,7 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 					m.c.SendMsg(NewMsgError(ErrCodeRecvTx, err))
 				}
 			case NtHeaders:
-				msg :=  m.m.(*MsgHeaders)
+				msg := m.m.(*MsgHeaders)
 				err := s.recvMsgHeaders(m.c, msg)
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))

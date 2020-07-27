@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,10 +74,11 @@ func TestCmpMap(t *testing.T) {
 }
 
 func TestUpdateDocument(t *testing.T) {
+	str := strings.Repeat("zip", 1024)
 	doc1 := &Document{
 		ID:   HASH160{1},
 		Tags: []string{"小学", "中学", "大学", "狗儿子"},
-		Body: []byte("这个是学校文档1"),
+		Body: []byte(str),
 		Time: 90,
 	}
 	fs, err := OpenDocSystem(NewTempDir())
@@ -84,6 +86,9 @@ func TestUpdateDocument(t *testing.T) {
 	defer fs.Close()
 	err = fs.Insert(doc1)
 	require.NoError(t, err)
+	doc3, err := fs.Get(doc1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, doc1.Body, doc3.Body)
 	doc2 := *doc1
 	doc2.Time = 100
 	doc2.Tags = []string{"小学", "中学", "新标签"}
@@ -205,8 +210,8 @@ func TestDocumentInsert(t *testing.T) {
 		{fs.Prefix("小"), 0, 100, 3},
 		{fs.Find("小狗"), 0, 100, 2},
 		{fs.Find("中学"), 0, 100, 1},
-		{fs.Like("金毛"), 0, 100, 2},
-		{fs.Like("狗"), 0, 100, 3},
+		{fs.Regex("金毛"), 0, 100, 2},
+		{fs.Regex("狗"), 0, 100, 3},
 		{fs.Prefix("金"), 0, 1, 1},
 		{fs.Prefix("金"), 0, 0, 0},
 	}

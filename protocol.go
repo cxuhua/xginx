@@ -189,6 +189,16 @@ type MsgIO interface {
 	Decode(r IReader) error
 }
 
+//GetDefautMsgID 获取默认msgid
+func GetDefautMsgID(m MsgIO) (MsgID, error) {
+	w := NewWriter()
+	err := m.Encode(w)
+	if err != nil {
+		return ErrMsgID, err
+	}
+	return md5.Sum(w.Bytes()), nil
+}
+
 //消息错误代码
 const (
 	ErrCodeRecvBlock  = 100001

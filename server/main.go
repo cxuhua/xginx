@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"os"
 
 	"github.com/cxuhua/xginx"
 )
@@ -16,8 +15,8 @@ func (lis *mylist) OnStart() {
 	xginx.LogInfo("my system start")
 }
 
-func (lis *mylist) OnStop(sig os.Signal) {
-	xginx.LogInfo("my system stop sig=", sig)
+func (lis *mylist) OnStop() {
+
 }
 
 func main() {

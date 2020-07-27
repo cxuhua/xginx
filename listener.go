@@ -2,7 +2,6 @@ package xginx
 
 import (
 	"errors"
-	"os"
 	"time"
 )
 
@@ -30,7 +29,7 @@ type IListener interface {
 	//当服务启动后会调用一次
 	OnStart()
 	//系统结束时
-	OnStop(sig os.Signal)
+	OnStop()
 	//当交易进入交易池之前，返回错误不会进入交易池
 	OnTxPool(tx *TX) error
 	//当交易池的交易被替换时
@@ -69,7 +68,7 @@ func (lis *Listener) OnInit(bi *BlockIndex) error {
 	LogInfo("MinerAddr =", lis.MinerAddr())
 	//如果是空链需要写入第一个创世区块
 	if bv := bi.GetBestValue(); !bv.IsValid() {
-		//bi.WriteGenesis()
+		bi.WriteGenesis()
 	}
 	return nil
 }
@@ -100,8 +99,8 @@ func (lis *Listener) OnStart() {
 }
 
 //OnStop 停止
-func (lis *Listener) OnStop(sig os.Signal) {
-	LogInfo("xginx stop sig=", sig)
+func (lis *Listener) OnStop() {
+
 }
 
 //OnSignTx 当账户没有私钥时调用此方法签名

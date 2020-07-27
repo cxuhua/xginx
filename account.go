@@ -173,8 +173,8 @@ func (ap Account) NewWitnessScript(execs ...[]byte) *WitnessScript {
 	w.Pks = []PKBytes{}
 	for _, pub := range ap.Pubs {
 		w.Pks = append(w.Pks, pub.GetPks())
+		w.Sig = append(w.Sig, SigBytes{})
 	}
-	w.Sig = []SigBytes{}
 	exec, err := MergeScript(execs...)
 	if err != nil {
 		panic(err)

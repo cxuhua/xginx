@@ -432,6 +432,9 @@ func (ss LockedScript) ToScript() (Script, error) {
 
 //NewLockedScript 创建锁定脚本
 func NewLockedScript(pkh HASH160, meta string, execs ...[]byte) (*LockedScript, error) {
+	if len(meta) > MaxMetaSize {
+		return nil, fmt.Errorf("meta too long %d", len(meta))
+	}
 	std := &LockedScript{Meta: VarBytes{}, Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
@@ -584,24 +587,38 @@ func (ss WitnessScript) Address() Address {
 	return addr
 }
 
+//CheckAccountArgs 检测账户参数
+func CheckAccountArgs(num uint8, less uint8, arbon bool, pkl int) error {
+	arb := InvalidArb
+	//如果启用了arb,必须是最后一个
+	if arbon {
+		arb = num - 1
+	}
+	if num < 1 || num > AccountKeyMaxSize {
+		return errors.New("num outbound")
+	}
+	if int(num) != pkl {
+		return errors.New("pub num error")
+	}
+	if less > num {
+		return errors.New("args less num error")
+	}
+	if less == num && arb != InvalidArb {
+		return errors.New("args less num arb error")
+	}
+	if arb != InvalidArb && arb != num-1 {
+		return errors.New("args num arb error")
+	}
+	return nil
+}
+
 //HashPkh hash公钥。地址hash也将由这个方法生成
 //生成地址使用公钥hash256，不公开公钥生成收款地址可使用此方法
 func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) {
 	id := ZERO160
-	if num < 1 || num > AccountKeyMaxSize {
-		return id, errors.New("num outbound")
-	}
-	if int(num) != len(pkhs) {
-		return id, errors.New("pub num error")
-	}
-	if less > num {
-		return id, errors.New("args less num error")
-	}
-	if less == num && arb != InvalidArb {
-		return id, errors.New("args less num arb error")
-	}
-	if arb != InvalidArb && arb != num-1 {
-		return id, errors.New("args num arb error")
+	err := CheckAccountArgs(num, less, arb != InvalidArb, len(pkhs))
+	if err != nil {
+		return id, err
 	}
 	w := NewWriter()
 	if err := w.TWrite(num); err != nil {
@@ -631,6 +648,29 @@ func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 		pkhs = append(pkhs, pkh)
 	}
 	return HashPkh(num, less, arb, pkhs)
+}
+
+//FinalScript 完成脚本,检查并精简脚本,签名完成之后调用
+func (ss *WitnessScript) Final() (Script, error) {
+	//检测公钥是否填充完毕
+	for i, v := range ss.Pks {
+		if !v.IsValid() {
+			return nil, fmt.Errorf("public %d miss", i)
+		}
+	}
+	//过滤不合法的签名
+	sigs := []SigBytes{}
+	for _, v := range ss.Sig {
+		if !v.IsValid() {
+			continue
+		}
+		sigs = append(sigs, v)
+	}
+	if len(sigs) == 0 {
+		return nil, fmt.Errorf("sig count error")
+	}
+	ss.Sig = sigs
+	return ss.ToScript()
 }
 
 //ToScript 转换为脚本存储

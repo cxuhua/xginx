@@ -78,7 +78,7 @@ type TRImp interface {
 
 //DBImp 数据基本操作接口
 type DBImp interface {
-	Has(ks ...[]byte) bool              //key是否存在
+	Has(ks ...[]byte) (bool, error)     //key是否存在
 	Put(ks ...[]byte) error             //添加键值
 	Get(ks ...[]byte) ([]byte, error)   //根据key获取值
 	Del(ks ...[]byte) error             //删除key
@@ -87,6 +87,7 @@ type DBImp interface {
 	Close()                             //关闭数据库
 	Iterator(slice ...*Range) *Iterator //搜索
 	Sync()                              //同步到磁盘
+	SizeOf(r []*Range) ([]int64, error) //获取范围内数量
 	Transaction() (TRImp, error)        //创建事务
 	NewBatch() *Batch                   //创建批量
 	LoadBatch(d []byte) (*Batch, error) //加载批量数据

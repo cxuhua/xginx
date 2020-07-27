@@ -211,17 +211,13 @@ func (db *leveldbimp) Close() {
 	}
 }
 
-func (db *leveldbimp) Has(ks ...[]byte) bool {
+func (db *leveldbimp) Has(ks ...[]byte) (bool, error) {
 	k := getDBKey(ks...)
 	opts := &opt.ReadOptions{
 		DontFillCache: false,
 		Strict:        opt.StrictReader,
 	}
-	b, err := db.lptr.Has(k, opts)
-	if err != nil {
-		panic(err)
-	}
-	return b
+	return db.lptr.Has(k, opts)
 }
 
 func (db *leveldbimp) Put(ks ...[]byte) error {
@@ -257,6 +253,14 @@ func (db *leveldbimp) Transaction() (TRImp, error) {
 		return nil, err
 	}
 	return &leveldbtr{tr: tr}, nil
+}
+
+func (db *leveldbimp) SizeOf(r []*Range) ([]int64, error) {
+	rgs := []util.Range{}
+	for _, v := range r {
+		rgs = append(rgs, *v.r)
+	}
+	return db.lptr.SizeOf(rgs)
 }
 
 func (db *leveldbimp) Sync() {

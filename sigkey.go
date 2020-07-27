@@ -29,6 +29,8 @@ const (
 var (
 	curve           = SECP256K1()
 	PrefixSecretKey = []byte{128}
+	PKBytesZero     = PKBytes{}
+	SigBytesZero    = SigBytes{}
 )
 
 //PKBytes 公钥字节存储
@@ -37,6 +39,14 @@ type PKBytes [33]byte
 //Bytes 获取字节
 func (v PKBytes) Bytes() []byte {
 	return v[:]
+}
+func (v PKBytes) IsValid() bool {
+	return !bytes.Equal(v[:], PKBytesZero[:])
+}
+
+//Hash 计算 hash
+func (v PKBytes) Hash256() HASH256 {
+	return Hash256From(v[:])
 }
 
 //Hash 计算 hash
@@ -81,6 +91,10 @@ func (v *PKBytes) Set(pk *PublicKey) PKBytes {
 
 //SigBytes 签名数据
 type SigBytes [75]byte
+
+func (v SigBytes) IsValid() bool {
+	return !bytes.Equal(v[:], SigBytesZero[:])
+}
 
 //Bytes 获取二进制
 func (v SigBytes) Bytes() []byte {
