@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"log"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,7 @@ func TestRSADumpLoad(t *testing.T) {
 	p2, err := LoadRSAPublicKey(str1)
 	require.NoError(t, err)
 	str2, err := p2.Dump()
+	log.Println(str2, len(str2))
 	require.NoError(t, err)
 	assert.Equal(t, str1, str2)
 }

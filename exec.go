@@ -396,6 +396,7 @@ func unixTimestamp(l *lua.LState) int {
 	tv, err := time.ParseInLocation(sfmt, sstr, time.Local)
 	if err != nil {
 		l.RaiseError(err.Error())
+		return 0
 	}
 	l.Push(lua.LNumber(tv.Unix()))
 	return 1
@@ -406,6 +407,7 @@ func verifyAddr(l *lua.LState) int {
 	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("tx script env can't use")
+		return 0
 	}
 	err := signer.VerifyAddr()
 	l.Push(lua.LBool(err == nil))
@@ -417,6 +419,7 @@ func verifySign(l *lua.LState) int {
 	signer := getEnvSigner(l.Context())
 	if signer == nil {
 		l.RaiseError("tx script env can't use")
+		return 0
 	}
 	err := signer.VerifySign()
 	l.Push(lua.LBool(err == nil))
