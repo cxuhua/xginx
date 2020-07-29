@@ -3,8 +3,8 @@ package xginx
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io/ioutil"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -240,7 +240,8 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	//订阅新区块和交易删除事件
 	bch := ps.Sub(NewRecvBlockTopic, TxPoolDelTxTopic)
 	defer ps.Unsub(bch)
-loop: for !genok {
+loop:
+	for !genok {
 		select {
 		case <-dt.C:
 			ppv := uint64(0)
@@ -331,7 +332,7 @@ func (m *minerEngine) SaveFirstBlock(blk *BlockInfo) {
 		panic(err)
 	}
 	LogInfof("save first block ID=%v success,file = genesis.blk", blk)
-	panic(fmt.Errorf("system exit,please update config file,reboot system"))
+	log.Panic("system exit,please update config file,reboot system")
 }
 
 //处理操作

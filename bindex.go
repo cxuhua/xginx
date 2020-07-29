@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
@@ -243,6 +244,29 @@ func GetBlockIndex() *BlockIndex {
 	return midx
 }
 
+//链接加入创世块
+func LinkGenesis(bi *BlockIndex) {
+	dat, err := ioutil.ReadFile("genesis.blk")
+	if err != nil {
+		LogInfo("read genesis.blk error", err)
+		return
+	}
+	buf := NewReader(dat)
+	blk := &BlockInfo{}
+	err = blk.Decode(buf)
+	if err != nil {
+		panic(err)
+	}
+	err = bi.LinkBlk(blk)
+	if err != nil {
+		panic(err)
+	}
+	if !blk.IsGenesis() {
+		log.Panic("block not config genesis")
+	}
+	LogInfo("load link genesis block ", blk)
+}
+
 //InitBlockIndex 初始化主链
 func InitBlockIndex(lis IListener) *BlockIndex {
 	if conf == nil {
@@ -250,7 +274,6 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 	}
 	monce.Do(func() {
 		bi := NewBlockIndex(lis)
-		//写入第一个区块
 		err := lis.OnInit(bi)
 		if err != nil {
 			panic(err)
@@ -259,7 +282,7 @@ func InitBlockIndex(lis IListener) *BlockIndex {
 			LogInfof("load block main chian progress = %d%%", pv)
 		})
 		if err == ErrEmptyBlockChain {
-			LogError(err)
+			LinkGenesis(bi)
 		} else if err == ErrArriveFirstBlock {
 			LogError(err)
 		} else if err != nil {
@@ -583,7 +606,7 @@ func (bi *BlockIndex) LoadAll(limit int, fn func(pv uint)) error {
 		}
 		if err == ErrEmptyBlockChain {
 			LogInfo("load finished, empty block chain")
-			break
+			return err
 		}
 		if err != nil {
 			return fmt.Errorf("load block header error %w", err)

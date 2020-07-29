@@ -8,7 +8,54 @@ import (
 
 //实现自己的监听器
 type mylist struct {
-	xginx.Listener
+}
+
+func (lis *mylist) OnInit(bi *xginx.BlockIndex) error {
+	panic("implement me")
+}
+
+func (lis *mylist) TimeNow() uint32 {
+	panic("implement me")
+}
+
+func (lis *mylist) OnUnlinkBlock(blk *xginx.BlockInfo) {
+	panic("implement me")
+}
+
+func (lis *mylist) OnLinkBlock(blk *xginx.BlockInfo) {
+	panic("implement me")
+}
+
+func (lis *mylist) OnNewBlock(blk *xginx.BlockInfo) error {
+	panic("implement me")
+}
+
+func (lis *mylist) OnFinished(blk *xginx.BlockInfo) error {
+	panic("implement me")
+}
+
+func (lis *mylist) OnClientMsg(c *xginx.Client, msg xginx.MsgIO) {
+	panic("implement me")
+}
+
+func (lis *mylist) OnLoadTxs(txs []*xginx.TX) []*xginx.TX {
+	panic("implement me")
+}
+
+func (lis *mylist) OnClose() {
+	panic("implement me")
+}
+
+func (lis *mylist) OnTxPool(tx *xginx.TX) error {
+	panic("implement me")
+}
+
+func (lis *mylist) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
+	panic("implement me")
+}
+
+func (lis *mylist) MinerAddr() xginx.Address {
+	panic("implement me")
 }
 
 func (lis *mylist) OnStart() {

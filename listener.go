@@ -7,7 +7,7 @@ import (
 
 //IListener 所有回调可能来自不同的协程
 type IListener interface {
-	//首次初始化时
+	//首次初始化时在加载区块链之前
 	OnInit(bi *BlockIndex) error
 	//时间戳发生器
 	TimeNow() uint32
@@ -26,7 +26,7 @@ type IListener interface {
 	OnLoadTxs(txs []*TX) []*TX
 	//链关闭时
 	OnClose()
-	//当服务启动后会调用一次
+	//当服务启动后会调用一次,区块链,节点服务启动后
 	OnStart()
 	//系统结束时
 	OnStop()

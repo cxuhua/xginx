@@ -69,7 +69,7 @@ func (lis *shoplistener) OnUnlinkBlock(blk *xginx.BlockInfo) {
 
 }
 
-//MinerAddr 返回矿工地址，默认返回配置中的
+//MinerAddr 返回矿工地址
 func (lis shoplistener) MinerAddr() xginx.Address {
 	bb, err := lis.keydb.GetConfig(MinerAddressKey)
 	if err == nil {
@@ -87,6 +87,7 @@ func (lis shoplistener) MinerAddr() xginx.Address {
 	if err != nil {
 		panic(err)
 	}
+
 	return aid
 }
 
@@ -119,35 +120,6 @@ func (lis *shoplistener) registerrpc() {
 	}
 }
 
-func (lis *shoplistener) looprpc() {
-	xginx.LogInfo("start json rpc server")
-	var delay time.Duration
-	for {
-		conn, err := lis.rpclis.Accept()
-		if err == nil {
-			delay = 0
-			go jsonrpc.ServeConn(conn)
-			continue
-		}
-		if ne, ok := err.(net.Error); ok && ne.Temporary() {
-			if delay == 0 {
-				delay = 5 * time.Millisecond
-			} else {
-				delay *= 2
-			}
-			if max := 3 * time.Second; delay > max {
-				delay = max
-			}
-			xginx.LogWarn("Accept warn: %v; retrying in %v", err, delay)
-			time.Sleep(delay)
-			continue
-		} else {
-			xginx.LogError(err)
-			break
-		}
-	}
-}
-
 func (lis *shoplistener) startrpc(conn string) {
 	urlv, err := url.Parse(conn)
 	if err != nil {
@@ -159,9 +131,12 @@ func (lis *shoplistener) startrpc(conn string) {
 		panic(err)
 	}
 	lis.rpclis = rpclis
-	go func() {
-		lis.looprpc()
-	}()
+	go xginx.ListenerLoopAccept(lis.rpclis, func(conn net.Conn) error {
+		go jsonrpc.ServeConn(conn)
+		return nil
+	}, func(err error) {
+		xginx.LogError(err)
+	})
 }
 
 func (lis *shoplistener) OnStart() {

@@ -585,36 +585,14 @@ func (s *TCPServer) loadIPS() {
 	LogInfof("load seed ip %d/%d", lipc, sipc)
 }
 
-func (s *TCPServer) run() {
-	LogInfo(s.addr.Network(), "server startup", s.addr)
-	defer s.recoverError()
-	s.wg.Add(1)
-	defer s.wg.Done()
+//开始监听链接
+func ListenerLoopAccept(lis net.Listener, connfn func(conn net.Conn) error, errfn func(err error)) {
 	var delay time.Duration
-	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
-	for i := 0; i < 4; i++ {
-		go s.dispatch(i, ch)
-	}
-	s.dopt <- 1 //load seed ip
 	for {
-		conn, err := s.tcplis.Accept()
-		//是否达到最大连接
-		if s.ConnNum() >= conf.MaxConn {
-			LogError("conn arrive max,ignore", conn)
-			//超过最大连接直接关闭
-			if err == nil {
-				_ = conn.Close()
-			}
-			continue
-		}
+		conn, err := lis.Accept()
 		if err == nil {
-			//开启新的协程处理新链接
 			delay = 0
-			c := s.NewClientWithConn(conn)
-			c.typ = ClientIn
-			c.isopen = true
-			LogInfo("new connection", conn.RemoteAddr())
-			c.Loop()
+			err = connfn(conn)
 			continue
 		}
 		if ne, ok := err.(net.Error); ok && ne.Temporary() {
@@ -623,19 +601,83 @@ func (s *TCPServer) run() {
 			} else {
 				delay *= 2
 			}
-			if max := 1 * time.Second; delay > max {
+			if max := 3 * time.Second; delay > max {
 				delay = max
 			}
-			LogError("Accept error: %v; retrying in %v", err, delay)
+			LogWarnf("Accept warn: %v; retrying in %v", err, delay)
 			time.Sleep(delay)
 			continue
 		} else {
-			//发生错误退出
-			s.err = err
-			s.cfun()
+			errfn(err)
 			break
 		}
 	}
+}
+
+func (s *TCPServer) run() {
+	LogInfo(s.addr.Network(), "server startup", s.addr)
+	defer s.recoverError()
+	s.wg.Add(1)
+	defer s.wg.Done()
+	ch := GetPubSub().Sub(NetMsgTopic, NewTxTopic)
+	for i := 0; i < 4; i++ {
+		go s.dispatch(i, ch)
+	}
+	s.dopt <- 1 //load seed ip
+	ListenerLoopAccept(s.tcplis, func(conn net.Conn) error {
+		if s.ConnNum() >= conf.MaxConn {
+			LogError("conn arrive max,close conn ", conn)
+			return conn.Close()
+		}
+		c := s.NewClientWithConn(conn)
+		c.typ = ClientIn
+		c.isopen = true
+		c.loop()
+		return nil
+	}, func(err error) {
+		s.err = err
+		s.cfun()
+	})
+	//for {
+	//	conn, err := s.tcplis.Accept()
+	//	//是否达到最大连接
+	//	if s.ConnNum() >= conf.MaxConn {
+	//		LogError("conn arrive max,ignore", conn)
+	//		//超过最大连接直接关闭
+	//		if err == nil {
+	//			_ = conn.Close()
+	//		}
+	//		continue
+	//	}
+	//	if err == nil {
+	//		//开启新的协程处理新链接
+	//		delay = 0
+	//		c := s.NewClientWithConn(conn)
+	//		c.typ = ClientIn
+	//		c.isopen = true
+	//		LogInfo("new connection", conn.RemoteAddr())
+	//		c.Loop()
+	//		continue
+	//	}
+	//	if ne, ok := err.(net.Error); ok && ne.Temporary() {
+	//		if delay == 0 {
+	//			delay = 5 * time.Millisecond
+	//		} else {
+	//			delay *= 2
+	//		}
+	//		if max := 1 * time.Second; delay > max {
+	//			delay = max
+	//		}
+	//		LogError("Accept error: %v; retrying in %v", err, delay)
+	//		time.Sleep(delay)
+	//		continue
+	//	} else {
+	//		//发生错误退出
+	//		s.err = err
+	//		s.cfun()
+	//		break
+	//	}
+	//}
 }
 
 //GetPkg 获取广播数据包
