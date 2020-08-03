@@ -7,11 +7,12 @@ require (
 	github.com/cxuhua/gopher-lua v1.0.1
 	github.com/cxuhua/lzma v0.1.2
 	github.com/hashicorp/golang-lru v0.5.4
-	github.com/jolestar/go-commons-pool/v2 v2.1.1
 	github.com/json-iterator/go v1.1.10
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.6.1
 	github.com/syndtr/goleveldb v1.0.0
+	github.com/graphql-go/graphql v0.7.9
+    github.com/graphql-go/handler v0.2.3
 )
 
 replace github.com/cxuhua/gopher-lua v1.0.1 => ../gopher-lua

@@ -666,6 +666,7 @@ func (ss *WitnessScript) Final() (Script, error) {
 		}
 		sigs = append(sigs, v)
 	}
+	//必须有一个签名
 	if len(sigs) == 0 {
 		return nil, fmt.Errorf("sig count error")
 	}
@@ -686,7 +687,7 @@ func (ss WitnessScript) ToScript() (Script, error) {
 //CheckSigs 检查指定的签名
 func (ss WitnessScript) CheckSigs(sigs []SigBytes) error {
 	if ss.Type != ScriptWitnessType {
-		return errors.New("type errpor")
+		return errors.New("type error")
 	}
 	if ss.Num == 0 || ss.Num > AccountKeyMaxSize {
 		return errors.New("num error")

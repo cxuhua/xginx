@@ -11,6 +11,11 @@ import (
 	"os"
 )
 
+const (
+	//当前版本
+	Version = "v0.0.1"
+)
+
 // 启动参数
 var (
 	ConfFile = flag.String("conf", "v10000.json", "config file name")
