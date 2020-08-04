@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -12,7 +13,6 @@ import (
 	"github.com/graphql-go/handler"
 
 	"github.com/cxuhua/xginx"
-	"github.com/graphql-go/graphql"
 )
 
 var (
@@ -28,8 +28,9 @@ type shoplistener struct {
 	keydb xginx.IKeysDB
 	//graphql http
 	gqlsrv *http.Server
-
-	wg sync.WaitGroup
+	//
+	gqlhandler *handler.Handler
+	wg         sync.WaitGroup
 }
 
 //OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
@@ -118,11 +119,52 @@ var (
 	lis = &shoplistener{}
 )
 
+const (
+	objkeyblockkey = "objkeyblockindex"
+	objdocdbkey    = "objdocdbkey"
+	objkeydbkey    = "objkeydbkey"
+)
+
 type Objects map[string]interface{}
+
+func (objs Objects) BlockIndex() *xginx.BlockIndex {
+	v, ok := objs[objkeyblockkey].(*xginx.BlockIndex)
+	if !ok {
+		panic(fmt.Errorf("block index miss"))
+	}
+	return v
+}
+
+func (objs Objects) KeyDB() xginx.IKeysDB {
+	v, ok := objs[objkeydbkey].(xginx.IKeysDB)
+	if !ok {
+		panic(fmt.Errorf("key db miss"))
+	}
+	return v
+}
+
+func (objs Objects) DocDB() xginx.IDocSystem {
+	v, ok := objs[objdocdbkey].(xginx.IDocSystem)
+	if !ok {
+		panic(fmt.Errorf("doc db  miss"))
+	}
+	return v
+}
 
 //返回可用的素有对象
 func NewObjects(ctx context.Context) Objects {
 	return Objects{}
+}
+
+//http Handler
+func (lis *shoplistener) ServeHTTP(rw http.ResponseWriter, q *http.Request) {
+	defer func() {
+		if err := recover(); err != nil {
+			_, _ = fmt.Fprintf(rw, "recover : %v", err)
+			rw.WriteHeader(http.StatusInternalServerError)
+		}
+	}()
+	lis.gqlhandler.ServeHTTP(rw, q)
 }
 
 func (lis *shoplistener) startgraphql(host string) {
@@ -131,40 +173,25 @@ func (lis *shoplistener) startgraphql(host string) {
 		xginx.LogError(err)
 		return
 	}
-	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query: graphql.NewObject(graphql.ObjectConfig{
-			Name: "Query",
-			Fields: graphql.Fields{
-				"version": &graphql.Field{
-					Type:        graphql.String,
-					Description: "xginx version",
-					Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-						return xginx.Version, nil
-					},
-				},
-			},
-		}),
-	})
-	if err != nil {
-		xginx.LogError(err)
-		return
-	}
-	h := handler.New(&handler.Config{
-		Schema:   &schema,
+	lis.gqlhandler = handler.New(&handler.Config{
+		Schema:   GetSchema(),
 		Pretty:   *xginx.IsDebug,
 		GraphiQL: *xginx.IsDebug,
 		RootObjectFn: func(ctx context.Context, r *http.Request) map[string]interface{} {
-			return NewObjects(ctx)
+			objs := NewObjects(ctx)
+			objs[objkeyblockkey] = xginx.GetBlockIndex()
+			objs[objdocdbkey] = lis.docdb
+			objs[objkeydbkey] = lis.keydb
+			return objs
 		},
 	})
 	mux := http.NewServeMux()
-	mux.Handle("/"+urlv.Scheme, h)
+	mux.Handle("/"+urlv.Scheme, lis)
 	lis.gqlsrv = &http.Server{
 		Addr:    urlv.Host,
 		Handler: mux,
 		BaseContext: func(listener net.Listener) context.Context {
-			ctx, _ := context.WithTimeout(xginx.GetContext(), time.Second*30)
-			return ctx
+			return xginx.GetContext()
 		},
 	}
 	lis.wg.Add(1)
