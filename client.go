@@ -56,6 +56,10 @@ type Client struct {
 	vmap    *sync.Map //属性存储器
 }
 
+func (c *Client) ID() uint64 {
+	return c.id
+}
+
 //FilterAdd 添加过滤数据
 func (c *Client) FilterAdd(key []byte) error {
 	blm, has := c.GetFilter()
