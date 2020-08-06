@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"testing"
 
 	"github.com/cxuhua/xginx"
@@ -56,7 +55,6 @@ func TestNewShopMeta(t *testing.T) {
 	}
 	sm, err := NewShopMeta(ctx, mb)
 	require.NoError(t, err)
-	log.Println(sm)
 	mb2, err := sm.To()
 	require.NoError(t, err)
 	assert.Equal(t, mb.Type, mb2.Type)

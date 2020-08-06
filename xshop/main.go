@@ -20,6 +20,10 @@ var (
 	gqlset = flag.String("graphql", "graphql://127.0.0.1:9334", "graphql addr port")
 )
 
+const (
+	MinerAddressKey = "__miner_address_key__"
+)
+
 //实现自己的监听器
 type shoplistener struct {
 	//文档处理db

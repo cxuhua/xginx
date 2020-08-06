@@ -3,73 +3,55 @@ package main
 import (
 	"github.com/cxuhua/xginx"
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 )
 
-var status = &graphql.Field{
-	Type: graphql.NewObject(graphql.ObjectConfig{
-		Name: "Status",
-		Fields: graphql.Fields{
-			"version": &graphql.Field{
-				Type:        graphql.Int,
-				Description: "区块链高度",
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					conf := xginx.GetConfig()
-					return conf.Ver, nil
-				},
-			},
-			"height": &graphql.Field{
-				Type:        graphql.Int,
-				Description: "区块链高度",
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					bi := p.Source.(*xginx.BlockIndex)
-					return bi.Height(), nil
-				},
-			},
-		},
-	}),
-	Description: "获取当前区块链状态",
-	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		objs := Objects(p.Info.RootValue.(map[string]interface{}))
-		return objs.BlockIndex(), nil
-	},
+func hashtypesp(value interface{}) interface{} {
+	switch value.(type) {
+	case string:
+		str := value.(string)
+		l := len(str)
+		if l == len(xginx.ZERO160)*2 {
+			return xginx.NewHASH160(str)
+		}
+		if l == len(xginx.ZERO256)*2 {
+			return xginx.NewHASH256(str)
+		}
+	case *string:
+		return hashtypesp(*(value).(*string))
+	case xginx.HASH160:
+		return value.(xginx.HASH160).String()
+	case xginx.HASH256:
+		return value.(xginx.HASH256).String()
+	}
+	return nil
 }
+
+var HashType = graphql.NewScalar(graphql.ScalarConfig{
+	Name:        "HashType",
+	Description: "hash256 hash160 graph",
+	Serialize:   hashtypesp,
+	ParseValue:  hashtypesp,
+	ParseLiteral: func(valueAST ast.Value) interface{} {
+		switch valueAST := valueAST.(type) {
+		case *ast.StringValue:
+			return hashtypesp(valueAST.Value)
+		}
+		return nil
+	},
+})
 
 var query = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Query",
 	Fields: graphql.Fields{
 		"status": status,
-	},
-})
-
-var mutation = graphql.NewObject(graphql.ObjectConfig{
-	Name: "Mutation",
-	Fields: graphql.Fields{
-		"login": &graphql.Field{
-			Args: graphql.FieldConfigArgument{
-				"name": {
-					Type:         graphql.String,
-					DefaultValue: "",
-					Description:  "用户名称",
-				},
-				"pass": {
-					Type:         graphql.String,
-					DefaultValue: "",
-					Description:  "用户密码",
-				},
-			},
-			Type:        graphql.Int,
-			Description: "xginx version",
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				return 100, nil
-			},
-		},
+		"coin":   coin,
 	},
 })
 
 func GetSchema() *graphql.Schema {
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query:    query,
-		Mutation: mutation,
+		Query: query,
 	})
 	if err != nil {
 		panic(err)
