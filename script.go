@@ -282,8 +282,8 @@ func (s *Script) Decode(r IReader) error {
 }
 
 //ToTxScript 如果是锁定脚本
-func (s Script) ToTxScript() (TxScript, error) {
-	rs := TxScript{}
+func (s Script) ToTxScript() (*TxScript, error) {
+	rs := &TxScript{}
 	if !s.IsTxScript() {
 		return rs, errors.New("script type error")
 	}
@@ -293,6 +293,23 @@ func (s Script) ToTxScript() (TxScript, error) {
 		return rs, err
 	}
 	return rs, nil
+}
+
+//To 转换到任意类型
+func (s Script) To() (interface{}, error) {
+	if s.IsCoinBase() {
+		return s, nil
+	}
+	if s.IsWitness() {
+		return s.ToWitness()
+	}
+	if s.IsTxScript() {
+		return s.ToTxScript()
+	}
+	if s.IsLocked() {
+		return s.ToLocked()
+	}
+	return nil, fmt.Errorf("script type error")
 }
 
 //ToLocked 如果是锁定脚本

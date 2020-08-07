@@ -530,13 +530,30 @@ func (bi *BlockIndex) GetTxConfirm(id HASH256) int {
 	return bi.GetBlockConfirm(txv.BlkID)
 }
 
+//LoadWithHeight 按高度查询区块
+func (bi *BlockIndex) LoadBlockWithH(h int) (*BlockInfo, error) {
+	bi.rwm.RLock()
+	ele := bi.gethele(uint32(h))
+	bi.rwm.RUnlock()
+	if ele == nil {
+		return nil, fmt.Errorf("not found height %d", h)
+	}
+	id, err := ele.ID()
+	if err != nil {
+		return nil, err
+	}
+	return bi.LoadBlock(id)
+}
+
 //LoadBlock 加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
 	hptr, ok := bi.lru.Get(id)
 	if ok {
 		return hptr.(*BlockInfo), nil
 	}
+	bi.rwm.RLock()
 	ele, has := bi.imap[id]
+	bi.rwm.RUnlock()
 	if !has {
 		return nil, fmt.Errorf("id %v miss", id)
 	}
@@ -1331,7 +1348,7 @@ func (bi *BlockIndex) Close() {
 
 //NewBlockIndex 创建区块链
 func NewBlockIndex(lis IListener) *BlockIndex {
-	lru, err := lru.New(256 * opt.MiB)
+	blru, err := lru.New(256 * opt.MiB)
 	if err != nil {
 		panic(err)
 	}
@@ -1342,6 +1359,6 @@ func NewBlockIndex(lis IListener) *BlockIndex {
 		hmap:  map[uint32]*list.Element{},
 		imap:  map[HASH256]*list.Element{},
 		blkdb: NewLevelDBStore(conf.DataDir + "/blks"),
-		lru:   lru,
+		lru:   blru,
 	}
 }

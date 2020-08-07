@@ -1,12 +1,14 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/cxuhua/xginx"
 	"github.com/graphql-go/graphql"
 )
 
 var ClientType = graphql.NewObject(graphql.ObjectConfig{
-	Name: "ClientType",
+	Name: "Client",
 	Fields: graphql.Fields{
 		"id": {
 			Type: graphql.Int,
@@ -25,10 +27,10 @@ var ClientType = graphql.NewObject(graphql.ObjectConfig{
 			Description: "链接地址",
 		},
 		"service": {
-			Type: graphql.Int,
+			Type: graphql.String,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				cli := p.Source.(*xginx.Client)
-				return cli.Service, nil
+				return fmt.Sprintf("%x", cli.Service), nil
 			},
 			Description: "服务",
 		},

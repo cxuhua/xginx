@@ -27,7 +27,7 @@ var CoinState = graphql.NewEnum(graphql.EnumConfig{
 })
 
 var CoinType = graphql.NewObject(graphql.ObjectConfig{
-	Name: "CoinType",
+	Name: "Coin",
 	Fields: graphql.Fields{
 		"tx": {
 			Type:        HashType,
@@ -94,7 +94,7 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 
 var coin = &graphql.Field{
 	Type: graphql.NewObject(graphql.ObjectConfig{
-		Name: "Coin",
+		Name: "QueryCoin",
 		Fields: graphql.Fields{
 			"list": &graphql.Field{
 				Args: graphql.FieldConfigArgument{

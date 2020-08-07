@@ -28,7 +28,7 @@ func hashtypesp(value interface{}) interface{} {
 }
 
 var HashType = graphql.NewScalar(graphql.ScalarConfig{
-	Name:        "HashType",
+	Name:        "Hash",
 	Description: "hash256 hash160 graph",
 	Serialize:   hashtypesp,
 	ParseValue:  hashtypesp,
@@ -46,6 +46,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 	Fields: graphql.Fields{
 		"status": status,
 		"coin":   coin,
+		"block":  block,
 	},
 })
 
