@@ -92,9 +92,9 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "单笔金额信息",
 })
 
-var coin = &graphql.Field{
+var listCoin = &graphql.Field{
 	Type: graphql.NewObject(graphql.ObjectConfig{
-		Name: "QueryCoin",
+		Name: "ListCoin",
 		Fields: graphql.Fields{
 			"list": &graphql.Field{
 				Args: graphql.FieldConfigArgument{

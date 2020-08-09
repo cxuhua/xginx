@@ -10,11 +10,18 @@ import (
 //AddressInfo 地址账户,值使用公钥hash256生成地址
 //无需加密,只是用来保存地址生成数据,是否有控制权需要另外检测
 type AddressInfo struct {
-	Num  uint8    `json:"num"`  //密钥总数
-	Less uint8    `json:"less"` //需要通过的签名数量
-	Arb  uint8    `json:"arb"`  //是否启用仲裁 != InvalidArb 表示启用
+	Num  int      `json:"num"`  //密钥总数
+	Less int      `json:"less"` //需要通过的签名数量
+	Arb  bool     `json:"arb"`  //是否启用仲裁 != InvalidArb 表示启用
 	Pks  []string `json:"pks"`  //公钥ID
 	Desc string   `json:"desc"` //描述
+}
+
+func (ka AddressInfo) GetArb() uint8 {
+	if ka.Arb {
+		return uint8(ka.Num - 1)
+	}
+	return InvalidArb
 }
 
 func (ka AddressInfo) ID() (Address, error) {
@@ -26,7 +33,11 @@ func (ka AddressInfo) ID() (Address, error) {
 		}
 		pkcs = append(pkcs, pkh)
 	}
-	hv, err := HashPkh(ka.Num, ka.Less, ka.Arb, pkcs)
+	arb := InvalidArb
+	if ka.Arb {
+		arb = uint8(len(ka.Pks) - 1)
+	}
+	hv, err := HashPkh(uint8(ka.Num), uint8(ka.Less), arb, pkcs)
 	if err != nil {
 		return "", err
 	}
@@ -40,9 +51,9 @@ func (ka AddressInfo) ToAccount(db IKeysDB) (*Account, error) {
 		return nil, err
 	}
 	acc := &Account{
-		Num:  ka.Num,
-		Less: ka.Less,
-		Arb:  ka.Arb,
+		Num:  uint8(ka.Num),
+		Less: uint8(ka.Less),
+		Arb:  ka.GetArb(),
 		Pubs: PublicArray{},
 		Pris: PrivatesMap{},
 	}
@@ -70,7 +81,14 @@ func (ka AddressInfo) Encode() ([]byte, error) {
 }
 
 func (ka AddressInfo) Check() error {
-	return CheckAccountArgs(ka.Num, ka.Less, ka.Arb != InvalidArb, len(ka.Pks))
+	//检测私钥id格式
+	for idx, kid := range ka.Pks {
+		_, err := DecodePublicHash(kid)
+		if err != nil {
+			return fmt.Errorf("private id %d error %w", idx, err)
+		}
+	}
+	return CheckAccountArgs(uint8(ka.Num), uint8(ka.Less), ka.Arb, len(ka.Pks))
 }
 
 func (ka *AddressInfo) Decode(bb []byte) error {
@@ -207,7 +225,7 @@ func (kd *levelkeysdb) NewAddressInfo(desc string) (*AddressInfo, error) {
 	ka := &AddressInfo{
 		Num:  1,
 		Less: 1,
-		Arb:  InvalidArb,
+		Arb:  false,
 		Pks:  []string{id},
 		Desc: desc,
 	}
@@ -355,9 +373,9 @@ func (kd *levelkeysdb) NewWitnessScript(id Address, execs ...[]byte) (*WitnessSc
 	}
 	w := &WitnessScript{}
 	w.Type = ScriptWitnessType
-	w.Num = ka.Num
-	w.Less = ka.Less
-	w.Arb = ka.Arb
+	w.Num = uint8(ka.Num)
+	w.Less = uint8(ka.Less)
+	w.Arb = ka.GetArb()
 	//使用空的数据预填充
 	w.Pks = make([]PKBytes, w.Num)
 	w.Sig = make([]SigBytes, w.Num)

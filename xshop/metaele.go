@@ -36,6 +36,31 @@ const (
 	MaxURLSize = 1024 * 1024 * 5
 )
 
+const (
+	//出售
+	MetaTypeSell = 1
+	//购买
+	MetaTypeBuy = 2
+	//确认
+	MetaTypeConfirm = 3
+)
+
+//txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
+type MetaBody struct {
+	Type int       `json:"type"` //1-出售 2-购买 3-确认
+	Tags []string  `json:"tags"` //内容关键字,用于商品关注过滤存储
+	Eles []MetaEle `json:"eles"` //元素集合
+}
+
+func ParseMetaBody(b []byte) (*MetaBody, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	mb := &MetaBody{}
+	err := json.Unmarshal(b, mb)
+	return mb, err
+}
+
 //meta元素
 type MetaEle struct {
 	//元素类型 TEXT URL
@@ -127,22 +152,6 @@ func (ele MetaEle) Check(ctx context.Context) error {
 		return nil
 	}
 	return fmt.Errorf("type %s error", ele.Type)
-}
-
-const (
-	//出售
-	MetaTypeSell = 1
-	//购买
-	MetaTypeBuy = 2
-	//确认
-	MetaTypeConfirm = 3
-)
-
-//txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
-type MetaBody struct {
-	Type int       `json:"type"` //1-出售 2-购买 3-确认
-	Tags []string  `json:"tags"` //内容关键字,用于商品关注过滤存储
-	Eles []MetaEle `json:"eles"` //元素集合
 }
 
 func (mb MetaBody) To() (ShopMeta, error) {

@@ -82,8 +82,12 @@ var BlockType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
-var block = &graphql.Field{
-	Name: "QueryBlock",
+func GetObjects(p graphql.ResolveParams) Objects {
+	return p.Info.RootValue.(map[string]interface{})
+}
+
+var blockInfo = &graphql.Field{
+	Name: "BlockInfo",
 	Args: graphql.FieldConfigArgument{
 		"id": {
 			Type:         HashType,
@@ -99,7 +103,7 @@ var block = &graphql.Field{
 	Type:        BlockType,
 	Description: "查询区块信息",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		objs := Objects(p.Info.RootValue.(map[string]interface{}))
+		objs := GetObjects(p)
 		bi := objs.BlockIndex()
 		id, ok := p.Args["id"].(xginx.HASH256)
 		if ok {

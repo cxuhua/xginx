@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/hex"
-	"fmt"
 	"net"
 
 	"github.com/cxuhua/xginx"
@@ -159,24 +158,10 @@ var LockedScriptType = graphql.NewObject(graphql.ObjectConfig{
 			Description: "输出地址",
 		},
 		"meta": {
-			Type: graphql.String,
-			Args: graphql.FieldConfigArgument{
-				"fmt": {
-					Type:         graphql.String,
-					DefaultValue: "str",
-					Description:  "显示格式:hex-16进制, str-字符串",
-				},
-			},
+			Type: MetaBodyType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				script := p.Source.(*xginx.LockedScript)
-				sfmt := p.Args["fmt"].(string)
-				if sfmt == "str" {
-					return string(script.Meta), nil
-				}
-				if sfmt == "hex" {
-					return hex.EncodeToString(script.Meta), nil
-				}
-				return nil, fmt.Errorf("fmt error")
+				return ParseMetaBody(script.Meta)
 			},
 			Description: "脚本执行最大时间(ms)",
 		},
@@ -196,25 +181,18 @@ var LockedScriptType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "交易脚本类型",
 })
 
-var ScriptType = graphql.NewUnion(graphql.UnionConfig{
-	Name:  "Script",
-	Types: []*graphql.Object{CoinbaseScriptType, TxScriptType, WitnessScriptType, LockedScriptType},
+//输入脚本类型可能是coins脚本或者是签名脚本
+var TxInScriptType = graphql.NewUnion(graphql.UnionConfig{
+	Name:  "TxInScript",
+	Types: []*graphql.Object{CoinbaseScriptType, WitnessScriptType},
 	ResolveType: func(p graphql.ResolveTypeParams) *graphql.Object {
 		_, ok := p.Value.(xginx.Script)
 		if ok {
 			return CoinbaseScriptType
 		}
-		_, ok = p.Value.(*xginx.TxScript)
-		if ok {
-			return TxScriptType
-		}
 		_, ok = p.Value.(*xginx.WitnessScript)
 		if ok {
 			return WitnessScriptType
-		}
-		_, ok = p.Value.(*xginx.LockedScript)
-		if ok {
-			return LockedScriptType
 		}
 		return nil
 	},
@@ -241,7 +219,7 @@ var TxInType = graphql.NewObject(graphql.ObjectConfig{
 			Description: "对应的输出所在的索引",
 		},
 		"script": {
-			Type: ScriptType,
+			Type: TxInScriptType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				in := p.Source.(*xginx.TxIn)
 				return in.Script.To()
@@ -268,15 +246,15 @@ var TxOutType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "TxOut",
 	Fields: graphql.Fields{
 		"value": {
-			Type: HashType,
+			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				out := p.Source.(*xginx.TxOut)
 				return int(out.Value), nil
 			},
-			Description: "对应的输出交易id",
+			Description: "对应的输出金额",
 		},
 		"script": {
-			Type: ScriptType,
+			Type: LockedScriptType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				out := p.Source.(*xginx.TxOut)
 				return out.Script.To()
@@ -327,12 +305,20 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 			Description: "输出",
 		},
 		"script": {
-			Type: ScriptType,
+			Type: TxScriptType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				tx := p.Source.(*xginx.TX)
 				return tx.Script.To()
 			},
 			Description: "交易脚本",
+		},
+		"coinbase": {
+			Type: graphql.Boolean,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				in := p.Source.(*xginx.TX)
+				return in.IsCoinBase(), nil
+			},
+			Description: "是否是coinbase交易",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
@@ -341,3 +327,60 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 	},
 	Description: "交易类型",
 })
+
+var txInfo = &graphql.Field{
+	Name: "TxInfo",
+	Args: graphql.FieldConfigArgument{
+		"id": {
+			Type:         HashType,
+			DefaultValue: nil,
+			Description:  "根据区块id查询",
+		},
+	},
+	Type:        TXType,
+	Description: "查询交易信息",
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
+		bi := objs.BlockIndex()
+		id, ok := p.Args["id"].(xginx.HASH256)
+		if !ok {
+			return NewError(1, "id args error")
+		}
+		return bi.LoadTX(id)
+	},
+}
+
+var TransferInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "TransferInput",
+	Fields: graphql.InputObjectConfigFieldMap{
+		"addr": {
+			Type:        graphql.String,
+			Description: "转账地址",
+		},
+		"amount": {
+			Type:        graphql.Int,
+			Description: "转账金额",
+		},
+		"meta": {
+			Type:        graphql.String,
+			Description: "输出meta",
+		},
+	},
+	Description: "转账到指定地址输入参数",
+})
+
+var transfer = &graphql.Field{
+	Name: "Transfer",
+	Type: graphql.NewNonNull(TXType),
+	Args: graphql.FieldConfigArgument{
+		"body": {
+			Type:         TransferInput,
+			DefaultValue: nil,
+			Description:  "输入参数",
+		},
+	},
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		return NewError(100, "not imp")
+	},
+	Description: "转账指定的金额到其他账号,返回交易信息",
+}

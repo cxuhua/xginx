@@ -58,9 +58,9 @@ var ClientType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "链接信息",
 })
 
-var status = &graphql.Field{
+var statusInfo = &graphql.Field{
 	Type: graphql.NewObject(graphql.ObjectConfig{
-		Name: "Status",
+		Name: "StatusInfo",
 		Fields: graphql.Fields{
 			"version": {
 				Type:        graphql.Int,
