@@ -547,13 +547,18 @@ func (bi *BlockIndex) LoadBlockWithH(h int) (*BlockInfo, error) {
 
 //LoadBlock 加载区块
 func (bi *BlockIndex) LoadBlock(id HASH256) (*BlockInfo, error) {
+	bi.rwm.RLock()
+	defer bi.rwm.RUnlock()
+	return bi.loadblock(id)
+}
+
+//LoadBlock 加载区块
+func (bi *BlockIndex) loadblock(id HASH256) (*BlockInfo, error) {
 	hptr, ok := bi.lru.Get(id)
 	if ok {
 		return hptr.(*BlockInfo), nil
 	}
-	bi.rwm.RLock()
 	ele, has := bi.imap[id]
-	bi.rwm.RUnlock()
 	if !has {
 		return nil, fmt.Errorf("id %v miss", id)
 	}
@@ -986,7 +991,7 @@ func (bi *BlockIndex) unlinkLast() error {
 	if err != nil {
 		return err
 	}
-	blk, err := bi.LoadBlock(id)
+	blk, err := bi.loadblock(id)
 	if err != nil {
 		return err
 	}

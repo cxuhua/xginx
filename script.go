@@ -661,6 +661,9 @@ func HashPkh(num uint8, less uint8, arb uint8, pkhs []HASH256) (HASH160, error) 
 func HashPks(num uint8, less uint8, arb uint8, pks []PKBytes) (HASH160, error) {
 	pkhs := []HASH256{}
 	for _, pk := range pks {
+		if !pk.IsValid() {
+			return ZERO160, fmt.Errorf("pks zero ,not valid")
+		}
 		pkh := Hash256From(pk[:])
 		pkhs = append(pkhs, pkh)
 	}

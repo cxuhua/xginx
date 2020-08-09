@@ -888,7 +888,9 @@ type TxIn struct {
 
 //NewTxIn 创建输入
 func NewTxIn() *TxIn {
-	return &TxIn{}
+	return &TxIn{
+		Sequence: FinalSequence,
+	}
 }
 
 //Clone 复制输入
@@ -897,7 +899,7 @@ func (in TxIn) Clone(seq ...uint) *TxIn {
 	n.OutHash = in.OutHash.Clone()
 	n.OutIndex = in.OutIndex
 	n.Script = in.Script.Clone()
-	if len(seq) > 0 {
+	if len(seq) > 0 && in.Sequence < FinalSequence {
 		n.Sequence = in.Sequence + VarUInt(seq[0])
 	} else {
 		n.Sequence = in.Sequence

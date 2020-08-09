@@ -31,10 +31,10 @@ var listPrivateKey = &graphql.Field{
 		return ids, nil
 	},
 }
-var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
-	Name: "AddressInfo",
+var AccountInfoType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "AccountInfo",
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
-		_, ok := p.Value.(*xginx.AddressInfo)
+		_, ok := p.Value.(*xginx.AccountInfo)
 		return ok
 	},
 	Description: "账户信息",
@@ -42,7 +42,7 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"num": {
 			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				return int(ka.Num), nil
 			},
 			Description: "证书数量",
@@ -50,7 +50,7 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"less": {
 			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				return int(ka.Less), nil
 			},
 			Description: "需要签名的数量",
@@ -58,7 +58,7 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"arb": {
 			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				return ka.Arb, nil
 			},
 			Description: "是否启用仲裁",
@@ -66,7 +66,7 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"pks": {
 			Type: graphql.NewList(graphql.String),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				return ka.Pks, nil
 			},
 			Description: "包含的密钥id",
@@ -74,7 +74,7 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"addr": {
 			Type: graphql.String,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				id, err := ka.ID()
 				return string(id), err
 			},
@@ -83,25 +83,33 @@ var AddressInfoType = graphql.NewObject(graphql.ObjectConfig{
 		"desc": {
 			Type: graphql.String,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				ka := p.Source.(*xginx.AddressInfo)
+				ka := p.Source.(*xginx.AccountInfo)
 				return ka.Desc, nil
 			},
 			Description: "描述信息",
+		},
+		"type": {
+			Type: AccountType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				ka := p.Source.(*xginx.AccountInfo)
+				return ka.Type, nil
+			},
+			Description: "账户地址信息",
 		},
 	},
 })
 
 var listAccount = &graphql.Field{
 	Name:        "listAccount",
-	Type:        graphql.NewList(graphql.NewNonNull(AddressInfoType)),
+	Type:        graphql.NewList(graphql.NewNonNull(AccountInfoType)),
 	Description: "获取私钥列表",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		objs := GetObjects(p)
 		keydb := objs.KeyDB()
 		ids, _ := keydb.ListAddress(0)
-		kas := []*xginx.AddressInfo{}
+		kas := []*xginx.AccountInfo{}
 		for _, id := range ids {
-			info, err := keydb.LoadAddressInfo(id)
+			info, err := keydb.LoadAccountInfo(id)
 			if err != nil {
 				return NewError(1, "load address %s error %w", id, err)
 			}
@@ -110,6 +118,21 @@ var listAccount = &graphql.Field{
 		return kas, nil
 	},
 }
+
+//账户类型
+var AccountType = graphql.NewEnum(graphql.EnumConfig{
+	Name: "AccountType",
+	Values: graphql.EnumValueConfigMap{
+		"COIN": {
+			Value:       1,
+			Description: "金额账户",
+		},
+		"TEMP": {
+			Value:       2,
+			Description: "临时账户",
+		},
+	},
+})
 
 var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 	Name: "CreateAccountInput",
@@ -136,6 +159,11 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			DefaultValue: "",
 			Description:  "账户描述信息",
 		},
+		"type": {
+			Type:         graphql.NewNonNull(AccountType),
+			DefaultValue: 1,
+			Description:  "账户类型",
+		},
 	},
 	Description: "创建一个账号地址输入参数",
 })
@@ -143,15 +171,15 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 var createAccount = &graphql.Field{
 	Name: "createAccount",
 	Args: graphql.FieldConfigArgument{
-		"body": {
+		"attr": {
 			Type:        graphql.NewNonNull(CreateAccountInput),
 			Description: "账户信息描述",
 		},
 	},
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		ka := &xginx.AddressInfo{}
-		err := DecodeValidateArgs("body", p, ka)
+		ka := &xginx.AccountInfo{}
+		err := DecodeValidateArgs("attr", p, ka)
 		if err != nil {
 			return NewError(1, err)
 		}
@@ -160,7 +188,7 @@ var createAccount = &graphql.Field{
 		}
 		objs := GetObjects(p)
 		keydb := objs.KeyDB()
-		addr, err := keydb.SaveAddressInfo(ka)
+		addr, err := keydb.SaveAccountInfo(ka)
 		if err != nil {
 			return NewError(3, err)
 		}

@@ -6,25 +6,33 @@ import (
 	"time"
 )
 
+const (
+	//金额账户
+	CoinAccountType = 1
+	//临时账户
+	TempAccountType = 2
+)
+
 //密钥证书存储库
-//AddressInfo 地址账户,值使用公钥hash256生成地址
+//AccountInfo 地址账户,值使用公钥hash256生成地址
 //无需加密,只是用来保存地址生成数据,是否有控制权需要另外检测
-type AddressInfo struct {
+type AccountInfo struct {
 	Num  int      `json:"num"`  //密钥总数
 	Less int      `json:"less"` //需要通过的签名数量
 	Arb  bool     `json:"arb"`  //是否启用仲裁 != InvalidArb 表示启用
 	Pks  []string `json:"pks"`  //公钥ID
 	Desc string   `json:"desc"` //描述
+	Type int      `json:"type"` //类型 1-金额账户,2-临时账户,可能会被删除
 }
 
-func (ka AddressInfo) GetArb() uint8 {
+func (ka AccountInfo) GetArb() uint8 {
 	if ka.Arb {
 		return uint8(ka.Num - 1)
 	}
 	return InvalidArb
 }
 
-func (ka AddressInfo) ID() (Address, error) {
+func (ka AccountInfo) ID() (Address, error) {
 	pkcs := []HASH256{}
 	for _, addr := range ka.Pks {
 		pkh, err := DecodePublicHash(addr)
@@ -45,7 +53,7 @@ func (ka AddressInfo) ID() (Address, error) {
 }
 
 //转换为账户,必须拥有私钥控制权
-func (ka AddressInfo) ToAccount(db IKeysDB) (*Account, error) {
+func (ka AccountInfo) ToAccount(db IKeysDB) (*Account, error) {
 	kaddr, err := ka.ID()
 	if err != nil {
 		return nil, err
@@ -76,11 +84,11 @@ func (ka AddressInfo) ToAccount(db IKeysDB) (*Account, error) {
 	return acc, nil
 }
 
-func (ka AddressInfo) Encode() ([]byte, error) {
+func (ka AccountInfo) Encode() ([]byte, error) {
 	return json.Marshal(ka)
 }
 
-func (ka AddressInfo) Check() error {
+func (ka AccountInfo) Check() error {
 	//检测私钥id格式
 	for idx, kid := range ka.Pks {
 		_, err := DecodePublicHash(kid)
@@ -91,7 +99,7 @@ func (ka AddressInfo) Check() error {
 	return CheckAccountArgs(uint8(ka.Num), uint8(ka.Less), ka.Arb, len(ka.Pks))
 }
 
-func (ka *AddressInfo) Decode(bb []byte) error {
+func (ka *AccountInfo) Decode(bb []byte) error {
 	return json.Unmarshal(bb, ka)
 }
 
@@ -144,15 +152,15 @@ type IKeysDB interface {
 	//关闭密钥数据库
 	Close()
 	//创建一个1-1账号返回描述信息
-	NewAddressInfo(desc string) (*AddressInfo, error)
+	NewAccountInfo(typ int, desc string) (*AccountInfo, error)
 	//创建一个新的私钥
 	NewPrivateKey() (string, error)
 	//获取一个私钥
 	LoadPrivateKey(id string) (*PrivateKey, error)
 	//保存账户地址描述
-	SaveAddressInfo(ka *AddressInfo) (Address, error)
+	SaveAccountInfo(ka *AccountInfo) (Address, error)
 	//加载账户地址描述
-	LoadAddressInfo(id Address) (*AddressInfo, error)
+	LoadAccountInfo(id Address) (*AccountInfo, error)
 	//是否有私钥控制权
 	HasKeyPrivileges(req *CtrlPrivateKeyReq) (*CtrlPrivateKeyRes, error)
 	//创建待签名脚本
@@ -164,7 +172,7 @@ type IKeysDB interface {
 	//删除私钥
 	DeletePrivateKey(id string) error
 	//删除账户描述
-	DeleteAddressInfo(id Address) error
+	DeleteAccountInfo(id Address) error
 	//设置密钥ttl为过期时间
 	SetKey(key string, ttl time.Duration)
 	//列出地址
@@ -217,19 +225,20 @@ func (kd *levelkeysdb) GetConfig(id string) ([]byte, error) {
 	return kd.db.Get(conprefox, []byte(id))
 }
 
-func (kd *levelkeysdb) NewAddressInfo(desc string) (*AddressInfo, error) {
+func (kd *levelkeysdb) NewAccountInfo(typ int, desc string) (*AccountInfo, error) {
 	id, err := kd.NewPrivateKey()
 	if err != nil {
 		return nil, err
 	}
-	ka := &AddressInfo{
+	ka := &AccountInfo{
 		Num:  1,
 		Less: 1,
 		Arb:  false,
 		Pks:  []string{id},
+		Type: CoinAccountType,
 		Desc: desc,
 	}
-	_, err = kd.SaveAddressInfo(ka)
+	_, err = kd.SaveAccountInfo(ka)
 	return ka, err
 }
 
@@ -309,13 +318,13 @@ func (kd *levelkeysdb) DeletePrivateKey(id string) error {
 	return kd.db.Del(priprefix, []byte(id))
 }
 
-func (kd *levelkeysdb) DeleteAddressInfo(id Address) error {
+func (kd *levelkeysdb) DeleteAccountInfo(id Address) error {
 	return kd.db.Del(accprefix, []byte(id))
 }
 
 //NewLockedScript 生成锁定脚本
 func (kd *levelkeysdb) NewLockedScript(id Address, meta string, exec ...[]byte) (*LockedScript, error) {
-	_, err := kd.LoadAddressInfo(id)
+	_, err := kd.LoadAccountInfo(id)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +337,7 @@ func (kd *levelkeysdb) NewLockedScript(id Address, meta string, exec ...[]byte) 
 
 //使用我的数据签名data并填充脚本脚本
 func (kd *levelkeysdb) Sign(id Address, data []byte, wits *WitnessScript) error {
-	ka, err := kd.LoadAddressInfo(id)
+	ka, err := kd.LoadAccountInfo(id)
 	if err != nil {
 		return err
 	}
@@ -367,7 +376,7 @@ func (kd *levelkeysdb) Sign(id Address, data []byte, wits *WitnessScript) error 
 
 //NewWitnessScript 生成未带有签名的脚本对象
 func (kd *levelkeysdb) NewWitnessScript(id Address, execs ...[]byte) (*WitnessScript, error) {
-	ka, err := kd.LoadAddressInfo(id)
+	ka, err := kd.LoadAccountInfo(id)
 	if err != nil {
 		return nil, err
 	}
@@ -388,8 +397,8 @@ func (kd *levelkeysdb) NewWitnessScript(id Address, execs ...[]byte) (*WitnessSc
 }
 
 //获取账户信息
-func (kd *levelkeysdb) LoadAddressInfo(id Address) (*AddressInfo, error) {
-	ka := &AddressInfo{}
+func (kd *levelkeysdb) LoadAccountInfo(id Address) (*AccountInfo, error) {
+	ka := &AccountInfo{}
 	bb, err := kd.db.Get(accprefix, []byte(id))
 	if err != nil {
 		return nil, err
@@ -407,7 +416,7 @@ func (kd *levelkeysdb) LoadAddressInfo(id Address) (*AddressInfo, error) {
 
 //使用私钥id创建一个账号,私钥id可能是自己的,也可能是其他人的,注意控制权
 //pkids 账户包含这些公钥ID,对应的私钥和公钥内容使用LoadPrivateKey获取
-func (kd *levelkeysdb) SaveAddressInfo(ka *AddressInfo) (Address, error) {
+func (kd *levelkeysdb) SaveAccountInfo(ka *AccountInfo) (Address, error) {
 	if err := ka.Check(); err != nil {
 		return "", err
 	}
@@ -415,7 +424,7 @@ func (kd *levelkeysdb) SaveAddressInfo(ka *AddressInfo) (Address, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := kd.LoadAddressInfo(id); err == nil {
+	if _, err := kd.LoadAccountInfo(id); err == nil {
 		return "", fmt.Errorf("address %s exists", id)
 	}
 	bb, err := ka.Encode()

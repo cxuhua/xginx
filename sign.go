@@ -24,15 +24,9 @@ type ISigner interface {
 	GetSigHash() ([]byte, error)
 	//获取签名对象 当前交易，当前输入，输入引用的输出,输入在交易中的索引
 	GetObjs() (*TX, *TxIn, *TxOut, int)
-	//获取消费地址
-	GetOutAddress() Address
-	//获取输入地址
-	GetInAddress() Address
-	//获取交易id
-	GetTxID() HASH256
-	//检测签名
+	//检测签名 脚本调用
 	VerifySign() error
-	//验证地址
+	//验证地址 脚本调用
 	VerifyAddr() error
 }
 
@@ -52,29 +46,6 @@ func NewSigner(tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
 		in:  in,
 		idx: idx,
 	}
-}
-
-//GetTxId 获取交易ID
-func (sr *mulsigner) GetTxID() HASH256 {
-	return sr.tx.MustID()
-}
-
-//GetOutAddress 获取输出对应的地址
-func (sr *mulsigner) GetOutAddress() Address {
-	addr, err := sr.out.Script.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	return addr
-}
-
-//GetInAddress 获取输入对应的地址
-func (sr *mulsigner) GetInAddress() Address {
-	addr, err := sr.in.Script.GetAddress()
-	if err != nil {
-		panic(err)
-	}
-	return addr
 }
 
 //GetObjs 获取签名对象

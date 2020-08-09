@@ -34,34 +34,9 @@ func newTransListner(bi *BlockIndex, src *Account, dst *Account) *transListner {
 }
 
 //获取金额对应的账户方法
-func (lis *transListner) GetAcc(ckv *CoinKeyValue) (*Account, error) {
-	return lis.src, nil
-}
-
-func (lis *transListner) GetTxOutExec(addr Address) []byte {
-	return DefaultLockedScript
-}
-
-//获取输入执行脚本 ckv消费的金额对象
-func (lis *transListner) GetTxInExec(ckv *CoinKeyValue) []byte {
-	return DefaultInputScript
-}
-
-//当输入创建好
-func (lis *transListner) OnNewTxIn(tx *TX, in *TxIn) error {
-	//交易能够被覆盖
-	in.Sequence = 0
-	return nil
-}
-
-//当输出创建好
-func (lis *transListner) OnNewTxOut(tx *TX, out *TxOut) error {
-	return nil
-}
-
-//当交易创建完毕
-func (lis *transListner) OnNewTx(tx *TX) error {
-	return nil
+func (lis *transListner) NewWitnessScript(ckv *CoinKeyValue) (*WitnessScript, error) {
+	wits := lis.src.NewWitnessScript(DefaultInputScript)
+	return wits, nil
 }
 
 //签名交易
@@ -93,7 +68,7 @@ func (lis *transListner) SignTx(singer ISigner, pass ...string) error {
 }
 
 //获取使用的金额列表
-func (lis *transListner) GetCoins() Coins {
+func (lis *transListner) GetCoins(amt Amount) Coins {
 	addr, err := lis.src.GetAddress()
 	if err != nil {
 		panic(err)
@@ -193,10 +168,10 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	//生成交易
 	mi := suite.bi.NewTrans(tlis)
 	//向dst转账1COIN，使用默认输出脚本
-	mi.Add(daddr, 1*Coin, DefaultLockedScript)
+	mi.Add(daddr, 1*Coin)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
-	tx, err := mi.NewTx(0, DefaultTxScript)
+	tx, err := mi.NewTx(DefaultExeTime, DefaultTxScript)
 	req.NoError(err)
 	bp := suite.bi.GetTxPool()
 	req.NotNil(bp)
@@ -216,12 +191,12 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	req.Equal(1, len(txs))
 
 	//seq+=1复制交易
-	cp := tx.Clone(1)
-	//重新签名
-	err = cp.Sign(suite.bi, tlis)
-	req.NoError(err)
-	err = bp.PushTx(suite.bi, cp)
-	req.NoError(err)
+	//cp := tx.Clone(1)
+	////重新签名
+	//err = cp.Sign(suite.bi, tlis)
+	//req.NoError(err)
+	//err = bp.PushTx(suite.bi, cp)
+	//req.NoError(err)
 
 	//创建一个新区块
 	blk, err := suite.bi.NewBlock(1)

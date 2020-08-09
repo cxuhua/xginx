@@ -16,14 +16,15 @@ func TestListDB(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		id, err := kdb.NewPrivateKey()
 		require.NoError(t, err)
-		ka := &AddressInfo{
+		ka := &AccountInfo{
 			Num:  1,
 			Less: 1,
-			Arb:  InvalidArb, //不启用
+			Type: CoinAccountType,
+			Arb:  false, //不启用
 			Pks:  []string{id},
 			Desc: "这是个测试账户",
 		}
-		_, err = kdb.SaveAddressInfo(ka)
+		_, err = kdb.SaveAccountInfo(ka)
 		require.NoError(t, err)
 	}
 	addrs, lkey := kdb.ListAddress(10)
@@ -46,7 +47,7 @@ func TestPrivateNewLoad(t *testing.T) {
 	kdb, err := OpenKeysDB(NewTempDir())
 	require.NoError(t, err)
 	defer kdb.Close()
-	ka, err := kdb.NewAddressInfo("aaa")
+	ka, err := kdb.NewAccountInfo(CoinAccountType, "aaa")
 	require.NoError(t, err)
 	acc, err := ka.ToAccount(kdb)
 	require.NoError(t, err)
@@ -74,7 +75,7 @@ func TestPrivateNewLoadWithKey(t *testing.T) {
 	assert.Equal(t, id, lid)
 }
 
-func TestLoadAddressInfo(t *testing.T) {
+func TestLoadAccountInfo(t *testing.T) {
 	kdb, err := OpenKeysDB(NewTempDir())
 	require.NoError(t, err)
 	defer kdb.Close()
@@ -95,21 +96,22 @@ func TestLoadAddressInfo(t *testing.T) {
 	err = res.Check(req)
 	require.NoError(t, err)
 
-	ka := &AddressInfo{
+	ka := &AccountInfo{
 		Num:  2,
 		Less: 2,
-		Arb:  InvalidArb, //不启用
+		Arb:  false, //不启用
+		Type: CoinAccountType,
 		Pks:  []string{id1, id2},
 		Desc: "这是个测试账户",
 	}
 	id3, err := ka.ID()
 	require.NoError(t, err)
 
-	id4, err := kdb.SaveAddressInfo(ka)
+	id4, err := kdb.SaveAccountInfo(ka)
 	require.NoError(t, err)
 	assert.Equal(t, id3, id4)
 
-	ka2, err := kdb.LoadAddressInfo(id3)
+	ka2, err := kdb.LoadAccountInfo(id3)
 	require.NoError(t, err)
 	id5, err := ka2.ID()
 	require.NoError(t, err)

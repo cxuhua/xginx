@@ -86,7 +86,7 @@ func (lis *shoplistener) MinerAddr() xginx.Address {
 	if err == nil {
 		return xginx.Address(bb)
 	}
-	addr, err := lis.keydb.NewAddressInfo("miner account")
+	addr, err := lis.keydb.NewAccountInfo(xginx.CoinAccountType, "miner coin account")
 	if err != nil {
 		panic(err)
 	}
