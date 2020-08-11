@@ -137,9 +137,9 @@ var (
 )
 
 const (
-	objblockkey = "objblockkey"
-	objdocdbkey = "objdocdbkey"
-	objkeydbkey = "objkeydbkey"
+	objblockkey = "__objblockkey__"
+	objdocdbkey = "__objdocdbkey__"
+	objkeydbkey = "__objkeydbkey__"
 )
 
 type Objects map[string]interface{}
