@@ -10,6 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/graphql-go/graphql"
+
+	"github.com/functionalfoundry/graphqlws"
+
 	"github.com/graphql-go/handler"
 
 	"github.com/cxuhua/xginx"
@@ -33,7 +37,9 @@ type shoplistener struct {
 	//graphql http
 	gqlsrv *http.Server
 	//
+	gqlschema  *graphql.Schema
 	gqlhandler *handler.Handler
+	gqlsubmgr  graphqlws.SubscriptionManager
 	wg         sync.WaitGroup
 }
 
@@ -53,7 +59,9 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 }
 
 func (lis *shoplistener) OnLinkBlock(blk *xginx.BlockInfo) {
-
+	lis.Publish(xginx.GetContext(), "linkBlock", func(objs Objects) {
+		objs["linkBlock"] = blk
+	})
 }
 
 func (lis *shoplistener) OnNewBlock(blk *xginx.BlockInfo) error {
@@ -77,7 +85,9 @@ func (lis *shoplistener) TimeNow() uint32 {
 
 //OnUnlinkBlock 区块断开
 func (lis *shoplistener) OnUnlinkBlock(blk *xginx.BlockInfo) {
-
+	lis.Publish(xginx.GetContext(), "unlinkBlock", func(objs Objects) {
+		objs["unlinkBlock"] = blk
+	})
 }
 
 //MinerAddr 返回矿工地址
@@ -127,9 +137,18 @@ const (
 	objkeyblockkey = "objkeyblockindex"
 	objdocdbkey    = "objdocdbkey"
 	objkeydbkey    = "objkeydbkey"
+	objkeysubmgr   = "objsubmgrkey"
 )
 
 type Objects map[string]interface{}
+
+func (objs Objects) SubMgr() graphqlws.SubscriptionManager {
+	v, ok := objs[objkeysubmgr].(graphqlws.SubscriptionManager)
+	if !ok {
+		panic(fmt.Errorf("submgr   miss"))
+	}
+	return v
+}
 
 func (objs Objects) BlockIndex() *xginx.BlockIndex {
 	v, ok := objs[objkeyblockkey].(*xginx.BlockIndex)
@@ -156,7 +175,7 @@ func (objs Objects) DocDB() xginx.IDocSystem {
 }
 
 //返回可用的素有对象
-func NewObjects(ctx context.Context) Objects {
+func NewObjects() Objects {
 	return Objects{}
 }
 
@@ -171,25 +190,73 @@ func (lis *shoplistener) ServeHTTP(rw http.ResponseWriter, q *http.Request) {
 	lis.gqlhandler.ServeHTTP(rw, q)
 }
 
+//创建全局变量
+func (lis *shoplistener) NewObjects() Objects {
+	objs := NewObjects()
+	objs[objkeyblockkey] = xginx.GetBlockIndex()
+	objs[objdocdbkey] = lis.docdb
+	objs[objkeydbkey] = lis.keydb
+	return objs
+}
+
+//发布一个消息
+func (lis *shoplistener) Publish(ctx context.Context, opt string, fns ...func(objs Objects)) {
+	if lis.gqlsubmgr == nil {
+		panic(fmt.Errorf("sub mgr miss"))
+	}
+	subs := lis.gqlsubmgr.Subscriptions()
+	for conn := range subs {
+		for _, sub := range subs[conn] {
+			if sub.OperationName != opt {
+				continue
+			}
+			//设定发布root对象数据
+			objs := lis.NewObjects()
+			for _, fn := range fns {
+				fn(objs)
+			}
+			params := graphql.Params{
+				Schema:         *lis.gqlschema,
+				RequestString:  sub.Query,
+				VariableValues: sub.Variables,
+				OperationName:  sub.OperationName,
+				RootObject:     objs,
+				Context:        ctx,
+			}
+			result := graphql.Do(params)
+			//发送数据
+			data := &graphqlws.DataMessagePayload{
+				Data:   result.Data,
+				Errors: graphqlws.ErrorsFromGraphQLErrors(result.Errors),
+			}
+			sub.SendData(data)
+		}
+	}
+}
+
 func (lis *shoplistener) startgraphql(host string) {
 	urlv, err := url.Parse(host)
 	if err != nil {
 		xginx.LogError(err)
 		return
 	}
-	lis.gqlhandler = handler.New(&handler.Config{
-		Schema:   GetSchema(),
-		Pretty:   *xginx.IsDebug,
-		GraphiQL: *xginx.IsDebug,
+	lis.gqlschema = GetSchema()
+	lis.gqlsubmgr = graphqlws.NewSubscriptionManager(lis.gqlschema)
+	conf := &handler.Config{
+		Schema:     lis.gqlschema,
+		Pretty:     true,
+		GraphiQL:   false,
+		Playground: true,
 		RootObjectFn: func(ctx context.Context, r *http.Request) map[string]interface{} {
-			objs := NewObjects(ctx)
-			objs[objkeyblockkey] = xginx.GetBlockIndex()
-			objs[objdocdbkey] = lis.docdb
-			objs[objkeydbkey] = lis.keydb
-			return objs
+			return lis.NewObjects()
 		},
+	}
+	wshandler := graphqlws.NewHandler(graphqlws.HandlerConfig{
+		SubscriptionManager: lis.gqlsubmgr,
 	})
+	lis.gqlhandler = handler.New(conf)
 	mux := http.NewServeMux()
+	mux.Handle("/subscriptions", wshandler)
 	mux.Handle("/"+urlv.Scheme, lis)
 	lis.gqlsrv = &http.Server{
 		Addr:    urlv.Host,

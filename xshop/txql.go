@@ -503,6 +503,21 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "交易类型",
 })
 
+var PageInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "PageInput",
+	Fields: graphql.InputObjectConfigFieldMap{
+		"skip": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "跳过的数量",
+		},
+		"limit": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "每页的数量",
+		},
+	},
+	Description: "分页参数输入",
+})
+
 var listTxPool = &graphql.Field{
 	Name:        "ListTxPool",
 	Type:        graphql.NewList(graphql.NewNonNull(TXType)),

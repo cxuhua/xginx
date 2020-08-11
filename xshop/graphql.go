@@ -131,10 +131,44 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 	Description: "数据更新接口",
 })
 
+var subscription = graphql.NewObject(graphql.ObjectConfig{
+	Name: "Subscription",
+	Fields: graphql.Fields{
+		"linkBlock": {
+			Name: "LinkBlock",
+			Type: graphql.NewNonNull(BlockType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				blk, ok := objs["linkBlock"].(*xginx.BlockInfo)
+				if !ok {
+					return NewError(100, "linkBlock info miss")
+				}
+				return blk, nil
+			},
+			Description: "当有新区块信息来时发送",
+		},
+		"unlinkBlock": {
+			Name: "UnlinkBlock",
+			Type: graphql.NewNonNull(BlockType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				blk, ok := objs["unlinkBlock"].(*xginx.BlockInfo)
+				if !ok {
+					return NewError(100, "unlinkBlock info miss")
+				}
+				return blk, nil
+			},
+			Description: "当有区块断开时发送",
+		},
+	},
+	Description: "数据订阅接口",
+})
+
 func GetSchema() *graphql.Schema {
 	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query:    query,
-		Mutation: matation,
+		Query:        query,
+		Mutation:     matation,
+		Subscription: subscription,
 	})
 	if err != nil {
 		panic(err)
