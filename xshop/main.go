@@ -30,17 +30,20 @@ const (
 
 //实现自己的监听器
 type shoplistener struct {
-	//文档处理db
+	//文档db
 	docdb xginx.IDocSystem
 	//密钥db
 	keydb xginx.IKeysDB
 	//graphql http
 	gqlsrv *http.Server
-	//
-	gqlschema  *graphql.Schema
+	//graphql接口描述
+	gqlschema *graphql.Schema
+	//graphqlhttp处理器
 	gqlhandler *handler.Handler
-	gqlsubmgr  graphqlws.SubscriptionManager
-	wg         sync.WaitGroup
+	//graphql订阅管理
+	gqlsubmgr graphqlws.SubscriptionManager
+	//等待所有退出
+	wg sync.WaitGroup
 }
 
 //OnTxPool 当交易进入交易池之前，返回错误不会进入交易池
@@ -134,24 +137,15 @@ var (
 )
 
 const (
-	objkeyblockkey = "objkeyblockindex"
-	objdocdbkey    = "objdocdbkey"
-	objkeydbkey    = "objkeydbkey"
-	objkeysubmgr   = "objsubmgrkey"
+	objblockkey = "objblockkey"
+	objdocdbkey = "objdocdbkey"
+	objkeydbkey = "objkeydbkey"
 )
 
 type Objects map[string]interface{}
 
-func (objs Objects) SubMgr() graphqlws.SubscriptionManager {
-	v, ok := objs[objkeysubmgr].(graphqlws.SubscriptionManager)
-	if !ok {
-		panic(fmt.Errorf("submgr   miss"))
-	}
-	return v
-}
-
 func (objs Objects) BlockIndex() *xginx.BlockIndex {
-	v, ok := objs[objkeyblockkey].(*xginx.BlockIndex)
+	v, ok := objs[objblockkey].(*xginx.BlockIndex)
 	if !ok {
 		panic(fmt.Errorf("block index miss"))
 	}
@@ -193,7 +187,7 @@ func (lis *shoplistener) ServeHTTP(rw http.ResponseWriter, q *http.Request) {
 //创建全局变量
 func (lis *shoplistener) NewObjects() Objects {
 	objs := NewObjects()
-	objs[objkeyblockkey] = xginx.GetBlockIndex()
+	objs[objblockkey] = xginx.GetBlockIndex()
 	objs[objdocdbkey] = lis.docdb
 	objs[objkeydbkey] = lis.keydb
 	return objs
@@ -251,12 +245,11 @@ func (lis *shoplistener) startgraphql(host string) {
 			return lis.NewObjects()
 		},
 	}
-	wshandler := graphqlws.NewHandler(graphqlws.HandlerConfig{
-		SubscriptionManager: lis.gqlsubmgr,
-	})
 	lis.gqlhandler = handler.New(conf)
 	mux := http.NewServeMux()
-	mux.Handle("/subscriptions", wshandler)
+	mux.Handle("/subscriptions", graphqlws.NewHandler(graphqlws.HandlerConfig{
+		SubscriptionManager: lis.gqlsubmgr,
+	}))
 	mux.Handle("/"+urlv.Scheme, lis)
 	lis.gqlsrv = &http.Server{
 		Addr:    urlv.Host,
