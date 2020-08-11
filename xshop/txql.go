@@ -416,7 +416,7 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 				tx := p.Source.(*xginx.TX)
 				return tx.IsPool(), nil
 			},
-			Description: "是否在内存池",
+			Description: "是否在交易池",
 		},
 		"verify": {
 			Type: graphql.Boolean,

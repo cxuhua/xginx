@@ -31,7 +31,7 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 	Fields: graphql.Fields{
 		"ispool": {
 			Type:        graphql.Boolean,
-			Description: "是否在交易池中",
+			Description: "是否在交易池",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				coin := p.Source.(*xginx.CoinKeyValue)
 				return coin.IsPool(), nil
@@ -39,7 +39,7 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 		},
 		"txId": {
 			Type:        HashType,
-			Description: "金额锁在的交易ID",
+			Description: "金额所在的交易ID",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				coin := p.Source.(*xginx.CoinKeyValue)
 				return coin.TxID, nil

@@ -134,31 +134,31 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 var subscription = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Subscription",
 	Fields: graphql.Fields{
-		"linkBlock": {
-			Name: "LinkBlock",
+		"block": {
+			Name: "Block",
 			Type: graphql.NewNonNull(BlockType),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				objs := GetObjects(p)
-				blk, ok := objs["linkBlock"].(*xginx.BlockInfo)
+				blk, ok := objs["block"].(*xginx.BlockInfo)
 				if !ok {
 					return NewError(100, "linkBlock info miss")
 				}
 				return blk, nil
 			},
-			Description: "当有新区块信息来时发送",
+			Description: "发送指定的区块信息",
 		},
-		"unlinkBlock": {
-			Name: "UnlinkBlock",
-			Type: graphql.NewNonNull(BlockType),
+		"tx": {
+			Name: "TX",
+			Type: graphql.NewNonNull(TXType),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				objs := GetObjects(p)
-				blk, ok := objs["unlinkBlock"].(*xginx.BlockInfo)
+				tx, ok := objs["tx"].(*xginx.TX)
 				if !ok {
-					return NewError(100, "unlinkBlock info miss")
+					return NewError(100, "tx info miss")
 				}
-				return blk, nil
+				return tx, nil
 			},
-			Description: "当有区块断开时发送",
+			Description: "发送指定的交易信息信息",
 		},
 	},
 	Description: "数据订阅接口",

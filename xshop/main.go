@@ -63,7 +63,7 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 
 func (lis *shoplistener) OnLinkBlock(blk *xginx.BlockInfo) {
 	lis.Publish(xginx.GetContext(), "linkBlock", func(objs Objects) {
-		objs["linkBlock"] = blk
+		objs["block"] = blk
 	})
 }
 
@@ -89,7 +89,7 @@ func (lis *shoplistener) TimeNow() uint32 {
 //OnUnlinkBlock 区块断开
 func (lis *shoplistener) OnUnlinkBlock(blk *xginx.BlockInfo) {
 	lis.Publish(xginx.GetContext(), "unlinkBlock", func(objs Objects) {
-		objs["unlinkBlock"] = blk
+		objs["block"] = blk
 	})
 }
 
@@ -235,6 +235,7 @@ func (lis *shoplistener) startgraphql(host string) {
 		return
 	}
 	lis.gqlschema = GetSchema()
+	//订阅初始化
 	lis.gqlsubmgr = graphqlws.NewSubscriptionManager(lis.gqlschema)
 	conf := &handler.Config{
 		Schema:     lis.gqlschema,
@@ -250,6 +251,7 @@ func (lis *shoplistener) startgraphql(host string) {
 	mux.Handle("/subscriptions", graphqlws.NewHandler(graphqlws.HandlerConfig{
 		SubscriptionManager: lis.gqlsubmgr,
 	}))
+	//查询更新初始化
 	mux.Handle("/"+urlv.Scheme, lis)
 	lis.gqlsrv = &http.Server{
 		Addr:    urlv.Host,

@@ -32,7 +32,7 @@ var ClientType = graphql.NewObject(graphql.ObjectConfig{
 				cli := p.Source.(*xginx.Client)
 				return fmt.Sprintf("%x", cli.Service), nil
 			},
-			Description: "服务",
+			Description: "对端提供的服务",
 		},
 		"height": {
 			Type: graphql.String,
@@ -40,7 +40,7 @@ var ClientType = graphql.NewObject(graphql.ObjectConfig{
 				cli := p.Source.(*xginx.Client)
 				return cli.Height, nil
 			},
-			Description: "链接地址",
+			Description: "对端区块高度",
 		},
 		"ver": {
 			Type: graphql.String,
@@ -48,7 +48,7 @@ var ClientType = graphql.NewObject(graphql.ObjectConfig{
 				cli := p.Source.(*xginx.Client)
 				return cli.Ver, nil
 			},
-			Description: "链接地址",
+			Description: "对端版本",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
@@ -87,7 +87,7 @@ var statusInfo = &graphql.Field{
 				},
 			},
 			"clients": {
-				Type:        graphql.NewList(ClientType),
+				Type:        graphql.NewList(graphql.NewNonNull(ClientType)),
 				Description: "链接客户端",
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 					return xginx.Server.Clients(), nil
