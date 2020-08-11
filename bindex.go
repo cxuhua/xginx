@@ -1096,6 +1096,15 @@ func (bi *BlockIndex) GetBestValue() BestValue {
 	return bv
 }
 
+//GetCoinWithAddress 从指定地址交易idx和输出索引获取金额信息
+func (bi *BlockIndex) GetCoinWithAddress(addr Address, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
+	pkh, err := addr.GetPkh()
+	if err != nil {
+		return nil, err
+	}
+	return bi.GetCoin(pkh, txid, idx)
+}
+
 //GetCoin 获取一笔金额
 func (bi *BlockIndex) GetCoin(pkh HASH160, txid HASH256, idx VarUInt) (*CoinKeyValue, error) {
 	key := GetDBKey(CoinsPrefix, pkh[:], txid[:], idx.Bytes())

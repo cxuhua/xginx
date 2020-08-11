@@ -14,10 +14,25 @@ type ShopTransListener interface {
 	xginx.ISignTx
 }
 
+//转账发送地址金额
+type SenderInfo struct {
+	Addr  xginx.Address
+	TxID  xginx.HASH256
+	Index xginx.VarUInt
+}
+
+//转账接收信息
+type ReceiverInfo struct {
+	Addr   xginx.Address
+	Amount xginx.Amount
+	Meta   string
+}
+
 //转账接口实现
 type eshoptranslistener struct {
-	bi    *xginx.BlockIndex //链指针
-	keydb xginx.IKeysDB     //账户数据库指针
+	bi      *xginx.BlockIndex //链指针
+	keydb   xginx.IKeysDB     //账户数据库指针
+	senders []SenderInfo
 }
 
 func (lis *eshoptranslistener) NewWitnessScript(ckv *xginx.CoinKeyValue) (*xginx.WitnessScript, error) {
@@ -26,10 +41,15 @@ func (lis *eshoptranslistener) NewWitnessScript(ckv *xginx.CoinKeyValue) (*xginx
 }
 
 //创建一个转账处理器,使用默认的输入输出脚本
-func (obj Objects) NewTransListener() ShopTransListener {
+//senders如果指定了可用发送金额
+func (obj Objects) NewTransListener(senders ...SenderInfo) ShopTransListener {
 	bi := obj.BlockIndex()
 	keydb := obj.KeyDB()
-	return &eshoptranslistener{bi: bi, keydb: keydb}
+	return &eshoptranslistener{
+		bi:      bi,
+		senders: senders,
+		keydb:   keydb,
+	}
 }
 
 //签名交易
@@ -75,8 +95,25 @@ func (lis *eshoptranslistener) SignTx(singer xginx.ISigner, pass ...string) erro
 	return nil
 }
 
+//获取指定coins
+func (lis *eshoptranslistener) getsenderscoins() xginx.Coins {
+	ret := xginx.Coins{}
+	for _, sender := range lis.senders {
+		coin, err := lis.bi.GetCoinWithAddress(sender.Addr, sender.TxID, sender.Index)
+		if err != nil {
+			continue
+		}
+		ret = append(ret, coin)
+	}
+	return ret
+}
+
 //获取使用的金额列表
 func (lis *eshoptranslistener) GetCoins(amt xginx.Amount) xginx.Coins {
+	//如果指定了固定金额
+	if len(lis.senders) > 0 {
+		return lis.getsenderscoins()
+	}
 	//获取所有的金额账户
 	ret := xginx.Coins{}
 	//每次获取10个
@@ -241,7 +278,7 @@ var WitnessScriptType = graphql.NewObject(graphql.ObjectConfig{
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
-		_, ok := p.Value.(xginx.TxScript)
+		_, ok := p.Value.(*xginx.WitnessScript)
 		return ok
 	},
 	Description: "输入脚本类型,多重签名证书",
@@ -373,6 +410,14 @@ var TxOutType = graphql.NewObject(graphql.ObjectConfig{
 var TXType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Tx",
 	Fields: graphql.Fields{
+		"ispool": {
+			Type: graphql.Boolean,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				tx := p.Source.(*xginx.TX)
+				return tx.IsPool(), nil
+			},
+			Description: "是否在内存池",
+		},
 		"verify": {
 			Type: graphql.Boolean,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -458,6 +503,18 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "交易类型",
 })
 
+var listTxPool = &graphql.Field{
+	Name:        "ListTxPool",
+	Type:        graphql.NewList(graphql.NewNonNull(TXType)),
+	Description: "获取交易池中的交易",
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
+		bi := objs.BlockIndex()
+		tp := bi.GetTxPool()
+		return tp.AllTxs(), nil
+	},
+}
+
 var txInfo = &graphql.Field{
 	Name: "TxInfo",
 	Args: graphql.FieldConfigArgument{
@@ -479,15 +536,28 @@ var txInfo = &graphql.Field{
 	},
 }
 
-type TransferInfo struct {
-	Addr   xginx.Address `json:"addr"`
-	Amount xginx.Amount  `json:"amount"`
-	Meta   string        `json:"meta"`
-	Fee    xginx.Amount  `json:"fee"`
-}
+var SenderInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "SenderInput",
+	Fields: graphql.InputObjectConfigFieldMap{
+		"addr": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "金额地址",
+		},
+		"txId": {
+			Type:        graphql.NewNonNull(HashType),
+			Description: "金额交易id",
+		},
+		"index": {
+			Type:         graphql.NewNonNull(graphql.Int),
+			DefaultValue: -1,
+			Description:  "金额交易索引",
+		},
+	},
+	Description: "转账到指定地址输入参数",
+})
 
-var TransferInput = graphql.NewInputObject(graphql.InputObjectConfig{
-	Name: "TransferInput",
+var ReceiverInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "ReceiverInput",
 	Fields: graphql.InputObjectConfigFieldMap{
 		"addr": {
 			Type:        graphql.NewNonNull(graphql.String),
@@ -502,11 +572,6 @@ var TransferInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			DefaultValue: "",
 			Description:  "输出meta",
 		},
-		"fee": {
-			Type:         graphql.Int,
-			DefaultValue: 0,
-			Description:  "交易费",
-		},
 	},
 	Description: "转账到指定地址输入参数",
 })
@@ -515,24 +580,38 @@ var transfer = &graphql.Field{
 	Name: "Transfer",
 	Type: graphql.NewNonNull(TXType),
 	Args: graphql.FieldConfigArgument{
-		"attr": {
-			Type:         TransferInput,
+		"sender": {
+			Type:         graphql.NewList(SenderInput),
 			DefaultValue: nil,
-			Description:  "输入参数",
+			Description:  "可定制的付款信息,如果为空系统自动查询可用金额",
+		},
+		"receiver": {
+			Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(ReceiverInput))),
+			Description: "收款人列表",
+		},
+		"fee": {
+			Type:         graphql.Int,
+			DefaultValue: 0,
+			Description:  "交易费",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		info := &TransferInfo{}
-		err := DecodeValidateArgs("attr", p, info)
+		senders := []SenderInfo{}
+		_ = DecodeValidateArgs("sender", p, &senders)
+		receiver := []ReceiverInfo{}
+		err := DecodeValidateArgs("receiver", p, &receiver)
 		if err != nil {
 			return NewError(1, err)
 		}
+		fee := p.Args["fee"].(int)
 		objs := GetObjects(p)
 		bi := objs.BlockIndex()
-		lis := objs.NewTransListener()
+		lis := objs.NewTransListener(senders...)
 		mi := bi.NewTrans(lis)
-		mi.Add(info.Addr, info.Amount)
-		mi.Fee = info.Fee
+		for _, info := range receiver {
+			mi.Add(info.Addr, info.Amount)
+		}
+		mi.Fee = xginx.Amount(fee)
 		tx, err := mi.NewTx(xginx.DefaultExeTime, xginx.DefaultTxScript)
 		if err != nil {
 			return NewError(2, err)

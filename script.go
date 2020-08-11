@@ -357,7 +357,7 @@ func NewCoinbaseScript(h uint32, ip []byte, bs ...[]byte) (Script, error) {
 		s = append(s, v...)
 	}
 	if s.Len() > MaxCoinbaseScriptSize {
-		return nil, fmt.Errorf("coinbase script too long  length = %d", s.Len())
+		return nil, fmt.Errorf("coinbase script too long length = %d", s.Len())
 	}
 	return s, nil
 }
@@ -448,14 +448,14 @@ func (ss LockedScript) ToScript() (Script, error) {
 }
 
 //NewLockedScript 创建锁定脚本
-func NewLockedScript(pkh HASH160, meta string, execs ...[]byte) (*LockedScript, error) {
+func NewLockedScript(pkh HASH160, meta []byte, execs ...[]byte) (*LockedScript, error) {
 	if len(meta) > MaxMetaSize {
 		return nil, fmt.Errorf("meta too long %d", len(meta))
 	}
 	std := &LockedScript{Meta: VarBytes{}, Exec: VarBytes{}}
 	std.Type = ScriptLockedType
 	std.Pkh = pkh
-	std.Meta = []byte(meta)
+	std.Meta = meta
 	exec, err := MergeScript(execs...)
 	if err != nil {
 		return nil, err

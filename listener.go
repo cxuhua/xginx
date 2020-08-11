@@ -63,7 +63,7 @@ func DefaultNewBlock(lis IListener, blk *BlockInfo) error {
 	if err != nil {
 		return err
 	}
-	lcks, err := NewLockedScript(pkh, "", DefaultLockedScript)
+	lcks, err := NewLockedScript(pkh, nil, DefaultLockedScript)
 	if err != nil {
 		return err
 	}

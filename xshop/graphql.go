@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/mitchellh/mapstructure"
@@ -22,7 +23,21 @@ func DecodeValidateArgs(f string, p graphql.ResolveParams, obj interface{}) erro
 	if err != nil {
 		return err
 	}
-	return validate.StructCtx(p.Context, obj)
+	v := reflect.Indirect(reflect.ValueOf(obj))
+	if v.Kind() == reflect.Struct {
+		return validate.StructCtx(p.Context, obj)
+	}
+	if v.Kind() != reflect.Array && v.Kind() != reflect.Slice {
+		return fmt.Errorf("obj kind error %v", v.Kind())
+	}
+	for i := 0; i < v.Len(); i++ {
+		iv := v.Index(i)
+		err = validate.StructCtx(p.Context, iv.Interface())
+		if err != nil {
+			return fmt.Errorf("validate array %d error %w", i, err)
+		}
+	}
+	return nil
 }
 
 //错误类型
@@ -62,11 +77,10 @@ func hashtypesp(value interface{}) interface{} {
 	switch value.(type) {
 	case string:
 		str := value.(string)
-		l := len(str)
-		if l == len(xginx.ZERO160)*2 {
+		if len(str) == len(xginx.ZERO160)*2 {
 			return xginx.NewHASH160(str)
 		}
-		if l == len(xginx.ZERO256)*2 {
+		if len(str) == len(xginx.ZERO256)*2 {
 			return xginx.NewHASH256(str)
 		}
 	case *string:
@@ -102,6 +116,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"txInfo":         txInfo,
 		"listPrivateKey": listPrivateKey,
 		"listAccount":    listAccount,
+		"listTxPool":     listTxPool,
 	},
 	Description: "数据查询接口",
 })

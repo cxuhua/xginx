@@ -90,11 +90,13 @@ func (ka AccountInfo) Encode() ([]byte, error) {
 
 func (ka AccountInfo) Check() error {
 	//检测私钥id格式
+	pkhs := []HASH256{}
 	for idx, kid := range ka.Pks {
-		_, err := DecodePublicHash(kid)
+		pkh, err := DecodePublicHash(kid)
 		if err != nil {
 			return fmt.Errorf("private id %d error %w", idx, err)
 		}
+		pkhs = append(pkhs, pkh)
 	}
 	return CheckAccountArgs(uint8(ka.Num), uint8(ka.Less), ka.Arb, len(ka.Pks))
 }
@@ -166,7 +168,7 @@ type IKeysDB interface {
 	//创建待签名脚本
 	NewWitnessScript(id Address, execs ...[]byte) (*WitnessScript, error)
 	//创建锁定脚本
-	NewLockedScript(id Address, meta string, exec ...[]byte) (*LockedScript, error)
+	NewLockedScript(id Address, meta []byte, exec ...[]byte) (*LockedScript, error)
 	//签名并填充脚本数据
 	Sign(id Address, data []byte, wits *WitnessScript) error
 	//删除私钥
@@ -323,7 +325,7 @@ func (kd *levelkeysdb) DeleteAccountInfo(id Address) error {
 }
 
 //NewLockedScript 生成锁定脚本
-func (kd *levelkeysdb) NewLockedScript(id Address, meta string, exec ...[]byte) (*LockedScript, error) {
+func (kd *levelkeysdb) NewLockedScript(id Address, meta []byte, exec ...[]byte) (*LockedScript, error) {
 	_, err := kd.LoadAccountInfo(id)
 	if err != nil {
 		return nil, err
@@ -410,6 +412,12 @@ func (kd *levelkeysdb) LoadAccountInfo(id Address) (*AccountInfo, error) {
 	err = ka.Check()
 	if err != nil {
 		return nil, err
+	}
+	//检查计算出的id是否和id匹配
+	if cid, err := ka.ID(); err != nil {
+		return nil, err
+	} else if cid != id {
+		return nil, fmt.Errorf("id not match")
 	}
 	return ka, nil
 }

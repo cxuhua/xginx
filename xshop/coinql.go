@@ -29,7 +29,15 @@ var CoinState = graphql.NewEnum(graphql.EnumConfig{
 var CoinType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Coin",
 	Fields: graphql.Fields{
-		"tx": {
+		"ispool": {
+			Type:        graphql.Boolean,
+			Description: "是否在交易池中",
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				coin := p.Source.(*xginx.CoinKeyValue)
+				return coin.IsPool(), nil
+			},
+		},
+		"txId": {
 			Type:        HashType,
 			Description: "金额锁在的交易ID",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {

@@ -94,7 +94,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	//转出到其他账号的输出
 	for i, amt := range m.Amt {
 		dst := m.Dst[i]
-		out, err := dst.NewTxOut(amt, "", DefaultLockedScript)
+		out, err := dst.NewTxOut(amt, nil, DefaultLockedScript)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +103,7 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	//多减的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
 		//默认找零到最后一个地址
-		out, err := lout.NewTxOut(amt, "", DefaultLockedScript)
+		out, err := lout.NewTxOut(amt, nil, DefaultLockedScript)
 		if err != nil {
 			return nil, err
 		}

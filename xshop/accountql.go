@@ -56,7 +56,7 @@ var AccountInfoType = graphql.NewObject(graphql.ObjectConfig{
 			Description: "需要签名的数量",
 		},
 		"arb": {
-			Type: graphql.Int,
+			Type: graphql.Boolean,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				ka := p.Source.(*xginx.AccountInfo)
 				return ka.Arb, nil
@@ -171,7 +171,7 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 var createAccount = &graphql.Field{
 	Name: "createAccount",
 	Args: graphql.FieldConfigArgument{
-		"attr": {
+		"info": {
 			Type:        graphql.NewNonNull(CreateAccountInput),
 			Description: "账户信息描述",
 		},
@@ -179,7 +179,7 @@ var createAccount = &graphql.Field{
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		ka := &xginx.AccountInfo{}
-		err := DecodeValidateArgs("attr", p, ka)
+		err := DecodeValidateArgs("info", p, ka)
 		if err != nil {
 			return NewError(1, err)
 		}
