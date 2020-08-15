@@ -103,15 +103,26 @@ var listAccount = &graphql.Field{
 	Name:        "listAccount",
 	Type:        graphql.NewList(graphql.NewNonNull(AccountInfoType)),
 	Description: "获取私钥列表",
+	Args: graphql.FieldConfigArgument{
+		"type": {
+			Type:         AccountType,
+			DefaultValue: 0,
+			Description:  "账户地址",
+		},
+	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		objs := GetObjects(p)
 		keydb := objs.KeyDB()
 		ids, _ := keydb.ListAddress(0)
+		typ := p.Args["type"].(int)
 		kas := []*xginx.AccountInfo{}
 		for _, id := range ids {
 			info, err := keydb.LoadAccountInfo(id)
 			if err != nil {
 				return NewError(1, "load address %s error %w", id, err)
+			}
+			if typ > 0 && typ != info.Type {
+				continue
 			}
 			kas = append(kas, info)
 		}
@@ -152,7 +163,7 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 		},
 		"pks": {
 			Type:        graphql.NewList(graphql.NewNonNull(graphql.String)),
-			Description: "私钥id列表",
+			Description: "私钥id列表,签名时根据参数确定需要哪些私钥签名",
 		},
 		"desc": {
 			Type:         graphql.String,

@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"net"
 
 	"github.com/cxuhua/xginx"
@@ -9,46 +11,111 @@ import (
 )
 
 //交易签名处理接口
-type ShopTransListener interface {
-	xginx.ITransListener
+type IShopTrans interface {
 	xginx.ISignTx
+	//fee交易费
+	NewTx(fee xginx.Amount) (*xginx.TX, error)
 }
 
 //转账发送地址金额
 type SenderInfo struct {
-	Addr  xginx.Address
-	TxID  xginx.HASH256
-	Index xginx.VarUInt
+	Addr   xginx.Address //地址
+	TxID   xginx.HASH256 //交易id
+	Index  xginx.VarUInt //金额索引
+	Script string        //解锁脚本
 }
 
 //转账接收信息
 type ReceiverInfo struct {
-	Addr   xginx.Address
-	Amount xginx.Amount
-	Meta   string
+	Addr   xginx.Address //地址
+	Amount xginx.Amount  //金额
+	Meta   string        //meta数据
+	Script string        //输出脚本
+}
+
+func (r ReceiverInfo) ParseMeta() (*MetaBody, error) {
+	return ParseMetaBody([]byte(r.Meta))
 }
 
 //转账接口实现
 type eshoptranslistener struct {
-	bi      *xginx.BlockIndex //链指针
-	keydb   xginx.IKeysDB     //账户数据库指针
-	senders []SenderInfo
+	bi        *xginx.BlockIndex //链指针
+	keydb     xginx.IKeysDB     //账户数据库指针
+	senders   []SenderInfo
+	receivers []ReceiverInfo
 }
 
-func (lis *eshoptranslistener) NewWitnessScript(ckv *xginx.CoinKeyValue) (*xginx.WitnessScript, error) {
-	addr := ckv.GetAddress()
-	return lis.keydb.NewWitnessScript(addr, xginx.DefaultInputScript)
+//fee 交易费
+func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
+	if !fee.IsRange() {
+		return nil, fmt.Errorf("fee %d error", fee)
+	}
+	tx := xginx.NewTx(xginx.DefaultExeTime, xginx.DefaultTxScript)
+	//输出金额总计
+	sum := fee
+	for _, v := range lis.receivers {
+		sum += v.Amount
+	}
+	//最后一个输入地址默认作为找零地址（如果有零）
+	var lout xginx.Address
+	//使用哪些金额
+	for _, sender := range lis.senders {
+		coin, err := lis.bi.GetCoinWithAddress(sender.Addr, sender.TxID, sender.Index)
+		if err != nil {
+			continue
+		}
+		//获取消费金额对应的账户
+		wits, err := lis.keydb.NewWitnessScript(sender.Addr, []byte(sender.Script))
+		if err != nil {
+			return nil, err
+		}
+		//生成待签名的输入
+		in, err := coin.NewTxIn(wits)
+		if err != nil {
+			return nil, err
+		}
+		tx.Ins = append(tx.Ins, in)
+		//保存最后一个地址
+		lout = coin.GetAddress()
+		sum -= coin.Value
+		if sum <= 0 {
+			break
+		}
+	}
+	//没有减完，余额不足
+	if sum > 0 {
+		return nil, errors.New("insufficient balance")
+	}
+	//转出到其他账号的输出
+	for _, v := range lis.receivers {
+		out, err := v.Addr.NewTxOut(v.Amount, []byte(v.Meta), []byte(v.Script))
+		if err != nil {
+			return nil, err
+		}
+		tx.Outs = append(tx.Outs, out)
+	}
+	//剩余的需要找零钱给自己，否则金额就会丢失
+	if amt := -sum; amt > 0 {
+		//默认找零到最后一个地址
+		out, err := lout.NewTxOut(amt, nil, xginx.DefaultLockedScript)
+		if err != nil {
+			return nil, err
+		}
+		tx.Outs = append(tx.Outs, out)
+	}
+	return tx, nil
 }
 
 //创建一个转账处理器,使用默认的输入输出脚本
 //senders如果指定了可用发送金额
-func (obj Objects) NewTransListener(senders ...SenderInfo) ShopTransListener {
+func (obj Objects) NewTrans(senders []SenderInfo, receivers []ReceiverInfo) IShopTrans {
 	bi := obj.BlockIndex()
 	keydb := obj.KeyDB()
 	return &eshoptranslistener{
-		bi:      bi,
-		senders: senders,
-		keydb:   keydb,
+		bi:        bi,
+		senders:   senders,
+		receivers: receivers,
+		keydb:     keydb,
 	}
 }
 
@@ -567,6 +634,11 @@ var SenderInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			DefaultValue: -1,
 			Description:  "金额交易索引",
 		},
+		"script": {
+			Type:         graphql.String,
+			DefaultValue: string(xginx.DefaultInputScript),
+			Description:  "金额地址",
+		},
 	},
 	Description: "转账到指定地址输入参数",
 })
@@ -583,13 +655,34 @@ var ReceiverInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			Description: "转账金额",
 		},
 		"meta": {
+			Type:        graphql.String,
+			Description: "输出meta,MetaBody,由接口createTxMeta创建",
+		},
+		"script": {
 			Type:         graphql.String,
-			DefaultValue: "",
-			Description:  "输出meta",
+			DefaultValue: string(xginx.DefaultLockedScript),
+			Description:  "金额地址",
 		},
 	},
 	Description: "转账到指定地址输入参数",
 })
+
+var createTxMeta = &graphql.Field{
+	Name: "CreateTxMeta",
+	Args: graphql.FieldConfigArgument{
+		"ver": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "区块版本",
+		},
+	},
+	Type: graphql.Boolean,
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		ver := p.Args["ver"].(int)
+		xginx.Miner.NewBlock(uint32(ver))
+		return true, nil
+	},
+	Description: "创建一个交易meta",
+}
 
 var transfer = &graphql.Field{
 	Name: "Transfer",
@@ -612,33 +705,40 @@ var transfer = &graphql.Field{
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		senders := []SenderInfo{}
-		_ = DecodeValidateArgs("sender", p, &senders)
-		receiver := []ReceiverInfo{}
-		err := DecodeValidateArgs("receiver", p, &receiver)
+		err := DecodeValidateArgs("sender", p, &senders)
 		if err != nil {
-			return NewError(1, err)
+			return NewError(100, err)
+		}
+		receiver := []ReceiverInfo{}
+		err = DecodeValidateArgs("receiver", p, &receiver)
+		if err != nil {
+			return NewError(101, err)
+		}
+		for _, v := range receiver {
+			if v.Meta == "" {
+				continue
+			}
+			_, err = v.ParseMeta()
+			if err != nil {
+				return NewError(102, "parse meta error=%v meta=%s", err, v.Meta)
+			}
 		}
 		fee := p.Args["fee"].(int)
 		objs := GetObjects(p)
 		bi := objs.BlockIndex()
-		lis := objs.NewTransListener(senders...)
-		mi := bi.NewTrans(lis)
-		for _, info := range receiver {
-			mi.Add(info.Addr, info.Amount)
-		}
-		mi.Fee = xginx.Amount(fee)
-		tx, err := mi.NewTx(xginx.DefaultExeTime, xginx.DefaultTxScript)
+		lis := objs.NewTrans(senders, receiver)
+		tx, err := lis.NewTx(xginx.Amount(fee))
 		if err != nil {
-			return NewError(2, err)
+			return NewError(103, err)
 		}
 		err = tx.Sign(bi, lis)
 		if err != nil {
-			return NewError(3, err)
+			return NewError(104, err)
 		}
 		bp := bi.GetTxPool()
 		err = bp.PushTx(bi, tx)
 		if err != nil {
-			return NewError(4, err)
+			return NewError(105, err)
 		}
 		return tx, nil
 	},

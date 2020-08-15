@@ -127,6 +127,8 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 		"transfer":         transfer,
 		"createPrivateKey": createPrivateKey,
 		"createAccount":    createAccount,
+		"newBlock":         newBlock,
+		"createTxMeta":     createTxMeta,
 	},
 	Description: "数据更新接口",
 })
@@ -141,7 +143,7 @@ var subscription = graphql.NewObject(graphql.ObjectConfig{
 				objs := GetObjects(p)
 				blk, ok := objs["block"].(*xginx.BlockInfo)
 				if !ok {
-					return NewError(100, "linkBlock info miss")
+					return NewError(100, "block info miss")
 				}
 				return blk, nil
 			},

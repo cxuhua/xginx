@@ -132,6 +132,8 @@ type IMiner interface {
 	ResetMiner() error
 	//当前时间戳
 	TimeNow() uint32
+	//发送创建新区块请求
+	NewBlock(ver uint32)
 }
 
 //默认矿工处理
@@ -156,6 +158,14 @@ func newMinerEngine() IMiner {
 		sch: make(chan bool, 1),
 		mch: make(chan HeaderBytes, 1),
 	}
+}
+
+func (m *minerEngine) NewBlock(ver uint32) {
+	ps := GetPubSub()
+	ps.Pub(MinerAct{
+		Opt: OptGenBlock,
+		Arg: ver,
+	}, NewMinerActTopic)
 }
 
 func (m *minerEngine) TimeNow() uint32 {
@@ -205,14 +215,11 @@ func (m *minerEngine) SetHeader(b []byte) error {
 }
 
 //创建一个区块
-func (m *minerEngine) genNewBlock(ver uint32) error {
+func (m *minerEngine) genNewBlock(num int, ver uint32) error {
 	if !m.ogb.Running() {
 		return nil
 	}
 	defer m.ogb.Reset()
-	if conf.MinerNum == 0 {
-		return errors.New("miner_num = 0,disable miner calc")
-	}
 	bi := GetBlockIndex()
 	txp := bi.GetTxPool()
 	blk, err := bi.NewBlock(ver)
@@ -229,7 +236,7 @@ func (m *minerEngine) genNewBlock(ver uint32) error {
 	}
 	LogInfof("start gen new block add %d Tx, prev=%v cpu=%d", len(blk.Txs), blk.Meta.Prev, conf.MinerNum)
 	m.mbv = blk.Header.Bytes()
-	mg := NewMinerGroup(m.mbv, blk.Header.Bits, conf.MinerNum)
+	mg := NewMinerGroup(m.mbv, blk.Header.Bits, num)
 	defer mg.Stop()
 	mg.Run()
 	//打印定时器
@@ -261,7 +268,7 @@ loop:
 				ts, blk.Meta.Height,
 				len(blk.Txs),
 				txp.Len(),
-				conf.MinerNum,
+				num,
 				bi.CacheSize(),
 			)
 			dt.Reset(time.Second * MinerLogSeconds)
@@ -353,7 +360,7 @@ func (m *minerEngine) processOpt(opt MinerAct) {
 			LogError("OptGetBlock args type error", opt.Arg)
 			break
 		}
-		err := m.genNewBlock(ver)
+		err := m.genNewBlock(1, ver)
 		if err != nil {
 			LogError("gen new block error", err)
 		}
@@ -395,7 +402,7 @@ func (m *minerEngine) loop(i int, ch chan interface{}, dt *time.Timer) {
 			if conf.MinerNum == 0 {
 				break
 			}
-			if err := m.genNewBlock(1); err != nil {
+			if err := m.genNewBlock(conf.MinerNum, 1); err != nil {
 				LogError("gen new block error", err)
 			}
 			dt.Reset(AutoGenBlockTime)

@@ -25,7 +25,6 @@ func Run(lis IListener) {
 		flag.Parse()
 	}
 	conf := InitConfig()
-	defer conf.Close()
 
 	LogInfof("xginx run config name = %s", conf.Name)
 
@@ -33,7 +32,6 @@ func Run(lis IListener) {
 	defer ps.Shutdown()
 
 	bi := InitBlockIndex(lis)
-	defer bi.Close()
 
 	csig := make(chan os.Signal)
 	ctx, cancel = context.WithCancel(context.Background())
@@ -47,7 +45,6 @@ func Run(lis IListener) {
 	time.Sleep(time.Millisecond * 300)
 	lis.OnStart()
 	//必定停止
-	defer lis.OnStop()
 
 	//等候关闭信号
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
@@ -55,6 +52,10 @@ func Run(lis IListener) {
 
 	cancel()
 	LogInfo("recv sig :", sig, ",system start exit")
+
+	lis.OnStop()
+	bi.Close()
+	conf.Close()
 
 	Server.Stop()
 	LogInfo("wait server stop")

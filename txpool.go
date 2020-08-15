@@ -53,8 +53,8 @@ func NewTxPool() *TxPool {
 
 //Close 关闭交易池
 func (pool *TxPool) Close() {
-	pool.mdb.Reset()
 	_ = pool.Dump(TxPoolFile)
+	pool.mdb.Reset()
 }
 
 func (pool *TxPool) deltx(bi *BlockIndex, tx *TX) {

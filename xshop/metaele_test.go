@@ -48,8 +48,8 @@ func TestNewShopMeta(t *testing.T) {
 	err = urls.Check(ctx)
 	require.NoError(t, err)
 
-	mb := MetaBody{
-		Type: 1,
+	mb := &MetaBody{
+		Type: MetaTypeSell,
 		Tags: []string{"11", "22"},
 		Eles: []MetaEle{mtxt, mhash, mrsa, urls},
 	}
@@ -57,6 +57,7 @@ func TestNewShopMeta(t *testing.T) {
 	require.NoError(t, err)
 	mb2, err := sm.To()
 	require.NoError(t, err)
+	assert.Equal(t, mb.Sum, mb2.Sum)
 	assert.Equal(t, mb.Type, mb2.Type)
 	assert.Equal(t, mb.Tags, mb2.Tags)
 	assert.Equal(t, mb.Eles, mb2.Eles)

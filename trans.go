@@ -17,23 +17,30 @@ type ITransListener interface {
 
 //Trans 交易数据结构
 type Trans struct {
-	bi  *BlockIndex
-	lis ITransListener
-	Dst []Address //目标地址
-	Amt []Amount  //目标金额 大小与dst对应
-	Fee Amount    //交易费
+	bi    *BlockIndex
+	lis   ITransListener
+	Dst   []Address //目标地址
+	Amt   []Amount  //目标金额 大小与dst对应
+	Metas []string
+	Fee   Amount //交易费
 }
 
 //Clean 清楚交易对象
 func (m *Trans) Clean() {
 	m.Dst = []Address{}
 	m.Amt = []Amount{}
+	m.Metas = []string{}
 }
 
 //Add 设置一个转账对象
-func (m *Trans) Add(dst Address, amt Amount) {
+func (m *Trans) Add(dst Address, amt Amount, meta ...string) {
 	m.Dst = append(m.Dst, dst)
 	m.Amt = append(m.Amt, amt)
+	if len(meta) > 0 && meta[0] != "" {
+		m.Metas = append(m.Metas, meta[0])
+	} else {
+		m.Metas = append(m.Metas, "")
+	}
 }
 
 //Check 检测参数
@@ -94,13 +101,14 @@ func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
 	//转出到其他账号的输出
 	for i, amt := range m.Amt {
 		dst := m.Dst[i]
-		out, err := dst.NewTxOut(amt, nil, DefaultLockedScript)
+		meta := m.Metas[i]
+		out, err := dst.NewTxOut(amt, []byte(meta), DefaultLockedScript)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
-	//多减的需要找零钱给自己，否则金额就会丢失
+	//剩余的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
 		//默认找零到最后一个地址
 		out, err := lout.NewTxOut(amt, nil, DefaultLockedScript)
@@ -127,10 +135,11 @@ func (m *Trans) BroadTx(bi *BlockIndex, tx *TX) {
 //NewTrans 创建待回调的交易对象
 func (bi *BlockIndex) NewTrans(lis ITransListener) *Trans {
 	return &Trans{
-		bi:  bi,
-		lis: lis,
-		Dst: []Address{},
-		Amt: []Amount{},
-		Fee: 0,
+		bi:    bi,
+		lis:   lis,
+		Dst:   []Address{},
+		Amt:   []Amount{},
+		Metas: []string{},
+		Fee:   0,
 	}
 }

@@ -194,7 +194,7 @@ func (lis *shoplistener) NewObjects() Objects {
 }
 
 //发布一个消息
-func (lis *shoplistener) Publish(ctx context.Context, opt string, fns ...func(objs Objects)) {
+func (lis *shoplistener) Publish(ctx context.Context, opt string, setobjs ...func(objs Objects)) {
 	if lis.gqlsubmgr == nil {
 		panic(fmt.Errorf("sub mgr miss"))
 	}
@@ -206,8 +206,8 @@ func (lis *shoplistener) Publish(ctx context.Context, opt string, fns ...func(ob
 			}
 			//设定发布root对象数据
 			objs := lis.NewObjects()
-			for _, fn := range fns {
-				fn(objs)
+			for _, setobj := range setobjs {
+				setobj(objs)
 			}
 			params := graphql.Params{
 				Schema:         *lis.gqlschema,
@@ -240,8 +240,8 @@ func (lis *shoplistener) startgraphql(host string) {
 	conf := &handler.Config{
 		Schema:     lis.gqlschema,
 		Pretty:     true,
-		GraphiQL:   false,
-		Playground: true,
+		GraphiQL:   true,
+		Playground: false,
 		RootObjectFn: func(ctx context.Context, r *http.Request) map[string]interface{} {
 			return lis.NewObjects()
 		},

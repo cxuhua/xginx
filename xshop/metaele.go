@@ -32,6 +32,8 @@ const (
 	MetaEleHASH = "HASH"
 	//RSA公钥,用于信息加密
 	MetaEleRSA = "RSA"
+	//KID 私钥ID = 公钥hash swit编码 可解码出公钥hash256用于生成地址
+	MetaEleKID = "KID"
 	//url资源对应的最大大小
 	MaxURLSize = 1024 * 1024 * 5
 )
@@ -50,6 +52,7 @@ type MetaBody struct {
 	Type int       `json:"type"` //1-出售 2-购买 3-确认
 	Tags []string  `json:"tags"` //内容关键字,用于商品关注过滤存储
 	Eles []MetaEle `json:"eles"` //元素集合
+	Sum  string    `json:"-"`    //生成时自动填充
 }
 
 func ParseMetaBody(b []byte) (*MetaBody, error) {
@@ -73,16 +76,23 @@ type MetaEle struct {
 	Body string `json:"body"`
 }
 
+var (
+	client = http.Client{}
+)
+
 func (ele MetaEle) checkurl(ctx context.Context, urlv *url.URL) error {
 	scheme := strings.ToLower(urlv.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return fmt.Errorf("only support http or https")
 	}
-	res, err := http.Get(urlv.String())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv.String(), nil)
 	if err != nil {
 		return err
 	}
-	defer res.Body.Close()
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
 	cls := res.Header.Get("Content-Length")
 	if cl, err := strconv.ParseInt(cls, 10, 32); err != nil {
 		return err
@@ -108,6 +118,13 @@ func (ele MetaEle) checkurl(ctx context.Context, urlv *url.URL) error {
 }
 
 func (ele MetaEle) Check(ctx context.Context) error {
+	if ele.Type == MetaEleKID {
+		if len(ele.Body) != ele.Size {
+			return fmt.Errorf("ele size error")
+		}
+		_, err := xginx.DecodePublicHash(ele.Body)
+		return err
+	}
 	if ele.Type == MetaEleTEXT {
 		if len(ele.Body) != ele.Size {
 			return fmt.Errorf("ele size error")
@@ -154,7 +171,9 @@ func (ele MetaEle) Check(ctx context.Context) error {
 	return fmt.Errorf("type %s error", ele.Type)
 }
 
-func (mb MetaBody) To() (ShopMeta, error) {
+func (mb *MetaBody) To() (ShopMeta, error) {
+	//sum不需要签名
+	mb.Sum = ""
 	jv, err := json.Marshal(mb)
 	if err != nil {
 		return "", err
@@ -164,6 +183,7 @@ func (mb MetaBody) To() (ShopMeta, error) {
 	if len(str) > xginx.MaxMetaSize {
 		return "", fmt.Errorf("content length > %d", xginx.MaxMetaSize)
 	}
+	mb.Sum = hv.String()
 	return str, nil
 }
 
@@ -177,11 +197,12 @@ func (s ShopMeta) To() (*MetaBody, error) {
 	if len(s) < sl+16 {
 		return nil, fmt.Errorf("meta length error")
 	}
+	mb := &MetaBody{}
+	mb.Sum = string(s[len(s)-sl:])
 	bb := string(s[:len(s)-sl])
-	if MetaHash(bb) != string(s[len(s)-sl:]) {
+	if MetaHash(bb) != mb.Sum {
 		return nil, fmt.Errorf("hash sum error")
 	}
-	mb := &MetaBody{}
 	err := json.Unmarshal([]byte(bb), mb)
 	if err != nil {
 		return nil, err
@@ -189,7 +210,7 @@ func (s ShopMeta) To() (*MetaBody, error) {
 	return mb, nil
 }
 
-func NewShopMeta(ctx context.Context, mb MetaBody) (ShopMeta, error) {
+func NewShopMeta(ctx context.Context, mb *MetaBody) (ShopMeta, error) {
 	if mb.Type != MetaTypeSell && mb.Type != MetaTypeBuy && mb.Type != MetaTypeConfirm {
 		return "", fmt.Errorf("type %d error", mb.Type)
 	}

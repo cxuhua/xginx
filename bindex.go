@@ -1213,6 +1213,34 @@ func (bi *BlockIndex) ListTxsWithID(id HASH160, limit ...int) (TxIndexs, error) 
 	return idxs, nil
 }
 
+//cb返回false,不再继续获取
+func (bi *BlockIndex) ListCoinsWithCB(addr Address, cb func(ckv *CoinKeyValue) bool) error {
+	tp := bi.GetTxPool()
+	pkh, err := addr.GetPkh()
+	if err != nil {
+		return err
+	}
+	prefix := getDBKey(CoinsPrefix, pkh[:])
+	iter := bi.blkdb.Index().Iterator(NewPrefix(prefix))
+	defer iter.Close()
+	for iter.Next() {
+		ckv := &CoinKeyValue{}
+		err := ckv.From(iter.Key(), iter.Value())
+		if err != nil {
+			return err
+		}
+		//如果在交易池消费了不显示
+		//消费剩余的会在交易池获取到
+		if tp.IsSpentCoin(ckv) {
+			continue
+		}
+		if !cb(ckv) {
+			return nil
+		}
+	}
+	return nil
+}
+
 //ListCoinsWithID 获取某个id的所有余额
 //已经消费在内存中的不列出
 func (bi *BlockIndex) ListCoinsWithID(pkh HASH160) (Coins, error) {

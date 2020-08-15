@@ -45,6 +45,16 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 				return coin.TxID, nil
 			},
 		},
+		"txInfo": {
+			Type:        TXType,
+			Description: "交易信息",
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				coin := p.Source.(*xginx.CoinKeyValue)
+				objs := GetObjects(p)
+				bi := objs.BlockIndex()
+				return bi.LoadTX(coin.TxID)
+			},
+		},
 		"index": {
 			Type:        graphql.Int,
 			Description: "金额锁在的交易输出索引",
@@ -116,6 +126,11 @@ var listCoin = &graphql.Field{
 						DefaultValue: 0,
 						Description:  "按状态查询",
 					},
+					"fee": {
+						Type:         graphql.Int,
+						DefaultValue: 0,
+						Description:  "按金额返回可用的金额",
+					},
 				},
 				Type:        graphql.NewList(CoinType),
 				Description: "获取地址金额信息",
@@ -123,18 +138,34 @@ var listCoin = &graphql.Field{
 					bi := p.Source.(*xginx.BlockIndex)
 					addr := p.Args["addr"].(string)
 					state := p.Args["state"].(int)
-					coins, err := bi.ListCoins(xginx.Address(addr))
-					if err != nil {
-						return nil, err
-					}
-					if state == 0 {
-						return coins.All.Sort(), nil
-					}
-					if state == 1 {
-						return coins.Locks.Sort(), nil
-					}
-					if state == 2 {
-						return coins.Coins.Sort(), nil
+					fee := p.Args["fee"].(int)
+					if fee > 0 {
+						coins := xginx.Coins{}
+						spent := bi.NextHeight()
+						err := bi.ListCoinsWithCB(xginx.Address(addr), func(ckv *xginx.CoinKeyValue) bool {
+							//不成熟的忽略
+							if !ckv.IsMatured(spent) {
+								return true
+							}
+							coins = append(coins, ckv)
+							fee -= int(ckv.Value)
+							return fee > 0
+						})
+						return coins, err
+					} else {
+						coins, err := bi.ListCoins(xginx.Address(addr))
+						if err != nil {
+							return nil, err
+						}
+						if state == 0 {
+							return coins.All.Sort(), nil
+						}
+						if state == 1 {
+							return coins.Locks.Sort(), nil
+						}
+						if state == 2 {
+							return coins.Coins.Sort(), nil
+						}
 					}
 					return nil, fmt.Errorf("state args %d error", state)
 				},

@@ -120,3 +120,20 @@ var blockInfo = &graphql.Field{
 		return bi.LoadBlock(bv.ID)
 	},
 }
+
+var newBlock = &graphql.Field{
+	Name: "NewBlock",
+	Args: graphql.FieldConfigArgument{
+		"ver": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "区块版本",
+		},
+	},
+	Type: graphql.Boolean,
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		ver := p.Args["ver"].(int)
+		xginx.Miner.NewBlock(uint32(ver))
+		return true, nil
+	},
+	Description: "创建一个新区块",
+}

@@ -70,7 +70,7 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 				mb := p.Source.(*MetaBody)
 				return mb.Eles, nil
 			},
-			Description: "标签",
+			Description: "元素",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
@@ -99,6 +99,10 @@ var EleType = graphql.NewEnum(graphql.EnumConfig{
 			Value:       MetaEleRSA,
 			Description: "RSA公钥,用于信息加密",
 		},
+		"KID": {
+			Value:       MetaEleKID,
+			Description: "私钥ID,公钥hashid",
+		},
 	},
 	Description: "meta元素类型",
 })
@@ -108,15 +112,15 @@ var BodyType = graphql.NewEnum(graphql.EnumConfig{
 	Values: graphql.EnumValueConfigMap{
 		"SELL": {
 			Value:       MetaTypeSell,
-			Description: "出售",
+			Description: "出售,卖家发出,并发布的链",
 		},
 		"BUY": {
 			Value:       MetaTypeBuy,
-			Description: "购买",
+			Description: "购买,买家购买",
 		},
 		"CONFIRM": {
 			Value:       MetaTypeConfirm,
-			Description: "确认发货",
+			Description: "确认,双方确认",
 		},
 	},
 	Description: "meta类型",
