@@ -139,7 +139,8 @@ func (m *MsgBroadAck) Decode(r IReader) error {
 
 //MsgBroadPkg 广播头
 type MsgBroadPkg struct {
-	MsgID MsgID //md5
+	Meta  []byte //自定义的meta数据
+	MsgID MsgID  //md5
 }
 
 //ID 消息id
@@ -154,12 +155,28 @@ func (m MsgBroadPkg) Type() NTType {
 
 //Encode 编码消息
 func (m MsgBroadPkg) Encode(w IWriter) error {
-	return w.WriteFull(m.MsgID[:])
+	err := w.WriteFull(m.Meta)
+	if err != nil {
+		return err
+	}
+	err = w.WriteFull(m.MsgID[:])
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 //Decode 解码消息
 func (m *MsgBroadPkg) Decode(r IReader) error {
-	return r.ReadFull(m.MsgID[:])
+	err := r.ReadFull(m.Meta)
+	if err != nil {
+		return err
+	}
+	err = r.ReadFull(m.MsgID[:])
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 //错误定义
@@ -179,6 +196,11 @@ func (m MsgID) SendKey() string {
 //RecvKey 用于接收的key
 func (m MsgID) RecvKey() string {
 	return "R" + string(m[:])
+}
+
+//IMsgMeta 创建一个meta信息
+type IMsgMeta interface {
+	NewMeta() []byte
 }
 
 //MsgIO 协议消息

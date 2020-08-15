@@ -95,8 +95,11 @@ type IServer interface {
 	Stop()
 	Wait()
 	NewClient() *Client
-	//广播消息,返回发送的目标数量
+	//广播消息,根据包ID先发包头
 	BroadMsg(m MsgIO, skips ...*Client) int
+	//直接广播数据,不处理包ID
+	Broadcast(m MsgIO, skips ...*Client) int
+	//
 	DoOpt(opt int)
 	Clients() []*Client
 	Addrs() []*AddrNode
@@ -178,13 +181,43 @@ func (s *TCPServer) NewMsgAddrs(c *Client) *MsgAddrs {
 	return msg
 }
 
+//Broad 直接广播数据,不处理包头
+func (s *TCPServer) Broadcast(m MsgIO, skips ...*Client) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	count := 0
+	skip := func(v *Client) bool {
+		for _, cc := range skips {
+			if cc.Equal(v) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range s.cls {
+		if skip(c) {
+			continue
+		}
+		c.SendMsg(m)
+		count++
+	}
+	return count
+}
+
 //BroadMsg 如果skips不空不会广播给skips中的链接
 func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	//先保存数据包到本地
+	id, err := m.ID()
+	if err != nil {
+		panic(err)
+	}
+	//数据先保存在缓存
+	s.SetPkg(id.SendKey(), m)
 	//检测是否在忽略列表中
 	count := 0
-	skipf := func(v *Client) bool {
+	skip := func(v *Client) bool {
 		for _, cc := range skips {
 			if cc.Equal(v) {
 				return true
@@ -194,10 +227,16 @@ func (s *TCPServer) BroadMsg(m MsgIO, skips ...*Client) int {
 	}
 	//一般不会发送给接收到数据的节点
 	for _, c := range s.cls {
-		if skipf(c) {
+		if skip(c) {
 			continue
 		}
-		c.BroadMsg(m)
+		//发送给周围的节点有id这个数据包
+		msg := &MsgBroadPkg{MsgID: id}
+		//如果有meta信息设置信息
+		if mf, ok := m.(IMsgMeta); ok {
+			msg.Meta = mf.NewMeta()
+		}
+		c.SendMsg(msg)
 		count++
 	}
 	return count
@@ -638,46 +677,6 @@ func (s *TCPServer) run() {
 		s.err = err
 		s.cfun()
 	})
-	//for {
-	//	conn, err := s.tcplis.Accept()
-	//	//是否达到最大连接
-	//	if s.ConnNum() >= conf.MaxConn {
-	//		LogError("conn arrive max,ignore", conn)
-	//		//超过最大连接直接关闭
-	//		if err == nil {
-	//			_ = conn.Close()
-	//		}
-	//		continue
-	//	}
-	//	if err == nil {
-	//		//开启新的协程处理新链接
-	//		delay = 0
-	//		c := s.NewClientWithConn(conn)
-	//		c.typ = ClientIn
-	//		c.isopen = true
-	//		LogInfo("new connection", conn.RemoteAddr())
-	//		c.Loop()
-	//		continue
-	//	}
-	//	if ne, ok := err.(net.Error); ok && ne.Temporary() {
-	//		if delay == 0 {
-	//			delay = 5 * time.Millisecond
-	//		} else {
-	//			delay *= 2
-	//		}
-	//		if max := 1 * time.Second; delay > max {
-	//			delay = max
-	//		}
-	//		LogError("Accept error: %v; retrying in %v", err, delay)
-	//		time.Sleep(delay)
-	//		continue
-	//	} else {
-	//		//发生错误退出
-	//		s.err = err
-	//		s.cfun()
-	//		break
-	//	}
-	//}
 }
 
 //GetPkg 获取广播数据包

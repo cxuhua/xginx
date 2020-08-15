@@ -176,12 +176,12 @@ func (c *Client) processMsg(m MsgIO) error {
 		if c.ss.HasPkg(msg.MsgID.RecvKey()) {
 			break
 		}
-		//只向最先到达的头发送数据应答
+		//发送收据请求包
 		rsg := &MsgBroadAck{MsgID: msg.MsgID}
 		c.SendMsg(rsg)
 	case NtBroadAck:
 		msg := m.(*MsgBroadAck)
-		//收到应答，有数据就发送回去
+		//收请求包，有数据就发送回去
 		if rsg, ok := c.ss.GetPkg(msg.MsgID.SendKey()); ok {
 			c.SendMsg(rsg)
 		}
@@ -417,19 +417,6 @@ func (c *Client) loop() {
 			return
 		}
 	}
-}
-
-//BroadMsg 广播消息
-func (c *Client) BroadMsg(m MsgIO) {
-	id, err := m.ID()
-	if err != nil {
-		panic(err)
-	}
-	//数据先保存在缓存
-	c.ss.SetPkg(id.SendKey(), m)
-	//发送广播包头
-	msg := &MsgBroadPkg{MsgID: id}
-	c.wc <- msg
 }
 
 //SendMsg 发送消息
