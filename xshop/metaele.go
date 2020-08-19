@@ -10,20 +10,24 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cxuhua/xginx"
 )
 
 //MetaHash hash方法
 func MetaHash(s string) string {
-	return xginx.Hash160From([]byte(s)).String()
+	return MetaHashBytes([]byte(s))
 }
 
-func MetaHashBytes(bb []byte) string {
-	return xginx.Hash160From(bb).String()
+func MetaHashBytes(dat []byte) string {
+	bb := xginx.Ripemd160(dat)
+	return hex.EncodeToString(bb)
 }
 
 const (
+	//唯一的UUID <= 64 byte
+	MetaEleUUID = "UUID"
 	//文本元素 sum为文本内容的sha256
 	MetaEleTEXT = "TEXT"
 	//url链接元素 sum为链接内容的sum
@@ -38,21 +42,31 @@ const (
 	MaxURLSize = 1024 * 1024 * 5
 )
 
+type MetaType int8
+
 const (
-	//出售
-	MetaTypeSell = 1
-	//购买
-	MetaTypeBuy = 2
-	//确认
-	MetaTypeConfirm = 3
+	MetaTypeSell    MetaType = 1 //出售
+	MetaTypeBuy     MetaType = 2 //购买
+	MetaTypeConfirm MetaType = 3 //确认
 )
 
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
-	Type int       `json:"type"` //1-出售 2-购买 3-确认
+	Type MetaType  `json:"type"` //1-出售 2-购买 3-确认
 	Tags []string  `json:"tags"` //内容关键字,用于商品关注过滤存储
 	Eles []MetaEle `json:"eles"` //元素集合
-	Sum  string    `json:"-"`    //生成时自动填充
+}
+
+func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
+	doc := xginx.NewDocument()
+	doc.ID = mb.MustID()
+	str, err := mb.To()
+	if err != nil {
+		return nil, err
+	}
+	doc.Body = []byte(str)
+	doc.Tags = mb.Tags
+	return doc, nil
 }
 
 func ParseMetaBody(b []byte) (*MetaBody, error) {
@@ -68,77 +82,116 @@ func ParseMetaBody(b []byte) (*MetaBody, error) {
 type MetaEle struct {
 	//元素类型 TEXT URL
 	Type string `json:"type"`
-	//内容长度
-	Size int `json:"size"`
-	//校验和 sha256算法 HASH和RSA公钥不需要校验
-	Sum string `json:"sum,omitempty"`
 	//对应的text内容或者是url 例如:http://www.baidu.com/logo.png
 	Body string `json:"body"`
 }
 
+//NewMetaEle 创建一个元素类型
+func NewMetaEle(typ string, body string) MetaEle {
+	me := MetaEle{
+		Type: typ,
+		Body: body,
+	}
+	return me
+}
+
+//NewMetaUrl 下载url资源生成描述
+func NewMetaUrl(ctx context.Context, surl string) (MetaEle, error) {
+	me := MetaEle{
+		Type: MetaEleURL,
+	}
+	urlv, err := url.Parse(surl)
+	if err != nil {
+		return me, err
+	}
+	//获取文件头
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, surl, nil)
+	if err != nil {
+		return me, err
+	}
+	res, err := httpclient.Do(req)
+	if err != nil {
+		return me, err
+	}
+	//资源的content-length必须存在
+	cls := res.Header.Get("Content-Length")
+	if cls == "" {
+		return me, fmt.Errorf("miss http Content-Length header")
+	} else if cl, err := strconv.ParseInt(cls, 10, 32); err != nil {
+		return me, err
+	} else if cl > MaxURLSize {
+		return me, fmt.Errorf("url resource %d too big > %d", cl, MaxURLSize)
+	}
+	//下载数据
+	req, err = http.NewRequestWithContext(ctx, http.MethodGet, surl, nil)
+	if err != nil {
+		return me, err
+	}
+	res, err = httpclient.Do(req)
+	if err != nil {
+		return me, err
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return me, err
+	}
+	q := urlv.Query()
+	q.Set("sum", MetaHashBytes(body))
+	urlv.RawQuery = q.Encode()
+	//追加sum用来检测内容是否一致
+	me.Body = urlv.String()
+	return me, nil
+}
+
 var (
-	client = http.Client{}
+	httpclient = http.Client{
+		Timeout: time.Second * 30,
+	}
 )
 
-func (ele MetaEle) checkurl(ctx context.Context, urlv *url.URL) error {
+//下载数据检测
+func (ele MetaEle) checkurl(ctx context.Context) error {
+	urlv, err := url.Parse(ele.Body)
+	if err != nil {
+		return err
+	}
+	q := urlv.Query()
+	if q.Get("sum") == "" {
+		return fmt.Errorf("url %s miss sum query args", ele.Body)
+	}
 	scheme := strings.ToLower(urlv.Scheme)
 	if scheme != "http" && scheme != "https" {
 		return fmt.Errorf("only support http or https")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlv.String(), nil)
+	elev, err := NewMetaUrl(ctx, urlv.String())
 	if err != nil {
 		return err
 	}
-	res, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	cls := res.Header.Get("Content-Length")
-	if cl, err := strconv.ParseInt(cls, 10, 32); err != nil {
-		return err
-	} else if cl > MaxURLSize {
-		return fmt.Errorf("url resource too big < %d", MaxURLSize)
-	} else if cl != int64(ele.Size) {
-		return fmt.Errorf("url resource size err %d != %d", cl, ele.Size)
-	}
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return err
-	}
-	if len(body) > MaxURLSize {
-		return fmt.Errorf("url resource too big < %d", MaxURLSize)
-	}
-	if len(body) != ele.Size {
-		return fmt.Errorf("url resource size err %d != %d", len(body), ele.Size)
-	}
-	if MetaHashBytes(body) != ele.Sum {
-		return fmt.Errorf("url resource sum error")
+	if elev.Body != ele.Body {
+		return fmt.Errorf("body not match")
 	}
 	return nil
 }
 
 func (ele MetaEle) Check(ctx context.Context) error {
 	if ele.Type == MetaEleKID {
-		if len(ele.Body) != ele.Size {
-			return fmt.Errorf("ele size error")
-		}
 		_, err := xginx.DecodePublicHash(ele.Body)
 		return err
 	}
-	if ele.Type == MetaEleTEXT {
-		if len(ele.Body) != ele.Size {
+	if ele.Type == MetaEleUUID {
+		if len(ele.Body) == 0 {
 			return fmt.Errorf("ele size error")
 		}
-		if MetaHash(ele.Body) != ele.Sum {
-			return fmt.Errorf("ele hash sum error")
+		return nil
+	}
+	if ele.Type == MetaEleTEXT {
+		if len(ele.Body) == 0 {
+			return fmt.Errorf("ele size error")
 		}
 		return nil
 	}
 	if ele.Type == MetaEleHASH {
-		if len(ele.Body) != ele.Size {
-			return fmt.Errorf("ele size error")
-		}
-		if ele.Size != len(xginx.ZERO256)*2 {
+		if len(ele.Body) != len(xginx.ZERO256)*2 {
 			return fmt.Errorf("hash length error")
 		}
 		_, err := hex.DecodeString(ele.Body)
@@ -148,9 +201,6 @@ func (ele MetaEle) Check(ctx context.Context) error {
 		return nil
 	}
 	if ele.Type == MetaEleRSA {
-		if len(ele.Body) != ele.Size {
-			return fmt.Errorf("ele size error")
-		}
 		_, err := xginx.LoadRSAPublicKey(ele.Body)
 		if err != nil {
 			return err
@@ -158,32 +208,35 @@ func (ele MetaEle) Check(ctx context.Context) error {
 		return nil
 	}
 	if ele.Type == MetaEleURL {
-		urlv, err := url.Parse(ele.Body)
-		if err != nil {
-			return err
-		}
-		err = ele.checkurl(ctx, urlv)
-		if err != nil {
-			return err
-		}
-		return nil
+		return ele.checkurl(ctx)
 	}
 	return fmt.Errorf("type %s error", ele.Type)
 }
 
+func (mb *MetaBody) Check(ctx context.Context) error {
+	if len(mb.Eles) == 0 {
+		return fmt.Errorf("eles empty")
+	}
+	for _, ele := range mb.Eles {
+		err := ele.Check(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (mb *MetaBody) To() (ShopMeta, error) {
 	//sum不需要签名
-	mb.Sum = ""
 	jv, err := json.Marshal(mb)
 	if err != nil {
 		return "", err
 	}
-	hv := xginx.Hash160From(jv)
-	str := ShopMeta(string(jv) + hv.String())
+	hv := MetaHashBytes(jv)
+	str := ShopMeta(string(jv) + hv)
 	if len(str) > xginx.MaxMetaSize {
 		return "", fmt.Errorf("content length > %d", xginx.MaxMetaSize)
 	}
-	mb.Sum = hv.String()
 	return str, nil
 }
 
@@ -198,11 +251,7 @@ func (s ShopMeta) To() (*MetaBody, error) {
 		return nil, fmt.Errorf("meta length error")
 	}
 	mb := &MetaBody{}
-	mb.Sum = string(s[len(s)-sl:])
 	bb := string(s[:len(s)-sl])
-	if MetaHash(bb) != mb.Sum {
-		return nil, fmt.Errorf("hash sum error")
-	}
 	err := json.Unmarshal([]byte(bb), mb)
 	if err != nil {
 		return nil, err

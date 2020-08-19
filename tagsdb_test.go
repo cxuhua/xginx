@@ -10,6 +10,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestLzma(t *testing.T) {
+	s := "123456"
+	z, err := LzmaCoder.Encode([]byte(s))
+	require.NoError(t, err)
+	assert.Equal(t, z[0], byte(0))
+	uz, err := LzmaCoder.Decode(z)
+	require.NoError(t, err)
+	assert.Equal(t, s, string(uz))
+	//zip
+	s = strings.Repeat("123456", 128)
+	z, err = LzmaCoder.Encode([]byte(s))
+	require.NoError(t, err)
+	assert.Equal(t, z[0], byte(1))
+	uz, err = LzmaCoder.Decode(z)
+	require.NoError(t, err)
+	assert.Equal(t, s, string(uz))
+}
+
 func TestCmpMap(t *testing.T) {
 	sys := &leveldbdocsystem{}
 	ostr := []string{"1", "2", "3"}

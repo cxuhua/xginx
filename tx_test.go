@@ -70,7 +70,7 @@ func TestNewTx(t *testing.T) {
 
 	out1 := &TxOut{}
 	out1.Value = 2 * Coin
-	sb, err := b.NewLockedScript("", DefaultLockedScript)
+	sb, err := b.NewLockedScript(nil, DefaultLockedScript)
 	require.NoError(t, err)
 	out1.Script = sb
 

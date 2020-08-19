@@ -106,6 +106,13 @@ func (ptr RSAPrivateKey) PublicKey() *RSAPublicKey {
 	return &RSAPublicKey{pp: &ptr.pk.PublicKey}
 }
 
+//ID 获取RSA ID
+func (ptr RSAPrivateKey) ID() (string, error) {
+	pub := ptr.PublicKey()
+	bb := x509.MarshalPKCS1PublicKey(pub.pp)
+	return EncodeAddressWithPrefix("rsa", Hash160From(bb))
+}
+
 //Dump 导出密钥
 func (ptr RSAPrivateKey) Dump(pass ...string) (string, error) {
 	bb := x509.MarshalPKCS1PrivateKey(ptr.pk)

@@ -122,6 +122,7 @@ func (lis *shoplistener) OnInit(bi *xginx.BlockIndex) error {
 	if err != nil {
 		return err
 	}
+	docs.SetCoder(xginx.LzmaCoder)
 	lis.docdb = docs
 	keys, err := xginx.OpenKeysDB(conf.DataDir + "/keys")
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/cxuhua/lzma"
 )
@@ -17,6 +18,12 @@ type Document struct {
 	Body []byte   //内容
 }
 
+func NewDocument() *Document {
+	return &Document{
+		Time: time.Now().UnixNano(),
+	}
+}
+
 func GetTimeBytes(v int64) []byte {
 	return EndianUInt64(uint64(v))
 }
@@ -27,12 +34,7 @@ func (doc Document) TimeBytes() []byte {
 
 func (doc Document) Encode() []byte {
 	w := NewWriter()
-	//压缩标记
-	_, err := w.Write([]byte{0})
-	if err != nil {
-		panic(err)
-	}
-	err = w.WriteFull(GetTimeBytes(doc.Time))
+	err := w.WriteFull(GetTimeBytes(doc.Time))
 	if err != nil {
 		panic(err)
 	}
@@ -42,15 +44,14 @@ func (doc Document) Encode() []byte {
 	}
 	bb := w.Bytes()
 	if len(bb) < 1024 {
-		return bb
+		return append([]byte{0}, bb...)
 	}
 	//启用1klzma压缩
-	zb, err := lzma.Compress(bb[1:])
+	zb, err := lzma.Compress(bb)
 	if err != nil {
 		panic(err)
 	}
-	bb[0] = 1
-	return append(bb[:1], zb...)
+	return append([]byte{1}, zb...)
 }
 
 //使用内容和时间自动创建id
@@ -64,12 +65,12 @@ func (doc *Document) Decode(b []byte) {
 		panic(fmt.Errorf("body zip flags  error"))
 	}
 	rb := b[1:]
-	if b[0] == 1 {
-		bb, err := lzma.Uncompress(b[1:])
+	if b[0] > 0 {
+		uzb, err := lzma.Uncompress(rb)
 		if err != nil {
 			panic(err)
 		}
-		rb = bb
+		rb = uzb
 	}
 	if len(rb) < 8 {
 		panic(fmt.Errorf("body bytes error"))
@@ -84,7 +85,7 @@ type IDocIter interface {
 	//跳过文档
 	Skip(skip int) IDocIter
 	//限制数量
-	Limit(skip int) IDocIter
+	Limit(limit int) IDocIter
 	//是否查询包含的所有tags 有损一点性能
 	Tags(v bool) IDocIter
 	//ByTime向下迭代
@@ -92,6 +93,48 @@ type IDocIter interface {
 	//ByTime向上迭代
 	ByPrev() IDocIter
 }
+
+type ICoder interface {
+	Encode(bb []byte) ([]byte, error)
+	Decode(bb []byte) ([]byte, error)
+}
+
+type lzmacoder struct {
+}
+
+func (coder lzmacoder) Encode(bb []byte) ([]byte, error) {
+	var zb []byte
+	var err error
+	if len(bb) == 0 {
+		return nil, nil
+	}
+	fb := byte(0)
+	zb, err = lzma.Compress(bb)
+	if err != nil {
+		return nil, err
+	}
+	//如果压缩效果比数据少,启用压缩数据
+	if len(zb) < len(bb) {
+		fb = byte(1)
+	} else {
+		zb = bb
+	}
+	return append([]byte{fb}, zb...), nil
+}
+
+func (coder lzmacoder) Decode(bb []byte) ([]byte, error) {
+	if len(bb) == 0 {
+		return nil, nil
+	}
+	if bb[0] == 0 {
+		return bb[1:], nil
+	}
+	return lzma.Uncompress(bb[1:])
+}
+
+var (
+	LzmaCoder ICoder = lzmacoder{}
+)
 
 //标签索引库接口
 type IDocSystem interface {
@@ -121,6 +164,8 @@ type IDocSystem interface {
 	Close()
 	//按时间索引迭代
 	ByTime(v ...int64) IDocIter
+	//设置编码解码器,只用于文档内容编码解码
+	SetCoder(coder ICoder)
 }
 
 var (
@@ -131,7 +176,12 @@ var (
 )
 
 type leveldbdocsystem struct {
-	db DBImp
+	coder ICoder
+	db    DBImp
+}
+
+func (sys *leveldbdocsystem) SetCoder(coder ICoder) {
+	sys.coder = coder
 }
 
 func (sys *leveldbdocsystem) Sync() {
@@ -231,7 +281,15 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 		sys.settag(bt, tag, doc.ID, false)
 	}
 	//添加内容
-	bt.Put(ckprefix, doc.ID[:], doc.Encode())
+	bb := doc.Encode()
+	var err error
+	if sys.coder != nil {
+		bb, err = sys.coder.Encode(bb)
+	}
+	if err != nil {
+		return err
+	}
+	bt.Put(ckprefix, doc.ID[:], bb)
 	//添加时间排序索引
 	bt.Put(tkprefix, doc.TimeBytes(), doc.ID[:], doc.ID[:])
 	//一次性写入
@@ -263,6 +321,12 @@ func (sys *leveldbdocsystem) Get(id HASH160, qtag ...bool) (*Document, error) {
 		doc.Tags = sys.gettags(id)
 	}
 	doc.ID = id
+	if sys.coder != nil {
+		bb, err = sys.coder.Decode(bb)
+	}
+	if err != nil {
+		return nil, err
+	}
 	doc.Decode(bb)
 	return doc, nil
 }
@@ -438,14 +502,11 @@ func (it *dociter) Tags(v bool) IDocIter {
 
 //正向获取
 func (it *dociter) newfkdoc(tags []string, id HASH160) (*Document, error) {
-	body, err := it.sys.db.Get(ckprefix, id[:])
+	doc, err := it.sys.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	doc := &Document{}
-	doc.ID = id
 	doc.Tags = tags
-	doc.Decode(body)
 	return doc, nil
 }
 

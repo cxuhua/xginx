@@ -187,12 +187,18 @@ type IKeysDB interface {
 	GetConfig(id string) ([]byte, error)
 	//是否存在配置
 	HasConfig(id string) (bool, error)
+	//RSA密钥存储
+	NewRSA() (string, error)
+	HasRSA(id string) (bool, error)
+	ListRSA() []string
+	GetRSA(id string) (*RSAPrivateKey, error)
 }
 
 var (
 	priprefix = []byte{1} //私钥前缀,使用公钥hash256作为id保存
 	accprefix = []byte{2} //账号前缀
-	conprefox = []byte{3} //配置信息key前缀
+	conprefix = []byte{3} //配置信息key前缀
+	rsaprefix = []byte{4} //rsa私钥前缀
 )
 
 type levelkeysdb struct {
@@ -212,19 +218,62 @@ func (kd levelkeysdb) keyexpire() bool {
 	return false
 }
 
+//创建rsa私钥
+func (kd *levelkeysdb) NewRSA() (string, error) {
+	rsa, err := NewRSAPrivateKey()
+	if err != nil {
+		return "", err
+	}
+	id, err := rsa.ID()
+	if err != nil {
+		return id, err
+	}
+	dump, err := rsa.Dump(kd.key...)
+	if err != nil {
+		return id, err
+	}
+	err = kd.db.Put(rsaprefix, []byte(id), []byte(dump))
+	return id, err
+}
+
+//是否存在配置
+func (kd *levelkeysdb) HasRSA(id string) (bool, error) {
+	return kd.db.Has(rsaprefix, []byte(id))
+}
+
+func (kd *levelkeysdb) ListRSA() []string {
+	res := []string{}
+	iter := kd.db.Iterator(NewPrefix(rsaprefix))
+	defer iter.Close()
+	for iter.Next() {
+		lkey := iter.Key()
+		res = append(res, string(lkey[len(rsaprefix):]))
+	}
+	return res
+}
+
+//获取配置
+func (kd *levelkeysdb) GetRSA(id string) (*RSAPrivateKey, error) {
+	bb, err := kd.db.Get(rsaprefix, []byte(id))
+	if err != nil {
+		return nil, err
+	}
+	return LoadRSAPrivateKey(string(bb), kd.key...)
+}
+
 //添加配置
 func (kd *levelkeysdb) PutConfig(id string, v []byte) error {
-	return kd.db.Put(conprefox, []byte(id), v)
+	return kd.db.Put(conprefix, []byte(id), v)
 }
 
 //是否存在配置
 func (kd *levelkeysdb) HasConfig(id string) (bool, error) {
-	return kd.db.Has(conprefox, []byte(id))
+	return kd.db.Has(conprefix, []byte(id))
 }
 
 //获取配置
 func (kd *levelkeysdb) GetConfig(id string) ([]byte, error) {
-	return kd.db.Get(conprefox, []byte(id))
+	return kd.db.Get(conprefix, []byte(id))
 }
 
 func (kd *levelkeysdb) NewAccountInfo(typ int, desc string) (*AccountInfo, error) {

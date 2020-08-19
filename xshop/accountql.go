@@ -5,8 +5,23 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
+var createRSA = &graphql.Field{
+	Name: "CreateRSA",
+	Type: graphql.String,
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
+		keydb := objs.KeyDB()
+		id, err := keydb.NewRSA()
+		if err != nil {
+			return NewError(1, err)
+		}
+		return id, nil
+	},
+	Description: "创建一个RSA密钥",
+}
+
 var createPrivateKey = &graphql.Field{
-	Name: "createPrivateKey",
+	Name: "CreatePrivateKey",
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		objs := GetObjects(p)
@@ -21,7 +36,7 @@ var createPrivateKey = &graphql.Field{
 }
 
 var listPrivateKey = &graphql.Field{
-	Name:        "listPrivateKey",
+	Name:        "ListPrivateKey",
 	Type:        graphql.NewList(graphql.NewNonNull(graphql.String)),
 	Description: "获取私钥列表",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -99,8 +114,19 @@ var AccountInfoType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+var listRSA = &graphql.Field{
+	Name:        "LlistRSA",
+	Type:        graphql.NewList(graphql.NewNonNull(graphql.String)),
+	Description: "获取RSA私钥ID列表",
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
+		keydb := objs.KeyDB()
+		return keydb.ListRSA(), nil
+	},
+}
+
 var listAccount = &graphql.Field{
-	Name:        "listAccount",
+	Name:        "ListAccount",
 	Type:        graphql.NewList(graphql.NewNonNull(AccountInfoType)),
 	Description: "获取私钥列表",
 	Args: graphql.FieldConfigArgument{
@@ -190,7 +216,7 @@ var createAccount = &graphql.Field{
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		ka := &xginx.AccountInfo{}
-		err := DecodeValidateArgs("info", p, ka)
+		err := DecodeValidateArgs(p, ka, "info")
 		if err != nil {
 			return NewError(1, err)
 		}

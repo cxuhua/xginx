@@ -16,15 +16,12 @@ func TestNewShopMeta(t *testing.T) {
 	mtxt := MetaEle{}
 	mtxt.Type = MetaEleTEXT
 	mtxt.Body = "test ele 11"
-	mtxt.Size = len(mtxt.Body)
-	mtxt.Sum = MetaHash(mtxt.Body)
 	err := mtxt.Check(ctx)
 	require.NoError(t, err)
 
 	mhash := MetaEle{}
 	mhash.Type = MetaEleHASH
 	mhash.Body = xginx.ZERO256.String()
-	mhash.Size = len(mhash.Body)
 	err = mhash.Check(ctx)
 	require.NoError(t, err)
 
@@ -35,16 +32,11 @@ func TestNewShopMeta(t *testing.T) {
 	body, err := rsa.PublicKey().Dump()
 	require.NoError(t, err)
 	mrsa.Body = body
-	mrsa.Size = len(mrsa.Body)
 	err = mrsa.Check(ctx)
 	require.NoError(t, err)
 
-	urls := MetaEle{
-		Type: MetaEleURL,
-		Size: 6617,
-		Sum:  "f16ed9adfaf03651720e091e5259c8aeb4f509c6",
-		Body: "https://www.baidu.com/img/flexible/logo/pc/result.png",
-	}
+	urls, err := NewMetaUrl(ctx, "https://www.baidu.com/img/flexible/logo/pc/result.png")
+	require.NoError(t, err)
 	err = urls.Check(ctx)
 	require.NoError(t, err)
 
@@ -57,7 +49,6 @@ func TestNewShopMeta(t *testing.T) {
 	require.NoError(t, err)
 	mb2, err := sm.To()
 	require.NoError(t, err)
-	assert.Equal(t, mb.Sum, mb2.Sum)
 	assert.Equal(t, mb.Type, mb2.Type)
 	assert.Equal(t, mb.Tags, mb2.Tags)
 	assert.Equal(t, mb.Eles, mb2.Eles)

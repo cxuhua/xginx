@@ -37,6 +37,10 @@ func (r ReceiverInfo) ParseMeta() (*MetaBody, error) {
 	return ParseMetaBody([]byte(r.Meta))
 }
 
+var (
+	MetaCoder = xginx.LzmaCoder
+)
+
 //转账接口实现
 type eshoptranslistener struct {
 	bi        *xginx.BlockIndex //链指针
@@ -88,7 +92,11 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	}
 	//转出到其他账号的输出
 	for _, v := range lis.receivers {
-		out, err := v.Addr.NewTxOut(v.Amount, []byte(v.Meta), []byte(v.Script))
+		bmeta, err := MetaCoder.Encode([]byte(v.Meta))
+		if err != nil {
+			return nil, err
+		}
+		out, err := v.Addr.NewTxOut(v.Amount, bmeta, []byte(v.Script))
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +374,11 @@ var LockedScriptType = graphql.NewObject(graphql.ObjectConfig{
 			Type: MetaBodyType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				script := p.Source.(*xginx.LockedScript)
-				return ParseMetaBody(script.Meta)
+				meta, err := MetaCoder.Decode(script.Meta)
+				if err != nil {
+					return nil, err
+				}
+				return ParseMetaBody(meta)
 			},
 			Description: "相关数据",
 		},
@@ -667,21 +679,70 @@ var ReceiverInput = graphql.NewInputObject(graphql.InputObjectConfig{
 	Description: "转账到指定地址输入参数",
 })
 
+var MetaEleInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "MetaEleInput",
+	Fields: graphql.InputObjectConfigFieldMap{
+		"type": {
+			Type:        graphql.NewNonNull(EleType),
+			Description: "元素类型",
+		},
+		"size": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "元素长度",
+		},
+		"sum": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "数据校验和Ripemd160算法,使用小写",
+		},
+		"body": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "元素内容",
+		},
+	},
+	Description: "转账到指定地址输入参数",
+})
+
+var TxMetaInput = graphql.NewInputObject(graphql.InputObjectConfig{
+	Name: "TxMetaInput",
+	Fields: graphql.InputObjectConfigFieldMap{
+		"type": {
+			Type:        graphql.NewNonNull(BodyType),
+			Description: "数据类型",
+		},
+		"tags": {
+			Type:        graphql.NewList(graphql.NewNonNull(graphql.String)),
+			Description: "关键字标签",
+		},
+		"eles": {
+			Type:        graphql.NewList(graphql.NewNonNull(MetaEleInput)),
+			Description: "关键字标签",
+		},
+	},
+	Description: "转账到指定地址输入参数",
+})
+
 var createTxMeta = &graphql.Field{
 	Name: "CreateTxMeta",
 	Args: graphql.FieldConfigArgument{
-		"ver": {
-			Type:        graphql.NewNonNull(graphql.Int),
-			Description: "区块版本",
+		"meta": {
+			Type:        graphql.NewNonNull(TxMetaInput),
+			Description: "数据内容",
 		},
 	},
-	Type: graphql.Boolean,
+	Type: MetaBodyType,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		ver := p.Args["ver"].(int)
-		xginx.Miner.NewBlock(uint32(ver))
-		return true, nil
+		mb := &MetaBody{}
+		err := DecodeValidateArgs(p, mb, "meta")
+		if err != nil {
+			return NewError(100, err)
+		}
+		err = mb.Check(p.Context)
+		if err != nil {
+			return NewError(101, err)
+		}
+		return mb, err
 	},
-	Description: "创建一个交易meta",
+	Description: "创建一个meta数据",
 }
 
 var transfer = &graphql.Field{
@@ -705,12 +766,12 @@ var transfer = &graphql.Field{
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		senders := []SenderInfo{}
-		err := DecodeValidateArgs("sender", p, &senders)
+		err := DecodeValidateArgs(p, &senders, "sender")
 		if err != nil {
 			return NewError(100, err)
 		}
 		receiver := []ReceiverInfo{}
-		err = DecodeValidateArgs("receiver", p, &receiver)
+		err = DecodeValidateArgs(p, &receiver, "receiver")
 		if err != nil {
 			return NewError(101, err)
 		}

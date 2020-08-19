@@ -13,22 +13,6 @@ var MetaEleType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "类型",
 		},
-		"size": {
-			Type: graphql.Int,
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				mb := p.Source.(MetaEle)
-				return mb.Size, nil
-			},
-			Description: "元素长度",
-		},
-		"sum": {
-			Type: graphql.String,
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				mb := p.Source.(MetaEle)
-				return mb.Sum, nil
-			},
-			Description: "校验和hash160",
-		},
 		"body": {
 			Type: graphql.String,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -83,6 +67,10 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 var EleType = graphql.NewEnum(graphql.EnumConfig{
 	Name: "EleType",
 	Values: graphql.EnumValueConfigMap{
+		"UUID": {
+			Value:       MetaEleUUID,
+			Description: "文本元素",
+		},
 		"TEXT": {
 			Value:       MetaEleTEXT,
 			Description: "文本元素",

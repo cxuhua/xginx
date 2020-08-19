@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/cxuhua/xginx"
@@ -12,32 +10,13 @@ import (
 	"github.com/graphql-go/graphql/language/ast"
 )
 
-var (
-	//默认校验器
-	validate = validator.New()
-)
-
-//DecodeValidateArgs decode args 到结构体并校验参数
-func DecodeValidateArgs(f string, p graphql.ResolveParams, obj interface{}) error {
-	err := mapstructure.Decode(p.Args[f], obj)
-	if err != nil {
-		return err
+//decode args到结构体
+func DecodeValidateArgs(p graphql.ResolveParams, obj interface{}, field ...string) error {
+	var sv interface{} = p.Args
+	if len(field) > 0 && field[0] != "" {
+		sv = p.Args[field[0]]
 	}
-	v := reflect.Indirect(reflect.ValueOf(obj))
-	if v.Kind() == reflect.Struct {
-		return validate.StructCtx(p.Context, obj)
-	}
-	if v.Kind() != reflect.Array && v.Kind() != reflect.Slice {
-		return fmt.Errorf("obj kind error %v", v.Kind())
-	}
-	for i := 0; i < v.Len(); i++ {
-		iv := v.Index(i)
-		err = validate.StructCtx(p.Context, iv.Interface())
-		if err != nil {
-			return fmt.Errorf("validate array %d error %w", i, err)
-		}
-	}
-	return nil
+	return mapstructure.Decode(sv, obj)
 }
 
 //错误类型
@@ -110,13 +89,17 @@ var HashType = graphql.NewScalar(graphql.ScalarConfig{
 var query = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Query",
 	Fields: graphql.Fields{
-		"statusInfo":     statusInfo,
-		"listCoin":       listCoin,
-		"blockInfo":      blockInfo,
-		"txInfo":         txInfo,
-		"listPrivateKey": listPrivateKey,
-		"listAccount":    listAccount,
-		"listTxPool":     listTxPool,
+		"statusInfo":      statusInfo,
+		"listCoin":        listCoin,
+		"blockInfo":       blockInfo,
+		"txInfo":          txInfo,
+		"listPrivateKey":  listPrivateKey,
+		"listAccount":     listAccount,
+		"listTxPool":      listTxPool,
+		"listRSA":         listRSA,
+		"listTempProduct": listTempProduct,
+		"loadProduct":     loadProduct,
+		"findProduct":     findProduct,
 	},
 	Description: "数据查询接口",
 })
@@ -129,6 +112,9 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 		"createAccount":    createAccount,
 		"newBlock":         newBlock,
 		"createTxMeta":     createTxMeta,
+		"product":          product,
+		"createRSA":        createRSA,
+		"newTempProduct":   newTempProduct,
 	},
 	Description: "数据更新接口",
 })

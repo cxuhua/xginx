@@ -111,11 +111,11 @@ func NewHASH160(v interface{}) HASH160 {
 		pks := v.(PKBytes)
 		hash = Hash160From(pks[:])
 	case string:
-		pub, err := LoadPublicKey(v.(string))
+		bb, err := hex.DecodeString(v.(string))
 		if err != nil {
 			panic(err)
 		}
-		hash = pub.Hash()
+		copy(hash[:], bb)
 	default:
 		panic(errors.New("v args type error"))
 	}

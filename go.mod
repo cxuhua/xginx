@@ -7,7 +7,6 @@ require (
 	github.com/cxuhua/gopher-lua v1.0.1
 	github.com/cxuhua/lzma v0.1.2
 	github.com/functionalfoundry/graphqlws v0.0.0-20200611113535-7bc58903ce7b
-	github.com/go-playground/validator/v10 v10.3.0
 	github.com/graphql-go/graphql v0.7.9
 	github.com/graphql-go/handler v0.2.3
 	github.com/hashicorp/golang-lru v0.5.4
