@@ -269,15 +269,17 @@ func TestDocumentSort(t *testing.T) {
 	err = fs.Insert(doc1, doc2, doc3)
 	require.NoError(t, err)
 	i := int64(3)
-	fs.All().ByPrev().Each(func(doc *Document) error {
+	_ = fs.All().ByPrev().Each(func(doc *Document) error {
 		assert.Equal(t, i, doc.Time)
 		i--
 		return nil
 	})
+	assert.Equal(t, i, int64(0))
 	i = int64(1)
-	fs.All().ByNext().Each(func(doc *Document) error {
+	_ = fs.All().ByNext().Each(func(doc *Document) error {
 		assert.Equal(t, i, doc.Time)
 		i++
 		return nil
 	})
+	assert.Equal(t, i, int64(4))
 }

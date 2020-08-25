@@ -86,6 +86,8 @@ type IDocIter interface {
 	ByNext() IDocIter
 	//ByTime向上迭代
 	ByPrev() IDocIter
+	//获取最后一个key
+	LastKey() []byte
 }
 
 type ICoder interface {
@@ -470,6 +472,11 @@ type dociter struct {
 	lkey    []byte //qall时保存最后一个key
 }
 
+//获取最后一个key
+func (it *dociter) LastKey() []byte {
+	return it.lkey
+}
+
 func (it *dociter) ByNext() IDocIter {
 	it.bynext = true
 	it.byprev = false
@@ -660,15 +667,12 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 
 func (it *dociter) eachall(fn func(doc *Document) error) error {
 	iter := it.sys.db.Iterator(NewPrefix(ckprefix))
-	if it.byprev {
-		iter.Last()
+	if it.lkey != nil {
+		iter.Seek(it.lkey)
 	}
 	limit := 0
 	first := true
 	for {
-		if it.limit != nil && limit >= *it.limit {
-			break
-		}
 		var has bool
 		if it.bynext {
 			has = iter.Next()
@@ -686,8 +690,10 @@ func (it *dociter) eachall(fn func(doc *Document) error) error {
 		if !has {
 			break
 		}
+		if it.limit != nil && limit >= *it.limit {
+			break
+		}
 		key := iter.Key()
-		it.lkey = key
 		doc := &Document{}
 		doc.ID = NewDocumentIDFrom(key[len(ckprefix):])
 		bb := iter.Value()
@@ -695,6 +701,7 @@ func (it *dociter) eachall(fn func(doc *Document) error) error {
 		if err := fn(doc); err != nil {
 			return err
 		}
+		it.lkey = key
 		limit++
 	}
 	return nil
@@ -783,14 +790,3 @@ func OpenDocSystem(dir string) (IDocSystem, error) {
 		db: db,
 	}, nil
 }
-
-//func (db *tagsdb) Insert(doc []byte, keys ...[]byte) error {
-//	bt := db.db.NewBatch()
-//	for _, key := range keys {
-//		//正向索引key prefix_key_doc ->doc
-//		bt.Put(fprefix, key, doc, doc)
-//		//反向索引key prefix_doc_key -> key
-//		bt.Put(bprefix, doc, key, key)
-//	}
-//	return db.db.Write(bt)
-//}
