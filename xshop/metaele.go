@@ -50,6 +50,53 @@ const (
 	MetaTypeConfirm MetaType = 3 //确认
 )
 
+//数据扩展信息 保存执行区块交易的信息
+type MetaExt struct {
+	TxID  xginx.HASH256 //交易ID
+	Index xginx.VarUInt //输出索引
+}
+
+func (ext *MetaExt) Decode(bb []byte) error {
+	r := xginx.NewReader(bb)
+	err := ext.TxID.Decode(r)
+	if err != nil {
+		return err
+	}
+	err = ext.Index.Decode(r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (ext MetaExt) Encode() ([]byte, error) {
+	w := xginx.NewWriter()
+	err := ext.TxID.Encode(w)
+	if err != nil {
+		return nil, err
+	}
+	err = ext.Index.Encode(w)
+	if err != nil {
+		return nil, err
+	}
+	return w.Bytes(), nil
+}
+
+//从文档系统获取扩展信息
+func (mb *MetaBody) GetExt(docdb xginx.IDocSystem) (*MetaExt, error) {
+	id := mb.MustID()
+	bb, err := docdb.GetExt(id)
+	if err != nil {
+		return nil, err
+	}
+	ext := &MetaExt{}
+	err = ext.Decode(bb)
+	if err != nil {
+		return nil, err
+	}
+	return ext, nil
+}
+
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
 	Type MetaType  `json:"type"` //1-出售 2-购买 3-确认
@@ -70,12 +117,7 @@ func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
 }
 
 func ParseMetaBody(b []byte) (*MetaBody, error) {
-	if len(b) == 0 {
-		return nil, nil
-	}
-	mb := &MetaBody{}
-	err := json.Unmarshal(b, mb)
-	return mb, err
+	return ShopMeta(b).To()
 }
 
 //meta元素
@@ -243,6 +285,9 @@ func (mb *MetaBody) To() (ShopMeta, error) {
 type ShopMeta string
 
 func (s ShopMeta) To() (*MetaBody, error) {
+	if len(s) == 0 {
+		return nil, fmt.Errorf("meta empty")
+	}
 	if len(s) > xginx.MaxMetaSize {
 		return nil, fmt.Errorf("content length > %d", xginx.MaxMetaSize)
 	}

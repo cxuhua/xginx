@@ -52,6 +52,11 @@ func (ptr RSAPublicKey) Encrypt(bb []byte) ([]byte, error) {
 	return rsa.EncryptPKCS1v15(rand.Reader, ptr.pp, bb)
 }
 
+func (ptr RSAPublicKey) ID() (string, error) {
+	bb := x509.MarshalPKCS1PublicKey(ptr.pp)
+	return EncodeAddressWithPrefix("rsa", Hash160From(bb))
+}
+
 //Dump 导出公钥
 func (ptr RSAPublicKey) Dump() (string, error) {
 	bb := x509.MarshalPKCS1PublicKey(ptr.pp)
@@ -108,9 +113,7 @@ func (ptr RSAPrivateKey) PublicKey() *RSAPublicKey {
 
 //ID 获取RSA ID
 func (ptr RSAPrivateKey) ID() (string, error) {
-	pub := ptr.PublicKey()
-	bb := x509.MarshalPKCS1PublicKey(pub.pp)
-	return EncodeAddressWithPrefix("rsa", Hash160From(bb))
+	return ptr.PublicKey().ID()
 }
 
 //Dump 导出密钥

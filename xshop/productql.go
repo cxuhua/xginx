@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cxuhua/xginx"
 
@@ -27,10 +29,22 @@ const (
 	ProductInfoMaxIndex
 )
 
-//获取metabody的id
-func (mb *MetaBody) MustID() xginx.HASH160 {
+//检测是否包含合法的文档ID
+func (mb MetaBody) HasID() bool {
+	if len(mb.Eles) <= ProductUUIDEleIndex {
+		return false
+	}
 	ele := mb.Eles[ProductUUIDEleIndex]
-	return xginx.NewHASH160(ele.Body)
+	if len(ele.Body) != xginx.DocumentIDLen*2 {
+		return false
+	}
+	return true
+}
+
+//获取metabody的id
+func (mb *MetaBody) MustID() xginx.DocumentID {
+	ele := mb.Eles[ProductUUIDEleIndex]
+	return xginx.DocumentIDFromHex(ele.Body)
 }
 
 //标签用,号隔开,使用这个特殊索引
@@ -73,18 +87,6 @@ var (
 var ProductType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "ProductType",
 	Fields: graphql.Fields{
-		"create": {
-			Name: "Create",
-			Type: graphql.NewNonNull(MetaBodyType),
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				mb, ok := p.Source.(*MetaBody)
-				if !ok {
-					return NewError(200, "source value type error")
-				}
-				return mb, nil
-			},
-			Description: "创建一个产品数据,返回产品meta描述",
-		},
 		"check": {
 			Name: "Check",
 			Type: graphql.Boolean,
@@ -122,7 +124,7 @@ var ProductType = graphql.NewObject(graphql.ObjectConfig{
 				}
 				err = docdb.Insert(doc)
 				if err != nil {
-					return NewError(2054, err)
+					return NewError(205, err)
 				}
 				//删除临时的
 				tempproducts.Delete(id)
@@ -155,7 +157,7 @@ var ProductType = graphql.NewObject(graphql.ObjectConfig{
 					Type  string
 					Body  string
 				}{}
-				err := DecodeValidateArgs(p, &args)
+				err := DecodeArgs(p, &args)
 				if err != nil {
 					return NewError(201, err)
 				}
@@ -163,7 +165,7 @@ var ProductType = graphql.NewObject(graphql.ObjectConfig{
 				if !ok {
 					return NewError(202, "source value type error")
 				}
-				//如果是rsa私钥从kdb获取,args.body代表rsa id
+				//如果是rsa私钥从kdb数据库获取,args.body代表rsa id
 				if args.Index == ProductEncryptionIndex {
 					rsa, err := kdb.GetRSA(args.Body)
 					if err != nil {
@@ -196,14 +198,14 @@ var product = &graphql.Field{
 	Args: graphql.FieldConfigArgument{
 		"id": {
 			Type:        graphql.NewNonNull(HashType),
-			Description: "hash160id",
+			Description: "创建产品返回的id",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		id := p.Args["id"].(xginx.HASH160)
+		id := p.Args["id"].(xginx.DocumentID)
 		pptr, ok := tempproducts.Load(id)
 		if !ok {
-			return NewError(100, "id %s miss", id.String())
+			return NewError(100, "id %s miss", id.Hex())
 		}
 		return pptr, nil
 	},
@@ -233,30 +235,32 @@ var findProduct = &graphql.Field{
 			DefaultValue: "",
 			Description:  "查询关键字",
 		},
-		"tags": {
+		"prefix": {
 			Type:         graphql.Boolean,
 			DefaultValue: false,
-			Description:  "是否查询标签",
+			Description:  "是否按前缀查询",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		mbs := []*MetaBody{}
 		key := p.Args["key"].(string)
-		tags := p.Args["tags"].(bool)
+		prefix := p.Args["prefix"].(bool)
 		objs := GetObjects(p)
 		docdb := objs.DocDB()
-		iter := docdb.Find(key)
-		err := iter.Tags(tags).Each(func(doc *xginx.Document) error {
+		var iter xginx.IDocIter
+		if prefix {
+			iter = docdb.Prefix(key)
+		} else {
+			iter = docdb.Find(key)
+		}
+		_ = iter.Each(func(doc *xginx.Document) error {
 			mb, err := ShopMeta(doc.Body).To()
 			if err != nil {
-				return err
+				panic(err)
 			}
 			mbs = append(mbs, mb)
 			return err
 		})
-		if err != nil {
-			return NewError(200, err)
-		}
 		return mbs, nil
 	},
 	Description: "根据关键字查询数据",
@@ -268,11 +272,11 @@ var loadProduct = &graphql.Field{
 	Args: graphql.FieldConfigArgument{
 		"id": {
 			Type:        graphql.NewNonNull(HashType),
-			Description: "存储后是hash160",
+			Description: "documentid",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		id := p.Args["id"].(xginx.HASH160)
+		id := p.Args["id"].(xginx.DocumentID)
 		objs := GetObjects(p)
 		docdb := objs.DocDB()
 		doc, err := docdb.Get(id, true)
@@ -288,17 +292,37 @@ var loadProduct = &graphql.Field{
 	Description: "从文档系统通过id获取数据",
 }
 
+func GetMetaBody(db xginx.IDocSystem, id xginx.DocumentID) (*MetaBody, error) {
+	doc, err := db.Get(id, true)
+	if err != nil {
+		return nil, err
+	}
+	mb, err := ShopMeta(doc.Body).To()
+	if err == nil {
+		return mb, nil
+	}
+	mbt, has := tempproducts.Load(id)
+	if has {
+		return mbt.(*MetaBody), nil
+	}
+	return nil, fmt.Errorf("not found netaboddy %s", id.Hex())
+}
+
+//NewDocID 创建一个递增唯一的ID
+func NewDocID() xginx.HASH160 {
+	id := xginx.HASH160{}
+	now := time.Now().UnixNano()
+	binary.BigEndian.PutUint64(id[:], uint64(now))
+	return id
+}
+
 var newTempProduct = &graphql.Field{
 	Name: "NewTempProduct",
 	Type: graphql.NewNonNull(MetaBodyType),
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		pri, err := xginx.NewPrivateKey()
-		if err != nil {
-			return NewError(101, err)
-		}
-		id := pri.PublicKey().Hash()
+		id := xginx.NewDocumentID()
 		product := NewProductMeta()
-		err = product.SetEle(p.Context, ProductUUIDEleIndex, MetaEleUUID, id.String())
+		err := product.SetEle(p.Context, ProductUUIDEleIndex, MetaEleUUID, id.Hex())
 		if err != nil {
 			return NewError(102, err)
 		}
@@ -306,6 +330,70 @@ var newTempProduct = &graphql.Field{
 		return product, nil
 	},
 	Description: "创建一个产品放在临时缓存",
+}
+
+var uploadProduct = &graphql.Field{
+	Name: "UploadProduct",
+	Type: graphql.NewNonNull(TXType),
+	Args: graphql.FieldConfigArgument{
+		"sender": {
+			Type:        graphql.NewList(SenderInput),
+			Description: "使用哪些金额作为产品保证金",
+		},
+		"receiver": {
+			Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(ReceiverInput))),
+			Description: "带metabody的产品信息的输出",
+		},
+		"fee": {
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "产品价格",
+		},
+	},
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		senders := []SenderInfo{}
+		err := DecodeArgs(p, &senders, "sender")
+		if err != nil {
+			return NewError(100, err)
+		}
+		receiver := []ReceiverInfo{}
+		err = DecodeArgs(p, &receiver, "receiver")
+		if err != nil {
+			return NewError(101, err)
+		}
+		for _, v := range receiver {
+			if v.Meta == "" {
+				return NewError(102, "meta args miss", err, v.Meta)
+			}
+			//上传产品时meta代表产品id,优先从docdb获取
+			mbid := xginx.NewHASH160(v.Meta)
+			if mbid.Equal(xginx.ZERO160) {
+				return NewError(103, "metaid error")
+			}
+		}
+		fee := p.Args["fee"].(int)
+		if fee == 0 {
+			return NewError(104, "fee error,must > 0")
+		}
+		objs := GetObjects(p)
+		bi := objs.BlockIndex()
+		//上传产品创建
+		lis := objs.NewTrans(senders, receiver, MetaTypeSell)
+		tx, err := lis.NewTx(xginx.Amount(fee))
+		if err != nil {
+			return NewError(105, err)
+		}
+		err = tx.Sign(bi, lis)
+		if err != nil {
+			return NewError(106, err)
+		}
+		bp := bi.GetTxPool()
+		err = bp.PushTx(bi, tx)
+		if err != nil {
+			return NewError(107, err)
+		}
+		return tx, nil
+	},
+	Description: "上传产品到区块链",
 }
 
 //创建一个出售产品meta数据

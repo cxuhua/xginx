@@ -32,6 +32,14 @@ var MetaEleType = graphql.NewObject(graphql.ObjectConfig{
 var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "MetaBody",
 	Fields: graphql.Fields{
+		"id": {
+			Type: HashType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				mb := p.Source.(*MetaBody)
+				return mb.MustID(), nil
+			},
+			Description: "类型",
+		},
 		"type": {
 			Type: BodyType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -56,12 +64,48 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "元素",
 		},
+		"ext": {
+			Type: MetaExtType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				mb := p.Source.(*MetaBody)
+				return mb.GetExt(objs.DocDB())
+			},
+			Description: "查询扩展信息",
+		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
 		_, ok := p.Value.(*MetaBody)
 		return ok
 	},
 	Description: "meta内容描述",
+})
+
+var MetaExtType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "MetaExtType",
+	Fields: graphql.Fields{
+		"txId": {
+			Type: HashType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				mb := p.Source.(*MetaExt)
+				return mb.TxID, nil
+			},
+			Description: "交易ID",
+		},
+		"index": {
+			Type: graphql.Int,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				mb := p.Source.(*MetaExt)
+				return mb.Index.ToInt(), nil
+			},
+			Description: "输出索引",
+		},
+	},
+	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
+		_, ok := p.Value.(*MetaExt)
+		return ok
+	},
+	Description: "扩展信息描述",
 })
 
 var EleType = graphql.NewEnum(graphql.EnumConfig{

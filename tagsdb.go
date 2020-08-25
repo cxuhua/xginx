@@ -12,10 +12,10 @@ import (
 
 //Document 文档关键字查询存储系统
 type Document struct {
-	ID   HASH160  //文档ID
-	Tags []string //标签
-	Time int64    //时间纳秒
-	Body []byte   //内容
+	ID   DocumentID //文档ID
+	Tags []string   //标签
+	Time int64      //时间纳秒
+	Body []byte     //内容
 }
 
 func NewDocument() *Document {
@@ -52,12 +52,6 @@ func (doc Document) Encode() []byte {
 		panic(err)
 	}
 	return append([]byte{1}, zb...)
-}
-
-//使用内容和时间自动创建id
-func (doc *Document) HashID() HASH160 {
-	doc.ID = Hash160From(doc.Encode())
-	return doc.ID
 }
 
 func (doc *Document) Decode(b []byte) {
@@ -139,21 +133,23 @@ var (
 //标签索引库接口
 type IDocSystem interface {
 	//追加tag
-	AddTag(id HASH160, tags ...string) error
+	AddTag(id DocumentID, tags ...string) error
 	//删除tag
-	DelTag(id HASH160, tags ...string) error
+	DelTag(id DocumentID, tags ...string) error
 	//添加文档
 	Insert(doc ...*Document) error
 	//删除文档
-	Delete(id ...HASH160) error
+	Delete(id ...DocumentID) error
 	//更新文档
 	Update(doc ...*Document) error
 	//根据id获取文档内容 qtag是否查询tags
-	Get(id HASH160, qtag ...bool) (*Document, error)
+	Get(id DocumentID, qtag ...bool) (*Document, error)
 	//文档是否存在
-	Has(id HASH160) (bool, error)
+	Has(id DocumentID) (bool, error)
 	//固定key查询
 	Find(key string) IDocIter
+	//获取所有文档
+	All() IDocIter
 	//按前缀查询文档
 	Prefix(key string) IDocIter
 	//模糊查询文档使用正则
@@ -164,8 +160,12 @@ type IDocSystem interface {
 	Close()
 	//按时间索引迭代
 	ByTime(v ...int64) IDocIter
-	//设置编码解码器,只用于文档内容编码解码
-	SetCoder(coder ICoder)
+	//添加文档扩展信息
+	PutExt(id DocumentID, ext []byte) error
+	//删除文档扩展信息
+	DelExt(id DocumentID) error
+	//获取文档扩展信息
+	GetExt(id DocumentID) ([]byte, error)
 }
 
 var (
@@ -173,15 +173,11 @@ var (
 	bkprefix = []byte{2} //方向索引前缀
 	ckprefix = []byte{3} //固定值前缀
 	tkprefix = []byte{4} //时间索引前缀
+	rkprefix = []byte{5} //文档id扩展数据信息
 )
 
 type leveldbdocsystem struct {
-	coder ICoder
-	db    DBImp
-}
-
-func (sys *leveldbdocsystem) SetCoder(coder ICoder) {
-	sys.coder = coder
+	db DBImp
 }
 
 func (sys *leveldbdocsystem) Sync() {
@@ -192,14 +188,26 @@ func (sys *leveldbdocsystem) Close() {
 	sys.db.Close()
 }
 
+func (sys *leveldbdocsystem) PutExt(id DocumentID, ext []byte) error {
+	return sys.db.Put(rkprefix, id[:], ext)
+}
+
+func (sys *leveldbdocsystem) DelExt(id DocumentID) error {
+	return sys.db.Del(rkprefix, id[:])
+}
+
+func (sys *leveldbdocsystem) GetExt(id DocumentID) ([]byte, error) {
+	return sys.db.Get(rkprefix, id[:])
+}
+
 //检测id文档是否存在
-func (sys *leveldbdocsystem) Has(id HASH160) (bool, error) {
+func (sys *leveldbdocsystem) Has(id DocumentID) (bool, error) {
 	return sys.db.Has(ckprefix, id[:])
 }
 
 //追加tag
-func (sys *leveldbdocsystem) AddTag(id HASH160, tags ...string) error {
-	if id.Equal(ZERO160) {
+func (sys *leveldbdocsystem) AddTag(id DocumentID, tags ...string) error {
+	if id.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	if has, err := sys.Has(id); err != nil {
@@ -225,8 +233,8 @@ func (sys *leveldbdocsystem) hastags(tags []string, tag []byte) bool {
 }
 
 //删除tag
-func (sys *leveldbdocsystem) DelTag(id HASH160, tags ...string) error {
-	if id.Equal(ZERO160) {
+func (sys *leveldbdocsystem) DelTag(id DocumentID, tags ...string) error {
+	if id.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	if has, err := sys.Has(id); err != nil {
@@ -268,7 +276,7 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	if len(doc.Body) == 0 {
 		return fmt.Errorf("body empty")
 	}
-	if doc.ID.Equal(ZERO160) {
+	if doc.ID.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	if has, err := sys.Has(doc.ID); err != nil {
@@ -282,13 +290,6 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	}
 	//添加内容
 	bb := doc.Encode()
-	var err error
-	if sys.coder != nil {
-		bb, err = sys.coder.Encode(bb)
-	}
-	if err != nil {
-		return err
-	}
 	bt.Put(ckprefix, doc.ID[:], bb)
 	//添加时间排序索引
 	bt.Put(tkprefix, doc.TimeBytes(), doc.ID[:], doc.ID[:])
@@ -297,7 +298,7 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 }
 
 //利用反向索引搜索文档有哪些tag
-func (sys *leveldbdocsystem) gettags(id HASH160) []string {
+func (sys *leveldbdocsystem) gettags(id DocumentID) []string {
 	strs := []string{}
 	fp := GetDBKey(bkprefix, id[:])
 	//id固定长度,所以根据这个前缀查询到的值肯定是标签
@@ -310,8 +311,7 @@ func (sys *leveldbdocsystem) gettags(id HASH160) []string {
 }
 
 //获取单个文档
-func (sys *leveldbdocsystem) Get(id HASH160, qtag ...bool) (*Document, error) {
-	//先获取原内容
+func (sys *leveldbdocsystem) Get(id DocumentID, qtag ...bool) (*Document, error) {
 	doc := &Document{}
 	bb, err := sys.db.Get(ckprefix, id[:])
 	if err != nil {
@@ -321,18 +321,12 @@ func (sys *leveldbdocsystem) Get(id HASH160, qtag ...bool) (*Document, error) {
 		doc.Tags = sys.gettags(id)
 	}
 	doc.ID = id
-	if sys.coder != nil {
-		bb, err = sys.coder.Decode(bb)
-	}
-	if err != nil {
-		return nil, err
-	}
 	doc.Decode(bb)
 	return doc, nil
 }
 
 //删除文档
-func (sys *leveldbdocsystem) Delete(ids ...HASH160) error {
+func (sys *leveldbdocsystem) Delete(ids ...DocumentID) error {
 	bt := sys.db.NewBatch()
 	for _, id := range ids {
 		err := sys.delete(bt, id)
@@ -344,8 +338,8 @@ func (sys *leveldbdocsystem) Delete(ids ...HASH160) error {
 }
 
 //删除文档
-func (sys *leveldbdocsystem) delete(bt *Batch, id HASH160) error {
-	if id.Equal(ZERO160) {
+func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
+	if id.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	//先获取原内容
@@ -405,7 +399,7 @@ func (sys *leveldbdocsystem) cmptags(o []string, n []string) ([]string, []string
 	return sys.maptolist(amap), sys.maptolist(dmap)
 }
 
-func (sys *leveldbdocsystem) settag(bt *Batch, tag string, id HASH160, del bool) {
+func (sys *leveldbdocsystem) settag(bt *Batch, tag string, id DocumentID, del bool) {
 	if del {
 		bt.Del(fkprefix, []byte(tag), id[:])
 		bt.Del(bkprefix, id[:], []byte(tag))
@@ -417,7 +411,7 @@ func (sys *leveldbdocsystem) settag(bt *Batch, tag string, id HASH160, del bool)
 
 //更新文档
 func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
-	if ndoc.ID.Equal(ZERO160) {
+	if ndoc.ID.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	//查询原文档包括标签
@@ -472,6 +466,8 @@ type dociter struct {
 	ittime  *int64
 	byprev  bool //向上
 	bynext  bool //向下
+	qall    bool
+	lkey    []byte //qall时保存最后一个key
 }
 
 func (it *dociter) ByNext() IDocIter {
@@ -501,17 +497,19 @@ func (it *dociter) Tags(v bool) IDocIter {
 }
 
 //正向获取
-func (it *dociter) newfkdoc(tags []string, id HASH160) (*Document, error) {
+func (it *dociter) newfkdoc(tags []string, id DocumentID) (*Document, error) {
 	doc, err := it.sys.Get(id)
 	if err != nil {
 		return nil, err
 	}
-	doc.Tags = tags
+	if len(tags) > 0 {
+		doc.Tags = tags
+	}
 	return doc, nil
 }
 
 //如果是find查询并且找到
-func (it *dociter) isfinded(k []byte, id HASH160) bool {
+func (it *dociter) isfinded(k []byte, id DocumentID) bool {
 	ckey := GetDBKey(fkprefix, []byte(it.key), id[:])
 	return bytes.Equal(k, ckey)
 }
@@ -575,7 +573,7 @@ func (it *dociter) eachbytime(fn func(doc *Document) error) error {
 				continue
 			}
 		}
-		hid := NewHASH160(iter.Value())
+		hid := NewDocumentIDFrom(iter.Value())
 		//是否查询相关tags
 		keys := []string{}
 		if it.stags != nil && *it.stags {
@@ -610,9 +608,9 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 		panic(fmt.Errorf("find and like error"))
 	}
 	//分组map记录id是否已经处理,当文档有很多tag时可能会遍历到多次
-	gmap := map[HASH160]bool{}
+	gmap := map[DocumentID]bool{}
 	iter := it.sys.db.Iterator(NewPrefix(fp))
-	ilen := len(ZERO160)
+	ilen := DocumentIDLen
 	flen := len(fkprefix)
 	limit := 0
 	skip := 0
@@ -623,7 +621,7 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 			return fmt.Errorf("key %v length error", key)
 		}
 		kkey := key[flen : klen-ilen]
-		hid := NewHASH160(iter.Value())
+		hid := NewDocumentIDFrom(iter.Value())
 		if it.qfind && !it.isfinded(key, hid) {
 			return fmt.Errorf("not found %s", it.key)
 		}
@@ -660,11 +658,65 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 	return nil
 }
 
+func (it *dociter) eachall(fn func(doc *Document) error) error {
+	iter := it.sys.db.Iterator(NewPrefix(ckprefix))
+	if it.byprev {
+		iter.Last()
+	}
+	limit := 0
+	first := true
+	for {
+		if it.limit != nil && limit >= *it.limit {
+			break
+		}
+		var has bool
+		if it.bynext {
+			has = iter.Next()
+			first = false
+		} else if it.byprev {
+			if first {
+				has = iter.Last()
+			} else {
+				has = iter.Prev()
+			}
+			first = false
+		} else {
+			return fmt.Errorf("bynext or byprev args error")
+		}
+		if !has {
+			break
+		}
+		key := iter.Key()
+		it.lkey = key
+		doc := &Document{}
+		doc.ID = NewDocumentIDFrom(key[len(ckprefix):])
+		bb := iter.Value()
+		doc.Decode(bb)
+		if err := fn(doc); err != nil {
+			return err
+		}
+		limit++
+	}
+	return nil
+}
+
 func (it *dociter) Each(fn func(doc *Document) error) error {
+	if it.qall {
+		return it.eachall(fn)
+	}
 	if it.bytime {
 		return it.eachbytime(fn)
 	}
 	return it.eachquery(fn)
+}
+
+//遍历所有文档
+func (sys *leveldbdocsystem) All() IDocIter {
+	return &dociter{
+		sys:    sys,
+		qall:   true,
+		bynext: true, //默认向下
+	}
 }
 
 //按前缀查询文档

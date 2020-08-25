@@ -11,7 +11,7 @@ import (
 )
 
 //decode args到结构体
-func DecodeValidateArgs(p graphql.ResolveParams, obj interface{}, field ...string) error {
+func DecodeArgs(p graphql.ResolveParams, obj interface{}, field ...string) error {
 	var sv interface{} = p.Args
 	if len(field) > 0 && field[0] != "" {
 		sv = p.Args[field[0]]
@@ -62,12 +62,17 @@ func hashtypesp(value interface{}) interface{} {
 		if len(str) == len(xginx.ZERO256)*2 {
 			return xginx.NewHASH256(str)
 		}
+		if len(str) == len(xginx.NilDocumentID)*2 {
+			return xginx.DocumentIDFromHex(str)
+		}
 	case *string:
 		return hashtypesp(*(value).(*string))
 	case xginx.HASH160:
 		return value.(xginx.HASH160).String()
 	case xginx.HASH256:
 		return value.(xginx.HASH256).String()
+	case xginx.DocumentID:
+		return value.(xginx.DocumentID).Hex()
 	}
 	return nil
 }
@@ -115,6 +120,7 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 		"product":          product,
 		"createRSA":        createRSA,
 		"newTempProduct":   newTempProduct,
+		"uploadProduct":    uploadProduct,
 	},
 	Description: "数据更新接口",
 })
@@ -147,6 +153,19 @@ var subscription = graphql.NewObject(graphql.ObjectConfig{
 				return tx, nil
 			},
 			Description: "发送指定的交易信息信息",
+		},
+		"product": {
+			Name: "Product",
+			Type: graphql.NewNonNull(MetaBodyType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				mb, ok := objs["product"].(*MetaBody)
+				if !ok {
+					return NewError(100, "metabody info miss")
+				}
+				return mb, nil
+			},
+			Description: "发送新的产品事件",
 		},
 	},
 	Description: "数据订阅接口",

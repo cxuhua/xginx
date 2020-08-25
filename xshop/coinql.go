@@ -140,7 +140,7 @@ var listCoin = &graphql.Field{
 						State int
 						Fee   xginx.Amount
 					}{}
-					err := DecodeValidateArgs(p, &args)
+					err := DecodeArgs(p, &args)
 					if err != nil {
 						return NewError(100, err)
 					}

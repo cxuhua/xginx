@@ -216,7 +216,7 @@ var createAccount = &graphql.Field{
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		ka := &xginx.AccountInfo{}
-		err := DecodeValidateArgs(p, ka, "info")
+		err := DecodeArgs(p, ka, "info")
 		if err != nil {
 			return NewError(1, err)
 		}

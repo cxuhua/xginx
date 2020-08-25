@@ -388,6 +388,19 @@ type BlockInfo struct {
 	merkel HashCacher  //merkel hash 缓存
 }
 
+//遍历区块中输出脚本
+func (blk *BlockInfo) EachOutScript(fn func(tx *TX, idx int, script *LockedScript)) {
+	for _, tx := range blk.Txs {
+		for idx, out := range tx.Outs {
+			locker, err := out.Script.ToLocked()
+			if err != nil {
+				continue
+			}
+			fn(tx, idx, locker)
+		}
+	}
+}
+
 //GetTx 获取区块交易
 func (blk *BlockInfo) GetTx(idx int) (*TX, error) {
 	if idx < 0 || idx >= len(blk.Txs) {

@@ -61,8 +61,71 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 	xginx.LogInfof("TX = %v Replace %v", new.MustID(), old.MustID())
 }
 
+//tx[idx] = meta位置
+func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx int, meta xginx.VarBytes, link bool) error {
+	bb, err := MetaCoder.Decode(meta)
+	if err != nil {
+		return err
+	}
+	mb, err := ParseMetaBody(bb)
+	if err != nil {
+		return err
+	}
+	//如果文档ID存在
+	if !mb.HasID() {
+		return fmt.Errorf("meta data error")
+	}
+	id := mb.MustID()
+	if !link {
+		return lis.docdb.Delete(id)
+	}
+	has, err := lis.docdb.Has(id)
+	if err != nil {
+		return err
+	}
+	//不存在添加到文档数据库,不关心的文档数据可不存入
+	//但下面的关系还是保存,用来查询
+	if !has {
+		doc, err := mb.ToDocument()
+		if err != nil {
+			return err
+		}
+		err = lis.docdb.Insert(doc)
+		if err != nil {
+			return err
+		}
+	}
+	//添加文档和区块交易数据的关联关系 docid -> tx.id+idx
+	//即使文档被删除了,这个关系还是存在
+	ext := MetaExt{
+		TxID:  tx.MustID(),
+		Index: xginx.VarUInt(idx),
+	}
+	extb, err := ext.Encode()
+	if err != nil {
+		return err
+	}
+	err = lis.docdb.PutExt(id, extb)
+	if err != nil {
+		return err
+	}
+	lis.Publish(xginx.GetContext(), "newProduct", func(objs Objects) {
+		objs["product"] = mb
+	})
+	return nil
+}
+
 func (lis *shoplistener) OnLinkBlock(blk *xginx.BlockInfo) {
-	lis.Publish(xginx.GetContext(), "linkBlock", func(objs Objects) {
+	ctx := xginx.GetContext()
+	//处理是否有新产品在区块中
+	blk.EachOutScript(func(tx *xginx.TX, idx int, script *xginx.LockedScript) {
+		if script.Meta.Len() == 0 {
+			return
+		}
+		_ = lis.onNewScriptMeta(ctx, tx, idx, script.Meta, true)
+	})
+	//发送订阅信息
+	lis.Publish(ctx, "linkBlock", func(objs Objects) {
 		objs["block"] = blk
 	})
 }
@@ -88,6 +151,14 @@ func (lis *shoplistener) TimeNow() uint32 {
 
 //OnUnlinkBlock 区块断开
 func (lis *shoplistener) OnUnlinkBlock(blk *xginx.BlockInfo) {
+	ctx := xginx.GetContext()
+	//处理是否有新产品移除
+	blk.EachOutScript(func(tx *xginx.TX, idx int, script *xginx.LockedScript) {
+		if script.Meta.Len() == 0 {
+			return
+		}
+		_ = lis.onNewScriptMeta(ctx, tx, idx, script.Meta, false)
+	})
 	lis.Publish(xginx.GetContext(), "unlinkBlock", func(objs Objects) {
 		objs["block"] = blk
 	})
@@ -122,7 +193,6 @@ func (lis *shoplistener) OnInit(bi *xginx.BlockIndex) error {
 	if err != nil {
 		return err
 	}
-	docs.SetCoder(xginx.LzmaCoder)
 	lis.docdb = docs
 	keys, err := xginx.OpenKeysDB(conf.DataDir + "/keys")
 	if err != nil {

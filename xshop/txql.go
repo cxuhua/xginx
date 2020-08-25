@@ -45,8 +45,25 @@ var (
 type eshoptranslistener struct {
 	bi        *xginx.BlockIndex //链指针
 	keydb     xginx.IKeysDB     //账户数据库指针
+	docdb     xginx.IDocSystem
 	senders   []SenderInfo
 	receivers []ReceiverInfo
+	typ       MetaType
+}
+
+func (lis *eshoptranslistener) getmeta(meta string) ([]byte, error) {
+	if lis.typ == 0 {
+		return []byte(meta), nil
+	}
+	mb, err := GetMetaBody(lis.docdb, xginx.DocumentIDFromHex(meta))
+	if err != nil {
+		return nil, err
+	}
+	sm, err := mb.To()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(sm), nil
 }
 
 //fee 交易费
@@ -92,7 +109,11 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	}
 	//转出到其他账号的输出
 	for _, v := range lis.receivers {
-		bmeta, err := MetaCoder.Encode([]byte(v.Meta))
+		meta, err := lis.getmeta(v.Meta)
+		if err != nil {
+			return nil, err
+		}
+		bmeta, err := MetaCoder.Encode(meta)
 		if err != nil {
 			return nil, err
 		}
@@ -116,15 +137,18 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 
 //创建一个转账处理器,使用默认的输入输出脚本
 //senders如果指定了可用发送金额
-func (obj Objects) NewTrans(senders []SenderInfo, receivers []ReceiverInfo) IShopTrans {
-	bi := obj.BlockIndex()
-	keydb := obj.KeyDB()
-	return &eshoptranslistener{
-		bi:        bi,
+func (obj Objects) NewTrans(senders []SenderInfo, receivers []ReceiverInfo, typ ...MetaType) IShopTrans {
+	lis := &eshoptranslistener{
+		bi:        obj.BlockIndex(),
 		senders:   senders,
 		receivers: receivers,
-		keydb:     keydb,
+		keydb:     obj.KeyDB(),
+		docdb:     obj.DocDB(),
 	}
+	if len(typ) > 0 {
+		lis.typ = typ[0]
+	}
+	return lis
 }
 
 //签名交易
@@ -378,6 +402,9 @@ var LockedScriptType = graphql.NewObject(graphql.ObjectConfig{
 				if err != nil {
 					return nil, err
 				}
+				if len(meta) == 0 {
+					return nil, nil
+				}
 				return ParseMetaBody(meta)
 			},
 			Description: "相关数据",
@@ -617,7 +644,7 @@ var txInfo = &graphql.Field{
 			Description: "交易id",
 		},
 	},
-	Type:        TXType,
+	Type:        graphql.NewNonNull(TXType),
 	Description: "查询交易信息",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		objs := GetObjects(p)
@@ -642,14 +669,13 @@ var SenderInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			Description: "金额交易id",
 		},
 		"index": {
-			Type:         graphql.NewNonNull(graphql.Int),
-			DefaultValue: -1,
-			Description:  "金额交易索引",
+			Type:        graphql.NewNonNull(graphql.Int),
+			Description: "金额交易索引",
 		},
 		"script": {
 			Type:         graphql.String,
 			DefaultValue: string(xginx.DefaultInputScript),
-			Description:  "金额地址",
+			Description:  "输入脚本",
 		},
 	},
 	Description: "转账到指定地址输入参数",
@@ -668,12 +694,12 @@ var ReceiverInput = graphql.NewInputObject(graphql.InputObjectConfig{
 		},
 		"meta": {
 			Type:        graphql.String,
-			Description: "输出meta,MetaBody,由接口createTxMeta创建",
+			Description: "输出meta数据",
 		},
 		"script": {
 			Type:         graphql.String,
 			DefaultValue: string(xginx.DefaultLockedScript),
-			Description:  "金额地址",
+			Description:  "输出执行脚本",
 		},
 	},
 	Description: "转账到指定地址输入参数",
@@ -732,7 +758,7 @@ var createTxMeta = &graphql.Field{
 	Type: MetaBodyType,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		mb := &MetaBody{}
-		err := DecodeValidateArgs(p, mb, "meta")
+		err := DecodeArgs(p, mb, "meta")
 		if err != nil {
 			return NewError(100, err)
 		}
@@ -766,12 +792,12 @@ var transfer = &graphql.Field{
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		senders := []SenderInfo{}
-		err := DecodeValidateArgs(p, &senders, "sender")
+		err := DecodeArgs(p, &senders, "sender")
 		if err != nil {
 			return NewError(100, err)
 		}
 		receiver := []ReceiverInfo{}
-		err = DecodeValidateArgs(p, &receiver, "receiver")
+		err = DecodeArgs(p, &receiver, "receiver")
 		if err != nil {
 			return NewError(101, err)
 		}
