@@ -25,11 +25,32 @@ type AccountInfo struct {
 	Type int      `json:"type"` //类型 1-金额账户,2-临时账户,可能会被删除
 }
 
+//创建零时账户
+func NewTempAccountInfo(num int, less int, arb bool, pks []string) (*AccountInfo, error) {
+	acc := &AccountInfo{
+		Num:  num,
+		Less: less,
+		Arb:  arb,
+		Pks:  pks,
+		Desc: "临时账户",
+		Type: 2,
+	}
+	return acc, acc.Check()
+}
+
 func (ka AccountInfo) GetArb() uint8 {
 	if ka.Arb {
 		return uint8(ka.Num - 1)
 	}
 	return InvalidArb
+}
+
+func (ka AccountInfo) MustAddress() Address {
+	id, err := ka.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 func (ka AccountInfo) ID() (Address, error) {
@@ -89,6 +110,14 @@ func (ka AccountInfo) Encode() ([]byte, error) {
 }
 
 func (ka AccountInfo) Check() error {
+	//检测是否重复
+	pkss := map[string]bool{}
+	for _, v := range ka.Pks {
+		if pkss[v] {
+			return fmt.Errorf("%s repeat pks", v)
+		}
+		pkss[v] = true
+	}
 	//检测私钥id格式
 	pkhs := []HASH256{}
 	for idx, kid := range ka.Pks {
@@ -171,6 +200,8 @@ type IKeysDB interface {
 	NewLockedScript(id Address, meta []byte, exec ...[]byte) (*LockedScript, error)
 	//签名并填充脚本数据
 	Sign(id Address, data []byte, wits *WitnessScript) error
+	//签名指定的账户信息
+	SignAccount(ka *AccountInfo, data []byte, wits *WitnessScript) error
 	//删除私钥
 	DeletePrivateKey(id string) error
 	//删除账户描述
@@ -387,11 +418,7 @@ func (kd *levelkeysdb) NewLockedScript(id Address, meta []byte, exec ...[]byte) 
 }
 
 //使用我的数据签名data并填充脚本脚本
-func (kd *levelkeysdb) Sign(id Address, data []byte, wits *WitnessScript) error {
-	ka, err := kd.LoadAccountInfo(id)
-	if err != nil {
-		return err
-	}
+func (kd *levelkeysdb) SignAccount(ka *AccountInfo, data []byte, wits *WitnessScript) error {
 	//检测数量是否匹配
 	if len(ka.Pks) != len(wits.Pks) {
 		return fmt.Errorf("pks num error")
@@ -425,6 +452,15 @@ func (kd *levelkeysdb) Sign(id Address, data []byte, wits *WitnessScript) error 
 	return nil
 }
 
+//使用我的数据签名data并填充脚本脚本
+func (kd *levelkeysdb) Sign(id Address, data []byte, wits *WitnessScript) error {
+	ka, err := kd.LoadAccountInfo(id)
+	if err != nil {
+		return err
+	}
+	return kd.SignAccount(ka, data, wits)
+}
+
 //NewWitnessScript 生成未带有签名的脚本对象
 func (kd *levelkeysdb) NewWitnessScript(id Address, execs ...[]byte) (*WitnessScript, error) {
 	ka, err := kd.LoadAccountInfo(id)
@@ -438,6 +474,14 @@ func (kd *levelkeysdb) NewWitnessScript(id Address, execs ...[]byte) (*WitnessSc
 	w.Arb = ka.GetArb()
 	//使用空的数据预填充
 	w.Pks = make([]PKBytes, w.Num)
+	//如果有公钥填充公钥
+	for idx, kid := range ka.Pks {
+		pri, err := kd.LoadPrivateKey(kid)
+		if err != nil {
+			continue
+		}
+		w.Pks[idx] = pri.PublicKey().GetPks()
+	}
 	w.Sig = make([]SigBytes, w.Num)
 	exec, err := MergeScript(execs...)
 	if err != nil {

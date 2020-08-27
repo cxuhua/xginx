@@ -99,7 +99,7 @@ type MsgAlert struct {
 
 //MsgBroadInfo 定制的消息广播
 type MsgBroadInfo struct {
-	Action int8
+	Action uint8
 	Msg    VarBytes
 }
 

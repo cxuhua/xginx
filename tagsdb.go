@@ -249,6 +249,7 @@ func (sys *leveldbdocsystem) DelTag(id DocumentID, tags ...string) error {
 	bp := GetDBKey(bkprefix, id[:])
 	//可从反向索引推导出正向索引tag
 	iter := sys.db.Iterator(NewPrefix(bp))
+	defer iter.Close()
 	for iter.Next() {
 		tag := iter.Value()
 		if !sys.hastags(tags, tag) {
@@ -357,6 +358,7 @@ func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 	//可从反向索引推导出正向索引tag
 	bp := GetDBKey(bkprefix, id[:])
 	iter := sys.db.Iterator(NewPrefix(bp))
+	defer iter.Close()
 	for iter.Next() {
 		//反向key
 		bt.Del(iter.Key())
@@ -538,6 +540,7 @@ func (it *dociter) getTimeIterator(tv int64) *Iterator {
 func (it *dociter) eachbytime(fn func(doc *Document) error) error {
 	fp := GetDBKey(tkprefix)
 	iter := it.sys.db.Iterator(NewPrefix(fp))
+	defer iter.Close()
 	limit := 0
 	skip := 0
 	finded := false
@@ -617,6 +620,7 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 	//分组map记录id是否已经处理,当文档有很多tag时可能会遍历到多次
 	gmap := map[DocumentID]bool{}
 	iter := it.sys.db.Iterator(NewPrefix(fp))
+	defer iter.Close()
 	ilen := DocumentIDLen
 	flen := len(fkprefix)
 	limit := 0
@@ -670,6 +674,7 @@ func (it *dociter) eachall(fn func(doc *Document) error) error {
 	if it.lkey != nil {
 		iter.Seek(it.lkey)
 	}
+	defer iter.Close()
 	limit := 0
 	first := true
 	for {

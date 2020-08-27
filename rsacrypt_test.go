@@ -2,6 +2,7 @@ package xginx
 
 import (
 	"log"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,8 @@ func TestRSAEncryptDecrypt(t *testing.T) {
 	r, err := NewRSAPrivateKey()
 	require.NoError(t, err)
 	p := r.PublicKey()
-	str1 := "ksjfksdfk(&838278234344"
+	//大数据测试
+	str1 := strings.Repeat("838278234344", 1024)
 	bb1, err := p.Encrypt([]byte(str1))
 	require.NoError(t, err)
 	bb2, err := r.Decrypt(bb1)

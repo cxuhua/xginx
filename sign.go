@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -13,6 +14,11 @@ type IGetSigBytes interface {
 type ISignTx interface {
 	SignTx(singer ISigner, pass ...string) error
 }
+
+var (
+	//如果签名时返回这个忽略
+	ErrIgnoreSignError = errors.New("ignore sign error")
+)
 
 //ISigner 签名验证接口
 type ISigner interface {

@@ -47,9 +47,42 @@ func (ptr RSAPublicKey) Verify(src []byte, sign []byte) error {
 	return rsa.VerifyPKCS1v15(ptr.pp, crypto.SHA256, hashed, sign)
 }
 
+func bytesSplit(buf []byte, lim int) [][]byte {
+	var chunk []byte
+	chunks := make([][]byte, 0, len(buf)/lim+1)
+	for len(buf) >= lim {
+		chunk, buf = buf[:lim], buf[lim:]
+		chunks = append(chunks, chunk)
+	}
+	if len(buf) > 0 {
+		chunks = append(chunks, buf[:len(buf)])
+	}
+	return chunks
+}
+
 //Encrypt 公钥加密
 func (ptr RSAPublicKey) Encrypt(bb []byte) ([]byte, error) {
-	return rsa.EncryptPKCS1v15(rand.Reader, ptr.pp, bb)
+	w := NewWriter()
+	bbs := bytesSplit(bb, ptr.pp.Size()-11)
+	for _, v := range bbs {
+		bv, err := rsa.EncryptPKCS1v15(rand.Reader, ptr.pp, v)
+		if err != nil {
+			return nil, err
+		}
+		err = w.WriteFull(bv)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return w.Bytes(), nil
+}
+
+func (ptr RSAPublicKey) MustID() string {
+	id, err := ptr.ID()
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 func (ptr RSAPublicKey) ID() (string, error) {
@@ -103,7 +136,19 @@ func (ptr RSAPrivateKey) Sign(src []byte) ([]byte, error) {
 
 //Decrypt 私钥解密
 func (ptr RSAPrivateKey) Decrypt(bb []byte) ([]byte, error) {
-	return rsa.DecryptPKCS1v15(rand.Reader, ptr.pk, bb)
+	w := NewWriter()
+	bbs := bytesSplit(bb, ptr.pk.Size())
+	for _, v := range bbs {
+		bv, err := rsa.DecryptPKCS1v15(rand.Reader, ptr.pk, v)
+		if err != nil {
+			return nil, err
+		}
+		err = w.WriteFull(bv)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return w.Bytes(), nil
 }
 
 //PublicKey 获取对应的公钥

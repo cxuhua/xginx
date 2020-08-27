@@ -105,6 +105,8 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"listTempProduct": listTempProduct,
 		"loadProduct":     loadProduct,
 		"findProduct":     findProduct,
+		"listTempTx":      listTempTx,
+		"loadTxInfo":      loadTxInfo,
 	},
 	Description: "数据查询接口",
 })
@@ -121,6 +123,7 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 		"createRSA":        createRSA,
 		"newTempProduct":   newTempProduct,
 		"uploadProduct":    uploadProduct,
+		"purchaseProduct":  purchaseProduct,
 	},
 	Description: "数据更新接口",
 })

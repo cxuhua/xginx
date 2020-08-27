@@ -36,7 +36,7 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 			Type: HashType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				mb := p.Source.(*MetaBody)
-				return mb.MustID(), nil
+				return mb.ID()
 			},
 			Description: "类型",
 		},
@@ -69,7 +69,7 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				objs := GetObjects(p)
 				mb := p.Source.(*MetaBody)
-				return mb.GetExt(objs.DocDB())
+				return mb.GetSellExt(objs.DocDB())
 			},
 			Description: "查询扩展信息",
 		},
@@ -146,8 +146,8 @@ var BodyType = graphql.NewEnum(graphql.EnumConfig{
 			Value:       MetaTypeSell,
 			Description: "出售,卖家发出,并发布的链",
 		},
-		"BUY": {
-			Value:       MetaTypeBuy,
+		"PURCHASE": {
+			Value:       MetaTypePurchase,
 			Description: "购买,买家购买",
 		},
 		"CONFIRM": {

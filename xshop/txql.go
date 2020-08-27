@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,6 +24,7 @@ type SenderInfo struct {
 	TxID   xginx.HASH256 //交易id
 	Index  xginx.VarUInt //金额索引
 	Script string        //解锁脚本
+	Keep   bool          //是否是找零地址
 }
 
 //转账接收信息
@@ -52,7 +54,7 @@ type eshoptranslistener struct {
 }
 
 func (lis *eshoptranslistener) getmeta(meta string) ([]byte, error) {
-	if lis.typ == 0 {
+	if lis.typ == 0 || lis.typ == MetaTypePurchase {
 		return []byte(meta), nil
 	}
 	mb, err := GetMetaBody(lis.docdb, xginx.DocumentIDFromHex(meta))
@@ -78,7 +80,7 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 		sum += v.Amount
 	}
 	//最后一个输入地址默认作为找零地址（如果有零）
-	var lout xginx.Address
+	var keepaddr xginx.Address
 	//使用哪些金额
 	for _, sender := range lis.senders {
 		coin, err := lis.bi.GetCoinWithAddress(sender.Addr, sender.TxID, sender.Index)
@@ -97,7 +99,9 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 		}
 		tx.Ins = append(tx.Ins, in)
 		//保存最后一个地址
-		lout = coin.GetAddress()
+		if sender.Keep {
+			keepaddr = coin.GetAddress()
+		}
 		sum -= coin.Value
 		if sum <= 0 {
 			break
@@ -106,6 +110,10 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	//没有减完，余额不足
 	if sum > 0 {
 		return nil, errors.New("insufficient balance")
+	}
+	//检测找零地址是否正确 sum < 0表示有找零
+	if err := keepaddr.Check(); sum < 0 && err != nil {
+		return nil, fmt.Errorf("keep address error %w", err)
 	}
 	//转出到其他账号的输出
 	for _, v := range lis.receivers {
@@ -126,13 +134,26 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	//剩余的需要找零钱给自己，否则金额就会丢失
 	if amt := -sum; amt > 0 {
 		//默认找零到最后一个地址
-		out, err := lout.NewTxOut(amt, nil, xginx.DefaultLockedScript)
+		out, err := keepaddr.NewTxOut(amt, nil, xginx.DefaultLockedScript)
 		if err != nil {
 			return nil, err
 		}
 		tx.Outs = append(tx.Outs, out)
 	}
 	return tx, nil
+}
+
+//创建一个处理器仅仅用于签名
+func (obj Objects) NewTransForSign(typ MetaType) IShopTrans {
+	lis := &eshoptranslistener{
+		bi:        obj.BlockIndex(),
+		senders:   []SenderInfo{},
+		receivers: []ReceiverInfo{},
+		keydb:     obj.KeyDB(),
+		docdb:     obj.DocDB(),
+		typ:       typ,
+	}
+	return lis
 }
 
 //创建一个转账处理器,使用默认的输入输出脚本
@@ -172,6 +193,10 @@ func (lis *eshoptranslistener) SignTx(singer xginx.ISigner, pass ...string) erro
 	}
 	//账户信息
 	info, err := lis.keydb.LoadAccountInfo(addr)
+	//如果没有账户信息,并且是买入,返回忽略错误
+	if err != nil && lis.typ == MetaTypePurchase {
+		return xginx.ErrIgnoreSignError
+	}
 	if err != nil {
 		return err
 	}
@@ -601,6 +626,66 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "是否是coinbase交易",
 		},
+		"joinTxPool": {
+			Type: graphql.Boolean,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				bi := objs.BlockIndex()
+				txp := bi.GetTxPool()
+				tx := p.Source.(*xginx.TX)
+				err := txp.PushTx(bi, tx)
+				if err != nil {
+					return NewError(100, err)
+				}
+				return true, nil
+			},
+			Description: "加入交易池",
+		},
+		"broadMsg": {
+			Type: graphql.String,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				tx := p.Source.(*xginx.TX)
+				mbs := SeparateMetaBodyFromTx(tx)
+				//必须存在购买meta数据
+				has := false
+				for _, mb := range mbs {
+					if mb.Type == MetaTypePurchase {
+						has = true
+						break
+					}
+				}
+				if !has {
+					return NewError(100, "tx MetaTypePurchase miss,can't broad msg")
+				}
+				msg, err := NewMsgBroadInfoWithPurchaseTx(tx)
+				if err != nil {
+					return NewError(101, err)
+				}
+				id, err := msg.ID()
+				if err != nil {
+					return NewError(102, err)
+				}
+				if xginx.Server == nil {
+					return NewError(103, "tcp server off")
+				}
+				xginx.Server.BroadMsg(msg)
+				return hex.EncodeToString(id[:]), nil
+			},
+			Description: "广播购买请求,返回消息id,也可以通过邮件方式将数据发送给卖家,使用导出功能导出数据",
+		},
+		"dump": {
+			Type: graphql.String,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				tx := p.Source.(*xginx.TX)
+				w := xginx.NewWriter()
+				err := tx.Encode(w)
+				if err != nil {
+					return NewError(100, err)
+				}
+				return base64.StdEncoding.EncodeToString(w.Bytes()), nil
+			},
+			Description: "交易数据导出为base64格式",
+		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
 		_, ok := p.Value.(*xginx.TX)
@@ -609,7 +694,7 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 	Description: "交易类型",
 })
 
-var PageInput = graphql.NewInputObject(graphql.InputObjectConfig{
+var PageInputType = graphql.NewInputObject(graphql.InputObjectConfig{
 	Name: "PageInput",
 	Fields: graphql.InputObjectConfigFieldMap{
 		"skip": {
@@ -633,6 +718,56 @@ var listTxPool = &graphql.Field{
 		bi := objs.BlockIndex()
 		tp := bi.GetTxPool()
 		return tp.AllTxs(), nil
+	},
+}
+
+var loadTxInfo = &graphql.Field{
+	Name: "LoadTxInfo",
+	Type: graphql.NewNonNull(TXType),
+	Args: graphql.FieldConfigArgument{
+		"data": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "base64编码的交易数据,tx.dump获取",
+		},
+	},
+	Description: "加载交易数据从base64格式",
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		data := p.Args["data"].(string)
+		bb, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			return NewError(100, err)
+		}
+		r := xginx.NewReader(bb)
+		tx := &xginx.TX{}
+		err = tx.Decode(r)
+		if err != nil {
+			return NewError(101, err)
+		}
+		mbs := SeparateMetaBodyFromTx(tx)
+		for _, mb := range mbs {
+			mb.GetPurchaseInfo(GetObjects(p).KeyDB())
+		}
+		return tx, nil
+	},
+}
+
+var listTempTx = &graphql.Field{
+	Name:        "ListTempTx",
+	Type:        graphql.NewList(graphql.NewNonNull(TXType)),
+	Description: "获取临时交易数据",
+	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
+		txs := []*xginx.TX{}
+		vptr := &xginx.TX{}
+		err := objs.TypeDB().Each(TypeDBTypeTTPTX, vptr, func(k []byte, v xginx.ISerializable) bool {
+			txs = append(txs, v.(*xginx.TX))
+			vptr = &xginx.TX{}
+			return true
+		})
+		if err != nil {
+			return NewError(100, err)
+		}
+		return txs, nil
 	},
 }
 
@@ -663,6 +798,10 @@ var SenderInput = graphql.NewInputObject(graphql.InputObjectConfig{
 		"addr": {
 			Type:        graphql.NewNonNull(graphql.String),
 			Description: "金额地址",
+		},
+		"keep": {
+			Type:        graphql.NewNonNull(graphql.Boolean),
+			Description: "是否作为找零地址",
 		},
 		"txId": {
 			Type:        graphql.NewNonNull(HashType),

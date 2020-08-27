@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -34,8 +35,10 @@ type shoplistener struct {
 	docdb xginx.IDocSystem
 	//密钥db
 	keydb xginx.IKeysDB
+	//分类db
+	typdb ITypeDB
 	//graphql http
-	gqlsrv *http.Server
+	gqlhttp *http.Server
 	//graphql接口描述
 	gqlschema *graphql.Schema
 	//graphqlhttp处理器
@@ -61,21 +64,13 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 	xginx.LogInfof("TX = %v Replace %v", new.MustID(), old.MustID())
 }
 
-//tx[idx] = meta位置
-func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx int, meta xginx.VarBytes, link bool) error {
-	bb, err := MetaCoder.Decode(meta)
-	if err != nil {
-		return err
-	}
-	mb, err := ParseMetaBody(bb)
-	if err != nil {
-		return err
-	}
+//当收到一个销售数据
+func (lis *shoplistener) onSellMeta(ctx context.Context, tx *xginx.TX, idx int, meta *MetaBody, link bool) error {
 	//如果文档ID存在
-	if !mb.HasID() {
+	if !meta.HasID() {
 		return fmt.Errorf("meta data error")
 	}
-	id := mb.MustID()
+	id := meta.MustID()
 	if !link {
 		return lis.docdb.Delete(id)
 	}
@@ -84,9 +79,8 @@ func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx 
 		return err
 	}
 	//不存在添加到文档数据库,不关心的文档数据可不存入
-	//但下面的关系还是保存,用来查询
 	if !has {
-		doc, err := mb.ToDocument()
+		doc, err := meta.ToDocument()
 		if err != nil {
 			return err
 		}
@@ -109,9 +103,33 @@ func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx 
 	if err != nil {
 		return err
 	}
-	lis.Publish(xginx.GetContext(), "newProduct", func(objs Objects) {
-		objs["product"] = mb
+	lis.Publish(ctx, "newProduct", func(objs Objects) {
+		objs["product"] = meta
 	})
+	return nil
+}
+
+//当收到一个购买数据
+func (lis *shoplistener) onPurchaseMeta(ctx context.Context, tx *xginx.TX, idx int, meta *MetaBody, link bool) error {
+	return nil
+}
+
+//tx[idx] = meta位置
+func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx int, meta xginx.VarBytes, link bool) error {
+	bb, err := MetaCoder.Decode(meta)
+	if err != nil {
+		return err
+	}
+	mb, err := ParseMetaBody(bb)
+	if err != nil {
+		return err
+	}
+	if mb.Type == MetaTypeSell {
+		return lis.onSellMeta(ctx, tx, idx, mb, link)
+	}
+	if mb.Type == MetaTypePurchase {
+		return lis.onPurchaseMeta(ctx, tx, idx, mb, link)
+	}
 	return nil
 }
 
@@ -122,7 +140,10 @@ func (lis *shoplistener) OnLinkBlock(blk *xginx.BlockInfo) {
 		if script.Meta.Len() == 0 {
 			return
 		}
-		_ = lis.onNewScriptMeta(ctx, tx, idx, script.Meta, true)
+		err := lis.onNewScriptMeta(ctx, tx, idx, script.Meta, true)
+		if err != nil {
+			xginx.LogError(err)
+		}
 	})
 	//发送订阅信息
 	lis.Publish(ctx, "linkBlock", func(objs Objects) {
@@ -141,7 +162,33 @@ func (lis *shoplistener) OnFinished(blk *xginx.BlockInfo) error {
 
 //OnClientMsg 收到网络信息
 func (lis *shoplistener) OnClientMsg(c *xginx.Client, msg xginx.MsgIO) {
-	//LogInfo(msg.Type())
+	typ := msg.Type()
+	switch typ {
+	case xginx.NtBroadInfo:
+		m := msg.(*xginx.MsgBroadInfo)
+		if m.Action == MsgActionPurchaseTx {
+			r := xginx.NewReader(m.Msg)
+			tx := &xginx.TX{}
+			err := tx.Decode(r)
+			if err != nil {
+				xginx.LogWarn("recv MsgBroadInfo action=MsgActionPurchaseTx Decode tx error", err)
+				return
+			}
+			mbs := SeparateMetaBodyFromTx(tx)
+			if len(mbs) == 0 {
+				xginx.LogWarn("recv MsgBroadInfo action=MsgActionPurchaseTx err,miss metabody data")
+				return
+			}
+			//暂时先不检测metabody数据的合法性
+			//继续广播数据
+			if xginx.Server != nil {
+				xginx.Server.BroadMsg(m, c)
+			}
+		} else if m.Action == MsgActionSellMeta {
+
+		}
+		log.Println(m.Action)
+	}
 }
 
 //TimeNow 当前时间戳获取
@@ -200,6 +247,11 @@ func (lis *shoplistener) OnInit(bi *xginx.BlockIndex) error {
 	}
 	lis.keydb = keys
 	xginx.LogInfo("miner address:", lis.MinerAddr())
+	typdb, err := NewTypeDB(conf.DataDir + "/types")
+	if err != nil {
+		return err
+	}
+	lis.typdb = typdb
 	return nil
 }
 
@@ -211,6 +263,7 @@ const (
 	objblockkey = "__objblockkey__"
 	objdocdbkey = "__objdocdbkey__"
 	objkeydbkey = "__objkeydbkey__"
+	objtypdbkey = "__objtypdbkey__"
 )
 
 type Objects map[string]interface{}
@@ -239,6 +292,14 @@ func (objs Objects) DocDB() xginx.IDocSystem {
 	return v
 }
 
+func (objs Objects) TypeDB() ITypeDB {
+	v, ok := objs[objtypdbkey].(ITypeDB)
+	if !ok {
+		panic(fmt.Errorf("type db  miss"))
+	}
+	return v
+}
+
 //返回可用的素有对象
 func NewObjects() Objects {
 	return Objects{}
@@ -261,6 +322,7 @@ func (lis *shoplistener) NewObjects() Objects {
 	objs[objblockkey] = xginx.GetBlockIndex()
 	objs[objdocdbkey] = lis.docdb
 	objs[objkeydbkey] = lis.keydb
+	objs[objtypdbkey] = lis.typdb
 	return objs
 }
 
@@ -324,7 +386,7 @@ func (lis *shoplistener) startgraphql(host string) {
 	}))
 	//查询更新初始化
 	mux.Handle("/"+urlv.Scheme, lis)
-	lis.gqlsrv = &http.Server{
+	lis.gqlhttp = &http.Server{
 		Addr:    urlv.Host,
 		Handler: mux,
 		BaseContext: func(listener net.Listener) context.Context {
@@ -334,7 +396,7 @@ func (lis *shoplistener) startgraphql(host string) {
 	lis.wg.Add(1)
 	go func() {
 		defer lis.wg.Done()
-		err := lis.gqlsrv.ListenAndServe()
+		err := lis.gqlhttp.ListenAndServe()
 		if err != nil {
 			xginx.LogError(err)
 		}
@@ -348,10 +410,10 @@ func (lis *shoplistener) OnStart() {
 
 func (lis *shoplistener) OnStop() {
 	//停止graphql服务
-	if lis.gqlsrv != nil {
+	if lis.gqlhttp != nil {
 		ctx, cancel := context.WithTimeout(xginx.GetContext(), time.Second*30)
 		defer cancel()
-		_ = lis.gqlsrv.Shutdown(ctx)
+		_ = lis.gqlhttp.Shutdown(ctx)
 	}
 	//等待结束
 	lis.wg.Wait()
@@ -363,6 +425,9 @@ func (lis *shoplistener) OnClose() {
 	}
 	if lis.keydb != nil {
 		lis.keydb.Close()
+	}
+	if lis.typdb != nil {
+		lis.typdb.Close()
 	}
 }
 

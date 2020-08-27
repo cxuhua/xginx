@@ -260,9 +260,11 @@ func (s Script) Encode(w IWriter) error {
 func (s Script) ForID(w IWriter) error {
 	if s.IsCoinBase() {
 		return s.Encode(w)
-	} else if wit, err := s.ToWitness(); err != nil {
-		return err
 	} else {
+		wit, err := s.ToWitness()
+		if err != nil {
+			return err
+		}
 		return wit.ForID(w)
 	}
 }
@@ -401,6 +403,11 @@ func (ss LockedScript) Address() Address {
 		panic(err)
 	}
 	return addr
+}
+
+//ForID id计算
+func (ss LockedScript) ForID(w IWriter) error {
+	return ss.Encode(w)
 }
 
 //Encode 编码

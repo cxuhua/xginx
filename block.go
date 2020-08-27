@@ -1098,6 +1098,17 @@ func (out *TxOut) GetCoin(in *TxIn, bi *BlockIndex) (*CoinKeyValue, error) {
 	return coin, err
 }
 
+//ForID 计算交易id用到的数据
+func (out *TxOut) ForID(w IWriter) error {
+	if err := out.Value.Encode(w); err != nil {
+		return err
+	}
+	if err := out.Script.ForID(w); err != nil {
+		return err
+	}
+	return nil
+}
+
 //HasCoin 获取输入引用的输出 输出对应的coin状态是否正常可用
 func (out *TxOut) HasCoin(in *TxIn, bi *BlockIndex) bool {
 	pkh, err := out.Script.GetPkh()
@@ -1362,6 +1373,11 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
 		}
 		//对每个输入签名
 		err = NewSigner(tx, out, in, idx).Sign(bi, lis, pass...)
+		//这个错误可能是部分签名,可暂时忽略
+		if err != nil && errors.Is(err, ErrIgnoreSignError) {
+			LogWarn(err)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

@@ -112,6 +112,13 @@ const (
 	NtBroadAck = NTType(0xf1)
 )
 
+//标准序列化接口
+
+type ISerializable interface {
+	Encode(w IWriter) error
+	Decode(r IReader) error
+}
+
 //MsgBroadAck 广播应答
 type MsgBroadAck struct {
 	MsgID MsgID
