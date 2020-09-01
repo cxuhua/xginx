@@ -12,15 +12,17 @@ import (
 
 //Document 文档关键字查询存储系统
 type Document struct {
-	ID   DocumentID //文档ID
-	Tags []string   //标签
-	Time int64      //时间纳秒
-	Body []byte     //内容
+	ID    DocumentID //文档ID
+	Tags  []string   //标签
+	Time  VarUInt    //时间纳秒
+	TxID  HASH256    //文档对应交易ID
+	Index VarUInt    //文档对应的输出索引
+	Body  VarBytes   //内容
 }
 
 func NewDocument() *Document {
 	return &Document{
-		Time: time.Now().UnixNano(),
+		Time: VarUInt(time.Now().UnixNano()),
 	}
 }
 
@@ -28,17 +30,21 @@ func GetTimeBytes(v int64) []byte {
 	return EndianUInt64(uint64(v))
 }
 
-func (doc Document) TimeBytes() []byte {
-	return GetTimeBytes(doc.Time)
-}
-
 func (doc Document) Encode() []byte {
 	w := NewWriter()
-	err := w.WriteFull(GetTimeBytes(doc.Time))
+	err := doc.Time.Encode(w)
 	if err != nil {
 		panic(err)
 	}
-	err = w.WriteFull(doc.Body)
+	err = doc.TxID.Encode(w)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Index.Encode(w)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Body.Encode(w)
 	if err != nil {
 		panic(err)
 	}
@@ -69,8 +75,23 @@ func (doc *Document) Decode(b []byte) {
 	if len(rb) < 8 {
 		panic(fmt.Errorf("body bytes error"))
 	}
-	doc.Time = int64(binary.BigEndian.Uint64(rb))
-	doc.Body = rb[8:]
+	r := NewReader(rb)
+	err := doc.Time.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.TxID.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Index.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Body.Decode(r)
+	if err != nil {
+		panic(err)
+	}
 }
 
 type IDocIter interface {
@@ -162,13 +183,7 @@ type IDocSystem interface {
 	//关闭文件系统
 	Close()
 	//按时间索引迭代
-	ByTime(v ...int64) IDocIter
-	//添加kv对象
-	PutObject(id DocumentID, vptr ISerializable) error
-	//删除kv对象
-	DelObject(id DocumentID) error
-	//获取kv对象
-	GetObject(id DocumentID, vptr ISerializable) error
+	ByTime(v ...VarUInt) IDocIter
 }
 
 var (
@@ -176,7 +191,6 @@ var (
 	bkprefix = []byte{2} //反向索引前缀
 	ckprefix = []byte{3} //固定值前缀
 	tkprefix = []byte{4} //时间索引前缀
-	obprefix = []byte{5} //对象前缀 PutObject DelObject GetObject
 )
 
 type leveldbdocsystem struct {
@@ -189,27 +203,6 @@ func (sys *leveldbdocsystem) Sync() {
 
 func (sys *leveldbdocsystem) Close() {
 	sys.db.Close()
-}
-
-func (sys *leveldbdocsystem) PutObject(id DocumentID, vptr ISerializable) error {
-	w := NewWriter()
-	if err := vptr.Encode(w); err != nil {
-		return err
-	}
-	return sys.db.Put(obprefix, id[:], w.Bytes())
-}
-
-func (sys *leveldbdocsystem) DelObject(id DocumentID) error {
-	return sys.db.Del(obprefix, id[:])
-}
-
-func (sys *leveldbdocsystem) GetObject(id DocumentID, vptr ISerializable) error {
-	bb, err := sys.db.Get(obprefix, id[:])
-	if err != nil {
-		return err
-	}
-	r := NewReader(bb)
-	return vptr.Decode(r)
 }
 
 //检测id文档是否存在
@@ -305,7 +298,7 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	bb := doc.Encode()
 	bt.Put(ckprefix, doc.ID[:], bb)
 	//添加时间排序索引
-	bt.Put(tkprefix, doc.TimeBytes(), doc.ID[:], doc.ID[:])
+	bt.Put(tkprefix, doc.Time.SortBytes(), doc.ID[:], doc.ID[:])
 	//一次性写入
 	return nil
 }
@@ -361,7 +354,7 @@ func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 		return err
 	}
 	//删除时间索引
-	bt.Del(tkprefix, doc.TimeBytes(), id[:])
+	bt.Del(tkprefix, doc.Time.SortBytes(), id[:])
 	//删除内容
 	bt.Del(ckprefix, id[:])
 	//删除所有的相关索引
@@ -444,8 +437,8 @@ func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
 	//如果内容或者时间不同
 	if ndoc.Time != ndoc.Time || !bytes.Equal(odoc.Body, ndoc.Body) {
 		//更新时间索引
-		bt.Del(tkprefix, odoc.TimeBytes(), odoc.ID[:])
-		bt.Put(tkprefix, ndoc.TimeBytes(), ndoc.ID[:], ndoc.ID[:])
+		bt.Del(tkprefix, odoc.Time.SortBytes(), odoc.ID[:])
+		bt.Put(tkprefix, ndoc.Time.SortBytes(), ndoc.ID[:], ndoc.ID[:])
 		//只要时间或者内容不同都要更新内容
 		bt.Del(ckprefix, odoc.ID[:]) //先删除再添加
 		bt.Put(ckprefix, ndoc.ID[:], ndoc.Encode())
@@ -477,7 +470,7 @@ type dociter struct {
 	limit   *int
 	stags   *bool //是否使用反向索引查询文档对应的所有tag
 	bytime  bool
-	ittime  *int64
+	ittime  *VarUInt
 	byprev  bool //向上
 	bynext  bool //向下
 	qall    bool
@@ -537,12 +530,12 @@ func (it *dociter) isliked(kkey []byte) bool {
 	return it.regex.Match(kkey)
 }
 
-func (it *dociter) getTime(k []byte) int64 {
-	return int64(binary.BigEndian.Uint64(k[1:]))
+func (it *dociter) getTime(k []byte) VarUInt {
+	return VarUInt(binary.BigEndian.Uint64(k[1:]))
 }
 
-func (it *dociter) getTimeIterator(tv int64) *Iterator {
-	s := GetDBKey(tkprefix, GetTimeBytes(tv))
+func (it *dociter) getTimeIterator(tv VarUInt) *Iterator {
+	s := GetDBKey(tkprefix, tv.SortBytes())
 	l := GetDBKey(tkprefix, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
 	return it.sys.db.Iterator(NewRange(s, l))
 }
@@ -753,7 +746,7 @@ func (sys *leveldbdocsystem) Find(key string) IDocIter {
 		byprev:  false,
 	}
 }
-func (sys *leveldbdocsystem) ByTime(v ...int64) IDocIter {
+func (sys *leveldbdocsystem) ByTime(v ...VarUInt) IDocIter {
 	iter := &dociter{
 		sys:     sys,
 		qprefix: false,

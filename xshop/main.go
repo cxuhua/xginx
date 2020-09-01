@@ -65,7 +65,7 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 }
 
 //是否保存文档
-func (lis *shoplistener) isSaveMetaBody(ctx context.Context, meta *MetaBody) bool {
+func (lis *shoplistener) isSaveSellMetaBody(ctx context.Context, meta *MetaBody) bool {
 	return true
 }
 
@@ -75,28 +75,25 @@ func (lis *shoplistener) onSellMeta(ctx context.Context, tx *xginx.TX, idx int, 
 	if !link {
 		return lis.docdb.Delete(id)
 	}
-	has, err := lis.docdb.Has(id)
+	//如果忽略直接返回,不关心的文档数据可不存入
+	if !lis.isSaveSellMetaBody(ctx, meta) {
+		return nil
+	}
+	doc, err := lis.docdb.Get(id)
+	//不存在添加到文档数据库
 	if err != nil {
-		return err
-	}
-	//不存在添加到文档数据库,不关心的文档数据可不存入
-	if !has && lis.isSaveMetaBody(ctx, meta) {
-		doc, err := meta.ToDocument()
+		doc, err = meta.ToDocument()
 		if err != nil {
 			return err
 		}
+		doc.TxID = tx.MustID()
+		doc.Index = xginx.VarUInt(idx)
 		err = lis.docdb.Insert(doc)
-		if err != nil {
-			return err
-		}
+	} else {
+		doc.TxID = tx.MustID()
+		doc.Index = xginx.VarUInt(idx)
+		err = lis.docdb.Update(doc)
 	}
-	//添加文档和区块交易数据的关联关系 docid -> tx.id+idx
-	//即使文档被删除了,这个关系还是存在
-	ext := &MetaExt{
-		TxID:  tx.MustID(),
-		Index: xginx.VarUInt(idx),
-	}
-	err = lis.docdb.PutObject(id, ext)
 	if err != nil {
 		return err
 	}

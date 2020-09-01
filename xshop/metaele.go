@@ -18,6 +18,10 @@ import (
 const (
 	//购买交易分类,当购买一个产品生成的交易临时存储在这里
 	TypeDBTypeTTPTX = "TPTX"
+	//卖出文档类型,当收到区块,包含卖出数据时保存
+	DocTypeSell = "SELL"
+	//购买文档类型,当收到区块,包含卖出数据时保存
+	DocTypePurchase = "PURCHASE"
 )
 
 //MetaHash hash方法
@@ -52,74 +56,29 @@ type MetaType int8
 const (
 	MetaTypeSell     MetaType = 1 //出售
 	MetaTypePurchase MetaType = 2 //购买
-	MetaTypeConfirm  MetaType = 3 //确认
+	MetaTypeFinish   MetaType = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
 )
 
-//数据扩展信息 保存执行区块交易的信息
-type MetaExt struct {
-	TxID  xginx.HASH256 //交易ID
-	Index xginx.VarUInt //输出索引
-}
-
 //获取对应的输出
-func (ext *MetaExt) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
-	tx, err := bi.LoadTX(ext.TxID)
+func (mb *MetaBody) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
+	tx, err := bi.LoadTX(mb.TxID)
 	if err != nil {
 		return nil, err
 	}
-	if idx := ext.Index.ToInt(); idx >= len(tx.Outs) {
+	if idx := mb.Index.ToInt(); idx >= len(tx.Outs) {
 		return nil, fmt.Errorf("index out bound")
 	} else {
 		return tx.Outs[idx], nil
 	}
 }
 
-func (ext *MetaExt) Decode(r xginx.IReader) error {
-	err := ext.TxID.Decode(r)
-	if err != nil {
-		return err
-	}
-	err = ext.Index.Decode(r)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (ext MetaExt) Encode(w xginx.IWriter) error {
-	err := ext.TxID.Encode(w)
-	if err != nil {
-		return err
-	}
-	err = ext.Index.Encode(w)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-//GetDocumentExt 获取文档扩展信息
-func GetDocumentExt(docdb xginx.IDocSystem, id xginx.DocumentID) (*MetaExt, error) {
-	ext := &MetaExt{}
-	err := docdb.GetObject(id, ext)
-	if err != nil {
-		return nil, err
-	}
-	return ext, nil
-}
-
-//从文档系统获取扩展信息
-func (mb *MetaBody) GetSellExt(docdb xginx.IDocSystem) (*MetaExt, error) {
-	id := mb.MustID()
-	return GetDocumentExt(docdb, id)
-}
-
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
-	Type MetaType  `json:"type"`           //1-出售 2-购买 3-确认
-	Tags []string  `json:"tags,omitempty"` //内容关键字,购买meta不存在
-	Eles []MetaEle `json:"eles"`           //元素集合
-	Ext  *MetaExt  `json:"-"`              //扩展信息
+	Type  MetaType      `json:"type"`           //1-出售 2-购买 3-确认
+	Tags  []string      `json:"tags,omitempty"` //内容关键字,购买meta不存在
+	Eles  []MetaEle     `json:"eles"`           //元素集合
+	TxID  xginx.HASH256 `json:"-"`              //交易ID,进入交易后保存到doc文档
+	Index xginx.VarUInt `json:"-"`              //输出索引
 }
 
 func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
@@ -327,7 +286,7 @@ func (s ShopMeta) To() (*MetaBody, error) {
 }
 
 func NewShopMeta(ctx context.Context, mb *MetaBody) (ShopMeta, error) {
-	if mb.Type != MetaTypeSell && mb.Type != MetaTypePurchase && mb.Type != MetaTypeConfirm {
+	if mb.Type != MetaTypeSell && mb.Type != MetaTypePurchase && mb.Type != MetaTypeFinish {
 		return "", fmt.Errorf("type %d error", mb.Type)
 	}
 	for _, ele := range mb.Eles {

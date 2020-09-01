@@ -478,30 +478,18 @@ var loadProduct = &graphql.Field{
 	Description: "从文档系统通过id获取数据",
 }
 
-func GetMetaBody(db xginx.IDocSystem, id xginx.DocumentID, withext ...bool) (*MetaBody, error) {
+func GetMetaBody(db xginx.IDocSystem, id xginx.DocumentID) (*MetaBody, error) {
 	doc, err := db.Get(id, true)
 	if err != nil {
 		return nil, err
 	}
-	var ext *MetaExt
-	if len(withext) > 0 && withext[0] {
-		ext, err = GetDocumentExt(db, id)
-	}
+	mb, err := ShopMeta(doc.Body).To()
 	if err != nil {
 		return nil, err
 	}
-	mb, err := ShopMeta(doc.Body).To()
-	if err == nil {
-		mb.Ext = ext
-		return mb, nil
-	}
-	mbt, has := tempproducts.Load(id)
-	if has {
-		mb = mbt.(*MetaBody)
-		mb.Ext = ext
-		return mb, nil
-	}
-	return nil, fmt.Errorf("not found netaboddy %s", id.String())
+	mb.TxID = doc.TxID
+	mb.Index = doc.Index
+	return mb, nil
 }
 
 //NewDocID 创建一个递增唯一的ID
@@ -585,7 +573,7 @@ var purchaseProduct = &graphql.Field{
 			return NewError(101, err)
 		}
 		//获取信息并且带扩展信息
-		meta, err := GetMetaBody(docdb, args.PID, true)
+		meta, err := GetMetaBody(docdb, args.PID)
 		if err != nil {
 			return NewError(102, err)
 		}
@@ -637,7 +625,7 @@ var purchaseProduct = &graphql.Field{
 			Body: base64.StdEncoding.EncodeToString(infob),
 		})
 		//获取产品所在的输出
-		txout, err := meta.Ext.GetTxOut(bi)
+		txout, err := meta.GetTxOut(bi)
 		if err != nil {
 			return NewError(109, err)
 		}
@@ -661,8 +649,8 @@ var purchaseProduct = &graphql.Field{
 		//添加默认的购买产品输出
 		senders := []SenderInfo{{
 			Addr:   lcks.Address(),
-			TxID:   meta.Ext.TxID,
-			Index:  meta.Ext.Index,
+			TxID:   meta.TxID,
+			Index:  meta.Index,
 			Script: string(xginx.DefaultInputScript),
 			Keep:   false,
 		}}

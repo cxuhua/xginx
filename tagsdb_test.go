@@ -117,7 +117,7 @@ func TestUpdateDocument(t *testing.T) {
 	err = fs.Find("新标签").Tags(true).Each(func(doc *Document) error {
 		assert.Equal(t, doc2.ID, doc.ID)
 		assert.Equal(t, 3, len(doc.Tags))
-		assert.Equal(t, int64(100), doc.Time)
+		assert.Equal(t, VarUInt(100), doc.Time)
 		assert.Equal(t, "新的内容", string(doc.Body))
 		count++
 		return nil
@@ -152,25 +152,25 @@ func TestDocumentListTime(t *testing.T) {
 	require.NoError(t, err)
 
 	type item struct {
-		v    []int64
+		v    []VarUInt
 		next bool
 		c    int
 	}
 
 	datas := []item{
-		{nil, true, 3},                    //default next
-		{[]int64{doc1.Time - 1}, true, 3}, // >
-		{[]int64{doc1.Time}, true, 3},     // >=
-		{[]int64{doc2.Time}, true, 2},     // >=
-		{[]int64{doc3.Time}, true, 1},     // >=
-		{[]int64{doc3.Time + 1}, true, 0}, // >= out
+		{nil, true, 3},                      //default next
+		{[]VarUInt{doc1.Time - 1}, true, 3}, // >
+		{[]VarUInt{doc1.Time}, true, 3},     // >=
+		{[]VarUInt{doc2.Time}, true, 2},     // >=
+		{[]VarUInt{doc3.Time}, true, 1},     // >=
+		{[]VarUInt{doc3.Time + 1}, true, 0}, // >= out
 
-		{nil, false, 3},                    //default prev
-		{[]int64{doc3.Time + 1}, false, 3}, //<
-		{[]int64{doc3.Time}, false, 3},     //<=
-		{[]int64{doc2.Time}, false, 2},     //<=
-		{[]int64{doc1.Time}, false, 1},     //<=
-		{[]int64{doc1.Time - 1}, false, 0}, //<= out
+		{nil, false, 3},                      //default prev
+		{[]VarUInt{doc3.Time + 1}, false, 3}, //<
+		{[]VarUInt{doc3.Time}, false, 3},     //<=
+		{[]VarUInt{doc2.Time}, false, 2},     //<=
+		{[]VarUInt{doc1.Time}, false, 1},     //<=
+		{[]VarUInt{doc1.Time - 1}, false, 0}, //<= out
 	}
 
 	for _, data := range datas {
@@ -268,18 +268,18 @@ func TestDocumentSort(t *testing.T) {
 	defer fs.Close()
 	err = fs.Insert(doc1, doc2, doc3)
 	require.NoError(t, err)
-	i := int64(3)
+	i := VarUInt(3)
 	_ = fs.All().ByPrev().Each(func(doc *Document) error {
 		assert.Equal(t, i, doc.Time)
 		i--
 		return nil
 	})
-	assert.Equal(t, i, int64(0))
-	i = int64(1)
+	assert.Equal(t, i, VarUInt(0))
+	i = VarUInt(1)
 	_ = fs.All().ByNext().Each(func(doc *Document) error {
 		assert.Equal(t, i, doc.Time)
 		i++
 		return nil
 	})
-	assert.Equal(t, i, int64(4))
+	assert.Equal(t, i, VarUInt(4))
 }

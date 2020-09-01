@@ -952,6 +952,12 @@ func (v VarUInt) ToInt() int {
 	return int(v)
 }
 
+func (v VarUInt) SortBytes() []byte {
+	b8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(b8, uint64(v))
+	return b8
+}
+
 //Bytes 获取二进制数据
 func (v VarUInt) Bytes() []byte {
 	lb := make([]byte, binary.MaxVarintLen64)
