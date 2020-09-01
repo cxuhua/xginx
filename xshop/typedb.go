@@ -7,6 +7,7 @@ import "github.com/cxuhua/xginx"
 type ITypeDB interface {
 	//添加数据
 	Put(typ string, k []byte, v xginx.ISerializable) error
+	//关闭数据库
 	Close()
 	//删除数据
 	Del(typ string, k []byte) error

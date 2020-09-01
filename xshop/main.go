@@ -64,12 +64,13 @@ func (lis *shoplistener) OnTxPoolRep(old *xginx.TX, new *xginx.TX) {
 	xginx.LogInfof("TX = %v Replace %v", new.MustID(), old.MustID())
 }
 
+//是否保存文档
+func (lis *shoplistener) isSaveMetaBody(ctx context.Context, meta *MetaBody) bool {
+	return true
+}
+
 //当收到一个销售数据
 func (lis *shoplistener) onSellMeta(ctx context.Context, tx *xginx.TX, idx int, meta *MetaBody, link bool) error {
-	//如果文档ID存在
-	if !meta.HasID() {
-		return fmt.Errorf("meta data error")
-	}
 	id := meta.MustID()
 	if !link {
 		return lis.docdb.Delete(id)
@@ -79,7 +80,7 @@ func (lis *shoplistener) onSellMeta(ctx context.Context, tx *xginx.TX, idx int, 
 		return err
 	}
 	//不存在添加到文档数据库,不关心的文档数据可不存入
-	if !has {
+	if !has && lis.isSaveMetaBody(ctx, meta) {
 		doc, err := meta.ToDocument()
 		if err != nil {
 			return err
@@ -91,15 +92,11 @@ func (lis *shoplistener) onSellMeta(ctx context.Context, tx *xginx.TX, idx int, 
 	}
 	//添加文档和区块交易数据的关联关系 docid -> tx.id+idx
 	//即使文档被删除了,这个关系还是存在
-	ext := MetaExt{
+	ext := &MetaExt{
 		TxID:  tx.MustID(),
 		Index: xginx.VarUInt(idx),
 	}
-	extb, err := ext.Encode()
-	if err != nil {
-		return err
-	}
-	err = lis.docdb.PutExt(id, extb)
+	err = lis.docdb.PutObject(id, ext)
 	if err != nil {
 		return err
 	}
@@ -123,6 +120,10 @@ func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx 
 	mb, err := ParseMetaBody(bb)
 	if err != nil {
 		return err
+	}
+	//如果文档ID存在
+	if !mb.HasID() {
+		return fmt.Errorf("meta data error, id miss")
 	}
 	if mb.Type == MetaTypeSell {
 		return lis.onSellMeta(ctx, tx, idx, mb, link)

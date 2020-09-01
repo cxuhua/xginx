@@ -43,7 +43,7 @@ func DocumentIDFromHex(s string) DocumentID {
 }
 
 func (id DocumentID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(id.Hex())
+	return json.Marshal(id.String())
 }
 
 func (id *DocumentID) UnmarshalJSON(b []byte) error {
@@ -90,7 +90,7 @@ func (id *DocumentID) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-func (id DocumentID) Hex() string {
+func (id DocumentID) String() string {
 	return hex.EncodeToString(id[:])
 }
 

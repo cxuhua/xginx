@@ -69,28 +69,6 @@ const (
 	PurchaseProductInfoStartIndex
 )
 
-//获取KID
-func (mb MetaBody) GetPurchaseKID() (string, error) {
-	if mb.Type != MetaTypePurchase {
-		return "", fmt.Errorf("mb type error")
-	}
-	ele, err := mb.GetEle(PurchaseProductPartKIDIndex)
-	if err != nil {
-		return "", err
-	}
-	if ele.Type != MetaEleKID {
-		return "", fmt.Errorf("kid kind error")
-	}
-	if ele.Body == "" {
-		return "", fmt.Errorf("kid emtpy")
-	}
-	_, err = xginx.DecodePublicHash(ele.Body)
-	if err != nil {
-		return "", err
-	}
-	return ele.Body, nil
-}
-
 //出售产品元素索引定义,必须存在的索引
 const (
 	//ID MetaEleTEXT
@@ -238,24 +216,6 @@ func (mb MetaBody) ID() (xginx.DocumentID, error) {
 		return xginx.NilDocumentID, err
 	}
 	return xginx.DocumentIDFromHex(ele.Body), nil
-}
-
-//获取KID
-func (mb MetaBody) GetPurchaseRSAID() (string, error) {
-	if mb.Type != MetaTypePurchase {
-		return "", fmt.Errorf("mb type error")
-	}
-	ele, err := mb.GetEle(PurchaseProductRSAIDIndex)
-	if err != nil {
-		return "", err
-	}
-	if ele.Type != MetaEleTEXT {
-		return "", fmt.Errorf("kid kind error")
-	}
-	if ele.Body == "" {
-		return "", fmt.Errorf("kid emtpy")
-	}
-	return ele.Body, nil
 }
 
 //获取metabody的id
@@ -431,7 +391,7 @@ var product = &graphql.Field{
 		id := p.Args["id"].(xginx.DocumentID)
 		pptr, ok := tempproducts.Load(id)
 		if !ok {
-			return NewError(100, "id %s miss", id.Hex())
+			return NewError(100, "id %s miss", id.String())
 		}
 		return pptr, nil
 	},
@@ -541,7 +501,7 @@ func GetMetaBody(db xginx.IDocSystem, id xginx.DocumentID, withext ...bool) (*Me
 		mb.Ext = ext
 		return mb, nil
 	}
-	return nil, fmt.Errorf("not found netaboddy %s", id.Hex())
+	return nil, fmt.Errorf("not found netaboddy %s", id.String())
 }
 
 //NewDocID 创建一个递增唯一的ID
@@ -558,7 +518,7 @@ var newTempProduct = &graphql.Field{
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		id := xginx.NewDocumentID()
 		product := NewProductMeta()
-		err := product.SetEle(p.Context, SellProductUUIDEleIndex, MetaEleUUID, id.Hex())
+		err := product.SetEle(p.Context, SellProductUUIDEleIndex, MetaEleUUID, id.String())
 		if err != nil {
 			return NewError(102, err)
 		}
@@ -611,7 +571,7 @@ var purchaseProduct = &graphql.Field{
 			return NewError(100, err)
 		}
 		//创建购买meta信息
-		buymeta := &MetaBody{
+		bmeta := &MetaBody{
 			Type: MetaTypePurchase,
 			Eles: make([]MetaEle, PurchaseProductInfoStartIndex),
 		}
@@ -652,17 +612,17 @@ var purchaseProduct = &graphql.Field{
 			return NewError(107, err)
 		}
 		//设置产品ID
-		buymeta.Eles[PurchaseProductUUIDEleIndex] = MetaEle{
+		bmeta.Eles[PurchaseProductUUIDEleIndex] = MetaEle{
 			Type: MetaEleUUID,
-			Body: args.PID.Hex(),
+			Body: args.PID.String(),
 		}
 		//设置2-2部分密钥
-		buymeta.Eles[PurchaseProductPartKIDIndex] = MetaEle{
+		bmeta.Eles[PurchaseProductPartKIDIndex] = MetaEle{
 			Type: MetaEleKID,
 			Body: args.KID,
 		}
 		//设置加密公钥
-		buymeta.Eles[PurchaseProductRSAIDIndex] = MetaEle{
+		bmeta.Eles[PurchaseProductRSAIDIndex] = MetaEle{
 			Type: MetaEleTEXT,
 			Body: rsapub.MustID(),
 		}
@@ -672,7 +632,7 @@ var purchaseProduct = &graphql.Field{
 			return NewError(108, err)
 		}
 		//信息使用base64标准编码
-		buymeta.Eles = append(buymeta.Eles, MetaEle{
+		bmeta.Eles = append(bmeta.Eles, MetaEle{
 			Type: MetaEleTEXT,
 			Body: base64.StdEncoding.EncodeToString(infob),
 		})
@@ -681,7 +641,7 @@ var purchaseProduct = &graphql.Field{
 		if err != nil {
 			return NewError(109, err)
 		}
-		smeta, err := buymeta.To()
+		smeta, err := bmeta.To()
 		if err != nil {
 			return NewError(110, err)
 		}

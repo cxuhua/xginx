@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -195,6 +196,20 @@ var (
 //MsgID 消息ID定义 使用md5
 type MsgID [md5.Size]byte
 
+func (id MsgID) String() string {
+	return hex.EncodeToString(id[:])
+}
+
+func MsgIDFromHex(str string) MsgID {
+	id, err := hex.DecodeString(str)
+	if err != nil {
+		panic(err)
+	}
+	ret := MsgID{}
+	copy(ret[:], id[:])
+	return ret
+}
+
 //SendKey 用于发送的key
 func (m MsgID) SendKey() string {
 	return "S" + string(m[:])
@@ -212,10 +227,9 @@ type IMsgMeta interface {
 
 //MsgIO 协议消息
 type MsgIO interface {
+	ISerializable
 	ID() (MsgID, error) //广播id获取
 	Type() NTType
-	Encode(w IWriter) error
-	Decode(r IReader) error
 }
 
 //GetDefautMsgID 获取默认msgid

@@ -74,8 +74,7 @@ func (ext *MetaExt) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
 	}
 }
 
-func (ext *MetaExt) Decode(bb []byte) error {
-	r := xginx.NewReader(bb)
+func (ext *MetaExt) Decode(r xginx.IReader) error {
 	err := ext.TxID.Decode(r)
 	if err != nil {
 		return err
@@ -87,27 +86,22 @@ func (ext *MetaExt) Decode(bb []byte) error {
 	return nil
 }
 
-func (ext MetaExt) Encode() ([]byte, error) {
-	w := xginx.NewWriter()
+func (ext MetaExt) Encode(w xginx.IWriter) error {
 	err := ext.TxID.Encode(w)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	err = ext.Index.Encode(w)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return w.Bytes(), nil
+	return nil
 }
 
 //GetDocumentExt 获取文档扩展信息
 func GetDocumentExt(docdb xginx.IDocSystem, id xginx.DocumentID) (*MetaExt, error) {
-	bb, err := docdb.GetExt(id)
-	if err != nil {
-		return nil, err
-	}
 	ext := &MetaExt{}
-	err = ext.Decode(bb)
+	err := docdb.GetObject(id, ext)
 	if err != nil {
 		return nil, err
 	}

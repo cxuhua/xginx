@@ -82,14 +82,15 @@ type IDocIter interface {
 	Limit(limit int) IDocIter
 	//是否查询包含的所有tags 有损一点性能
 	Tags(v bool) IDocIter
-	//ByTime向下迭代
+	//ByNext 向下迭代
 	ByNext() IDocIter
-	//ByTime向上迭代
+	//ByPrev 向上迭代
 	ByPrev() IDocIter
 	//获取最后一个key
 	LastKey() []byte
 }
 
+//文档编码器
 type ICoder interface {
 	Encode(bb []byte) ([]byte, error)
 	Decode(bb []byte) ([]byte, error)
@@ -162,20 +163,20 @@ type IDocSystem interface {
 	Close()
 	//按时间索引迭代
 	ByTime(v ...int64) IDocIter
-	//添加文档扩展信息
-	PutExt(id DocumentID, ext []byte) error
-	//删除文档扩展信息
-	DelExt(id DocumentID) error
-	//获取文档扩展信息
-	GetExt(id DocumentID) ([]byte, error)
+	//添加kv对象
+	PutObject(id DocumentID, vptr ISerializable) error
+	//删除kv对象
+	DelObject(id DocumentID) error
+	//获取kv对象
+	GetObject(id DocumentID, vptr ISerializable) error
 }
 
 var (
 	fkprefix = []byte{1} //正向索引前缀
-	bkprefix = []byte{2} //方向索引前缀
+	bkprefix = []byte{2} //反向索引前缀
 	ckprefix = []byte{3} //固定值前缀
 	tkprefix = []byte{4} //时间索引前缀
-	rkprefix = []byte{5} //文档id扩展数据信息
+	obprefix = []byte{5} //对象前缀 PutObject DelObject GetObject
 )
 
 type leveldbdocsystem struct {
@@ -190,16 +191,25 @@ func (sys *leveldbdocsystem) Close() {
 	sys.db.Close()
 }
 
-func (sys *leveldbdocsystem) PutExt(id DocumentID, ext []byte) error {
-	return sys.db.Put(rkprefix, id[:], ext)
+func (sys *leveldbdocsystem) PutObject(id DocumentID, vptr ISerializable) error {
+	w := NewWriter()
+	if err := vptr.Encode(w); err != nil {
+		return err
+	}
+	return sys.db.Put(obprefix, id[:], w.Bytes())
 }
 
-func (sys *leveldbdocsystem) DelExt(id DocumentID) error {
-	return sys.db.Del(rkprefix, id[:])
+func (sys *leveldbdocsystem) DelObject(id DocumentID) error {
+	return sys.db.Del(obprefix, id[:])
 }
 
-func (sys *leveldbdocsystem) GetExt(id DocumentID) ([]byte, error) {
-	return sys.db.Get(rkprefix, id[:])
+func (sys *leveldbdocsystem) GetObject(id DocumentID, vptr ISerializable) error {
+	bb, err := sys.db.Get(obprefix, id[:])
+	if err != nil {
+		return err
+	}
+	r := NewReader(bb)
+	return vptr.Decode(r)
 }
 
 //检测id文档是否存在
@@ -772,7 +782,7 @@ func (sys *leveldbdocsystem) Prefix(key string) IDocIter {
 	}
 }
 
-//模糊查询文档
+//使用正则模糊查询文档
 func (sys *leveldbdocsystem) Regex(str string) IDocIter {
 	return &dociter{
 		sys:     sys,

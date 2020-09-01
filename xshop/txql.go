@@ -641,7 +641,7 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "加入交易池",
 		},
-		"broadMsg": {
+		"broadcast": {
 			Type: graphql.String,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				tx := p.Source.(*xginx.TX)
@@ -742,10 +742,6 @@ var loadTxInfo = &graphql.Field{
 		err = tx.Decode(r)
 		if err != nil {
 			return NewError(101, err)
-		}
-		mbs := SeparateMetaBodyFromTx(tx)
-		for _, mb := range mbs {
-			mb.GetPurchaseInfo(GetObjects(p).KeyDB())
 		}
 		return tx, nil
 	},

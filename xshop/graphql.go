@@ -56,14 +56,21 @@ func hashtypesp(value interface{}) interface{} {
 	switch value.(type) {
 	case string:
 		str := value.(string)
+		//20*2
 		if len(str) == len(xginx.ZERO160)*2 {
 			return xginx.NewHASH160(str)
 		}
+		//32*2
 		if len(str) == len(xginx.ZERO256)*2 {
 			return xginx.NewHASH256(str)
 		}
+		//12*2
 		if len(str) == len(xginx.NilDocumentID)*2 {
 			return xginx.DocumentIDFromHex(str)
+		}
+		//16*2
+		if len(str) == len(xginx.MsgID{})*2 {
+			return xginx.MsgIDFromHex(str)
 		}
 	case *string:
 		return hashtypesp(*(value).(*string))
@@ -72,14 +79,16 @@ func hashtypesp(value interface{}) interface{} {
 	case xginx.HASH256:
 		return value.(xginx.HASH256).String()
 	case xginx.DocumentID:
-		return value.(xginx.DocumentID).Hex()
+		return value.(xginx.DocumentID).String()
+	case xginx.MsgID:
+		return value.(xginx.MsgID).String()
 	}
 	return nil
 }
 
 var HashType = graphql.NewScalar(graphql.ScalarConfig{
 	Name:        "Hash",
-	Description: "hash256 hash160",
+	Description: "HASH256 HASH160 DocumentID MsgID",
 	Serialize:   hashtypesp,
 	ParseValue:  hashtypesp,
 	ParseLiteral: func(valueAST ast.Value) interface{} {
