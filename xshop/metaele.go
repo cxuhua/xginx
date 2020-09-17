@@ -15,15 +15,6 @@ import (
 	"github.com/cxuhua/xginx"
 )
 
-const (
-	//购买交易分类,当购买一个产品生成的交易临时存储在这里
-	TypeDBTypeTTPTX = "TPTX"
-	//卖出文档类型,当收到区块,包含卖出数据时保存
-	DocTypeSell = "SELL"
-	//购买文档类型,当收到区块,包含卖出数据时保存
-	DocTypePurchase = "PURCHASE"
-)
-
 //MetaHash hash方法
 func MetaHash(s string) string {
 	return MetaHashBytes([]byte(s))
@@ -47,16 +38,16 @@ const (
 	MetaEleRSA = "RSA"
 	//KID 私钥ID = 公钥hash swit编码 可解码出公钥hash256用于生成地址
 	MetaEleKID = "KID"
+	//保存交易信息base64编码
+	MetaEleTX = "TX"
 	//url资源对应的最大大小
 	MaxURLSize = 1024 * 1024 * 5
 )
 
-type MetaType int8
-
 const (
-	MetaTypeSell     MetaType = 1 //出售
-	MetaTypePurchase MetaType = 2 //购买
-	MetaTypeFinish   MetaType = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
+	MetaTypeSell     byte = 1 //出售
+	MetaTypePurchase byte = 2 //购买
+	MetaTypeFinish   byte = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
 )
 
 //获取对应的输出
@@ -74,11 +65,18 @@ func (mb *MetaBody) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
 
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
-	Type  MetaType      `json:"type"`           //1-出售 2-购买 3-确认
-	Tags  []string      `json:"tags,omitempty"` //内容关键字,购买meta不存在
-	Eles  []MetaEle     `json:"eles"`           //元素集合
-	TxID  xginx.HASH256 `json:"-"`              //交易ID,进入交易后保存到doc文档
-	Index xginx.VarUInt `json:"-"`              //输出索引
+	Type  byte             `json:"type"`           //1-出售 2-购买 3-确认
+	Tags  []string         `json:"tags,omitempty"` //内容关键字,购买meta不存在
+	Eles  []MetaEle        `json:"eles"`           //元素集合
+	TxID  xginx.HASH256    `json:"-"`              //交易ID,进入交易后保存到doc文档
+	Index xginx.VarUInt    `json:"-"`              //输出索引
+	Next  xginx.DocumentID `json:"-"`
+	Prev  xginx.DocumentID `json:"-"`
+}
+
+//根据type创建类型文档ID
+func (mb *MetaBody) NewID() xginx.DocumentID {
+	return xginx.NewDocumentID(byte(mb.Type))
 }
 
 func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
@@ -90,6 +88,8 @@ func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
 	}
 	doc.Body = []byte(str)
 	doc.Tags = mb.Tags
+	doc.Next = mb.Next
+	doc.Prev = mb.Prev
 	return doc, nil
 }
 
@@ -226,6 +226,10 @@ func (ele MetaEle) Check(ctx context.Context) error {
 		}
 		return nil
 	}
+	//这个只是临时的交易信息,在保存购买信息时保存相关的交易信息
+	if ele.Type == MetaEleTX {
+		return nil
+	}
 	if ele.Type == MetaEleURL {
 		return ele.checkurl(ctx)
 	}
@@ -242,7 +246,7 @@ func (mb *MetaBody) Check(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return mb.CheckType()
 }
 
 func (mb *MetaBody) To() (ShopMeta, error) {

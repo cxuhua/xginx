@@ -55,6 +55,8 @@ github.com/coreos/go-semver v0.3.0/go.mod h1:nnelYz7RCh+5ahJtPPxZlU+153eP4D4r3Ee
 github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f/go.mod h1:F5haX7vjVVG0kc13fIWeqUViNPyEJxv/OmvnBo0Yme4=
 github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfcXa63jLwjI0eiQQMgzzUDFVpN/nH/eA=
 github.com/creasty/defaults v1.3.0/go.mod h1:CIEEvs7oIVZm30R8VxtFJs+4k201gReYyuYHJxZc68I=
+github.com/cxuhua/handler v0.2.5 h1:XS+YPN+VDDbbUO6OgUicT/xSuI03UBxZi5xDyTEjWFA=
+github.com/cxuhua/handler v0.2.5/go.mod h1:tCKOOg7ztrD419usaBO0Qkon+BcZeGktGZjy+1BAzw0=
 github.com/cxuhua/lzma v0.1.2 h1:CazPN7Ga28nrQEk4k50pncMrkqW8AYNLuzJsc2PdJP8=
 github.com/cxuhua/lzma v0.1.2/go.mod h1:EJ/P5F1aZ+41afxzSfHwcxhu1yuMjm8Yjx9vHZGTdwQ=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

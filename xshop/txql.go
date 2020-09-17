@@ -5,7 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"net"
+	"net/url"
+	"sort"
+	"strings"
 
 	"github.com/cxuhua/xginx"
 	"github.com/graphql-go/graphql"
@@ -43,6 +47,46 @@ var (
 	MetaCoder = xginx.LzmaCoder
 )
 
+//获取购买交易UUID,根据消耗的金额作为uuid,防止重复提交一样的交易
+func GetPurchaseTxUUID(objs Objects, tx *xginx.TX) (xginx.HASH256, *url.URL, error) {
+	bi := objs.BlockIndex()
+	if !tx.CoinsIsValid(bi) {
+		return xginx.ZERO256, nil, fmt.Errorf("tx coins not valid")
+	}
+	mbs := SeparateMetaBodyFromTx(tx, MetaTypePurchase)
+	if len(mbs) != 1 {
+		return xginx.ZERO256, nil, fmt.Errorf("miss purcharse meta data")
+	}
+	mb := mbs[0]
+	rsa, err := mb.GetPurchaseRSAID()
+	if err != nil {
+		return xginx.ZERO256, nil, err
+	}
+	ss := []string{}
+	for _, in := range tx.Ins {
+		ss = append(ss, fmt.Sprintf("%s-%d", in.OutHash.String(), in.OutIndex.ToInt()))
+	}
+	//排序后结算hash值
+	sort.StringSlice(ss).Sort()
+	bb := strings.Join(ss, ",")
+	uuid := xginx.Hash256From([]byte(bb))
+	bid, err := mb.ID()
+	if err != nil {
+		return xginx.ZERO256, nil, err
+	}
+	sid := bid.To(MetaTypeSell)
+	//获取购买的产品ID
+	sb, err := GetMetaBody(objs.DocDB(), sid)
+	if err != nil {
+		return xginx.ZERO256, nil, err
+	}
+	urlv, err := sb.GetSellURL(rsa)
+	if err != nil {
+		return xginx.ZERO256, nil, err
+	}
+	return uuid, urlv, nil
+}
+
 //转账接口实现
 type eshoptranslistener struct {
 	bi        *xginx.BlockIndex //链指针
@@ -50,13 +94,16 @@ type eshoptranslistener struct {
 	docdb     xginx.IDocSystem
 	senders   []SenderInfo
 	receivers []ReceiverInfo
-	typ       MetaType
+	typ       byte
 }
 
-func (lis *eshoptranslistener) getmeta(meta string) ([]byte, error) {
+//获取产品信息
+func (lis *eshoptranslistener) getMetaBody(meta string) ([]byte, error) {
+	//如果是购买,直接返回信息
 	if lis.typ == 0 || lis.typ == MetaTypePurchase {
 		return []byte(meta), nil
 	}
+	//如果是出售从文档中获取数据
 	mb, err := GetMetaBody(lis.docdb, xginx.DocumentIDFromHex(meta))
 	if err != nil {
 		return nil, err
@@ -117,10 +164,11 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	}
 	//转出到其他账号的输出
 	for _, v := range lis.receivers {
-		meta, err := lis.getmeta(v.Meta)
+		meta, err := lis.getMetaBody(v.Meta)
 		if err != nil {
 			return nil, err
 		}
+		//压缩数据
 		bmeta, err := MetaCoder.Encode(meta)
 		if err != nil {
 			return nil, err
@@ -144,7 +192,7 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 }
 
 //创建一个处理器仅仅用于签名
-func (obj Objects) NewTransForSign(typ MetaType) IShopTrans {
+func (obj Objects) NewTransForSign(typ byte) IShopTrans {
 	lis := &eshoptranslistener{
 		bi:        obj.BlockIndex(),
 		senders:   []SenderInfo{},
@@ -158,7 +206,7 @@ func (obj Objects) NewTransForSign(typ MetaType) IShopTrans {
 
 //创建一个转账处理器,使用默认的输入输出脚本
 //senders如果指定了可用发送金额
-func (obj Objects) NewTrans(senders []SenderInfo, receivers []ReceiverInfo, typ ...MetaType) IShopTrans {
+func (obj Objects) NewTrans(senders []SenderInfo, receivers []ReceiverInfo, typ ...byte) IShopTrans {
 	lis := &eshoptranslistener{
 		bi:        obj.BlockIndex(),
 		senders:   senders,
@@ -240,7 +288,7 @@ func (lis *eshoptranslistener) GetCoins(amt xginx.Amount) xginx.Coins {
 	}
 	//获取所有的金额账户
 	ret := xginx.Coins{}
-	//每次获取10个
+	//每次获取10个,直到凑足可用金额
 	for addrs, lkey := lis.keydb.ListAddress(10); len(addrs) > 0; {
 		for _, addr := range addrs {
 			acc, err := lis.keydb.LoadAccountInfo(addr)
@@ -263,11 +311,6 @@ func (lis *eshoptranslistener) GetCoins(amt xginx.Amount) xginx.Coins {
 		addrs, lkey = lis.keydb.ListAddress(10, lkey)
 	}
 	return ret
-}
-
-//获取找零地址
-func (lis *eshoptranslistener) GetKeep() xginx.Address {
-	return xginx.EmptyAddress
 }
 
 var CoinbaseScriptType = graphql.NewObject(graphql.ObjectConfig{
@@ -557,7 +600,17 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 				tx := p.Source.(*xginx.TX)
 				return tx.Verify(bi) == nil, nil
 			},
-			Description: "签名校验",
+			Description: "校验交易是否有效",
+		},
+		"coinsIsValid": {
+			Type: graphql.Boolean,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				bi := objs.BlockIndex()
+				tx := p.Source.(*xginx.TX)
+				return tx.CoinsIsValid(bi), nil
+			},
+			Description: "验证输入对应的金额是否可用",
 		},
 		"final": {
 			Type: graphql.Boolean,
@@ -641,55 +694,25 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "加入交易池",
 		},
-		"broadcast": {
-			Type: graphql.String,
+		"upload": {
+			Type: graphql.Boolean,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
 				tx := p.Source.(*xginx.TX)
-				mbs := SeparateMetaBodyFromTx(tx)
-				//必须存在购买meta数据
-				has := false
-				for _, mb := range mbs {
-					if mb.Type == MetaTypePurchase {
-						has = true
-						break
-					}
-				}
-				if !has {
-					return NewError(100, "tx MetaTypePurchase miss,can't broad msg")
-				}
-				msg, err := NewMsgBroadInfoWithPurchaseTx(tx)
-				if err != nil {
-					return NewError(101, err)
-				}
-				id, err := msg.ID()
-				if err != nil {
-					return NewError(102, err)
-				}
-				if xginx.Server == nil {
-					return NewError(103, "tcp server off")
-				}
-				xginx.Server.BroadMsg(msg)
-				return hex.EncodeToString(id[:]), nil
-			},
-			Description: "广播购买请求,返回消息id,也可以通过邮件方式将数据发送给卖家,使用导出功能导出数据",
-		},
-		"dump": {
-			Type: graphql.String,
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				tx := p.Source.(*xginx.TX)
-				w := xginx.NewWriter()
-				err := tx.Encode(w)
+				uuid, urlv, err := GetPurchaseTxUUID(objs, tx)
 				if err != nil {
 					return NewError(100, err)
 				}
-				return base64.StdEncoding.EncodeToString(w.Bytes()), nil
+				log.Println(uuid, urlv)
+				//加密上传到 urlv指向的地址,告诉买家使用这个交易数据购买指定产品
+				return false, nil
 			},
-			Description: "交易数据导出为base64格式",
+			Description: "上传到购买地址,返回是否购买成功",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
-		_, ok := p.Value.(*xginx.TX)
-		return ok
+		tx, ok := p.Value.(*xginx.TX)
+		return ok && tx != nil
 	},
 	Description: "交易类型",
 })
@@ -721,54 +744,53 @@ var listTxPool = &graphql.Field{
 	},
 }
 
-var loadTxInfo = &graphql.Field{
-	Name: "LoadTxInfo",
+var loadEncryptedTx = &graphql.Field{
+	Name: "LoadEncryptedTx",
 	Type: graphql.NewNonNull(TXType),
 	Args: graphql.FieldConfigArgument{
+		"rsa": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "用于解密的rsa密钥ID",
+		},
 		"data": {
 			Type:        graphql.NewNonNull(graphql.String),
 			Description: "base64编码的交易数据,tx.dump获取",
 		},
 	},
-	Description: "加载交易数据从base64格式",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		data := p.Args["data"].(string)
-		bb, err := base64.StdEncoding.DecodeString(data)
+		objs := GetObjects(p)
+		kdb := objs.KeyDB()
+		args := &EncryptedTx{}
+		err := DecodeArgs(p, args)
 		if err != nil {
 			return NewError(100, err)
+		}
+		bb, err := base64.StdEncoding.DecodeString(args.Data)
+		if err != nil {
+			return NewError(101, err)
+		}
+		//获取解密密钥
+		rsa, err := kdb.GetRSA(args.RSA)
+		if err != nil {
+			return NewError(102, err)
+		}
+		bb, err = rsa.Decrypt(bb)
+		if err != nil {
+			return NewError(103, err)
 		}
 		r := xginx.NewReader(bb)
 		tx := &xginx.TX{}
 		err = tx.Decode(r)
 		if err != nil {
-			return NewError(101, err)
+			return NewError(104, err)
 		}
 		return tx, nil
 	},
+	Description: "加载加密的交易数据从base64格式",
 }
 
-var listTempTx = &graphql.Field{
-	Name:        "ListTempTx",
-	Type:        graphql.NewList(graphql.NewNonNull(TXType)),
-	Description: "获取临时交易数据",
-	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		objs := GetObjects(p)
-		txs := []*xginx.TX{}
-		vptr := &xginx.TX{}
-		err := objs.TypeDB().Each(TypeDBTypeTTPTX, vptr, func(k []byte, v xginx.ISerializable) bool {
-			txs = append(txs, v.(*xginx.TX))
-			vptr = &xginx.TX{}
-			return true
-		})
-		if err != nil {
-			return NewError(100, err)
-		}
-		return txs, nil
-	},
-}
-
-var txInfo = &graphql.Field{
-	Name: "TxInfo",
+var loadTxInfo = &graphql.Field{
+	Name: "LoadTxInfo",
 	Args: graphql.FieldConfigArgument{
 		"id": {
 			Type:        graphql.NewNonNull(HashType),

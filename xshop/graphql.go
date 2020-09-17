@@ -106,7 +106,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"statusInfo":      statusInfo,
 		"listCoin":        listCoin,
 		"blockInfo":       blockInfo,
-		"txInfo":          txInfo,
+		"loadTxInfo":      loadTxInfo,
 		"listPrivateKey":  listPrivateKey,
 		"listAccount":     listAccount,
 		"listTxPool":      listTxPool,
@@ -114,8 +114,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"listTempProduct": listTempProduct,
 		"loadProduct":     loadProduct,
 		"findProduct":     findProduct,
-		"listTempTx":      listTempTx,
-		"loadTxInfo":      loadTxInfo,
+		"loadEncryptedTx": loadEncryptedTx,
 	},
 	Description: "数据查询接口",
 })
@@ -123,13 +122,13 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 var matation = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Mutation",
 	Fields: graphql.Fields{
+		"createRSA":        createRSA,
 		"transfer":         transfer,
 		"createPrivateKey": createPrivateKey,
 		"createAccount":    createAccount,
 		"newBlock":         newBlock,
 		"createTxMeta":     createTxMeta,
-		"product":          product,
-		"createRSA":        createRSA,
+		"loadTempProduct":  loadTempProduct,
 		"newTempProduct":   newTempProduct,
 		"uploadProduct":    uploadProduct,
 		"purchaseProduct":  purchaseProduct,
@@ -164,7 +163,7 @@ var subscription = graphql.NewObject(graphql.ObjectConfig{
 				}
 				return tx, nil
 			},
-			Description: "发送指定的交易信息信息",
+			Description: "发送指定的交易信息",
 		},
 		"product": {
 			Name: "Product",

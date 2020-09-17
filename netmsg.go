@@ -55,8 +55,6 @@ func (v NetPackage) ToMsgIO() (MsgIO, error) {
 		m = &MsgBroadAck{}
 	case NtBroadPkg:
 		m = &MsgBroadPkg{}
-	case NtBroadInfo:
-		m = &MsgBroadInfo{}
 	}
 	if m == nil {
 		return nil, fmt.Errorf("message not create instance type=%v", v.Type)
@@ -95,44 +93,6 @@ func (m MsgGetAddrs) Type() NTType {
 type MsgAlert struct {
 	Msg VarBytes
 	Sig VarBytes //消息签名可验证消息来自哪里
-}
-
-//MsgBroadInfo 定制的消息广播
-type MsgBroadInfo struct {
-	Action uint8
-	Msg    VarBytes
-}
-
-//Type 消息类型
-func (m MsgBroadInfo) Type() NTType {
-	return NtBroadInfo
-}
-
-//Encode 编码消息
-func (m MsgBroadInfo) Encode(w IWriter) error {
-	if err := w.TWrite(m.Action); err != nil {
-		return err
-	}
-	if err := m.Msg.Encode(w); err != nil {
-		return err
-	}
-	return nil
-}
-
-//Decode 解码消息
-func (m *MsgBroadInfo) Decode(r IReader) error {
-	if err := r.TRead(&m.Action); err != nil {
-		return err
-	}
-	if err := m.Msg.Decode(r); err != nil {
-		return err
-	}
-	return nil
-}
-
-//ID 消息ID
-func (m MsgBroadInfo) ID() (MsgID, error) {
-	return GetDefautMsgID(&m)
 }
 
 //NewMsgAlert 创建消息

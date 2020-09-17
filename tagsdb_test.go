@@ -91,13 +91,71 @@ func TestCmpMap(t *testing.T) {
 	assert.Equal(t, []string{}, ds)
 }
 
+func TestNextPrev(t *testing.T) {
+	doc1 := &Document{
+		ID:    DocumentID{1},
+		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
+		Body:  []byte("doc1"),
+		TxID:  HASH256{1, 2, 3},
+		Index: VarUInt(100),
+	}
+	doc2 := &Document{
+		ID:    DocumentID{2},
+		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
+		Body:  []byte("doc1"),
+		TxID:  HASH256{1, 2, 3},
+		Index: VarUInt(100),
+	}
+	doc1.Next = doc2.ID
+	doc2.Prev = doc1.ID
+
+	fs, err := OpenDocSystem(NewTempDir())
+	require.NoError(t, err)
+	defer fs.Close()
+	err = fs.Insert(doc1, doc2)
+	require.NoError(t, err)
+	doc3, err := fs.Get(doc1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, doc3.ID, doc1.ID)
+	doc4, err := doc3.GetNext(fs)
+	require.NoError(t, err)
+	assert.Equal(t, doc4.ID, doc2.ID)
+	doc5, err := doc4.GetPrev(fs)
+	require.NoError(t, err)
+	assert.Equal(t, doc5.ID, doc1.ID)
+}
+
+func TestUpdateTxID(t *testing.T) {
+	str := strings.Repeat("zip", 1024)
+	doc1 := &Document{
+		ID:    DocumentID{1},
+		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
+		Body:  []byte(str),
+		TxID:  HASH256{1, 2, 3},
+		Index: VarUInt(100),
+	}
+	fs, err := OpenDocSystem(NewTempDir())
+	require.NoError(t, err)
+	defer fs.Close()
+	err = fs.Insert(doc1)
+	require.NoError(t, err)
+	doc3, err := fs.Get(doc1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, doc1.TxID, doc3.TxID)
+	doc3.TxID = HASH256{4, 5, 6}
+	err = fs.Update(doc3)
+	require.NoError(t, err)
+	doc3, err = fs.Get(doc1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, HASH256{4, 5, 6}, doc3.TxID)
+}
+
 func TestUpdateDocument(t *testing.T) {
 	str := strings.Repeat("zip", 1024)
 	doc1 := &Document{
 		ID:   DocumentID{1},
 		Tags: []string{"小学", "中学", "大学", "狗儿子"},
 		Body: []byte(str),
-		Time: 90,
 	}
 	fs, err := OpenDocSystem(NewTempDir())
 	require.NoError(t, err)
@@ -108,7 +166,6 @@ func TestUpdateDocument(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, doc1.Body, doc3.Body)
 	doc2 := *doc1
-	doc2.Time = 100
 	doc2.Tags = []string{"小学", "中学", "新标签"}
 	doc2.Body = []byte("新的内容")
 	err = fs.Update(&doc2)
@@ -117,7 +174,6 @@ func TestUpdateDocument(t *testing.T) {
 	err = fs.Find("新标签").Tags(true).Each(func(doc *Document) error {
 		assert.Equal(t, doc2.ID, doc.ID)
 		assert.Equal(t, 3, len(doc.Tags))
-		assert.Equal(t, VarUInt(100), doc.Time)
 		assert.Equal(t, "新的内容", string(doc.Body))
 		count++
 		return nil
@@ -126,89 +182,21 @@ func TestUpdateDocument(t *testing.T) {
 	assert.Equal(t, 1, count)
 }
 
-func TestDocumentListTime(t *testing.T) {
-	doc1 := &Document{
-		ID:   DocumentID{1},
-		Tags: []string{"小学", "中学", "大学", "狗儿子"},
-		Body: []byte("这个是学校文档1"),
-		Time: 90,
-	}
-	doc2 := &Document{
-		ID:   DocumentID{2},
-		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗", "毛线"},
-		Body: []byte("这个是狗子文档2"),
-		Time: 100,
-	}
-	doc3 := &Document{
-		ID:   DocumentID{3},
-		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗"},
-		Body: []byte("这个是狗子文档3"),
-		Time: 110,
-	}
-	fs, err := OpenDocSystem(NewTempDir())
-	require.NoError(t, err)
-	defer fs.Close()
-	err = fs.Insert(doc1, doc2, doc3)
-	require.NoError(t, err)
-
-	type item struct {
-		v    []VarUInt
-		next bool
-		c    int
-	}
-
-	datas := []item{
-		{nil, true, 3},                      //default next
-		{[]VarUInt{doc1.Time - 1}, true, 3}, // >
-		{[]VarUInt{doc1.Time}, true, 3},     // >=
-		{[]VarUInt{doc2.Time}, true, 2},     // >=
-		{[]VarUInt{doc3.Time}, true, 1},     // >=
-		{[]VarUInt{doc3.Time + 1}, true, 0}, // >= out
-
-		{nil, false, 3},                      //default prev
-		{[]VarUInt{doc3.Time + 1}, false, 3}, //<
-		{[]VarUInt{doc3.Time}, false, 3},     //<=
-		{[]VarUInt{doc2.Time}, false, 2},     //<=
-		{[]VarUInt{doc1.Time}, false, 1},     //<=
-		{[]VarUInt{doc1.Time - 1}, false, 0}, //<= out
-	}
-
-	for _, data := range datas {
-		count := 0
-		if data.next {
-			err = fs.ByTime(data.v...).ByNext().Each(func(doc *Document) error {
-				count++
-				return nil
-			})
-		} else {
-			err = fs.ByTime(data.v...).ByPrev().Each(func(doc *Document) error {
-				count++
-				return nil
-			})
-		}
-		require.NoError(t, err)
-		assert.Equal(t, data.c, count, "%v %v", data.v, data.c)
-	}
-}
-
 func TestDocumentInsert(t *testing.T) {
 	doc1 := &Document{
 		ID:   DocumentID{1},
 		Tags: []string{"小学", "中学", "大学", "狗儿子"},
 		Body: []byte("这个是学校文档1"),
-		Time: 90,
 	}
 	doc2 := &Document{
 		ID:   DocumentID{2},
 		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗", "毛线"},
 		Body: []byte("这个是狗子文档2"),
-		Time: 100,
 	}
 	doc3 := &Document{
 		ID:   DocumentID{3},
 		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗"},
 		Body: []byte("这个是狗子文档3"),
-		Time: 110,
 	}
 	fs, err := OpenDocSystem(NewTempDir())
 	require.NoError(t, err)
@@ -242,44 +230,4 @@ func TestDocumentInsert(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, data.c, count, "%v", idx)
 	}
-}
-
-func TestDocumentSort(t *testing.T) {
-	doc1 := &Document{
-		ID:   NewDocumentID(),
-		Tags: []string{"小学", "中学", "大学", "狗儿子"},
-		Body: []byte("这个是学校文档1"),
-		Time: 1,
-	}
-	doc2 := &Document{
-		ID:   NewDocumentID(),
-		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗", "毛线"},
-		Body: []byte("这个是狗子文档2"),
-		Time: 2,
-	}
-	doc3 := &Document{
-		ID:   NewDocumentID(),
-		Tags: []string{"拉布拉多", "金毛狮王", "猎狗", "小狗"},
-		Body: []byte("这个是狗子文档3"),
-		Time: 3,
-	}
-	fs, err := OpenDocSystem(NewTempDir())
-	require.NoError(t, err)
-	defer fs.Close()
-	err = fs.Insert(doc1, doc2, doc3)
-	require.NoError(t, err)
-	i := VarUInt(3)
-	_ = fs.All().ByPrev().Each(func(doc *Document) error {
-		assert.Equal(t, i, doc.Time)
-		i--
-		return nil
-	})
-	assert.Equal(t, i, VarUInt(0))
-	i = VarUInt(1)
-	_ = fs.All().ByNext().Each(func(doc *Document) error {
-		assert.Equal(t, i, doc.Time)
-		i++
-		return nil
-	})
-	assert.Equal(t, i, VarUInt(4))
 }

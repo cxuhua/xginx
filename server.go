@@ -553,13 +553,6 @@ func (s *TCPServer) dispatch(idx int, ch chan interface{}) {
 				if err != nil {
 					m.c.SendMsg(NewMsgError(ErrCodeHeaders, err))
 				}
-			case NtBroadInfo:
-				msg := m.m.(*MsgBroadInfo)
-				s.BroadMsg(msg, m.c)
-			}
-			//统一回调
-			if msg, ok := m.m.(MsgIO); ok {
-				s.lptr.OnClientMsg(m.c, msg)
 			}
 		case <-s.dt.C:
 			//定时请求区块数据

@@ -1352,6 +1352,26 @@ func (tx *TX) Verify(bi *BlockIndex) error {
 	return nil
 }
 
+//验证输入对应的金额是否存在,不验证签名
+func (tx *TX) CoinsIsValid(bi *BlockIndex) bool {
+	//签名每一个输入
+	for _, in := range tx.Ins {
+		if in.IsCoinBase() {
+			//不验证coinbase交易
+			return true
+		}
+		//获取引用的输出
+		out, err := in.LoadTxOut(bi)
+		if err != nil {
+			return false
+		}
+		if !out.HasCoin(in, bi) {
+			return false
+		}
+	}
+	return true
+}
+
 //Sign 签名交易数据
 //cspent 是否检测输出金额是否存在
 func (tx *TX) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
