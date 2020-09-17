@@ -57,6 +57,8 @@ github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f/go.mod h1:E3G3o1h8I7cfc
 github.com/creasty/defaults v1.3.0/go.mod h1:CIEEvs7oIVZm30R8VxtFJs+4k201gReYyuYHJxZc68I=
 github.com/cxuhua/handler v0.2.5 h1:XS+YPN+VDDbbUO6OgUicT/xSuI03UBxZi5xDyTEjWFA=
 github.com/cxuhua/handler v0.2.5/go.mod h1:tCKOOg7ztrD419usaBO0Qkon+BcZeGktGZjy+1BAzw0=
+github.com/cxuhua/handler v0.2.6 h1:0BWNAlXglhXaa9jHPbMIfo42EidycvgipwxEBOPJ878=
+github.com/cxuhua/handler v0.2.6/go.mod h1:tCKOOg7ztrD419usaBO0Qkon+BcZeGktGZjy+1BAzw0=
 github.com/cxuhua/lzma v0.1.2 h1:CazPN7Ga28nrQEk4k50pncMrkqW8AYNLuzJsc2PdJP8=
 github.com/cxuhua/lzma v0.1.2/go.mod h1:EJ/P5F1aZ+41afxzSfHwcxhu1yuMjm8Yjx9vHZGTdwQ=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

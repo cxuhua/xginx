@@ -297,11 +297,15 @@ func (lis *shoplistener) startgraphql(host string) {
 	//订阅初始化
 	lis.gqlsubmgr = graphqlws.NewSubscriptionManager(lis.gqlschema)
 	conf := &handler.Config{
+		Title:    "eshop文档接口",
 		Schema:   lis.gqlschema,
 		Pretty:   true,
 		GraphiQL: true,
-		RootObjectFn: func(ctx context.Context, r *http.Request, opts *handler.RequestOptions) map[string]interface{} {
+		RootFn: func(ctx context.Context, r *http.Request, opts *handler.RequestOptions) map[string]interface{} {
 			return lis.NewObjects(opts)
+		},
+		ExitFn: func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+
 		},
 	}
 	lis.gqlhandler = handler.New(conf)
