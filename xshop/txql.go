@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"net/url"
-	"sort"
-	"strings"
 
 	"github.com/cxuhua/xginx"
 	"github.com/graphql-go/graphql"
@@ -47,44 +44,214 @@ var (
 	MetaCoder = xginx.LzmaCoder
 )
 
-//获取购买交易UUID,根据消耗的金额作为uuid,防止重复提交一样的交易
-func GetPurchaseTxUUID(objs Objects, tx *xginx.TX) (xginx.HASH256, *url.URL, error) {
+//输出+信息结构,保存信息和对应的输出,out的meta应该是meta信息
+type MetaTxOut struct {
+	Tx    *xginx.TX    //对应的区块交易信息
+	Out   *xginx.TxOut //所在的输出
+	Index int          //输出索引
+	Meta  *MetaBody    //解析出的meta信息
+}
+
+type MetaTxOutPair struct {
+	Purchase *MetaTxOut
+	Sell     *MetaTxOut
+}
+
+//获取产品金额
+func (pair *MetaTxOutPair) GetProductAmount() (xginx.Amount, error) {
+	a := pair.Sell.Out.Value
+	if a.IsRange() {
+		return 0, fmt.Errorf("fee value error")
+	}
+	return a, nil
+}
+
+//获取购买金额
+func (pair *MetaTxOutPair) GetPayAmount() (xginx.Amount, error) {
+	b, err := pair.GetProductAmount()
+	if err != nil {
+		return 0, err
+	}
+	a := pair.Purchase.Out.Value - b
+	if a.IsRange() {
+		return 0, fmt.Errorf("fee value error")
+	}
+	return a, nil
+}
+
+//获取交易费
+func (pair *MetaTxOutPair) GetTransAmount(objs Objects) (xginx.Amount, error) {
+	return pair.Purchase.Tx.GetTransAmount(objs.BlockIndex())
+}
+
+//创建双发控制账户,此账户密钥被买卖双方控制,当购买交易确认后,需要双发签名
+func (pair *MetaTxOutPair) NewAccount() (*xginx.AccountInfo, error) {
+	//购买方私钥id
+	bbkid, err := pair.Purchase.Meta.GetKID()
+	if err != nil {
+		return nil, err
+	}
+	//出售方私钥id
+	sbkid, err := pair.Sell.Meta.GetKID()
+	if err != nil {
+		return nil, err
+	}
+	return xginx.NewTempAccountInfo(2, 2, false, []string{sbkid, bbkid})
+}
+
+//检测控制地址,如果买家收到此交易还要检测sbkid私钥是否是自己的
+func (pair *MetaTxOutPair) CheckAddress(objs Objects) error {
+	acc, err := pair.NewAccount()
+	if err != nil {
+		return err
+	}
+	lcks, err := pair.Purchase.Out.Script.ToLocked()
+	if err != nil {
+		return err
+	}
+	if acc.MustAddress() != lcks.Address() {
+		return fmt.Errorf("address error")
+	}
+	return nil
+}
+
+//检测买卖交易对是否正确
+func (pair *MetaTxOutPair) Check(objs Objects) error {
 	bi := objs.BlockIndex()
-	if !tx.CoinsIsValid(bi) {
-		return xginx.ZERO256, nil, fmt.Errorf("tx coins not valid")
+	//检测购买交易的金额是否存在区块链上
+	if !pair.Purchase.Tx.CoinsIsValid(bi) {
+		return fmt.Errorf("purchase tx coins not valid")
 	}
-	mbs := SeparateMetaBodyFromTx(tx, MetaTypePurchase)
-	if len(mbs) != 1 {
-		return xginx.ZERO256, nil, fmt.Errorf("miss purcharse meta data")
-	}
-	mb := mbs[0]
-	rsa, err := mb.GetPurchaseRSAID()
+	//检测出售交易是否合法
+	err := pair.Sell.Tx.Verify(bi)
 	if err != nil {
-		return xginx.ZERO256, nil, err
+		return err
 	}
-	ss := []string{}
-	for _, in := range tx.Ins {
-		ss = append(ss, fmt.Sprintf("%s-%d", in.OutHash.String(), in.OutIndex.ToInt()))
-	}
-	//排序后结算hash值
-	sort.StringSlice(ss).Sort()
-	bb := strings.Join(ss, ",")
-	uuid := xginx.Hash256From([]byte(bb))
-	bid, err := mb.ID()
+	//检测控制地址
+	err = pair.CheckAddress(objs)
 	if err != nil {
-		return xginx.ZERO256, nil, err
+		return err
 	}
+	return nil
+}
+
+//获取出售信息
+func (mbt *MetaTxOut) GetSell(objs Objects) (*MetaTxOut, error) {
+	ret := &MetaTxOut{}
+	bid, err := mbt.Meta.ID()
+	if err != nil {
+		return nil, err
+	}
+	//转换为购买id
 	sid := bid.To(MetaTypeSell)
-	//获取购买的产品ID
-	sb, err := GetMetaBody(objs.DocDB(), sid)
+	//获取购买的产品信息,当区块确认时如果有销售交易信息肯定已经存入doc系统
+	meta, err := GetMetaBody(objs.DocDB(), sid)
 	if err != nil {
-		return xginx.ZERO256, nil, err
+		return nil, err
 	}
-	urlv, err := sb.GetSellURL(rsa)
+	if meta.Type != MetaTypeSell {
+		return nil, fmt.Errorf("sell meta type error")
+	}
+	//当购买时应该可以获取的产品所在的交易信息
+	tx, out, err := meta.GetTX(objs.BlockIndex())
 	if err != nil {
-		return xginx.ZERO256, nil, err
+		return nil, err
 	}
-	return uuid, urlv, nil
+	ret.Index = meta.Index.ToInt()
+	ret.Meta = meta
+	ret.Tx = tx
+	ret.Out = out
+	return ret, nil
+}
+
+//防止重复攻击的uuid,可能返回多个,只要有一个被保存就说明已经提交的交换系统中
+func (mbt *MetaTxOut) UUID() ([]string, error) {
+	if mbt.Meta.Type == MetaTypeSell {
+		id, err := mbt.Tx.ID()
+		if err != nil {
+			return nil, err
+		}
+		sid := fmt.Sprintf("%s%.4d", id.String(), mbt.Index)
+		return []string{sid}, nil
+	}
+	if mbt.Meta.Type == MetaTypePurchase {
+		ids := []string{}
+		for _, in := range mbt.Tx.Ins {
+			id := fmt.Sprintf("%s%.4d", in.OutHash.String(), in.OutIndex.ToInt())
+			ids = append(ids, id)
+		}
+		return ids, nil
+	}
+	return nil, fmt.Errorf("uuid get error")
+}
+
+func (mbt *MetaTxOut) NewPair(objs Objects) (*MetaTxOutPair, error) {
+	ret := &MetaTxOutPair{}
+	ret.Purchase = mbt
+	sell, err := mbt.GetSell(objs)
+	if err != nil {
+		return nil, err
+	}
+	ret.Sell = sell
+	return ret, nil
+}
+
+//重新定义TX
+type PurchaseTX xginx.TX
+
+//从tx创建
+func NewPurchaseTX(tx *xginx.TX) *PurchaseTX {
+	stx := PurchaseTX(*tx)
+	return &stx
+}
+
+//从交易中获取购买信息
+func (stx *PurchaseTX) FindMeta() (*MetaTxOut, error) {
+	ret := &MetaTxOut{}
+	tx := (*xginx.TX)(stx)
+	for idx, out := range tx.Outs {
+		lcks, err := out.Script.ToLocked()
+		if err != nil {
+			continue
+		}
+		mbb, err := MetaCoder.Decode(lcks.Meta)
+		if err != nil {
+			continue
+		}
+		mb, err := ParseMetaBody(mbb)
+		if err != nil {
+			continue
+		}
+		if mb.Type != MetaTypePurchase {
+			continue
+		}
+		mb.Index = xginx.VarUInt(idx)
+		mb.TxID = tx.MustID()
+		ret.Tx = tx
+		ret.Index = idx
+		ret.Out = out
+		ret.Meta = mb
+		return ret, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+//获取购买交易对
+func (stx *PurchaseTX) NewPair(objs Objects) (*MetaTxOutPair, error) {
+	//获取购买信息
+	pmb, err := stx.FindMeta()
+	if err != nil {
+		return nil, err
+	}
+	pair, err := pmb.NewPair(objs)
+	if err != nil {
+		return nil, err
+	}
+	err = pair.Check(objs)
+	if err != nil {
+		return nil, err
+	}
+	return pair, nil
 }
 
 //转账接口实现
@@ -694,21 +861,6 @@ var TXType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "加入交易池",
 		},
-		"upload": {
-			Type: graphql.Boolean,
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				objs := GetObjects(p)
-				tx := p.Source.(*xginx.TX)
-				uuid, urlv, err := GetPurchaseTxUUID(objs, tx)
-				if err != nil {
-					return NewError(100, err)
-				}
-				log.Println(uuid, urlv)
-				//加密上传到 urlv指向的地址,告诉买家使用这个交易数据购买指定产品
-				return false, nil
-			},
-			Description: "上传到购买地址,返回是否购买成功",
-		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
 		tx, ok := p.Value.(*xginx.TX)
@@ -744,23 +896,17 @@ var listTxPool = &graphql.Field{
 	},
 }
 
-var loadEncryptedTx = &graphql.Field{
-	Name: "LoadEncryptedTx",
+var loadEncodedTx = &graphql.Field{
+	Name: "LoadEncodedTx",
 	Type: graphql.NewNonNull(TXType),
 	Args: graphql.FieldConfigArgument{
-		"rsa": {
-			Type:        graphql.NewNonNull(graphql.String),
-			Description: "用于解密的rsa密钥ID",
-		},
 		"data": {
 			Type:        graphql.NewNonNull(graphql.String),
-			Description: "base64编码的交易数据,tx.dump获取",
+			Description: "base64编码的交易数据",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		objs := GetObjects(p)
-		kdb := objs.KeyDB()
-		args := &EncryptedTx{}
+		args := &EncodedTx{}
 		err := DecodeArgs(p, args)
 		if err != nil {
 			return NewError(100, err)
@@ -769,24 +915,19 @@ var loadEncryptedTx = &graphql.Field{
 		if err != nil {
 			return NewError(101, err)
 		}
-		//获取解密密钥
-		rsa, err := kdb.GetRSA(args.RSA)
-		if err != nil {
-			return NewError(102, err)
-		}
-		bb, err = rsa.Decrypt(bb)
-		if err != nil {
-			return NewError(103, err)
-		}
 		r := xginx.NewReader(bb)
 		tx := &xginx.TX{}
 		err = tx.Decode(r)
 		if err != nil {
-			return NewError(104, err)
+			return NewError(102, err)
 		}
+		objs := GetObjects(p)
+		stx := NewPurchaseTX(tx)
+		pair, err := stx.NewPair(objs)
+		log.Println(pair, err)
 		return tx, nil
 	},
-	Description: "加载加密的交易数据从base64格式",
+	Description: "获取加载有加密的信息",
 }
 
 var loadTxInfo = &graphql.Field{

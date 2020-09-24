@@ -174,29 +174,8 @@ func (mb MetaBody) GetSellURL(rsaId string) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	urls := ele.Body + "/" + rsaId
+	urls := ele.Body + "?rsa=" + rsaId
 	return url.Parse(urls)
-}
-
-//获取交易信息,只有保存后的购买信息才有这个信息
-func (mb MetaBody) GetTX() (*xginx.TX, error) {
-	if mb.Type != MetaTypePurchase {
-		return nil, fmt.Errorf("mb type error")
-	}
-	for _, ele := range mb.Eles {
-		if ele.Type != MetaEleTX {
-			continue
-		}
-		bb, err := base64.StdEncoding.DecodeString(ele.Body)
-		if err != nil {
-			return nil, err
-		}
-		r := xginx.NewReader(bb)
-		tx := &xginx.TX{}
-		err = tx.Decode(r)
-		return tx, err
-	}
-	return nil, fmt.Errorf("not found tx info")
 }
 
 //获取购买meta中的加密信息并且解密body,如果能解密并且获取到这个信息,才是发给我的,因为只有我才有私钥
@@ -618,18 +597,18 @@ var newTempProduct = &graphql.Field{
 	Description: "创建一个产品放在临时缓存",
 }
 
-type EncryptedTx struct {
+type EncodedTx struct {
 	Data string `json:"data"`
 	RSA  string `json:"rsa"`
 }
 
-var EncryptedTxType = graphql.NewObject(graphql.ObjectConfig{
-	Name: "EncryptedTx",
+var EncodedTxType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "EncodedTx",
 	Fields: graphql.Fields{
 		"rsa": {
 			Type: graphql.NewNonNull(graphql.String),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				etx := p.Source.(*EncryptedTx)
+				etx := p.Source.(*EncodedTx)
 				return etx.RSA, nil
 			},
 			Description: "加密公钥id",
@@ -637,14 +616,14 @@ var EncryptedTxType = graphql.NewObject(graphql.ObjectConfig{
 		"data": {
 			Type: graphql.NewNonNull(graphql.String),
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				etx := p.Source.(*EncryptedTx)
+				etx := p.Source.(*EncodedTx)
 				return etx.Data, nil
 			},
 			Description: "加密数据,base64编码",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
-		_, ok := p.Value.(*EncryptedTx)
+		_, ok := p.Value.(*EncodedTx)
 		return ok
 	},
 	Description: "加密的交易信息,包含交易信息,和rsa公钥id",
@@ -652,7 +631,7 @@ var EncryptedTxType = graphql.NewObject(graphql.ObjectConfig{
 
 var purchaseProduct = &graphql.Field{
 	Name: "PurchaseProduct",
-	Type: graphql.NewNonNull(EncryptedTxType),
+	Type: graphql.NewNonNull(EncodedTxType),
 	Args: graphql.FieldConfigArgument{
 		"pid": {
 			Type:        graphql.NewNonNull(HashType),
@@ -666,9 +645,9 @@ var purchaseProduct = &graphql.Field{
 			Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(SenderInput))),
 			Description: "使用哪些金额来购买",
 		},
-		"infos": {
-			Type:        graphql.NewList(graphql.NewNonNull(graphql.String)),
-			Description: "购买信息(多个),将由公钥加密",
+		"info": {
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "购买信息,将由公钥加密",
 		},
 		"fee": {
 			Type:        graphql.NewNonNull(graphql.Int),
@@ -680,7 +659,7 @@ var purchaseProduct = &graphql.Field{
 			PID    xginx.DocumentID
 			KID    string
 			Sender []SenderInfo
-			Infos  []string
+			Info   string
 			Fee    xginx.Amount
 		}{}
 		err := DecodeArgs(p, &args)
@@ -720,10 +699,10 @@ var purchaseProduct = &graphql.Field{
 			return NewError(105, err)
 		}
 		//购买信息不能为空
-		if len(args.Infos) == 0 {
+		if args.Info == "" {
 			return NewError(106, "info miss")
 		}
-		//构造2-2账户,由买家和卖家控制,后面可加入中介保证密钥,发生纠纷时中介可参与
+		//构造2-2账户,由买家和卖家控制,后面可加入第三方中介,发生纠纷时中介可参与
 		acc, err := xginx.NewTempAccountInfo(2, 2, false, []string{sellkid, args.KID})
 		if err != nil {
 			return NewError(107, err)
@@ -745,15 +724,18 @@ var purchaseProduct = &graphql.Field{
 			Type: MetaEleTEXT,
 			Body: rsapub.MustID(),
 		}
-		//加密信息并设置到meta
-		for _, info := range args.Infos {
-			bmeta.Eles = append(bmeta.Eles, MetaEle{
-				Type: MetaEleTEXT,
-				Body: info,
-			})
+		//加密自定义的购买信息
+		sinfo, err := rsapub.Encrypt([]byte(args.Info))
+		if err != nil {
+			return NewError(108, err)
 		}
+		//加密信息并设置到meta
+		bmeta.Eles = append(bmeta.Eles, MetaEle{
+			Type: MetaEleTEXT,
+			Body: base64.StdEncoding.EncodeToString(sinfo),
+		})
 		//获取产品所在的输出
-		txout, err := meta.GetTxOut(bi)
+		_, txout, err := meta.GetTX(bi)
 		if err != nil {
 			return NewError(109, err)
 		}
@@ -763,10 +745,10 @@ var purchaseProduct = &graphql.Field{
 		}
 		receiver := []ReceiverInfo{
 			{
-				Addr:   acc.MustAddress(),
-				Amount: txout.Value + txout.Value, //包括商品本身的价值
-				Meta:   string(smeta),
-				Script: string(xginx.DefaultLockedScript),
+				Addr:   acc.MustAddress(),                 //转入控制地址
+				Amount: txout.Value + txout.Value,         //包括商品本身的价值
+				Meta:   string(smeta),                     //购买信息
+				Script: string(xginx.DefaultLockedScript), //默认解锁脚本
 			},
 		}
 		//获取锁定脚本
@@ -774,7 +756,7 @@ var purchaseProduct = &graphql.Field{
 		if err != nil {
 			return NewError(112, err)
 		}
-		//添加默认的购买产品输出
+		//添加默认的购买产品输入,指向产品输出
 		senders := []SenderInfo{{
 			Addr:   lcks.Address(),
 			TxID:   meta.TxID,
@@ -789,13 +771,14 @@ var purchaseProduct = &graphql.Field{
 			return NewError(113, err)
 		}
 		senders = append(senders, stmps...)
-		//上传产品创建
+		//创建购买交易
 		lis := objs.NewTrans(senders, receiver, MetaTypePurchase)
 		tx, err := lis.NewTx(args.Fee)
 		if err != nil {
 			return NewError(114, err)
 		}
 		err = tx.Sign(bi, lis)
+		//只是买方进行了签名,这个交易会上传到卖家指定的地址等卖家确认
 		if err != nil && !errors.Is(err, xginx.ErrIgnoreSignError) {
 			return nil, err
 		}
@@ -804,15 +787,10 @@ var purchaseProduct = &graphql.Field{
 		if err != nil {
 			return NewError(115, err)
 		}
-		//加密交易信息
-		etx, err := rsapub.Encrypt(w.Bytes())
-		if err != nil {
-			return NewError(108, err)
-		}
-		//返回加密的交易信息
-		info := &EncryptedTx{}
+		//返回交易信息
+		info := &EncodedTx{}
 		info.RSA = rsapub.MustID()
-		info.Data = base64.StdEncoding.EncodeToString(etx)
+		info.Data = base64.StdEncoding.EncodeToString(w.Bytes())
 		return info, nil
 	},
 	Description: "生成购买交易",

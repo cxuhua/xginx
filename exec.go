@@ -610,7 +610,7 @@ func setTxBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) err
 	//是否是coinbase
 	kvs("cbb", lua.LBool(tx.IsCoinBase()))
 	//交易费,如果是coinbase，这个返回coinbase输出金额
-	fee, err := tx.GetTransFee(bi)
+	fee, err := tx.GetTransAmount(bi)
 	if err != nil {
 		return err
 	}

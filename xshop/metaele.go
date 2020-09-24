@@ -50,26 +50,13 @@ const (
 	MetaTypeFinish   byte = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
 )
 
-//获取对应的输出
-func (mb *MetaBody) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
-	tx, err := bi.LoadTX(mb.TxID)
-	if err != nil {
-		return nil, err
-	}
-	if idx := mb.Index.ToInt(); idx >= len(tx.Outs) {
-		return nil, fmt.Errorf("index out bound")
-	} else {
-		return tx.Outs[idx], nil
-	}
-}
-
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
 	Type  byte             `json:"type"`           //1-出售 2-购买 3-确认
 	Tags  []string         `json:"tags,omitempty"` //内容关键字,购买meta不存在
 	Eles  []MetaEle        `json:"eles"`           //元素集合
 	TxID  xginx.HASH256    `json:"-"`              //交易ID,进入交易后保存到doc文档
-	Index xginx.VarUInt    `json:"-"`              //输出索引
+	Index xginx.VarUInt    `json:"-"`              //输出索引,本信息所在交易的输出位置
 	Next  xginx.DocumentID `json:"-"`
 	Prev  xginx.DocumentID `json:"-"`
 }
@@ -77,6 +64,24 @@ type MetaBody struct {
 //根据type创建类型文档ID
 func (mb *MetaBody) NewID() xginx.DocumentID {
 	return xginx.NewDocumentID(byte(mb.Type))
+}
+
+//获取区块链中对应的交易信息和输出,当产品存入区块链后才可能获取到
+func (mb MetaBody) GetTX(bi *xginx.BlockIndex) (*xginx.TX, *xginx.TxOut, error) {
+	tx, err := bi.LoadTX(mb.TxID)
+	if err != nil {
+		return nil, nil, err
+	}
+	//验证一次交易
+	if err := tx.Verify(bi); err != nil {
+		return nil, nil, err
+	}
+	idx := mb.Index.ToInt()
+	if idx < 0 || idx >= len(tx.Outs) {
+		return nil, nil, fmt.Errorf("index out bound")
+	}
+	out := tx.Outs[idx]
+	return tx, out, nil
 }
 
 func (mb *MetaBody) ToDocument() (*xginx.Document, error) {

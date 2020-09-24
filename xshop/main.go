@@ -287,6 +287,18 @@ func (lis *shoplistener) Publish(ctx context.Context, opt string, setobjs ...fun
 	}
 }
 
+func (lis *shoplistener) rootFn(ctx context.Context, r *http.Request, opts *handler.RequestOptions) map[string]interface{} {
+	return lis.NewObjects(opts)
+}
+
+func (lis *shoplistener) exitFn(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+
+}
+
+func (lis *shoplistener) handleRecvTx(w http.ResponseWriter, req *http.Request) {
+
+}
+
 func (lis *shoplistener) startgraphql(host string) {
 	urlv, err := url.Parse(host)
 	if err != nil {
@@ -301,20 +313,17 @@ func (lis *shoplistener) startgraphql(host string) {
 		Schema:   lis.gqlschema,
 		Pretty:   true,
 		GraphiQL: true,
-		RootFn: func(ctx context.Context, r *http.Request, opts *handler.RequestOptions) map[string]interface{} {
-			return lis.NewObjects(opts)
-		},
-		ExitFn: func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-
-		},
+		RootFn:   lis.rootFn,
+		ExitFn:   lis.exitFn,
 	}
 	lis.gqlhandler = handler.New(conf)
 	mux := http.NewServeMux()
 	mux.Handle("/subscriptions", graphqlws.NewHandler(graphqlws.HandlerConfig{
 		SubscriptionManager: lis.gqlsubmgr,
 	}))
-	//查询更新初始化
 	mux.Handle("/"+urlv.Scheme, lis)
+	//http://127.0.0.1:9334/swap/tx?rsa=rsaxxxx
+	mux.Handle("/swap/tx", &httptxswap{objs: lis.NewObjects()})
 	lis.gqlhttp = &http.Server{
 		Addr:    urlv.Host,
 		Handler: mux,

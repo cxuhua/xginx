@@ -114,7 +114,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"listTempProduct": listTempProduct,
 		"loadProduct":     loadProduct,
 		"findProduct":     findProduct,
-		"loadEncryptedTx": loadEncryptedTx,
+		"loadEncodedTx":   loadEncodedTx,
 	},
 	Description: "数据查询接口",
 })
