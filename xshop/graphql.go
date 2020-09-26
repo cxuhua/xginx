@@ -100,6 +100,42 @@ var HashType = graphql.NewScalar(graphql.ScalarConfig{
 	},
 })
 
+func amounttypesp(value interface{}) interface{} {
+	switch value.(type) {
+	case xginx.Amount:
+		return int64(value.(xginx.Amount))
+	case *xginx.Amount:
+		return amounttypesp(*(value).(*xginx.Amount))
+	case string:
+		a, err := xginx.ParseAmount(value.(string))
+		if err != nil {
+			panic(err)
+		}
+		return a
+	case *string:
+		return amounttypesp(*(value).(*string))
+	case int:
+		return xginx.Amount(value.(int))
+	case int64:
+		return xginx.Amount(value.(int64))
+	}
+	return nil
+}
+
+var AmountType = graphql.NewScalar(graphql.ScalarConfig{
+	Name:        "Amount",
+	Description: "xginx.Amount",
+	Serialize:   amounttypesp,
+	ParseValue:  amounttypesp,
+	ParseLiteral: func(valueAST ast.Value) interface{} {
+		switch valueAST := valueAST.(type) {
+		case *ast.StringValue:
+			return amounttypesp(valueAST.Value)
+		}
+		return nil
+	},
+})
+
 var query = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Query",
 	Fields: graphql.Fields{
@@ -114,7 +150,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"listTempProduct": listTempProduct,
 		"loadProduct":     loadProduct,
 		"findProduct":     findProduct,
-		"loadEncodedTx":   loadEncodedTx,
+		"loadMetaPair":    loadMetaPair,
 	},
 	Description: "数据查询接口",
 })
@@ -130,7 +166,7 @@ var matation = graphql.NewObject(graphql.ObjectConfig{
 		"createTxMeta":     createTxMeta,
 		"loadTempProduct":  loadTempProduct,
 		"newTempProduct":   newTempProduct,
-		"uploadProduct":    uploadProduct,
+		"sellProduct":      sellProduct,
 		"purchaseProduct":  purchaseProduct,
 	},
 	Description: "数据更新接口",

@@ -650,17 +650,24 @@ var purchaseProduct = &graphql.Field{
 			Description: "购买信息,将由公钥加密",
 		},
 		"fee": {
-			Type:        graphql.NewNonNull(graphql.Int),
-			Description: "交易费",
+			Type:         graphql.Int,
+			DefaultValue: 0,
+			Description:  "交易费",
+		},
+		"deposit": {
+			Type:         graphql.Int,
+			DefaultValue: 0,
+			Description:  "押金,抵押更多的金额保证安全,交易确认后退回给买家",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		args := struct {
-			PID    xginx.DocumentID
-			KID    string
-			Sender []SenderInfo
-			Info   string
-			Fee    xginx.Amount
+			PID     xginx.DocumentID
+			KID     string
+			Sender  []SenderInfo
+			Info    string
+			Fee     xginx.Amount
+			Deposit xginx.Amount
 		}{}
 		err := DecodeArgs(p, &args)
 		if err != nil {
@@ -745,10 +752,10 @@ var purchaseProduct = &graphql.Field{
 		}
 		receiver := []ReceiverInfo{
 			{
-				Addr:   acc.MustAddress(),                 //转入控制地址
-				Amount: txout.Value + txout.Value,         //包括商品本身的价值
-				Meta:   string(smeta),                     //购买信息
-				Script: string(xginx.DefaultLockedScript), //默认解锁脚本
+				Addr:   acc.MustAddress(),                        //转入控制地址
+				Amount: txout.Value + txout.Value + args.Deposit, //包括商品本身的价值+抵押金额
+				Meta:   string(smeta),                            //购买信息
+				Script: string(xginx.DefaultLockedScript),        //默认解锁脚本
 			},
 		}
 		//获取锁定脚本
@@ -796,8 +803,8 @@ var purchaseProduct = &graphql.Field{
 	Description: "生成购买交易",
 }
 
-var uploadProduct = &graphql.Field{
-	Name: "UploadProduct",
+var sellProduct = &graphql.Field{
+	Name: "SellProduct",
 	Type: graphql.NewNonNull(TXType),
 	Args: graphql.FieldConfigArgument{
 		"sender": {
@@ -857,7 +864,7 @@ var uploadProduct = &graphql.Field{
 		}
 		return tx, nil
 	},
-	Description: "上传产品到区块链",
+	Description: "出售产品到区块链,发布一个出售交易,接收为自己的可控制的地址",
 }
 
 //创建一个出售产品meta数据

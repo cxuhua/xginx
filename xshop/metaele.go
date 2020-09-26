@@ -30,7 +30,7 @@ const (
 	MetaEleUUID = "UUID"
 	//文本元素 sum为文本内容的sha256
 	MetaEleTEXT = "TEXT"
-	//url链接元素 sum为链接内容的sum
+	//url链接元素 MetaHash 方法进行签名
 	MetaEleURL = "URL"
 	//HASH公钥,用于合成地址信息
 	MetaEleHASH = "HASH"
@@ -38,8 +38,6 @@ const (
 	MetaEleRSA = "RSA"
 	//KID 私钥ID = 公钥hash swit编码 可解码出公钥hash256用于生成地址
 	MetaEleKID = "KID"
-	//保存交易信息base64编码
-	MetaEleTX = "TX"
 	//url资源对应的最大大小
 	MaxURLSize = 1024 * 1024 * 5
 )
@@ -160,7 +158,7 @@ func NewMetaUrl(ctx context.Context, surl string) (MetaEle, error) {
 		return me, err
 	}
 	q := urlv.Query()
-	q.Set("sum", MetaHashBytes(body))
+	q.Set("hash", MetaHashBytes(body))
 	urlv.RawQuery = q.Encode()
 	//追加sum用来检测内容是否一致
 	me.Body = urlv.String()
@@ -180,11 +178,10 @@ func (ele MetaEle) checkurl(ctx context.Context) error {
 		return err
 	}
 	q := urlv.Query()
-	if q.Get("sum") == "" {
-		return fmt.Errorf("url %s miss sum query args", ele.Body)
+	if q.Get("hash") == "" {
+		return fmt.Errorf("url %s miss hash query args", ele.Body)
 	}
-	scheme := strings.ToLower(urlv.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if pp := strings.ToLower(urlv.Scheme); pp != "http" && pp != "https" {
 		return fmt.Errorf("only support http or https")
 	}
 	elev, err := NewMetaUrl(ctx, urlv.String())
@@ -229,10 +226,6 @@ func (ele MetaEle) Check(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return nil
-	}
-	//这个只是临时的交易信息,在保存购买信息时保存相关的交易信息
-	if ele.Type == MetaEleTX {
 		return nil
 	}
 	if ele.Type == MetaEleURL {

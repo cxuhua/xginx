@@ -96,23 +96,6 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "上个文档",
 		},
-		"listBuyers": {
-			Type: graphql.Int,
-			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				mb := p.Source.(*MetaBody)
-				if mb.Type != MetaTypeSell {
-					return NewError(100, "not sell type")
-				}
-				//id, err := mb.ID()
-				//if err != nil {
-				//	return NewError(101, err)
-				//}
-				//bid := id.To(MetaTypePurchase)
-				//objs := GetObjects(p)
-				return mb.Index.ToInt(), nil
-			},
-			Description: "获取买家列表",
-		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
 		_, ok := p.Value.(*MetaBody)
@@ -147,10 +130,6 @@ var EleType = graphql.NewEnum(graphql.EnumConfig{
 		"KID": {
 			Value:       MetaEleKID,
 			Description: "私钥ID,公钥hashid",
-		},
-		"TX": {
-			Value:       MetaEleTX,
-			Description: "交易base64信息",
 		},
 	},
 	Description: "meta元素类型",

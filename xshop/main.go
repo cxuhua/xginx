@@ -77,6 +77,9 @@ func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx 
 	if err != nil {
 		return err
 	}
+	if mb.Type != id.Type() {
+		return fmt.Errorf("id type not match")
+	}
 	if !link {
 		return lis.docdb.Delete(id)
 	}

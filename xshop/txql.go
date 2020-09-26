@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 
 	"github.com/cxuhua/xginx"
@@ -52,28 +51,166 @@ type MetaTxOut struct {
 	Meta  *MetaBody    //解析出的meta信息
 }
 
+var MetaTxOutType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "MetaTxOutType",
+	Fields: graphql.Fields{
+		"tx": {
+			Type: graphql.NewNonNull(TXType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOut)
+				return v.Tx, nil
+			},
+			Description: "交易信息",
+		},
+		"out": {
+			Type: graphql.NewNonNull(TxOutType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOut)
+				return v.Out, nil
+			},
+			Description: "信息meta信息所在的输出",
+		},
+		"index": {
+			Type: graphql.Int,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOut)
+				return v.Index, nil
+			},
+			Description: "输出的索引位置",
+		},
+		"meta": {
+			Type: graphql.NewNonNull(MetaBodyType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOut)
+				return v.Meta, nil
+			},
+			Description: "meta信息",
+		},
+	},
+	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
+		_, ok := p.Value.(*MetaTxOut)
+		return ok
+	},
+	Description: "交易脚本类型",
+})
+
 type MetaTxOutPair struct {
 	Purchase *MetaTxOut
 	Sell     *MetaTxOut
 }
 
+var PairAmountType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "PairAmountType",
+	Fields: graphql.Fields{
+		"sell": {
+			Type: AmountType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOutPair)
+				return v.GetProductAmount()
+			},
+			Description: "卖价",
+		},
+		"pay": {
+			Type: AmountType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOutPair)
+				return v.GetPayAmount()
+			},
+			Description: "支付的",
+		},
+		"deposit": {
+			Type: AmountType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOutPair)
+				return v.GetDepositAmount()
+			},
+			Description: "抵押金=出价-卖价",
+		},
+		"trans": {
+			Type: AmountType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				objs := GetObjects(p)
+				v := p.Source.(*MetaTxOutPair)
+				return v.GetTransAmount(objs)
+			},
+			Description: "交易费",
+		},
+	},
+	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
+		_, ok := p.Value.(*MetaTxOutPair)
+		return ok
+	},
+	Description: "卖卖交易对相关金额",
+})
+
+var MetaTxOutPairType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "MetaTxOutPairType",
+	Fields: graphql.Fields{
+		"purchase": {
+			Type: graphql.NewNonNull(MetaTxOutType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOutPair)
+				return v.Purchase, nil
+			},
+			Description: "购买信息",
+		},
+		"sell": {
+			Type: graphql.NewNonNull(MetaTxOutType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				v := p.Source.(*MetaTxOutPair)
+				return v.Sell, nil
+			},
+			Description: "出售信息",
+		},
+		"amount": {
+			Type: graphql.NewNonNull(PairAmountType),
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				return p.Source, nil
+			},
+			Description: "相关金额",
+		},
+	},
+	IsTypeOf: func(p graphql.IsTypeOfParams) bool {
+		_, ok := p.Value.(*MetaTxOutPair)
+		return ok
+	},
+	Description: "卖卖交易对信息",
+})
+
+//获取抵押金额
+func (pair *MetaTxOutPair) GetDepositAmount() (xginx.Amount, error) {
+	pfee, err := pair.GetPayAmount()
+	if err != nil {
+		return 0, err
+	}
+	sfee, err := pair.GetProductAmount()
+	if err != nil {
+		return 0, err
+	}
+	deposit := pfee - sfee
+	if !deposit.IsRange() {
+		return 0, fmt.Errorf("deposit fee error")
+	}
+	return deposit, nil
+}
+
 //获取产品金额
 func (pair *MetaTxOutPair) GetProductAmount() (xginx.Amount, error) {
 	a := pair.Sell.Out.Value
-	if a.IsRange() {
+	if !a.IsRange() {
 		return 0, fmt.Errorf("fee value error")
 	}
 	return a, nil
 }
 
-//获取购买金额
+//获取购买支付得金额
 func (pair *MetaTxOutPair) GetPayAmount() (xginx.Amount, error) {
 	b, err := pair.GetProductAmount()
 	if err != nil {
 		return 0, err
 	}
 	a := pair.Purchase.Out.Value - b
-	if a.IsRange() {
+	if !a.IsRange() {
 		return 0, fmt.Errorf("fee value error")
 	}
 	return a, nil
@@ -81,7 +218,14 @@ func (pair *MetaTxOutPair) GetPayAmount() (xginx.Amount, error) {
 
 //获取交易费
 func (pair *MetaTxOutPair) GetTransAmount(objs Objects) (xginx.Amount, error) {
-	return pair.Purchase.Tx.GetTransAmount(objs.BlockIndex())
+	a, err := pair.Purchase.Tx.GetTransAmount(objs.BlockIndex())
+	if err != nil {
+		return 0, err
+	}
+	if !a.IsRange() {
+		return 0, fmt.Errorf("fee value error")
+	}
+	return a, nil
 }
 
 //创建双发控制账户,此账户密钥被买卖双方控制,当购买交易确认后,需要双发签名
@@ -131,6 +275,18 @@ func (pair *MetaTxOutPair) Check(objs Objects) error {
 	err = pair.CheckAddress(objs)
 	if err != nil {
 		return err
+	}
+	//检查金额
+	sfee, err := pair.GetProductAmount()
+	if err != nil {
+		return err
+	}
+	bfee, err := pair.GetPayAmount()
+	if err != nil {
+		return err
+	}
+	if bfee < sfee {
+		return fmt.Errorf("pay fee < product fee")
 	}
 	return nil
 }
@@ -896,9 +1052,21 @@ var listTxPool = &graphql.Field{
 	},
 }
 
-var loadEncodedTx = &graphql.Field{
-	Name: "LoadEncodedTx",
-	Type: graphql.NewNonNull(TXType),
+//从交易加载交易对
+func LoadPairWithTx(objs Objects, bb []byte) (*MetaTxOutPair, error) {
+	r := xginx.NewReader(bb)
+	tx := &xginx.TX{}
+	err := tx.Decode(r)
+	if err != nil {
+		return nil, err
+	}
+	stx := NewPurchaseTX(tx)
+	return stx.NewPair(objs)
+}
+
+var loadMetaPair = &graphql.Field{
+	Name: "loadMetaPair",
+	Type: graphql.NewNonNull(MetaTxOutPairType),
 	Args: graphql.FieldConfigArgument{
 		"data": {
 			Type:        graphql.NewNonNull(graphql.String),
@@ -906,28 +1074,19 @@ var loadEncodedTx = &graphql.Field{
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+		objs := GetObjects(p)
 		args := &EncodedTx{}
 		err := DecodeArgs(p, args)
-		if err != nil {
+		if err != nil || args.Data == "" {
 			return NewError(100, err)
 		}
 		bb, err := base64.StdEncoding.DecodeString(args.Data)
 		if err != nil {
 			return NewError(101, err)
 		}
-		r := xginx.NewReader(bb)
-		tx := &xginx.TX{}
-		err = tx.Decode(r)
-		if err != nil {
-			return NewError(102, err)
-		}
-		objs := GetObjects(p)
-		stx := NewPurchaseTX(tx)
-		pair, err := stx.NewPair(objs)
-		log.Println(pair, err)
-		return tx, nil
+		return LoadPairWithTx(objs, bb)
 	},
-	Description: "获取加载有加密的信息",
+	Description: "从购买交易加载买卖数据对",
 }
 
 var loadTxInfo = &graphql.Field{
