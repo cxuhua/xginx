@@ -50,13 +50,13 @@ const (
 
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
-	Type  byte             `json:"type"`           //1-出售 2-购买 3-确认
-	Tags  []string         `json:"tags,omitempty"` //内容关键字,购买meta不存在
-	Eles  []MetaEle        `json:"eles"`           //元素集合
-	TxID  xginx.HASH256    `json:"-"`              //交易ID,进入交易后保存到doc文档
-	Index xginx.VarUInt    `json:"-"`              //输出索引,本信息所在交易的输出位置
-	Next  xginx.DocumentID `json:"-"`
-	Prev  xginx.DocumentID `json:"-"`
+	Type  byte             `json:"type"` //1-出售 2-购买 3-确认
+	Tags  []string         `json:"tags"` //内容关键字,购买meta不存在
+	Eles  []MetaEle        `json:"eles"` //元素集合
+	TxID  xginx.HASH256    `json:"-"`    //交易ID,进入交易后保存到doc文档
+	Index xginx.VarUInt    `json:"-"`    //输出索引,本信息所在交易的输出位置
+	Next  xginx.DocumentID `json:"-"`    //链表链接到下一个
+	Prev  xginx.DocumentID `json:"-"`    //上一个
 }
 
 //根据type创建类型文档ID

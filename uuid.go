@@ -20,6 +20,11 @@ var NilDocumentID DocumentID
 
 var DocumentIDLen = len(NilDocumentID)
 
+//是否是空的id
+func (id DocumentID) IsNil() bool {
+	return id.Equal(NilDocumentID)
+}
+
 func (id DocumentID) Encode(w IWriter) error {
 	return w.WriteFull(id[:])
 }

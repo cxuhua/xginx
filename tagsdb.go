@@ -59,18 +59,18 @@ func (doc Document) Encode() []byte {
 	return append([]byte{1}, zb...)
 }
 
-func (doc *Document) GetNext(db IDocSystem) (*Document, error) {
+func (doc *Document) GetNext(db IDocSystem, qtag ...bool) (*Document, error) {
 	if doc.Next.Equal(NilDocumentID) {
 		return nil, fmt.Errorf("next null")
 	}
-	return db.Get(doc.Next)
+	return db.Get(doc.Next, qtag...)
 }
 
-func (doc *Document) GetPrev(db IDocSystem) (*Document, error) {
+func (doc *Document) GetPrev(db IDocSystem, qtag ...bool) (*Document, error) {
 	if doc.Prev.Equal(NilDocumentID) {
 		return nil, fmt.Errorf("prev null")
 	}
-	return db.Get(doc.Prev)
+	return db.Get(doc.Prev, qtag...)
 }
 
 func (doc *Document) Decode(b []byte) {
@@ -313,8 +313,8 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	//添加内容
 	bb := doc.Encode()
 	bt.Put(ckprefix, doc.ID[:], bb)
-	//一次性写入
-	return nil
+	//创建链接
+	return sys.insertlink(bt, doc)
 }
 
 //利用反向索引搜索文档有哪些tag
@@ -357,14 +357,104 @@ func (sys *leveldbdocsystem) Delete(ids ...DocumentID) error {
 	return sys.db.Write(bt)
 }
 
+//插入链接关系
+func (sys *leveldbdocsystem) updatelink(bt *Batch, odoc *Document, ndoc *Document) error {
+	if !odoc.Next.Equal(ndoc.Next) && !odoc.Prev.Equal(ndoc.Prev) {
+		err := sys.deletelink(bt, odoc)
+		if err != nil {
+			return err
+		}
+	} else if !odoc.Next.Equal(ndoc.Next) {
+		next, err := odoc.GetNext(sys, true)
+		if err == nil {
+			next.Prev = NilDocumentID
+			err = sys.update(bt, next, true)
+		}
+		if err != nil {
+			return err
+		}
+	} else if !odoc.Prev.Equal(ndoc.Prev) {
+		prev, err := odoc.GetPrev(sys, true)
+		if err == nil {
+			prev.Next = NilDocumentID
+			err = sys.update(bt, prev, true)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return sys.insertlink(bt, ndoc)
+}
+
+//插入链接关系
+func (sys *leveldbdocsystem) insertlink(bt *Batch, doc *Document) error {
+	prev, perr := doc.GetPrev(sys, true)
+	next, nerr := doc.GetNext(sys, true)
+	//有上一个
+	if perr == nil {
+		prev.Next = doc.ID
+		err := sys.update(bt, prev, true)
+		if err != nil {
+			return err
+		}
+	}
+	//有下一个
+	if nerr == nil {
+		next.Prev = doc.ID
+		err := sys.update(bt, next, true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//删除更新链接关系
+func (sys *leveldbdocsystem) deletelink(bt *Batch, doc *Document) error {
+	uprev, unext := false, false
+	prev, perr := doc.GetPrev(sys, true)
+	next, nerr := doc.GetNext(sys, true)
+	if perr == nil && nerr != nil {
+		//有上一个没下一个
+		prev.Next = NilDocumentID
+		uprev = true
+	} else if perr == nil && nerr == nil {
+		//有上一个也有下一个
+		prev.Next = next.ID
+		next.Prev = prev.ID
+		uprev = true
+		unext = true
+	} else if perr != nil && nerr == nil {
+		//没有上一个,有下一个
+		next.Prev = NilDocumentID
+		unext = true
+	} else {
+		//都没有直接返回
+		return nil
+	}
+	if uprev {
+		err := sys.update(bt, prev, true)
+		if err != nil {
+			return err
+		}
+	}
+	if unext {
+		err := sys.update(bt, next, true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 //删除文档
 func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 	if id.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	//先获取原内容
-	has, err := sys.Has(id)
-	if err != nil || !has {
+	old, err := sys.Get(id)
+	if err != nil {
 		return fmt.Errorf("doc miss")
 	}
 	//删除内容
@@ -380,7 +470,8 @@ func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 		//正向key
 		bt.Del(fkprefix, iter.Value(), id[:])
 	}
-	return nil
+	//检测是否更新链接关系
+	return sys.deletelink(bt, old)
 }
 
 func (sys *leveldbdocsystem) listtomap(ss []string) map[string]bool {
@@ -430,7 +521,7 @@ func (sys *leveldbdocsystem) settag(bt *Batch, tag string, id DocumentID, del bo
 }
 
 //更新文档
-func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
+func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document, only bool) error {
 	if ndoc.ID.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
@@ -452,14 +543,17 @@ func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
 	//先删除再添加
 	bt.Del(ckprefix, odoc.ID[:])
 	bt.Put(ckprefix, ndoc.ID[:], ndoc.Encode())
-	return nil
+	if only {
+		return nil
+	}
+	return sys.updatelink(bt, odoc, ndoc)
 }
 
 //更新文档
 func (sys *leveldbdocsystem) Update(ndoc ...*Document) error {
 	bt := sys.db.NewBatch()
 	for _, doc := range ndoc {
-		err := sys.update(bt, doc)
+		err := sys.update(bt, doc, false)
 		if err != nil {
 			return err
 		}

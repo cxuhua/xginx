@@ -1,6 +1,7 @@
 package xginx
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -91,38 +92,95 @@ func TestCmpMap(t *testing.T) {
 	assert.Equal(t, []string{}, ds)
 }
 
+//检测doc,是否在一条链上
+func checklink(fs IDocSystem, docs ...*Document) error {
+	if len(docs) <= 1 {
+		return nil
+	}
+	first, err := fs.Get(docs[0].ID)
+	if err != nil {
+		return err
+	}
+	for i := 1; i < len(docs); i++ {
+		next, err := fs.Get(docs[i].ID)
+		if err != nil {
+			return err
+		}
+		if !first.Next.Equal(next.ID) {
+			return fmt.Errorf("doc next id error 1")
+		}
+		if !next.Prev.Equal(first.ID) {
+			return fmt.Errorf("doc next id error 2")
+		}
+		first = next
+	}
+	return nil
+}
+
 func TestNextPrev(t *testing.T) {
-	doc1 := &Document{
+	doc0 := &Document{
 		ID:    DocumentID{1},
 		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
 		Body:  []byte("doc1"),
 		TxID:  HASH256{1, 2, 3},
 		Index: VarUInt(100),
 	}
-	doc2 := &Document{
+	doc1 := &Document{
 		ID:    DocumentID{2},
 		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
 		Body:  []byte("doc1"),
 		TxID:  HASH256{1, 2, 3},
 		Index: VarUInt(100),
 	}
+	doc2 := &Document{
+		ID:    DocumentID{3},
+		Tags:  []string{"小学", "中学", "大学", "狗儿子"},
+		Body:  []byte("doc1"),
+		TxID:  HASH256{1, 2, 3},
+		Index: VarUInt(103),
+	}
+	//创建双向链
+	//0 -> 1
+	doc0.Next = doc1.ID
+	//1 <- 0
+	doc1.Prev = doc0.ID
+	//1 -> 2
 	doc1.Next = doc2.ID
+	//2 <- 1
 	doc2.Prev = doc1.ID
 
 	fs, err := OpenDocSystem(NewTempDir())
 	require.NoError(t, err)
 	defer fs.Close()
-	err = fs.Insert(doc1, doc2)
+	err = fs.Insert(doc0, doc1, doc2)
 	require.NoError(t, err)
-	doc3, err := fs.Get(doc1.ID)
+
+	err = checklink(fs, doc0, doc1, doc2)
 	require.NoError(t, err)
-	assert.Equal(t, doc3.ID, doc1.ID)
-	doc4, err := doc3.GetNext(fs)
+
+	err = fs.Delete(doc1.ID)
 	require.NoError(t, err)
-	assert.Equal(t, doc4.ID, doc2.ID)
-	doc5, err := doc4.GetPrev(fs)
+	err = checklink(fs, doc0, doc2)
 	require.NoError(t, err)
-	assert.Equal(t, doc5.ID, doc1.ID)
+
+	err = fs.Insert(doc1)
+	require.NoError(t, err)
+	err = checklink(fs, doc0, doc1, doc2)
+	require.NoError(t, err)
+
+	doc1.Next = NilDocumentID
+	doc1.Prev = doc0.ID
+	err = fs.Update(doc1)
+	require.NoError(t, err)
+	err = checklink(fs, doc0, doc1)
+	require.NoError(t, err)
+
+	doc1.Next = doc2.ID
+	doc1.Prev = NilDocumentID
+	err = fs.Update(doc1)
+	require.NoError(t, err)
+	err = checklink(fs, doc1, doc2)
+	require.NoError(t, err)
 }
 
 func TestUpdateTxID(t *testing.T) {
