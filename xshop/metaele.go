@@ -18,10 +18,6 @@ import (
 const (
 	//购买交易分类,当购买一个产品生成的交易临时存储在这里
 	TypeDBTypeTTPTX = "TPTX"
-	//卖出文档类型,当收到区块,包含卖出数据时保存
-	DocTypeSell = "SELL"
-	//购买文档类型,当收到区块,包含卖出数据时保存
-	DocTypePurchase = "PURCHASE"
 )
 
 //MetaHash hash方法
