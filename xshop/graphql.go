@@ -100,13 +100,49 @@ var HashType = graphql.NewScalar(graphql.ScalarConfig{
 	},
 })
 
+func amounttypesp(value interface{}) interface{} {
+	switch value.(type) {
+	case xginx.Amount:
+		return int64(value.(xginx.Amount))
+	case *xginx.Amount:
+		return amounttypesp(*(value).(*xginx.Amount))
+	case string:
+		a, err := xginx.ParseAmount(value.(string))
+		if err != nil {
+			panic(err)
+		}
+		return a
+	case *string:
+		return amounttypesp(*(value).(*string))
+	case int:
+		return xginx.Amount(value.(int))
+	case int64:
+		return xginx.Amount(value.(int64))
+	}
+	return nil
+}
+
+var AmountType = graphql.NewScalar(graphql.ScalarConfig{
+	Name:        "Amount",
+	Description: "xginx.Amount",
+	Serialize:   amounttypesp,
+	ParseValue:  amounttypesp,
+	ParseLiteral: func(valueAST ast.Value) interface{} {
+		switch valueAST := valueAST.(type) {
+		case *ast.StringValue:
+			return amounttypesp(valueAST.Value)
+		}
+		return nil
+	},
+})
+
 var query = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Query",
 	Fields: graphql.Fields{
 		"statusInfo":      statusInfo,
 		"listCoin":        listCoin,
 		"blockInfo":       blockInfo,
-		"txInfo":          txInfo,
+		"loadTxInfo":      loadTxInfo,
 		"listPrivateKey":  listPrivateKey,
 		"listAccount":     listAccount,
 		"listTxPool":      listTxPool,
@@ -114,8 +150,7 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 		"listTempProduct": listTempProduct,
 		"loadProduct":     loadProduct,
 		"findProduct":     findProduct,
-		"listTempTx":      listTempTx,
-		"loadTxInfo":      loadTxInfo,
+		"loadMetaPair":    loadMetaPair,
 	},
 	Description: "数据查询接口",
 })
@@ -123,15 +158,15 @@ var query = graphql.NewObject(graphql.ObjectConfig{
 var matation = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Mutation",
 	Fields: graphql.Fields{
+		"createRSA":        createRSA,
 		"transfer":         transfer,
 		"createPrivateKey": createPrivateKey,
 		"createAccount":    createAccount,
 		"newBlock":         newBlock,
 		"createTxMeta":     createTxMeta,
-		"product":          product,
-		"createRSA":        createRSA,
+		"loadTempProduct":  loadTempProduct,
 		"newTempProduct":   newTempProduct,
-		"uploadProduct":    uploadProduct,
+		"sellProduct":      sellProduct,
 		"purchaseProduct":  purchaseProduct,
 	},
 	Description: "数据更新接口",
@@ -164,7 +199,7 @@ var subscription = graphql.NewObject(graphql.ObjectConfig{
 				}
 				return tx, nil
 			},
-			Description: "发送指定的交易信息信息",
+			Description: "发送指定的交易信息",
 		},
 		"product": {
 			Name: "Product",

@@ -15,11 +15,6 @@ import (
 	"github.com/cxuhua/xginx"
 )
 
-const (
-	//购买交易分类,当购买一个产品生成的交易临时存储在这里
-	TypeDBTypeTTPTX = "TPTX"
-)
-
 //MetaHash hash方法
 func MetaHash(s string) string {
 	return MetaHashBytes([]byte(s))
@@ -35,7 +30,7 @@ const (
 	MetaEleUUID = "UUID"
 	//文本元素 sum为文本内容的sha256
 	MetaEleTEXT = "TEXT"
-	//url链接元素 sum为链接内容的sum
+	//url链接元素 MetaHash 方法进行签名
 	MetaEleURL = "URL"
 	//HASH公钥,用于合成地址信息
 	MetaEleHASH = "HASH"
@@ -47,34 +42,44 @@ const (
 	MaxURLSize = 1024 * 1024 * 5
 )
 
-type MetaType int8
-
 const (
-	MetaTypeSell     MetaType = 1 //出售
-	MetaTypePurchase MetaType = 2 //购买
-	MetaTypeFinish   MetaType = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
+	MetaTypeSell     byte = 1 //出售
+	MetaTypePurchase byte = 2 //购买
+	MetaTypeFinish   byte = 3 //完成,卖家发货后构造交易,买家收到后签名发布到链上,如果不完成,此交易会被标记
 )
-
-//获取对应的输出
-func (mb *MetaBody) GetTxOut(bi *xginx.BlockIndex) (*xginx.TxOut, error) {
-	tx, err := bi.LoadTX(mb.TxID)
-	if err != nil {
-		return nil, err
-	}
-	if idx := mb.Index.ToInt(); idx >= len(tx.Outs) {
-		return nil, fmt.Errorf("index out bound")
-	} else {
-		return tx.Outs[idx], nil
-	}
-}
 
 //txout输出meta,meta末尾为meta元素的sha256校验和(64字节,hex格式编码)
 type MetaBody struct {
-	Type  MetaType      `json:"type"`           //1-出售 2-购买 3-确认
-	Tags  []string      `json:"tags,omitempty"` //内容关键字,购买meta不存在
-	Eles  []MetaEle     `json:"eles"`           //元素集合
-	TxID  xginx.HASH256 `json:"-"`              //交易ID,进入交易后保存到doc文档
-	Index xginx.VarUInt `json:"-"`              //输出索引
+	Type  byte             `json:"type"` //1-出售 2-购买 3-确认
+	Tags  []string         `json:"tags"` //内容关键字,购买meta不存在
+	Eles  []MetaEle        `json:"eles"` //元素集合
+	TxID  xginx.HASH256    `json:"-"`    //交易ID,进入交易后保存到doc文档
+	Index xginx.VarUInt    `json:"-"`    //输出索引,本信息所在交易的输出位置
+	Next  xginx.DocumentID `json:"-"`    //链表链接到下一个
+	Prev  xginx.DocumentID `json:"-"`    //上一个
+}
+
+//根据type创建类型文档ID
+func (mb *MetaBody) NewID() xginx.DocumentID {
+	return xginx.NewDocumentID(byte(mb.Type))
+}
+
+//获取区块链中对应的交易信息和输出,当产品存入区块链后才可能获取到
+func (mb MetaBody) GetTX(bi *xginx.BlockIndex) (*xginx.TX, *xginx.TxOut, error) {
+	tx, err := bi.LoadTX(mb.TxID)
+	if err != nil {
+		return nil, nil, err
+	}
+	//验证一次交易
+	if err := tx.Verify(bi); err != nil {
+		return nil, nil, err
+	}
+	idx := mb.Index.ToInt()
+	if idx < 0 || idx >= len(tx.Outs) {
+		return nil, nil, fmt.Errorf("index out bound")
+	}
+	out := tx.Outs[idx]
+	return tx, out, nil
 }
 
 func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
@@ -86,6 +91,8 @@ func (mb *MetaBody) ToDocument() (*xginx.Document, error) {
 	}
 	doc.Body = []byte(str)
 	doc.Tags = mb.Tags
+	doc.Next = mb.Next
+	doc.Prev = mb.Prev
 	return doc, nil
 }
 
@@ -151,7 +158,7 @@ func NewMetaUrl(ctx context.Context, surl string) (MetaEle, error) {
 		return me, err
 	}
 	q := urlv.Query()
-	q.Set("sum", MetaHashBytes(body))
+	q.Set("hash", MetaHashBytes(body))
 	urlv.RawQuery = q.Encode()
 	//追加sum用来检测内容是否一致
 	me.Body = urlv.String()
@@ -171,11 +178,10 @@ func (ele MetaEle) checkurl(ctx context.Context) error {
 		return err
 	}
 	q := urlv.Query()
-	if q.Get("sum") == "" {
-		return fmt.Errorf("url %s miss sum query args", ele.Body)
+	if q.Get("hash") == "" {
+		return fmt.Errorf("url %s miss hash query args", ele.Body)
 	}
-	scheme := strings.ToLower(urlv.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if pp := strings.ToLower(urlv.Scheme); pp != "http" && pp != "https" {
 		return fmt.Errorf("only support http or https")
 	}
 	elev, err := NewMetaUrl(ctx, urlv.String())
@@ -238,7 +244,7 @@ func (mb *MetaBody) Check(ctx context.Context) error {
 			return err
 		}
 	}
-	return nil
+	return mb.CheckType()
 }
 
 func (mb *MetaBody) To() (ShopMeta, error) {

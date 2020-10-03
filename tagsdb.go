@@ -5,38 +5,29 @@ import (
 	"encoding/binary"
 	"fmt"
 	"regexp"
-	"time"
 
 	"github.com/cxuhua/lzma"
 )
 
 //Document 文档关键字查询存储系统
+//next prev为存在链式关系时启用
 type Document struct {
 	ID    DocumentID //文档ID
 	Tags  []string   //标签
-	Time  VarUInt    //时间纳秒
 	TxID  HASH256    //文档对应交易ID
 	Index VarUInt    //文档对应的输出索引
 	Body  VarBytes   //内容
+	Next  DocumentID //下个关系
+	Prev  DocumentID //上个关系
 }
 
 func NewDocument() *Document {
-	return &Document{
-		Time: VarUInt(time.Now().UnixNano()),
-	}
-}
-
-func GetTimeBytes(v int64) []byte {
-	return EndianUInt64(uint64(v))
+	return &Document{}
 }
 
 func (doc Document) Encode() []byte {
 	w := NewWriter()
-	err := doc.Time.Encode(w)
-	if err != nil {
-		panic(err)
-	}
-	err = doc.TxID.Encode(w)
+	err := doc.TxID.Encode(w)
 	if err != nil {
 		panic(err)
 	}
@@ -45,6 +36,14 @@ func (doc Document) Encode() []byte {
 		panic(err)
 	}
 	err = doc.Body.Encode(w)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Next.Encode(w)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Prev.Encode(w)
 	if err != nil {
 		panic(err)
 	}
@@ -58,6 +57,20 @@ func (doc Document) Encode() []byte {
 		panic(err)
 	}
 	return append([]byte{1}, zb...)
+}
+
+func (doc *Document) GetNext(db IDocSystem, qtag ...bool) (*Document, error) {
+	if doc.Next.Equal(NilDocumentID) {
+		return nil, fmt.Errorf("next null")
+	}
+	return db.Get(doc.Next, qtag...)
+}
+
+func (doc *Document) GetPrev(db IDocSystem, qtag ...bool) (*Document, error) {
+	if doc.Prev.Equal(NilDocumentID) {
+		return nil, fmt.Errorf("prev null")
+	}
+	return db.Get(doc.Prev, qtag...)
 }
 
 func (doc *Document) Decode(b []byte) {
@@ -76,11 +89,7 @@ func (doc *Document) Decode(b []byte) {
 		panic(fmt.Errorf("body bytes error"))
 	}
 	r := NewReader(rb)
-	err := doc.Time.Decode(r)
-	if err != nil {
-		panic(err)
-	}
-	err = doc.TxID.Decode(r)
+	err := doc.TxID.Decode(r)
 	if err != nil {
 		panic(err)
 	}
@@ -89,6 +98,14 @@ func (doc *Document) Decode(b []byte) {
 		panic(err)
 	}
 	err = doc.Body.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Next.Decode(r)
+	if err != nil {
+		panic(err)
+	}
+	err = doc.Prev.Decode(r)
 	if err != nil {
 		panic(err)
 	}
@@ -109,6 +126,8 @@ type IDocIter interface {
 	ByPrev() IDocIter
 	//获取最后一个key
 	LastKey() []byte
+	//设置lastkey
+	SetLastKey(lk []byte)
 }
 
 //文档编码器
@@ -172,8 +191,8 @@ type IDocSystem interface {
 	Has(id DocumentID) (bool, error)
 	//固定key查询
 	Find(key string) IDocIter
-	//获取所有文档
-	All() IDocIter
+	//获取所有文档 prefix存在时拼接前缀
+	All(prefix ...[]byte) IDocIter
 	//按前缀查询文档
 	Prefix(key string) IDocIter
 	//模糊查询文档使用正则
@@ -182,15 +201,12 @@ type IDocSystem interface {
 	Sync()
 	//关闭文件系统
 	Close()
-	//按时间索引迭代
-	ByTime(v ...VarUInt) IDocIter
 }
 
 var (
 	fkprefix = []byte{1} //正向索引前缀
 	bkprefix = []byte{2} //反向索引前缀
 	ckprefix = []byte{3} //固定值前缀
-	tkprefix = []byte{4} //时间索引前缀
 )
 
 type leveldbdocsystem struct {
@@ -297,10 +313,8 @@ func (sys *leveldbdocsystem) insert(bt *Batch, doc *Document) error {
 	//添加内容
 	bb := doc.Encode()
 	bt.Put(ckprefix, doc.ID[:], bb)
-	//添加时间排序索引
-	bt.Put(tkprefix, doc.Time.SortBytes(), doc.ID[:], doc.ID[:])
-	//一次性写入
-	return nil
+	//创建链接
+	return sys.insertlink(bt, doc)
 }
 
 //利用反向索引搜索文档有哪些tag
@@ -343,18 +357,106 @@ func (sys *leveldbdocsystem) Delete(ids ...DocumentID) error {
 	return sys.db.Write(bt)
 }
 
+//插入链接关系
+func (sys *leveldbdocsystem) updatelink(bt *Batch, odoc *Document, ndoc *Document) error {
+	if !odoc.Next.Equal(ndoc.Next) && !odoc.Prev.Equal(ndoc.Prev) {
+		err := sys.deletelink(bt, odoc)
+		if err != nil {
+			return err
+		}
+	} else if !odoc.Next.Equal(ndoc.Next) {
+		next, err := odoc.GetNext(sys, true)
+		if err == nil {
+			next.Prev = NilDocumentID
+			err = sys.update(bt, next, true)
+		}
+		if err != nil {
+			return err
+		}
+	} else if !odoc.Prev.Equal(ndoc.Prev) {
+		prev, err := odoc.GetPrev(sys, true)
+		if err == nil {
+			prev.Next = NilDocumentID
+			err = sys.update(bt, prev, true)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return sys.insertlink(bt, ndoc)
+}
+
+//插入链接关系
+func (sys *leveldbdocsystem) insertlink(bt *Batch, doc *Document) error {
+	prev, perr := doc.GetPrev(sys, true)
+	next, nerr := doc.GetNext(sys, true)
+	//有上一个
+	if perr == nil {
+		prev.Next = doc.ID
+		err := sys.update(bt, prev, true)
+		if err != nil {
+			return err
+		}
+	}
+	//有下一个
+	if nerr == nil {
+		next.Prev = doc.ID
+		err := sys.update(bt, next, true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+//删除更新链接关系
+func (sys *leveldbdocsystem) deletelink(bt *Batch, doc *Document) error {
+	uprev, unext := false, false
+	prev, perr := doc.GetPrev(sys, true)
+	next, nerr := doc.GetNext(sys, true)
+	if perr == nil && nerr != nil {
+		//有上一个没下一个
+		prev.Next = NilDocumentID
+		uprev = true
+	} else if perr == nil && nerr == nil {
+		//有上一个也有下一个
+		prev.Next = next.ID
+		next.Prev = prev.ID
+		uprev = true
+		unext = true
+	} else if perr != nil && nerr == nil {
+		//没有上一个,有下一个
+		next.Prev = NilDocumentID
+		unext = true
+	} else {
+		//都没有直接返回
+		return nil
+	}
+	if uprev {
+		err := sys.update(bt, prev, true)
+		if err != nil {
+			return err
+		}
+	}
+	if unext {
+		err := sys.update(bt, next, true)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 //删除文档
 func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 	if id.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
 	//先获取原内容
-	doc, err := sys.Get(id)
+	old, err := sys.Get(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("doc miss")
 	}
-	//删除时间索引
-	bt.Del(tkprefix, doc.Time.SortBytes(), id[:])
 	//删除内容
 	bt.Del(ckprefix, id[:])
 	//删除所有的相关索引
@@ -368,7 +470,8 @@ func (sys *leveldbdocsystem) delete(bt *Batch, id DocumentID) error {
 		//正向key
 		bt.Del(fkprefix, iter.Value(), id[:])
 	}
-	return nil
+	//检测是否更新链接关系
+	return sys.deletelink(bt, old)
 }
 
 func (sys *leveldbdocsystem) listtomap(ss []string) map[string]bool {
@@ -389,20 +492,21 @@ func (sys *leveldbdocsystem) maptolist(smap map[string]bool) []string {
 
 //比较原标签和新标签,返回需要删除和添加的标签
 func (sys *leveldbdocsystem) cmptags(o []string, n []string) ([]string, []string) {
-	amap := map[string]bool{}
-	dmap := map[string]bool{}
-	omap := sys.listtomap(o)
-	nmap := sys.listtomap(n)
+	amap, dmap := map[string]bool{}, map[string]bool{}
+	omap, nmap := sys.listtomap(o), sys.listtomap(n)
+	//获取新增的标签
 	for tag := range nmap {
 		if !omap[tag] {
 			amap[tag] = true
 		}
 	}
+	//获取删除的标签
 	for tag := range omap {
 		if !nmap[tag] {
 			dmap[tag] = true
 		}
 	}
+	//返回新增,删除的
 	return sys.maptolist(amap), sys.maptolist(dmap)
 }
 
@@ -417,7 +521,7 @@ func (sys *leveldbdocsystem) settag(bt *Batch, tag string, id DocumentID, del bo
 }
 
 //更新文档
-func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
+func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document, only bool) error {
 	if ndoc.ID.Equal(NilDocumentID) {
 		return fmt.Errorf("id error nil")
 	}
@@ -428,29 +532,28 @@ func (sys *leveldbdocsystem) update(bt *Batch, ndoc *Document) error {
 	}
 	//比较处理标签
 	tadds, tdels := sys.cmptags(odoc.Tags, ndoc.Tags)
+	//新增的标签
 	for _, tag := range tadds {
 		sys.settag(bt, tag, ndoc.ID, false)
 	}
+	//删除的标签
 	for _, tag := range tdels {
 		sys.settag(bt, tag, odoc.ID, true)
 	}
-	//如果内容或者时间不同
-	if ndoc.Time != ndoc.Time || !bytes.Equal(odoc.Body, ndoc.Body) {
-		//更新时间索引
-		bt.Del(tkprefix, odoc.Time.SortBytes(), odoc.ID[:])
-		bt.Put(tkprefix, ndoc.Time.SortBytes(), ndoc.ID[:], ndoc.ID[:])
-		//只要时间或者内容不同都要更新内容
-		bt.Del(ckprefix, odoc.ID[:]) //先删除再添加
-		bt.Put(ckprefix, ndoc.ID[:], ndoc.Encode())
+	//先删除再添加
+	bt.Del(ckprefix, odoc.ID[:])
+	bt.Put(ckprefix, ndoc.ID[:], ndoc.Encode())
+	if only {
+		return nil
 	}
-	return nil
+	return sys.updatelink(bt, odoc, ndoc)
 }
 
 //更新文档
 func (sys *leveldbdocsystem) Update(ndoc ...*Document) error {
 	bt := sys.db.NewBatch()
 	for _, doc := range ndoc {
-		err := sys.update(bt, doc)
+		err := sys.update(bt, doc, false)
 		if err != nil {
 			return err
 		}
@@ -469,17 +572,20 @@ type dociter struct {
 	skip    *int
 	limit   *int
 	stags   *bool //是否使用反向索引查询文档对应的所有tag
-	bytime  bool
-	ittime  *VarUInt
-	byprev  bool //向上
-	bynext  bool //向下
+	byprev  bool  //向上
+	bynext  bool  //向下
 	qall    bool
-	lkey    []byte //qall时保存最后一个key
+	lkey    []byte   //qall时保存最后一个key
+	prefix  [][]byte //qall 时使用的前缀
 }
 
 //获取最后一个key
 func (it *dociter) LastKey() []byte {
 	return it.lkey
+}
+
+func (it *dociter) SetLastKey(lk []byte) {
+	it.lkey = lk
 }
 
 func (it *dociter) ByNext() IDocIter {
@@ -532,83 +638,6 @@ func (it *dociter) isliked(kkey []byte) bool {
 
 func (it *dociter) getTime(k []byte) VarUInt {
 	return VarUInt(binary.BigEndian.Uint64(k[1:]))
-}
-
-func (it *dociter) getTimeIterator(tv VarUInt) *Iterator {
-	s := GetDBKey(tkprefix, tv.SortBytes())
-	l := GetDBKey(tkprefix, []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-	return it.sys.db.Iterator(NewRange(s, l))
-}
-
-func (it *dociter) eachbytime(fn func(doc *Document) error) error {
-	fp := GetDBKey(tkprefix)
-	iter := it.sys.db.Iterator(NewPrefix(fp))
-	defer iter.Close()
-	limit := 0
-	skip := 0
-	finded := false
-	first := true
-	for {
-		if it.ittime != nil && first {
-			titer := it.getTimeIterator(*it.ittime)
-			if titer.Next() {
-				finded = iter.Seek(titer.Key())
-			} else if it.byprev {
-				finded = iter.Last()
-			} else if it.bynext {
-				finded = iter.First()
-			}
-			titer.Close()
-			first = false
-		} else if it.bynext {
-			if first {
-				finded = iter.First()
-				first = false
-			} else {
-				finded = iter.Next()
-			}
-		} else if it.byprev {
-			if first {
-				finded = iter.Last()
-				first = false
-			} else {
-				finded = iter.Prev()
-			}
-		}
-		if !finded {
-			break
-		}
-		if tv := it.getTime(iter.Key()); it.ittime != nil {
-			if it.bynext && tv < *it.ittime {
-				continue
-			}
-			if it.byprev && tv > *it.ittime {
-				continue
-			}
-		}
-		hid := NewDocumentIDFrom(iter.Value())
-		//是否查询相关tags
-		keys := []string{}
-		if it.stags != nil && *it.stags {
-			keys = it.sys.gettags(hid)
-		}
-		if it.skip != nil && skip < *it.skip {
-			skip++
-			continue
-		}
-		doc, err := it.newfkdoc(keys, hid)
-		if err != nil {
-			return err
-		}
-		if it.limit != nil && limit >= *it.limit {
-			break
-		}
-		if err := fn(doc); err != nil {
-			return err
-		}
-		limit++
-	}
-	return nil
 }
 
 func (it *dociter) eachquery(fn func(doc *Document) error) error {
@@ -673,14 +702,20 @@ func (it *dociter) eachquery(fn func(doc *Document) error) error {
 }
 
 func (it *dociter) eachall(fn func(doc *Document) error) error {
-	iter := it.sys.db.Iterator(NewPrefix(ckprefix))
+	ckp := append([]byte{}, ckprefix...)
+	for _, bb := range it.prefix {
+		ckp = append(ckp, bb...)
+	}
+	has := true
+	iter := it.sys.db.Iterator(NewPrefix(ckp))
+	//seek不存志不会继续获取
 	if it.lkey != nil {
-		iter.Seek(it.lkey)
+		has = iter.Seek(it.lkey)
 	}
 	defer iter.Close()
 	limit := 0
 	first := true
-	for {
+	for has {
 		var has bool
 		if it.bynext {
 			has = iter.Next()
@@ -719,18 +754,16 @@ func (it *dociter) Each(fn func(doc *Document) error) error {
 	if it.qall {
 		return it.eachall(fn)
 	}
-	if it.bytime {
-		return it.eachbytime(fn)
-	}
 	return it.eachquery(fn)
 }
 
 //遍历所有文档
-func (sys *leveldbdocsystem) All() IDocIter {
+func (sys *leveldbdocsystem) All(prefix ...[]byte) IDocIter {
 	return &dociter{
 		sys:    sys,
 		qall:   true,
 		bynext: true, //默认向下
+		prefix: prefix,
 	}
 }
 
@@ -745,21 +778,6 @@ func (sys *leveldbdocsystem) Find(key string) IDocIter {
 		bynext:  true,
 		byprev:  false,
 	}
-}
-func (sys *leveldbdocsystem) ByTime(v ...VarUInt) IDocIter {
-	iter := &dociter{
-		sys:     sys,
-		qprefix: false,
-		qlike:   false,
-		qfind:   false,
-		bynext:  true,
-		bytime:  true,
-		byprev:  false,
-	}
-	if len(v) > 0 {
-		iter.ittime = &v[0]
-	}
-	return iter
 }
 
 //按前缀查询文档

@@ -1230,7 +1230,6 @@ func (bi *BlockIndex) ListCoinsWithCB(addr Address, cb func(ckv *CoinKeyValue) b
 			return err
 		}
 		//如果在交易池消费了不显示
-		//消费剩余的会在交易池获取到
 		if tp.IsSpentCoin(ckv) {
 			continue
 		}
@@ -1257,7 +1256,6 @@ func (bi *BlockIndex) ListCoinsWithID(pkh HASH160) (Coins, error) {
 			return nil, err
 		}
 		//如果在交易池消费了不显示
-		//消费剩余的会在交易池获取到
 		if tp.IsSpentCoin(ckv) {
 			continue
 		}

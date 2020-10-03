@@ -10,7 +10,17 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func TestUUID(t *testing.T) {
+	id1 := NewDocumentID(1)
+	id2 := id1.To(2)
+	assert.Equal(t, id1.Type(), byte(1))
+	assert.Equal(t, id2.Type(), byte(2))
+	assert.Equal(t, id1[1:], id2[1:])
+}
 
 func TestHashDumpLoad(t *testing.T) {
 	s1 := "sdfsdf978s9df7s0df7sdf"

@@ -19,8 +19,6 @@ type IListener interface {
 	OnNewBlock(blk *BlockInfo) error
 	//完成区块，当检测完成调用,设置merkle之前
 	OnFinished(blk *BlockInfo) error
-	//当收到网络数据时,数据包根据类型转换成需要的包
-	OnClientMsg(c *Client, msg MsgIO)
 	//当加载交易列表到区块时可用此方法过滤不加入区块的
 	//调用 AddTxs 时会触发
 	OnLoadTxs(txs []*TX) []*TX

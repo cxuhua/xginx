@@ -21,6 +21,14 @@ type ClientMsg struct {
 	m MsgIO
 }
 
+func (msg *ClientMsg) GetMsg() MsgIO {
+	return msg.m
+}
+
+func (msg *ClientMsg) GetClient() *Client {
+	return msg.c
+}
+
 //NewClientMsg 会创建一个新的网络通道数据
 func NewClientMsg(c *Client, m MsgIO) *ClientMsg {
 	return &ClientMsg{

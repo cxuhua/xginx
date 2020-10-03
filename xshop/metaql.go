@@ -38,7 +38,7 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 				mb := p.Source.(*MetaBody)
 				return mb.ID()
 			},
-			Description: "类型",
+			Description: "id",
 		},
 		"type": {
 			Type: BodyType,
@@ -79,6 +79,22 @@ var MetaBodyType = graphql.NewObject(graphql.ObjectConfig{
 				return mb.Index.ToInt(), nil
 			},
 			Description: "输出索引",
+		},
+		"next": {
+			Type: HashType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				mb := p.Source.(*MetaBody)
+				return mb.Next, nil
+			},
+			Description: "下个文档",
+		},
+		"prev": {
+			Type: HashType,
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				mb := p.Source.(*MetaBody)
+				return mb.Prev, nil
+			},
+			Description: "上个文档",
 		},
 	},
 	IsTypeOf: func(p graphql.IsTypeOfParams) bool {

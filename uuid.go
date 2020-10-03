@@ -13,11 +13,25 @@ import (
 	"time"
 )
 
+//第一个字节为分类字节,可分0-254类
 type DocumentID [12]byte
 
 var NilDocumentID DocumentID
 
 var DocumentIDLen = len(NilDocumentID)
+
+//是否是空的id
+func (id DocumentID) IsNil() bool {
+	return id.Equal(NilDocumentID)
+}
+
+func (id DocumentID) Encode(w IWriter) error {
+	return w.WriteFull(id[:])
+}
+
+func (id *DocumentID) Decode(r IReader) error {
+	return r.ReadFull(id[:])
+}
 
 func (id DocumentID) Equal(v DocumentID) bool {
 	return bytes.Equal(id[:], v[:])
@@ -40,6 +54,23 @@ func DocumentIDFromHex(s string) DocumentID {
 	var oid [12]byte
 	copy(oid[:], b[:])
 	return oid
+}
+
+//复制id并转换到指定类型
+func (id DocumentID) To(typ byte) DocumentID {
+	oid := id
+	oid.SetType(typ)
+	return oid
+}
+
+//获取类型字节
+func (id DocumentID) Type() byte {
+	return id[0]
+}
+
+//修改类型字节
+func (id *DocumentID) SetType(typ byte) {
+	id[0] = typ
 }
 
 func (id DocumentID) MarshalJSON() ([]byte, error) {
@@ -104,13 +135,12 @@ func readRandomUint32() uint32 {
 	return (uint32(b[0]) << 0) | (uint32(b[1]) << 8) | (uint32(b[2]) << 16) | (uint32(b[3]) << 24)
 }
 
-func processUniqueBytes() [5]byte {
-	var b [5]byte
+func processUniqueBytes() [4]byte {
+	var b [4]byte
 	_, err := io.ReadFull(rand.Reader, b[:])
 	if err != nil {
 		panic(fmt.Errorf("cannot initialize objectid package with crypto.rand.Reader: %v", err))
 	}
-
 	return b
 }
 
@@ -124,14 +154,19 @@ var objectIDCounter = readRandomUint32()
 
 var processUnique = processUniqueBytes()
 
-func NewDocumentIDFromTimestamp(timestamp time.Time) DocumentID {
+func NewDocumentIDFromTimestamp(typ byte, timestamp time.Time) DocumentID {
 	var b [12]byte
-	binary.BigEndian.PutUint32(b[0:4], uint32(timestamp.Unix()))
-	copy(b[4:9], processUnique[:])
+	b[0] = typ
+	binary.BigEndian.PutUint32(b[1:5], uint32(timestamp.Unix()))
+	copy(b[5:9], processUnique[:])
 	putUint24(b[9:12], atomic.AddUint32(&objectIDCounter, 1))
 	return b
 }
 
-func NewDocumentID() DocumentID {
-	return NewDocumentIDFromTimestamp(time.Now())
+func NewDocumentID(typ ...byte) DocumentID {
+	t := byte(0)
+	if len(typ) > 0 {
+		t = typ[0]
+	}
+	return NewDocumentIDFromTimestamp(t, time.Now())
 }

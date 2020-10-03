@@ -161,11 +161,11 @@ var AccountType = graphql.NewEnum(graphql.EnumConfig{
 	Name: "AccountType",
 	Values: graphql.EnumValueConfigMap{
 		"COIN": {
-			Value:       1,
+			Value:       xginx.CoinAccountType,
 			Description: "金额账户",
 		},
 		"TEMP": {
-			Value:       2,
+			Value:       xginx.TempAccountType,
 			Description: "临时账户",
 		},
 	},
@@ -175,12 +175,14 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 	Name: "CreateAccountInput",
 	Fields: graphql.InputObjectConfigFieldMap{
 		"num": {
-			Type:        graphql.NewNonNull(graphql.Int),
-			Description: "密钥数量",
+			Type:         graphql.NewNonNull(graphql.Int),
+			DefaultValue: 1,
+			Description:  "密钥数量",
 		},
 		"less": {
-			Type:        graphql.NewNonNull(graphql.Int),
-			Description: "需要通过签名的密钥数量",
+			Type:         graphql.NewNonNull(graphql.Int),
+			DefaultValue: 1,
+			Description:  "需要通过签名的密钥数量",
 		},
 		"arb": {
 			Type:         graphql.Boolean,
@@ -198,7 +200,7 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 		},
 		"type": {
 			Type:         graphql.NewNonNull(AccountType),
-			DefaultValue: 1,
+			DefaultValue: xginx.CoinAccountType,
 			Description:  "账户类型",
 		},
 	},
@@ -208,7 +210,7 @@ var CreateAccountInput = graphql.NewInputObject(graphql.InputObjectConfig{
 var createAccount = &graphql.Field{
 	Name: "createAccount",
 	Args: graphql.FieldConfigArgument{
-		"info": {
+		"args": {
 			Type:        graphql.NewNonNull(CreateAccountInput),
 			Description: "账户信息描述",
 		},
@@ -216,7 +218,7 @@ var createAccount = &graphql.Field{
 	Type: graphql.String,
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		ka := &xginx.AccountInfo{}
-		err := DecodeArgs(p, ka, "info")
+		err := DecodeArgs(p, ka, "args")
 		if err != nil {
 			return NewError(1, err)
 		}

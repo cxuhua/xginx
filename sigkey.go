@@ -585,6 +585,17 @@ func EncodeAddressWithPrefix(prefix string, pkh HASH160) (string, error) {
 	return addr, nil
 }
 
+//DecodeAddressWithPrefix 编码地址用指定前缀
+func DecodeAddressWithPrefix(addr string) (string, HASH160, error) {
+	pre, hash, err := SegWitAddressDecode(addr)
+	if err != nil {
+		return "", ZERO160, err
+	}
+	id := HASH160{}
+	copy(id[:], hash)
+	return pre, id, err
+}
+
 //EncodePublicHash 编码公钥hash
 func EncodePublicHash(pkh HASH256) (string, error) {
 	ver := byte(0)
