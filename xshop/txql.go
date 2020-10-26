@@ -1052,7 +1052,7 @@ var listTxPool = &graphql.Field{
 	},
 }
 
-//从交易加载交易对
+//从购买交易加载交易对
 func LoadPairWithTx(objs Objects, bb []byte) (*MetaTxOutPair, error) {
 	r := xginx.NewReader(bb)
 	tx := &xginx.TX{}
@@ -1060,8 +1060,7 @@ func LoadPairWithTx(objs Objects, bb []byte) (*MetaTxOutPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	stx := NewPurchaseTX(tx)
-	return stx.NewPair(objs)
+	return NewPurchaseTX(tx).NewPair(objs)
 }
 
 var loadMetaPair = &graphql.Field{
