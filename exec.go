@@ -1154,7 +1154,7 @@ func (tx *TX) ExecScript(bi *BlockIndex) error {
 		//无脚本不执行
 		return nil
 	}
-	//交易脚本执行时间为cpu/2
+	//交易脚本执行时间为指定总时间/2
 	exectime := time.Duration(txs.ExeTime/2) * time.Millisecond
 	//限制时间
 	ctx, cancel := context.WithTimeout(context.Background(), exectime)
@@ -1173,6 +1173,7 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits *WitnessScript, lcks *Locke
 		//无脚本不执行
 		return nil
 	}
+	//获取交易脚本
 	txs, err := sr.tx.Script.ToTxScript()
 	if err != nil {
 		return err
@@ -1189,11 +1190,11 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits *WitnessScript, lcks *Locke
 	//输入和输出锁定脚本在两个不同的环境中执行，使用这个map传递数据
 	//只用于签名脚本输入输出传递信息
 	ctx = context.WithValue(ctx, transKey, newTransOutMap(ctx))
-	//编译输入脚本 执行错误返回
+	//编译执行输入脚本
 	if err := compileExecScript(ctx, ExecTypeInMain, 1, wits.Exec); err != nil {
 		return err
 	}
-	//编译输出脚本
+	//编译执行输出脚本
 	if err := compileExecScript(ctx, ExecTypeOutMain, 2, lcks.Exec); err != nil {
 		return err
 	}

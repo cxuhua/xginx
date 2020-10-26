@@ -16,14 +16,6 @@ import (
 	"github.com/graphql-go/graphql"
 )
 
-//消息广播类型定义 定制 xginx.MsgBroadInfo 消息
-const (
-	//出售广播类型
-	MsgActionSellMeta = uint8(0xf0) // ShopMeta
-	//购买交易
-	MsgActionPurchaseTx = uint8(0xf1) // xginx.TX 收到交易信息,如果正确签名发布交易
-)
-
 //从交易中分离出meta数据
 func SeparateMetaBodyFromTx(tx *xginx.TX, typ byte) []*MetaBody {
 	mbs := []*MetaBody{}
@@ -652,7 +644,7 @@ var purchaseProduct = &graphql.Field{
 		"fee": {
 			Type:         graphql.Int,
 			DefaultValue: 0,
-			Description:  "交易费",
+			Description:  "区块交易费",
 		},
 		"deposit": {
 			Type:         graphql.Int,
@@ -716,17 +708,17 @@ var purchaseProduct = &graphql.Field{
 		}
 		//转换为卖出类型ID
 		args.PID = args.PID.To(bmeta.Type)
-		//设置产品ID,转换为出售ID
+		//设置产品ID,要购买的产品id
 		bmeta.Eles[PurchaseProductUUIDEleIndex] = MetaEle{
 			Type: MetaEleUUID,
 			Body: args.PID.String(),
 		}
-		//设置2-2部分密钥
+		//设置2-2部分密钥,买方参与的私钥id
 		bmeta.Eles[PurchaseProductPartKIDIndex] = MetaEle{
 			Type: MetaEleKID,
 			Body: args.KID,
 		}
-		//设置加密公钥
+		//设置加密公钥,使用哪个公钥加密信息
 		bmeta.Eles[PurchaseProductRSAIDIndex] = MetaEle{
 			Type: MetaEleTEXT,
 			Body: rsapub.MustID(),
@@ -736,30 +728,35 @@ var purchaseProduct = &graphql.Field{
 		if err != nil {
 			return NewError(108, err)
 		}
-		//加密信息并设置到meta
+		//加密信息并设置到meta base64 编码
 		bmeta.Eles = append(bmeta.Eles, MetaEle{
 			Type: MetaEleTEXT,
 			Body: base64.StdEncoding.EncodeToString(sinfo),
 		})
 		//获取产品所在的输出
-		_, txout, err := meta.GetTX(bi)
+		tx, stx, err := meta.GetTX(bi)
 		if err != nil {
 			return NewError(109, err)
 		}
-		smeta, err := bmeta.To()
-		if err != nil {
+		//验证交易
+		if err := tx.Verify(bi); err != nil {
 			return NewError(110, err)
 		}
+		smeta, err := bmeta.To()
+		if err != nil {
+			return NewError(111, err)
+		}
+		//把所有的金额转入双方控制的地址
 		receiver := []ReceiverInfo{
 			{
-				Addr:   acc.MustAddress(),                        //转入控制地址
-				Amount: txout.Value + txout.Value + args.Deposit, //包括商品本身的价值+抵押金额
-				Meta:   string(smeta),                            //购买信息
-				Script: string(xginx.DefaultLockedScript),        //默认解锁脚本
+				Addr:   acc.MustAddress(),                    //转入控制地址
+				Amount: stx.Value + stx.Value + args.Deposit, //包括商品本身的价值*2+抵押金额
+				Meta:   string(smeta),                        //购买信息
+				Script: string(xginx.DefaultLockedScript),    //默认解锁脚本
 			},
 		}
 		//获取锁定脚本
-		lcks, err := txout.Script.ToLocked()
+		lcks, err := stx.Script.ToLocked()
 		if err != nil {
 			return NewError(112, err)
 		}
@@ -780,7 +777,7 @@ var purchaseProduct = &graphql.Field{
 		senders = append(senders, stmps...)
 		//创建购买交易
 		lis := objs.NewTrans(senders, receiver, MetaTypePurchase)
-		tx, err := lis.NewTx(args.Fee)
+		tx, err = lis.NewTx(args.Fee)
 		if err != nil {
 			return NewError(114, err)
 		}
@@ -808,11 +805,11 @@ var sellProduct = &graphql.Field{
 	Type: graphql.NewNonNull(TXType),
 	Args: graphql.FieldConfigArgument{
 		"sender": {
-			Type:        graphql.NewList(SenderInput),
+			Type:        graphql.NewList(graphql.NewNonNull(SenderInput)),
 			Description: "使用哪些金额作为产品保证金",
 		},
 		"receiver": {
-			Type:        graphql.NewNonNull(graphql.NewList(graphql.NewNonNull(ReceiverInput))),
+			Type:        graphql.NewList(graphql.NewNonNull(ReceiverInput)),
 			Description: "带metabody的产品信息的输出",
 		},
 		"fee": {

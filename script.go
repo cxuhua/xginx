@@ -256,7 +256,7 @@ func (s Script) Encode(w IWriter) error {
 	return VarBytes(s).Encode(w)
 }
 
-//ForID 为计算id编码
+//ForID 为计算id编码脚本数据
 func (s Script) ForID(w IWriter) error {
 	if s.IsCoinBase() {
 		return s.Encode(w)
@@ -269,7 +269,7 @@ func (s Script) ForID(w IWriter) error {
 	}
 }
 
-//ForVerify 签名，验证写入
+//ForVerify 脚本签名数据
 func (s Script) ForVerify(w IWriter) error {
 	wit, err := s.ToWitness()
 	if err != nil {
@@ -390,10 +390,10 @@ func (s Script) Height() uint32 {
 
 //LockedScript 标准锁定脚本
 type LockedScript struct {
-	Type uint8
-	Pkh  HASH160
-	Meta VarBytes // len < MaxMetaSize
-	Exec VarBytes
+	Type uint8    //类型
+	Pkh  HASH160  //地址hash
+	Meta VarBytes //信息数据 len < MaxMetaSize
+	Exec VarBytes //解锁执行脚本
 }
 
 //Address 获取地址

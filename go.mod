@@ -5,10 +5,10 @@ go 1.13
 require (
 	github.com/alibaba/sentinel-golang v0.4.0
 	github.com/cxuhua/gopher-lua v1.0.1
+	github.com/cxuhua/handler v0.2.8
 	github.com/cxuhua/lzma v0.1.2
 	github.com/functionalfoundry/graphqlws v0.0.0-20200611113535-7bc58903ce7b
 	github.com/graphql-go/graphql v0.7.9
-	github.com/cxuhua/handler v0.2.6
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.10
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect

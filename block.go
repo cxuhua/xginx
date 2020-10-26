@@ -1063,7 +1063,7 @@ func (in *TxIn) IsCoinBase() bool {
 
 //TxOut 交易输出
 type TxOut struct {
-	Value  Amount //距离奖励 GetRewardRate 计算比例，所有输出之和不能高于总奖励
+	Value  Amount //输出金额
 	Script Script //锁定脚本
 	pool   bool   //是否来自交易池中的交易
 }

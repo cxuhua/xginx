@@ -111,75 +111,65 @@ var CoinType = graphql.NewObject(graphql.ObjectConfig{
 })
 
 var listCoin = &graphql.Field{
-	Type: graphql.NewObject(graphql.ObjectConfig{
-		Name: "ListCoin",
-		Fields: graphql.Fields{
-			"list": &graphql.Field{
-				Args: graphql.FieldConfigArgument{
-					"addr": {
-						Type:         graphql.NewNonNull(graphql.String),
-						DefaultValue: nil,
-						Description:  "账户地址",
-					},
-					"state": {
-						Type:         CoinState,
-						DefaultValue: 0,
-						Description:  "按状态查询",
-					},
-					"fee": {
-						Type:         graphql.Int,
-						DefaultValue: 0,
-						Description:  "按金额返回可用的金额",
-					},
-				},
-				Type:        graphql.NewList(CoinType),
-				Description: "获取地址金额信息",
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					args := struct {
-						Addr  xginx.Address
-						State int
-						Fee   xginx.Amount
-					}{}
-					err := DecodeArgs(p, &args)
-					if err != nil {
-						return NewError(100, err)
-					}
-					bi := p.Source.(*xginx.BlockIndex)
-					if args.Fee > 0 {
-						coins := xginx.Coins{}
-						spent := bi.NextHeight()
-						err := bi.ListCoinsWithCB(args.Addr, func(ckv *xginx.CoinKeyValue) bool {
-							//不成熟的忽略
-							if !ckv.IsMatured(spent) {
-								return true
-							}
-							coins = append(coins, ckv)
-							args.Fee -= ckv.Value
-							return args.Fee > 0
-						})
-						return coins, err
-					}
-					coins, err := bi.ListCoins(args.Addr)
-					if err != nil {
-						return nil, err
-					}
-					if args.State == 0 {
-						return coins.All.Sort(), nil
-					}
-					if args.State == 1 {
-						return coins.Locks.Sort(), nil
-					}
-					if args.State == 2 {
-						return coins.Coins.Sort(), nil
-					}
-					return nil, fmt.Errorf("state args %d error", args.State)
-				},
-			},
+	Name: "ListCoin",
+	Args: graphql.FieldConfigArgument{
+		"addr": {
+			Type:         graphql.NewNonNull(graphql.String),
+			DefaultValue: nil,
+			Description:  "账户地址",
 		},
-	}),
-	Description: "查询金额相关信息",
+		"state": {
+			Type:         CoinState,
+			DefaultValue: 0,
+			Description:  "按状态查询",
+		},
+		"fee": {
+			Type:         graphql.Int,
+			DefaultValue: 0,
+			Description:  "按金额返回可用的金额",
+		},
+	},
+	Type:        graphql.NewList(graphql.NewNonNull(CoinType)),
+	Description: "获取地址金额信息",
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-		objs := Objects(p.Info.RootValue.(map[string]interface{}))
-		return objs.BlockIndex(), nil
+		args := struct {
+			Addr  xginx.Address
+			State int
+			Fee   xginx.Amount
+		}{}
+		err := DecodeArgs(p, &args)
+		if err != nil {
+			return NewError(100, err)
+		}
+		objs := GetObjects(p)
+		bi := objs.BlockIndex()
+		if args.Fee > 0 {
+			coins := xginx.Coins{}
+			spent := bi.NextHeight()
+			err := bi.ListCoinsWithCB(args.Addr, func(ckv *xginx.CoinKeyValue) bool {
+				//不成熟的忽略
+				if !ckv.IsMatured(spent) {
+					return true
+				}
+				coins = append(coins, ckv)
+				args.Fee -= ckv.Value
+				return args.Fee > 0
+			})
+			return coins, err
+		}
+		coins, err := bi.ListCoins(args.Addr)
+		if err != nil {
+			return nil, err
+		}
+		if args.State == 0 {
+			return coins.All.Sort(), nil
+		}
+		if args.State == 1 {
+			return coins.Locks.Sort(), nil
+		}
+		if args.State == 2 {
+			return coins.Coins.Sort(), nil
+		}
+		return nil, fmt.Errorf("state args %d error", args.State)
 	},
 }

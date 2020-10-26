@@ -294,7 +294,7 @@ func (lis *shoplistener) rootFn(ctx context.Context, r *http.Request, opts *hand
 	return lis.NewObjects(opts)
 }
 
-func (lis *shoplistener) exitFn(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+func (lis *shoplistener) exitFn(ctx context.Context, w http.ResponseWriter, r *http.Request, buf []byte) {
 
 }
 
@@ -312,12 +312,13 @@ func (lis *shoplistener) startgraphql(host string) {
 	//订阅初始化
 	lis.gqlsubmgr = graphqlws.NewSubscriptionManager(lis.gqlschema)
 	conf := &handler.Config{
-		Title:    "eshop文档接口",
-		Schema:   lis.gqlschema,
-		Pretty:   true,
-		GraphiQL: true,
-		RootFn:   lis.rootFn,
-		ExitFn:   lis.exitFn,
+		Title:        "eshop文档接口",
+		Schema:       lis.gqlschema,
+		Pretty:       true,
+		GraphiQL:     true,
+		Subscription: "ws://" + urlv.Host + "/subscriptions",
+		EntryFn:      lis.rootFn,
+		ExitFn:       lis.exitFn,
 	}
 	lis.gqlhandler = handler.New(conf)
 	mux := http.NewServeMux()
@@ -325,8 +326,10 @@ func (lis *shoplistener) startgraphql(host string) {
 		SubscriptionManager: lis.gqlsubmgr,
 	}))
 	mux.Handle("/"+urlv.Scheme, lis)
-	//http://127.0.0.1:9334/swap/tx?rsa=rsaxxxx
+	//数据交换协议地址:http://127.0.0.1:9334/swap/tx?rsa=rsaxxxx
 	mux.Handle("/swap/tx", &httptxswap{objs: lis.NewObjects()})
+	//文件服务
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./public"))))
 	lis.gqlhttp = &http.Server{
 		Addr:    urlv.Host,
 		Handler: mux,
