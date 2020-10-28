@@ -99,10 +99,7 @@ func (lis *shoplistener) onNewScriptMeta(ctx context.Context, tx *xginx.TX, idx 
 		doc.Index = xginx.VarUInt(idx)
 		err = lis.docdb.Update(doc)
 	}
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (lis *shoplistener) OnLinkBlock(blk *xginx.BlockInfo) {
@@ -140,7 +137,7 @@ func (lis *shoplistener) TimeNow() uint32 {
 //OnUnlinkBlock 区块断开
 func (lis *shoplistener) OnUnlinkBlock(blk *xginx.BlockInfo) {
 	ctx := xginx.GetContext()
-	//处理是否有新产品移除
+	//处理是否有新产品
 	blk.EachOutScript(func(tx *xginx.TX, idx int, script *xginx.LockedScript) {
 		if script.Meta.Len() == 0 {
 			return

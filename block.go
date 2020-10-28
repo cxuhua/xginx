@@ -688,7 +688,7 @@ func (blk *BlockInfo) GetFee(bi *BlockIndex) (Amount, error) {
 		if tx.IsCoinBase() {
 			continue
 		}
-		f, err := tx.GetTransAmount(bi)
+		f, err := tx.GetFeeAmount(bi)
 		if err != nil {
 			return fee, err
 		}
@@ -1472,9 +1472,9 @@ func (tx *TX) CoinbaseFee() (Amount, error) {
 	return fee, nil
 }
 
-//GetTransFee 获取此交易交易费
+//GetFeeAmount 获取此交易交易费
 //如果是coinase返回coinbase输出金额
-func (tx *TX) GetTransAmount(bi *BlockIndex) (Amount, error) {
+func (tx *TX) GetFeeAmount(bi *BlockIndex) (Amount, error) {
 	if tx.IsCoinBase() {
 		return tx.CoinbaseFee()
 	}

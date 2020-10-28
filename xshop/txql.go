@@ -95,8 +95,8 @@ var MetaTxOutType = graphql.NewObject(graphql.ObjectConfig{
 })
 
 type MetaTxOutPair struct {
-	Purchase *MetaTxOut
-	Sell     *MetaTxOut
+	Purchase *MetaTxOut //购买meta
+	Sell     *MetaTxOut //出售meta
 }
 
 var PairAmountType = graphql.NewObject(graphql.ObjectConfig{
@@ -126,12 +126,12 @@ var PairAmountType = graphql.NewObject(graphql.ObjectConfig{
 			},
 			Description: "抵押金=出价-卖价",
 		},
-		"trans": {
+		"fee": {
 			Type: AmountType,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				objs := GetObjects(p)
 				v := p.Source.(*MetaTxOutPair)
-				return v.GetTransAmount(objs)
+				return v.GetFeeAmount(objs)
 			},
 			Description: "交易费",
 		},
@@ -217,8 +217,8 @@ func (pair *MetaTxOutPair) GetPayAmount() (xginx.Amount, error) {
 }
 
 //获取交易费
-func (pair *MetaTxOutPair) GetTransAmount(objs Objects) (xginx.Amount, error) {
-	a, err := pair.Purchase.Tx.GetTransAmount(objs.BlockIndex())
+func (pair *MetaTxOutPair) GetFeeAmount(objs Objects) (xginx.Amount, error) {
+	a, err := pair.Purchase.Tx.GetFeeAmount(objs.BlockIndex())
 	if err != nil {
 		return 0, err
 	}
@@ -327,13 +327,13 @@ func (mbt *MetaTxOut) UUID() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		sid := fmt.Sprintf("%s%.4d", id.String(), mbt.Index)
+		sid := fmt.Sprintf("%s%d", id.String(), mbt.Index)
 		return []string{sid}, nil
 	}
 	if mbt.Meta.Type == MetaTypePurchase {
 		ids := []string{}
 		for _, in := range mbt.Tx.Ins {
-			id := fmt.Sprintf("%s%.4d", in.OutHash.String(), in.OutIndex.ToInt())
+			id := fmt.Sprintf("%s%d", in.OutHash.String(), in.OutIndex.ToInt())
 			ids = append(ids, id)
 		}
 		return ids, nil
@@ -392,7 +392,7 @@ func (stx *PurchaseTX) FindMeta() (*MetaTxOut, error) {
 	return nil, fmt.Errorf("not found")
 }
 
-//获取购买交易对
+//获取买卖交易对
 func (stx *PurchaseTX) NewPair(objs Objects) (*MetaTxOutPair, error) {
 	//获取购买信息
 	pmb, err := stx.FindMeta()
@@ -468,7 +468,7 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 			return nil, err
 		}
 		tx.Ins = append(tx.Ins, in)
-		//保存最后一个地址
+		//保存最后一个找零地址
 		if sender.Keep {
 			keepaddr = coin.GetAddress()
 		}
@@ -1064,7 +1064,7 @@ func LoadPairWithTx(objs Objects, bb []byte) (*MetaTxOutPair, error) {
 }
 
 var loadMetaPair = &graphql.Field{
-	Name: "loadMetaPair",
+	Name: "LoadMetaPair",
 	Type: graphql.NewNonNull(MetaTxOutPairType),
 	Args: graphql.FieldConfigArgument{
 		"data": {
@@ -1074,12 +1074,11 @@ var loadMetaPair = &graphql.Field{
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		objs := GetObjects(p)
-		args := &EncodedTx{}
-		err := DecodeArgs(p, args)
-		if err != nil || args.Data == "" {
-			return NewError(100, err)
+		data := p.Args["data"].(string)
+		if data == "" {
+			return NewError(100, "data args error")
 		}
-		bb, err := base64.StdEncoding.DecodeString(args.Data)
+		bb, err := base64.StdEncoding.DecodeString(data)
 		if err != nil {
 			return NewError(101, err)
 		}
@@ -1149,8 +1148,8 @@ var ReceiverInput = graphql.NewInputObject(graphql.InputObjectConfig{
 			Description: "转账金额",
 		},
 		"meta": {
-			Type:        graphql.String,
-			Description: "输出meta数据",
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "输出meta数据(使用id)",
 		},
 		"script": {
 			Type:         graphql.String,

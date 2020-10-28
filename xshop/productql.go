@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cxuhua/lzma"
+
 	"github.com/cxuhua/xginx"
 
 	"github.com/graphql-go/graphql"
@@ -158,7 +160,7 @@ func (mb MetaBody) GetEle(idx int) (MetaEle, error) {
 }
 
 //根据rsaid获取购买发布地址
-func (mb MetaBody) GetSellURL(rsaId string) (*url.URL, error) {
+func (mb MetaBody) GetSellURL() (*url.URL, error) {
 	if mb.Type != MetaTypeSell {
 		return nil, fmt.Errorf("mb type error")
 	}
@@ -166,7 +168,12 @@ func (mb MetaBody) GetSellURL(rsaId string) (*url.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	urls := ele.Body + "?rsa=" + rsaId
+	//获取信息加密用公钥
+	rsapub, err := mb.GetSellRSA()
+	if err != nil {
+		return nil, err
+	}
+	urls := ele.Body + "?rsa=" + rsapub.MustID()
 	return url.Parse(urls)
 }
 
@@ -594,6 +601,21 @@ type EncodedTx struct {
 	RSA  string `json:"rsa"`
 }
 
+//上传data到指定的地址
+func (etx *EncodedTx) Upload(ctx context.Context, urlv url.URL) error {
+	//压缩上传
+	data, err := base64.StdEncoding.DecodeString(etx.Data)
+	if err != nil {
+		return err
+	}
+	zip, err := lzma.Compress(data)
+	if err != nil {
+		return err
+	}
+	print(zip)
+	return nil
+}
+
 var EncodedTxType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "EncodedTx",
 	Fields: graphql.Fields{
@@ -651,6 +673,11 @@ var purchaseProduct = &graphql.Field{
 			DefaultValue: 0,
 			Description:  "押金,抵押更多的金额保证安全,交易确认后退回给买家",
 		},
+		"upload": {
+			Type:         graphql.Boolean,
+			DefaultValue: false,
+			Description:  "是否上传到卖家指定的地址",
+		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 		args := struct {
@@ -660,6 +687,7 @@ var purchaseProduct = &graphql.Field{
 			Info    string
 			Fee     xginx.Amount
 			Deposit xginx.Amount
+			Upload  bool
 		}{}
 		err := DecodeArgs(p, &args)
 		if err != nil {
@@ -679,7 +707,7 @@ var purchaseProduct = &graphql.Field{
 		if err != nil {
 			return NewError(101, err)
 		}
-		//获取信息并且带扩展信息
+		//获取产品信息
 		meta, err := GetMetaBody(docdb, args.PID)
 		if err != nil {
 			return NewError(102, err)
@@ -755,12 +783,12 @@ var purchaseProduct = &graphql.Field{
 				Script: string(xginx.DefaultLockedScript),    //默认解锁脚本
 			},
 		}
-		//获取锁定脚本
+		//获取产品所在输出锁定脚本
 		lcks, err := stx.Script.ToLocked()
 		if err != nil {
 			return NewError(112, err)
 		}
-		//添加默认的购买产品输入,指向产品输出
+		//卖家的产品押金
 		senders := []SenderInfo{{
 			Addr:   lcks.Address(),
 			TxID:   meta.TxID,
@@ -768,7 +796,7 @@ var purchaseProduct = &graphql.Field{
 			Script: string(xginx.DefaultInputScript),
 			Keep:   false,
 		}}
-		//其他输入,必须先消耗产品输出
+		//其他输入,包括买家购买金额和抵押金额
 		stmps := []SenderInfo{}
 		err = DecodeArgs(p, &stmps, "sender")
 		if err != nil {
@@ -795,6 +823,17 @@ var purchaseProduct = &graphql.Field{
 		info := &EncodedTx{}
 		info.RSA = rsapub.MustID()
 		info.Data = base64.StdEncoding.EncodeToString(w.Bytes())
+		//如果需要上传
+		if args.Upload {
+			url, err := meta.GetSellURL()
+			if err != nil {
+				return NewError(116, err)
+			}
+			err = info.Upload(p.Context, *url)
+			if err != nil {
+				return NewError(117, err)
+			}
+		}
 		return info, nil
 	},
 	Description: "生成购买交易",
@@ -813,8 +852,9 @@ var sellProduct = &graphql.Field{
 			Description: "带metabody的产品信息的输出",
 		},
 		"fee": {
-			Type:        graphql.NewNonNull(graphql.Int),
-			Description: "交易费",
+			Type:         graphql.Int,
+			DefaultValue: 0,
+			Description:  "交易费",
 		},
 	},
 	Resolve: func(p graphql.ResolveParams) (interface{}, error) {
@@ -828,20 +868,19 @@ var sellProduct = &graphql.Field{
 		if err != nil {
 			return NewError(101, err)
 		}
+		//可一次发送多个
 		for _, v := range receiver {
 			if v.Meta == "" {
 				return NewError(102, "meta args miss", err, v.Meta)
 			}
 			//上传产品时meta代表产品id,优先从docdb获取
 			docid := xginx.DocumentIDFromHex(v.Meta)
-			if docid.Equal(xginx.NilDocumentID) {
+			if docid.IsNil() {
 				return NewError(103, "docid error")
 			}
 		}
+		//交易费
 		fee := p.Args["fee"].(int)
-		if fee == 0 {
-			return NewError(104, "fee error,must > 0")
-		}
 		objs := GetObjects(p)
 		bi := objs.BlockIndex()
 		//上传产品创建

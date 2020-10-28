@@ -357,7 +357,7 @@ func CheckScript(codes ...[]byte) error {
 	defer l.Close()
 	buf := NewReadWriter()
 	for _, vb := range codes {
-		buf.WriteFull(vb)
+		_ = buf.WriteFull(vb)
 	}
 	if buf.Len() > MaxExecSize {
 		return fmt.Errorf("script %s ,too big > %d", string(buf.Bytes()), MaxExecSize)
@@ -487,7 +487,7 @@ func transMapValueHas(l *lua.LState) int {
 		l.RaiseError("args 1 empty error")
 	}
 	tmap := getEnvTransMap(l.Context())
-	if tmap == nil {
+	if tmap == nil || tmap.kvs == nil {
 		l.RaiseError("trans map miss")
 	}
 	_, b := tmap.kvs[key]
@@ -517,17 +517,17 @@ func transMapValueGet(l *lua.LState) int {
 	if !b {
 		l.Push(lua.LNil)
 	} else {
-		switch v.(type) {
+		switch pv := v.(type) {
 		case int64:
-			l.Push(lua.LNumber(v.(int64)))
+			l.Push(lua.LNumber(pv))
 		case float64:
-			l.Push(lua.LNumber(v.(float64)))
+			l.Push(lua.LNumber(pv))
 		case bool:
-			l.Push(lua.LBool(v.(bool)))
+			l.Push(lua.LBool(pv))
 		case string:
-			l.Push(lua.LString(v.(string)))
+			l.Push(lua.LString(pv))
 		case *lua.LTable:
-			l.Push(v.(*lua.LTable))
+			l.Push(pv)
 		default:
 			l.Push(lua.LNil)
 		}
@@ -610,7 +610,7 @@ func setTxBlockTable(l *lua.LState, tbl *lua.LTable, bi *BlockIndex, tx *TX) err
 	//是否是coinbase
 	kvs("cbb", lua.LBool(tx.IsCoinBase()))
 	//交易费,如果是coinbase，这个返回coinbase输出金额
-	fee, err := tx.GetTransAmount(bi)
+	fee, err := tx.GetFeeAmount(bi)
 	if err != nil {
 		return err
 	}
