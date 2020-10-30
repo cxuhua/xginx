@@ -6,16 +6,16 @@ import (
 	"unsafe"
 )
 
-//使用:go tool cgo lua.go 生成导出给c调用
+//使用:go tool cgo xlua.go 生成导出给c调用
 //export Panic
 func Panic(msg string) {
 	panic(fmt.Errorf(msg))
 }
 
 //export CallGoFunc
-func CallGoFunc(s unsafe.Pointer, f unsafe.Pointer) {
+func CallGoFunc(s unsafe.Pointer, f unsafe.Pointer) int {
 	sp := (*luastate)(s)
-	(*(*LuaFunc)(f))(sp)
+	return (*(*LuaFunc)(f))(sp)
 }
 
 //export LuaOnStep

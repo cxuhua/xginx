@@ -261,7 +261,7 @@ typedef StackValue *StkId;
 ** Common Header for all collectable objects (in macro form, to be
 ** included in other objects)
 */
-#define CommonHeader	struct GCObject *next; lu_byte tt; lu_byte marked; void *goptr
+#define CommonHeader	struct GCObject *next; lu_byte tt; lu_byte marked
 
 
 /* Common type for all collectable objects */
