@@ -19,15 +19,17 @@ func TestArray(t *testing.T) {
 
 	assert.Equal(t, l.GetTop(), 0)
 	l.NewTable()
-	assert.Equal(t, l.GetTop(), 1)
-	l.SetArray(-1, 1, "11")
-	l.SetArray(-1, 2, "22")
-	l.SetArray(-1, 3, "33")
-	assert.Equal(t, l.GetTop(), 1)
-	ll, ok := l.IsArray(-1)
+	l.PushStr("11")
+	assert.Equal(t, l.GetTop(), 2)
+	l.SetArray(-2, 1, "11")
+	l.SetArray(-2, 2, "22")
+	l.SetArray(-2, 3, "33")
+	assert.Equal(t, l.GetTop(), 2)
+	ll, ok := l.IsArray(-2)
 	assert.True(t, ok)
 	assert.Equal(t, ll, 3)
-	assert.Equal(t, l.GetTop(), 1)
+	assert.Equal(t, l.GetTop(), 2)
+	l.Pop(1)
 	l.SetGlobal("tbl")
 	assert.Equal(t, l.GetTop(), 0)
 	err := l.Exec([]byte(`return tbl`))
@@ -42,6 +44,21 @@ func TestArray(t *testing.T) {
 	assert.Equal(t, l.GetArray(-1, 1), "11")
 	assert.Equal(t, l.GetArray(-1, 2), "22")
 	assert.Equal(t, l.GetTop(), 1)
+	//test table
+	tbl := l.ToTable(-1)
+	vars := []string{}
+	tbl.ForEach(func() bool {
+		vars = append(vars, l.ToStr(-1))
+		return true
+	})
+	assert.Equal(t, vars, []string{"11", "22", "33"})
+	assert.Equal(t, l.GetTop(), 1)
+	assert.Equal(t, tbl.Get(3), "33")
+	assert.Equal(t, tbl.Get(1), "11")
+	assert.Equal(t, tbl.Get(2), "22")
+	tbl.Set(4, 4)
+	assert.Equal(t, l.GetTop(), 1)
+	assert.Equal(t, tbl.Get(4), int64(4))
 }
 
 func TestForEach(t *testing.T) {

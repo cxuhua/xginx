@@ -26,17 +26,102 @@ var (
 )
 
 const (
-	TNIL     = C.LUA_TNIL
-	TBOOLEAN = C.LUA_TBOOLEAN
-	TNUMBER  = C.LUA_TNUMBER
-	TSTRING  = C.LUA_TSTRING
-	TTABLE   = C.LUA_TTABLE
+	TNIL      = C.LUA_TNIL
+	TBOOLEAN  = C.LUA_TBOOLEAN
+	TNUMBER   = C.LUA_TNUMBER
+	TSTRING   = C.LUA_TSTRING
+	TTABLE    = C.LUA_TTABLE
+	TFUNCTION = C.LUA_TFUNCTION
 )
 
 type ITable interface {
+	Set(k interface{}, v interface{})
+	Get(k interface{}) interface{}
+	ForEach(fn func() bool)
+	IsArray(lp ...*int) bool
 }
 
 type table struct {
+	l   ILuaState
+	idx int
+}
+
+func (tbl *table) IsArray(lp ...*int) bool {
+	ll, ok := tbl.l.IsArray(tbl.idx)
+	if len(lp) > 0 && lp[0] != nil {
+		*lp[0] = ll
+	}
+	return ok
+}
+
+func (tbl *table) Set(k interface{}, v interface{}) {
+	switch kt := k.(type) {
+	case int:
+		tbl.l.SetArray(tbl.idx, kt, v)
+	case *int:
+		tbl.l.SetArray(tbl.idx, *kt, v)
+	case int16:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case int32:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case int64:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case uint:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case uint16:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case uint32:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case uint64:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case string:
+		tbl.l.SetValue(tbl.idx, kt, v)
+	case *string:
+		tbl.l.SetValue(tbl.idx, *kt, v)
+	default:
+		panic(fmt.Errorf("not support key type %v", k))
+	}
+}
+
+//-2 -> key -1 ->value
+func (tbl *table) ForEach(fn func() bool) {
+	tbl.l.PushNil()
+	for tbl.l.Next(tbl.idx-1) != TNIL {
+		if !fn() {
+			tbl.l.Pop(2)
+			break
+		}
+		tbl.l.Pop(1)
+	}
+}
+
+func (tbl *table) Get(k interface{}) interface{} {
+	switch kt := k.(type) {
+	case int:
+		return tbl.l.GetArray(tbl.idx, kt)
+	case *int:
+		return tbl.l.GetArray(tbl.idx, *kt)
+	case int16:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case int32:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case int64:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case uint:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case uint16:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case uint32:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case uint64:
+		return tbl.l.GetArray(tbl.idx, int(kt))
+	case string:
+		return tbl.l.GetValue(tbl.idx, kt)
+	case *string:
+		return tbl.l.GetValue(tbl.idx, *kt)
+	default:
+		panic(fmt.Errorf("not support key type %v", k))
+	}
 }
 
 type ILuaState interface {
@@ -68,12 +153,14 @@ type ILuaState interface {
 	ToInt(idx int) int64
 	ToFloat(idx int) float64
 	ToBool(idx int) bool
+	ToFunc(idx int) LuaFunc
 	ToValue(idx int) interface{}
 	IsStr(idx int) bool
 	IsInt(idx int) bool
 	IsFloat(idx int) bool
 	IsBool(idx int) bool
 	IsTable(idx int) bool
+	IsFunc(idx int) bool
 	//push stack
 	PushNil()
 	PushValue(v interface{})
@@ -84,6 +171,7 @@ type ILuaState interface {
 	PushFunc(fn LuaFunc)
 	//table
 	NewTable()
+	//each top stack table
 	ForEach(fn func() bool)
 	//是否是数组,并返回长度
 	IsArray(idx int) (int, bool)
@@ -93,12 +181,14 @@ type ILuaState interface {
 	SetField(idx int, key string)
 	GetTable(idx int) int
 	GetField(idx int, key string) int
-	//table opt
+	//作为对象设置table值
 	SetValue(idx int, k string, v interface{})
 	GetValue(idx int, k string) interface{}
-	//
+	//做为数组设置table值
 	SetArray(idx int, k int, v interface{})
 	GetArray(idx int, k int) interface{}
+	//对idx位置的table操作
+	ToTable(idx int) ITable
 }
 
 type luastate struct {
@@ -112,6 +202,16 @@ type luastate struct {
 func tocharptr(str string) *C.char {
 	btr := []byte(str)
 	return (*C.char)(unsafe.Pointer(&btr[0]))
+}
+
+func (l *luastate) ToTable(idx int) ITable {
+	if !l.IsTable(idx) {
+		panic(fmt.Errorf("stack index = %dnot table", idx))
+	}
+	return &table{
+		l:   l,
+		idx: idx,
+	}
 }
 
 //-2 -> key -1 ->value
@@ -320,6 +420,15 @@ func (l *luastate) IsTable(idx int) bool {
 	return C.lua_type(l.ptr, C.int(idx)) == C.LUA_TTABLE
 }
 
+func (l *luastate) IsFunc(idx int) bool {
+	return C.lua_iscfunction(l.ptr, C.int(idx)) != 0
+}
+
+func (l *luastate) ToFunc(idx int) LuaFunc {
+	ptr := unsafe.Pointer(C.lua_tocfunction(l.ptr, C.int(idx)))
+	return *(*LuaFunc)(ptr)
+}
+
 func (l *luastate) ToValue(idx int) interface{} {
 	if l.IsStr(idx) {
 		return l.ToStr(idx)
@@ -327,11 +436,18 @@ func (l *luastate) ToValue(idx int) interface{} {
 	if l.IsBool(idx) {
 		return l.ToBool(idx)
 	}
+	//优先检测是否是整形
+	if l.IsInt(idx) {
+		return l.ToInt(idx)
+	}
 	if l.IsFloat(idx) {
 		return l.ToFloat(idx)
 	}
-	if l.IsInt(idx) {
-		return l.ToInt(idx)
+	if l.IsFunc(idx) {
+		return l.ToFunc(idx)
+	}
+	if l.IsTable(idx) {
+		return l.ToTable(idx)
 	}
 	panic(fmt.Errorf("type error"))
 }
@@ -341,7 +457,7 @@ func (l *luastate) ToBool(idx int) bool {
 }
 
 func (l *luastate) IsStr(idx int) bool {
-	return C.lua_isstring(l.ptr, C.int(idx)) != 0
+	return C.lua_type(l.ptr, C.int(idx)) == C.LUA_TSTRING
 }
 
 func (l *luastate) IsInt(idx int) bool {
