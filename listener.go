@@ -42,7 +42,7 @@ func DefaultNewBlock(lis IListener, blk *BlockInfo) error {
 	conf := GetConfig()
 	//设置base out script
 	//创建coinbase tx
-	tx := NewTx(0)
+	tx := NewTx(DefaultExeLimit)
 	txt := time.Now().Format("2006-01-02 15:04:05")
 	addr := conf.GetNetAddr()
 	//base tx

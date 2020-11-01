@@ -23,7 +23,7 @@ type TxScript struct {
 	//脚本最大执行时间，时间一半分配给交易脚本，一半分配给签名脚本
 	//签名脚本每个输入签名只有 n分之一的一半时间 n为输入数量
 	//单位:毫秒
-	ExeTime uint32
+	ExeLimit uint32
 	//执行脚本
 	Exec VarBytes
 }
@@ -33,7 +33,7 @@ func (ss TxScript) Encode(w IWriter) error {
 	if err := w.TWrite(ss.Type); err != nil {
 		return err
 	}
-	if err := w.TWrite(ss.ExeTime); err != nil {
+	if err := w.TWrite(ss.ExeLimit); err != nil {
 		return err
 	}
 	if err := ss.Exec.Encode(w); err != nil {
@@ -47,7 +47,7 @@ func (ss *TxScript) Decode(r IReader) error {
 	if err := r.TRead(&ss.Type); err != nil {
 		return err
 	}
-	if err := r.TRead(&ss.ExeTime); err != nil {
+	if err := r.TRead(&ss.ExeLimit); err != nil {
 		return err
 	}
 	if err := ss.Exec.Decode(r); err != nil {
@@ -69,10 +69,10 @@ func MergeScript(execs ...[]byte) (VarBytes, error) {
 }
 
 //NewTxScript 创建交易脚本
-func NewTxScript(exetime uint32, execs ...[]byte) (Script, error) {
+func NewTxScript(exeLimit uint32, execs ...[]byte) (Script, error) {
 	std := &TxScript{Exec: VarBytes{}}
 	std.Type = ScriptTxType
-	std.ExeTime = exetime
+	std.ExeLimit = FixExeLimit(exeLimit)
 	exec, err := MergeScript(execs...)
 	if err != nil {
 		return nil, err
@@ -122,8 +122,9 @@ func (s Script) Check() error {
 		if txs.Exec.Len() > MaxExecSize {
 			return fmt.Errorf("tx script size too big")
 		}
-		if txs.ExeTime > MaxExeTime {
-			return fmt.Errorf("tx script exectime too big, ExeTime > %d", MaxExeTime)
+		err = CheckExeLimit(txs.ExeLimit)
+		if err != nil {
+			return err
 		}
 		return nil
 	}

@@ -255,7 +255,7 @@ func (lis *shoplistener) NewObjects(opts ...*handler.RequestOptions) Objects {
 //发布一个消息
 func (lis *shoplistener) Publish(ctx context.Context, opt string, setobjs ...func(objs Objects)) {
 	if lis.gqlsubmgr == nil {
-		panic(fmt.Errorf("sub mgr miss"))
+		return
 	}
 	subs := lis.gqlsubmgr.Subscriptions()
 	for conn := range subs {

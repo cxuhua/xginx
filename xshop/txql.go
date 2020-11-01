@@ -443,7 +443,7 @@ func (lis *eshoptranslistener) NewTx(fee xginx.Amount) (*xginx.TX, error) {
 	if !fee.IsRange() {
 		return nil, fmt.Errorf("fee %d error", fee)
 	}
-	tx := xginx.NewTx(xginx.DefaultExeTime, xginx.DefaultTxScript)
+	tx := xginx.NewTx(xginx.DefaultExeLimit, xginx.DefaultTxScript)
 	//输出金额总计
 	sum := fee
 	for _, v := range lis.receivers {
@@ -679,7 +679,7 @@ var TxScriptType = graphql.NewObject(graphql.ObjectConfig{
 			Type: graphql.Int,
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				script := p.Source.(*xginx.TxScript)
-				return int(script.ExeTime), nil
+				return int(script.ExeLimit), nil
 			},
 			Description: "脚本执行最大时间(ms)",
 		},

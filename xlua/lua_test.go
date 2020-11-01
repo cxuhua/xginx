@@ -12,8 +12,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMapGetSet(t *testing.T) {
+	ctx := NewMapContext()
+	lw := NewLuaState(ctx, time.Second*3, AttrMapSet)
+	defer lw.Close()
+	lw.OpenLibs()
+	assert.Equal(t, lw.GetTop(), 0)
+	err := lw.Exec([]byte(`map_set("key1",1.1) map_set("key2","22")`))
+	assert.Equal(t, lw.GetTop(), 0)
+	require.NoError(t, err)
+
+	lr := NewLuaState(ctx, time.Second*3, AttrMapGet)
+	defer lr.Close()
+	lr.OpenLibs()
+	assert.Equal(t, lr.GetTop(), 0)
+	err = lr.Exec([]byte(`print(map_get("key1")) print(map_get("key2"))`))
+	assert.Equal(t, lr.GetTop(), 0)
+	require.NoError(t, err)
+	err = lr.Exec([]byte(`print(map_has("key12"))`))
+	require.NoError(t, err)
+}
+
 func TestArray(t *testing.T) {
-	l := NewLuaState(context.Background(), time.Second*3)
+	l := NewLuaState(context.Background(), time.Second*3, AttrMapGet)
 	defer l.Close()
 	l.OpenLibs()
 
@@ -23,7 +44,7 @@ func TestArray(t *testing.T) {
 	assert.Equal(t, l.GetTop(), 2)
 	l.SetArray(-2, 1, "11")
 	l.SetArray(-2, 2, "22")
-	l.SetArray(-2, 3, "33")
+	l.ToTable(-2).Append("33")
 	assert.Equal(t, l.GetTop(), 2)
 	ll, ok := l.IsArray(-2)
 	assert.True(t, ok)

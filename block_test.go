@@ -171,7 +171,7 @@ func (suite *BlockTestSuite) TestTxLockTime() {
 	mi.Add(daddr, 1*Coin)
 	//1000作为交易费
 	mi.Fee = 1 * Coin
-	tx, err := mi.NewTx(DefaultExeTime, DefaultTxScript)
+	tx, err := mi.NewTx(DefaultExeLimit, DefaultTxScript)
 	req.NoError(err)
 	bp := suite.bi.GetTxPool()
 	req.NotNil(bp)

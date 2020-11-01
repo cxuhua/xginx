@@ -4,22 +4,24 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 )
 
 //常量定义
 const (
 	//最大块大小
-	MaxBlockSize = 1024 * 1024 * 4
+	MaxBlockSize = 1024 * 1024 * 8
 	//最大日志大小
-	MaxLogSize = 1024 * 1024 * 2
+	MaxLogSize = 1024 * 1024 * 4
 	//最大执行脚本长度
 	MaxExecSize = 1024 * 2
 	//最大meta数据长度
 	MaxMetaSize = 1024 * 4
-	//默认1000毫秒执行时间 (ms)
-	DefaultExeTime = 1000
-	//最大执行时间
-	MaxExeTime = 30000
+	//默认: 50步,1=30毫秒
+	DefaultExeLimit = (30 << 16) | 30000
+	//高16位限制执行步数,低16位限制执行时间,单位:微秒
+	MaxExeTimeLimit = uint32(0xFFFF) //65毫秒
+	MaxExeStepLimit = uint32(30000)  //6万step
 	//coinbase需要100区块后可用
 	CoinbaseMaturity = 100
 	//如果所有的输入全是 >= FinalSequence，交易立即生效
@@ -1170,15 +1172,72 @@ type TX struct {
 	pool   bool       //是否来自内存池
 }
 
+//PackExeLimit 合并限制步数和时间
+func PackExeLimit(step uint32, time uint32) uint32 {
+	if step > MaxExeStepLimit {
+		panic(fmt.Errorf("step limit error"))
+	}
+	if time > MaxExeTimeLimit {
+		panic(fmt.Errorf("time limit error"))
+	}
+	return (step << 16) | time
+}
+
+//CheckExeLimit 检测
+func CheckExeLimit(v uint32) error {
+	step := (v >> 16) & 0xFFFF
+	timev := v & 0xFFFF
+	if step > MaxExeStepLimit {
+		return fmt.Errorf("step limit error")
+	}
+	if timev > MaxExeTimeLimit {
+		return fmt.Errorf("time limit error")
+	}
+	return nil
+}
+
+//ParseExeLimit 解析执行时间和步数
+func GetExeLimit(v uint32) (int, time.Duration) {
+	step := (v >> 16) & 0xFFFF
+	timev := v & 0xFFFF
+	if step > MaxExeStepLimit {
+		step = MaxExeStepLimit
+	}
+	if timev > MaxExeTimeLimit {
+		timev = MaxExeTimeLimit
+	}
+	return int(step), time.Microsecond * time.Duration(timev)
+}
+
+//ParseExeLimit 解析执行时间和步数
+func ParseExeLimit(v uint32) (uint32, uint32) {
+	step := (v >> 16) & 0xFFFF
+	timev := v & 0xFFFF
+	if step > MaxExeStepLimit {
+		step = MaxExeStepLimit
+	}
+	if timev > MaxExeTimeLimit {
+		timev = MaxExeTimeLimit
+	}
+	return step, timev
+}
+
+//FixExeLimit 修正执行时间和步数
+func FixExeLimit(v uint32) uint32 {
+	step := (v >> 16) & 0xFFFF
+	timev := v & 0xFFFF
+	if step > MaxExeStepLimit {
+		step = MaxExeStepLimit
+	}
+	if timev > MaxExeTimeLimit {
+		timev = MaxExeTimeLimit
+	}
+	return (step << 16) | timev
+}
+
 //NewTx 创建交易
 //cpu 执行脚本限制时间,如果为0，默认为 DefaultExecTime=
 func NewTx(exetime uint32, execs ...[]byte) *TX {
-	if exetime == 0 {
-		exetime = DefaultExeTime
-	}
-	if exetime > MaxExeTime {
-		exetime = MaxExeTime
-	}
 	tx := &TX{}
 	tx.Ver = 1
 	tx.Outs = []*TxOut{}

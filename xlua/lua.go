@@ -35,15 +35,25 @@ const (
 )
 
 type ITable interface {
-	Set(k interface{}, v interface{})
+	Set(k interface{}, v interface{}) ITable
 	Get(k interface{}) interface{}
 	ForEach(fn func() bool)
 	IsArray(lp ...*int) bool
+	Append(v interface{}) ITable
 }
 
 type table struct {
 	l   ILuaState
 	idx int
+}
+
+//每次获取长度和检测,速度较慢,连续添加使用Set(int,v)
+func (tbl *table) Append(v interface{}) ITable {
+	ll := 0
+	if !tbl.IsArray(&ll) {
+		panic(fmt.Errorf("not array table"))
+	}
+	return tbl.Set(ll+1, v)
 }
 
 func (tbl *table) IsArray(lp ...*int) bool {
@@ -54,7 +64,7 @@ func (tbl *table) IsArray(lp ...*int) bool {
 	return ok
 }
 
-func (tbl *table) Set(k interface{}, v interface{}) {
+func (tbl *table) Set(k interface{}, v interface{}) ITable {
 	switch kt := k.(type) {
 	case int:
 		tbl.l.SetArray(tbl.idx, kt, v)
@@ -81,6 +91,7 @@ func (tbl *table) Set(k interface{}, v interface{}) {
 	default:
 		panic(fmt.Errorf("not support key type %v", k))
 	}
+	return tbl
 }
 
 //-2 -> key -1 ->value
@@ -133,12 +144,14 @@ type ILuaState interface {
 	OpenLibs()
 	//加载执行脚本
 	Exec(script []byte) error
+	//检测脚本语法错误
+	Check(script []byte) (err error)
 	//获取环境
 	Context() context.Context
 	//注册全局函数,函数不能引用其他go指针数据
-	SetFunc(name string, fn LuaFunc)
+	SetFunc(name string, fn LuaFunc) ILuaState
 	//设置执行步限制
-	SetLimit(limit int)
+	SetLimit(limit int) ILuaState
 	//获取当前执行步数
 	GetStep() int
 	//global
@@ -493,24 +506,42 @@ func (l *luastate) PushBool(v bool) {
 	}
 }
 
+func (l *luastate) Check(script []byte) error {
+	var err error
+	var bptr *C.char = (*C.char)(unsafe.Pointer(&script[0]))
+	var bsiz C.size_t = C.size_t(len(script))
+	ret := C.luaL_loadbufferx(l.ptr, bptr, bsiz, nil, nil)
+	if ret != C.LUA_OK {
+		err = fmt.Errorf("load error : %s", l.ToStr(1))
+		l.Pop(1)
+	}
+	return err
+}
+
 func (l *luastate) Exec(script []byte) (err error) {
 	defer func() {
 		if rerr, ok := recover().(error); ok {
 			err = rerr
+			l.cancel()
 		}
-		l.cancel()
 	}()
 	var bptr *C.char = (*C.char)(unsafe.Pointer(&script[0]))
 	var bsiz C.size_t = C.size_t(len(script))
 	ret := C.luaL_loadbufferx(l.ptr, bptr, bsiz, nil, nil)
 	if ret != C.LUA_OK {
-		return fmt.Errorf("load error : %s", l.ToStr(1))
+		err = fmt.Errorf("load error : %s", l.ToStr(1))
+		l.Pop(1)
+		return err
+	}
+	if err != nil {
+		return err
 	}
 	ret = C.lua_pcallk(l.ptr, 0, C.LUA_MULTRET, 0, 0, nil)
 	if ret != C.LUA_OK {
-		return fmt.Errorf("call error : %s", l.ToStr(1))
+		err = fmt.Errorf("call error : %s", l.ToStr(1))
+		l.Pop(1)
 	}
-	return nil
+	return err
 }
 
 func (l *luastate) OnStep() {
@@ -529,26 +560,114 @@ func (l *luastate) OnStep() {
 	}
 }
 
-func (l *luastate) SetLimit(limit int) {
+func (l *luastate) SetLimit(limit int) ILuaState {
 	l.step = 0
 	l.limit = limit
+	return l
 }
 
 func (l *luastate) OpenLibs() {
 	C.luaL_openlibs(l.ptr)
 }
 
-func (l *luastate) SetFunc(name string, fn LuaFunc) {
+func (l *luastate) SetFunc(name string, fn LuaFunc) ILuaState {
 	str := tocharptr(name)
 	C.go_lua_set_global_func(l.ptr, str, unsafe.Pointer(&fn))
+	return l
 }
 
 type LuaFunc func(l ILuaState) int
 
-func NewLuaState(ctx context.Context, exp time.Duration) ILuaState {
-	if ctx == nil {
-		ctx = context.Background()
+var (
+	mapkey = struct{}{}
+)
+
+type ctxmap map[string]interface{}
+
+func mustGetMap(ctx context.Context) ctxmap {
+	p := ctx.Value(mapkey)
+	if p == nil {
+		panic(fmt.Errorf("miss ctxmap 1"))
 	}
+	v, ok := p.(ctxmap)
+	if !ok {
+		panic(fmt.Errorf("miss ctxmap 2"))
+	}
+	return v
+}
+
+func NewMapContext() context.Context {
+	return context.WithValue(context.Background(), mapkey, ctxmap{})
+}
+
+const (
+	//限制map元素数量
+	MapSizeLimit = 16
+)
+
+func map_set(l ILuaState) int {
+	ctx := l.Context()
+	top := l.GetTop()
+	if top != 2 {
+		panic(fmt.Errorf("args key value error"))
+	}
+	if !l.IsStr(1) {
+		panic(fmt.Errorf("args key type error"))
+	}
+	cmap := mustGetMap(ctx)
+	if len(cmap) >= MapSizeLimit {
+		panic(fmt.Errorf("map size limit %d", MapSizeLimit))
+	}
+	cmap[l.ToStr(1)] = l.ToValue(2)
+	return 0
+}
+
+func map_get(l ILuaState) int {
+	ctx := l.Context()
+	top := l.GetTop()
+	if top != 1 {
+		panic(fmt.Errorf("args key value error"))
+	}
+	if !l.IsStr(1) {
+		panic(fmt.Errorf("args key type error"))
+	}
+	cmap := mustGetMap(ctx)
+	if len(cmap) >= MapSizeLimit {
+		panic(fmt.Errorf("map size limit %d", MapSizeLimit))
+	}
+	pv, has := cmap[l.ToStr(1)]
+	if !has {
+		l.PushNil()
+		return 1
+	}
+	l.PushValue(pv)
+	return 1
+}
+
+func map_has(l ILuaState) int {
+	ctx := l.Context()
+	top := l.GetTop()
+	if top != 1 {
+		panic(fmt.Errorf("args key value error"))
+	}
+	if !l.IsStr(1) {
+		panic(fmt.Errorf("args key type error"))
+	}
+	cmap := mustGetMap(ctx)
+	if len(cmap) >= MapSizeLimit {
+		panic(fmt.Errorf("map size limit %d", MapSizeLimit))
+	}
+	_, has := cmap[l.ToStr(1)]
+	l.PushBool(has)
+	return 1
+}
+
+const (
+	AttrMapSet = 1 << 0
+	AttrMapGet = 1 << 1
+)
+
+func NewLuaState(ctx context.Context, exp time.Duration, attr ...int) ILuaState {
 	l := &luastate{}
 	l.ptr = C.luaL_newstate()
 	l.ptr.goptr = unsafe.Pointer(l)
@@ -558,5 +677,12 @@ func NewLuaState(ctx context.Context, exp time.Duration) ILuaState {
 		l := obj.(ILuaState)
 		l.Close()
 	})
+	if len(attr) > 0 && attr[0]&AttrMapSet != 0 {
+		l.SetFunc("map_set", map_set)
+	}
+	if len(attr) > 0 && attr[0]&AttrMapGet != 0 {
+		l.SetFunc("map_get", map_get)
+		l.SetFunc("map_has", map_has)
+	}
 	return l
 }
