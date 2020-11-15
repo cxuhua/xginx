@@ -10,13 +10,13 @@ import (
 )
 
 var (
-	ctx    context.Context
-	cancel context.CancelFunc
+	xctx    context.Context
+	xcancel context.CancelFunc
 )
 
 //GetContext 获取区块链服务context
 func GetContext() context.Context {
-	return ctx
+	return xctx
 }
 
 //Run 启动区块链服务
@@ -34,12 +34,12 @@ func Run(lis IListener) {
 	bi := InitBlockIndex(lis)
 
 	csig := make(chan os.Signal)
-	ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
+	xctx, xcancel = context.WithCancel(context.Background())
+	defer xcancel()
 
-	Server.Start(ctx, lis)
+	Server.Start(xctx, lis)
 
-	Miner.Start(ctx, lis)
+	Miner.Start(xctx, lis)
 
 	//延迟回调
 	time.Sleep(time.Millisecond * 300)
@@ -50,7 +50,7 @@ func Run(lis IListener) {
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 
-	cancel()
+	xcancel()
 	LogInfo("recv sig :", sig, ",system start exit")
 
 	lis.OnStop()

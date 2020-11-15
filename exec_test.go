@@ -19,6 +19,8 @@ func init() {
 
 	DefaultInputScript = []byte(`
 	map_set("a",11)
+	local tx,inv,out,idx = get_signer()
+	print(tx.id)
 	return true
 `)
 

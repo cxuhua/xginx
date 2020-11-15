@@ -1236,13 +1236,13 @@ func FixExeLimit(v uint32) uint32 {
 }
 
 //NewTx 创建交易
-//cpu 执行脚本限制时间,如果为0，默认为 DefaultExecTime=
-func NewTx(exetime uint32, execs ...[]byte) *TX {
+//exeLimit 执行脚本限制
+func NewTx(exeLimit uint32, execs ...[]byte) *TX {
 	tx := &TX{}
 	tx.Ver = 1
 	tx.Outs = []*TxOut{}
 	tx.Ins = []*TxIn{}
-	script, err := NewTxScript(exetime, execs...)
+	script, err := NewTxScript(exeLimit, execs...)
 	if err != nil {
 		panic(err)
 	}
@@ -1452,11 +1452,7 @@ func (tx *TX) Sign(bi *BlockIndex, lis ISignTx, pass ...string) error {
 		}
 		//对每个输入签名
 		err = NewSigner(tx, out, in, idx).Sign(bi, lis, pass...)
-		//这个错误可能是部分签名,可暂时忽略
-		if err != nil && errors.Is(err, ErrIgnoreSignError) {
-			LogWarn(err)
-			continue
-		}
+		//这个错误可能是部
 		if err != nil {
 			return fmt.Errorf("sign in %d error %w", idx, err)
 		}

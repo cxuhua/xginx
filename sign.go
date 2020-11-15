@@ -1,7 +1,6 @@
 package xginx
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -14,11 +13,6 @@ type IGetSigBytes interface {
 type ISignTx interface {
 	SignTx(singer ISigner, pass ...string) error
 }
-
-var (
-	//如果签名时返回这个忽略
-	ErrIgnoreSignError = errors.New("ignore sign error")
-)
 
 //ISigner 签名验证接口
 type ISigner interface {
@@ -34,6 +28,10 @@ type ISigner interface {
 	VerifySign() error
 	//验证地址 脚本调用
 	VerifyAddr() error
+	//查找交易中是否包含指定输出的地址
+	QueryTxOut(addr Address) (*TxOut, error)
+	//查找交易中是否包含指定输入的地址
+	QueryTxIn(addr Address) (*TxIn, error)
 }
 
 //多重签名器
@@ -52,6 +50,34 @@ func NewSigner(tx *TX, out *TxOut, in *TxIn, idx int) ISigner {
 		in:  in,
 		idx: idx,
 	}
+}
+
+//查找交易中是否包含指定地址的输输入
+func (sr *mulsigner) QueryTxIn(addr Address) (*TxIn, error) {
+	for _, in := range sr.tx.Ins {
+		sa, err := in.Script.GetAddress()
+		if err != nil {
+			return nil, err
+		}
+		if sa == addr {
+			return in, nil
+		}
+	}
+	return nil, fmt.Errorf("not found")
+}
+
+//查找交易中是否包含指定地址的输出
+func (sr *mulsigner) QueryTxOut(addr Address) (*TxOut, error) {
+	for _, out := range sr.tx.Outs {
+		sa, err := out.Script.GetAddress()
+		if err != nil {
+			return nil, err
+		}
+		if sa == addr {
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("not found")
 }
 
 //GetObjs 获取签名对象

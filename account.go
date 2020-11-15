@@ -96,7 +96,7 @@ func (ap Account) SignHash(hash []byte, pri *PrivateKey) (int, SigBytes, error) 
 	return i, sigb, nil
 }
 
-//VerifyAll 验证签名.返回正确的签名数量
+//VerifyAll 验证签名
 func (ap Account) VerifyAll(hv []byte, sigs []SigBytes) error {
 	less := int(ap.Less)
 	num := int(ap.Num)

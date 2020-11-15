@@ -2,7 +2,10 @@ package xginx
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"log"
+	"net"
 
 	"github.com/cxuhua/xginx/xlua"
 )
@@ -91,6 +94,164 @@ func verifySign(l xlua.ILuaState) int {
 	return 1
 }
 
+//获取当前时间戳
+func timestamp(l xlua.ILuaState) int {
+	bi := getEnvBlockIndex(l.Context())
+	if bi == nil {
+		panic(fmt.Errorf("bi miss"))
+	}
+	v := bi.lptr.TimeNow()
+	l.PushInt(int64(v))
+	return 1
+}
+
+//设置脚本
+func setScript(l xlua.ILuaState, script Script) {
+	tbl := l.NewTable()
+	//脚本长度
+	tbl.Set("size", len(script))
+	typ := script.GetType()
+	tbl.Set("type", typ)
+	tbl.Set("raw", hex.EncodeToString(script))
+	switch typ {
+	case ScriptTxType:
+		s, err := script.ToTxScript()
+		if err != nil {
+			panic(err)
+		}
+		obj := l.NewTable()
+		obj.Set("exec", s.Exec.String())
+		obj.Set("limit", s.ExeLimit)
+		l.SetField(-2, "tx")
+	case ScriptWitnessType:
+		s, err := script.ToWitness()
+		if err != nil {
+			panic(err)
+		}
+		obj := l.NewTable()
+		obj.Set("exec", s.Exec.String())
+		obj.Set("num", s.Num)
+		obj.Set("less", s.Less)
+		obj.Set("arb", s.Arb)
+		obj.Set("address", string(s.Address()))
+		l.SetField(-2, "witness")
+	case ScriptLockedType:
+		s, err := script.ToLocked()
+		if err != nil {
+			panic(err)
+		}
+		obj := l.NewTable()
+		obj.Set("exec", s.Exec.String())
+		obj.Set("meta", s.Meta.String())
+		obj.Set("address", string(s.Address()))
+		l.SetField(-2, "locked")
+	case ScriptCoinbaseType:
+		obj := l.NewTable()
+		obj.Set("height", script.Height())
+		obj.Set("ip", net.IP(script.IP()).String())
+		obj.Set("data", hex.EncodeToString(script.Data()))
+		l.SetField(-2, "coinbase")
+	default:
+		panic(fmt.Errorf("script type error"))
+	}
+	l.SetField(-2, "script")
+}
+
+//设置输入信息
+func setTxIn(l xlua.ILuaState, in *TxIn) {
+	tbl := l.NewTable()
+	tbl.Set("out_hash", in.OutHash.String())
+	tbl.Set("out_index", in.OutIndex.ToUInt32())
+	tbl.Set("seq", in.Sequence.ToUInt32())
+	setScript(l, in.Script)
+}
+
+//设置输出信息
+func setTxOut(l xlua.ILuaState, out *TxOut) {
+	tbl := l.NewTable()
+	tbl.Set("value", int64(out.Value))
+	setScript(l, out.Script)
+}
+
+//设置交易信息到栈顶
+func setTxInfo(l xlua.ILuaState, tx *TX) int {
+	tbl := l.NewTable()
+	//版本
+	tbl.Set("ver", tx.Ver.ToInt())
+	tbl.Set("id", tx.MustID().String())
+	//输入
+	l.NewTable()
+	for i, in := range tx.Ins {
+		l.PushInt(int64(i + 1))
+		setTxIn(l, in)
+		l.SetTable(-3)
+	}
+	l.SetField(-2, "ins")
+	//输出
+	l.NewTable()
+	for i, out := range tx.Outs {
+		l.PushInt(int64(i + 1))
+		setTxOut(l, out)
+		l.SetTable(-3)
+	}
+	l.SetField(-2, "outs")
+	//设置脚本信息
+	setScript(l, tx.Script)
+	return 1
+}
+
+//获取当前交易信息(0 1 2可用)
+func txInfo(l xlua.ILuaState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		panic(fmt.Errorf("bi miss"))
+	}
+	tx := getEnvTx(ctx)
+	if tx == nil {
+		panic(fmt.Errorf("tx miss"))
+	}
+	return setTxInfo(l, tx)
+}
+
+//获取当前输入信息,返回4个信息,交易,当前输入,当前输出,输入索引
+func getSigner(l xlua.ILuaState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		panic(fmt.Errorf("bi miss"))
+	}
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		panic(fmt.Errorf("signer miss"))
+	}
+	tx, in, out, idx := signer.GetObjs()
+	setTxInfo(l, tx)
+	setTxIn(l, in)
+	setTxOut(l, out)
+	l.PushInt(int64(idx))
+	return 4
+}
+
+//获取当前输入引用的交易
+func getOutTx(l xlua.ILuaState) int {
+	ctx := l.Context()
+	bi := getEnvBlockIndex(ctx)
+	if bi == nil {
+		panic(fmt.Errorf("bi miss"))
+	}
+	signer := getEnvSigner(ctx)
+	if signer == nil {
+		panic(fmt.Errorf("signer miss"))
+	}
+	_, in, _, _ := signer.GetObjs()
+	tx, err := bi.LoadTX(in.OutHash)
+	if err != nil {
+		panic(err)
+	}
+	return setTxInfo(l, tx)
+}
+
 //编译脚本
 //typ = 0,tx script
 //typ = 1,input script
@@ -106,15 +267,6 @@ func compileExecScript(ctx context.Context, limit uint32, name string, typ int, 
 	if buf.Len() == 0 {
 		return nil
 	}
-	//获取必须的环境变量
-	bi := getEnvBlockIndex(ctx)
-	if bi == nil {
-		return fmt.Errorf("lua env miss blockindex ")
-	}
-	tx := getEnvTx(ctx)
-	if tx == nil {
-		return fmt.Errorf("lua env miss tx ")
-	}
 	attr := 0
 	if typ == 1 {
 		//输入脚本允许设置数据map传递到输出脚本
@@ -124,18 +276,37 @@ func compileExecScript(ctx context.Context, limit uint32, name string, typ int, 
 	} else {
 		attr = 0
 	}
+	//时间执行和步数限制
 	lstep, ltime := GetExeLimit(limit)
 	l := xlua.NewLuaState(ctx, ltime, attr).SetLimit(lstep)
 	//测试模式下可使用标准库
 	if *IsDebug {
 		l.OpenLibs()
 	}
-	if typ == 2 {
-		l.SetFunc("verify_addr", verifyAddr)
-		l.SetFunc("verify_sign", verifySign)
+	//通用属性
+	l.SetGlobalValue("ScriptCoinbaseType", ScriptCoinbaseType)
+	l.SetGlobalValue("ScriptLockedType", ScriptLockedType)
+	l.SetGlobalValue("ScriptWitnessType", ScriptWitnessType)
+	l.SetGlobalValue("ScriptTxType", ScriptTxType)
+	//通用方法
+	l.SetFunc("timestamp", timestamp) //获取当前时间
+	if typ == 1 {
+		//执行输入脚本
+		l.SetFunc("get_signer", getSigner) //获取当前交签名器
+		l.SetFunc("get_outtx", getOutTx)   //获取引用所在的交易
+	} else if typ == 2 {
+		//执行输出脚本
+		l.SetFunc("get_signer", getSigner)   //获取当前交签名器
+		l.SetFunc("get_outtx", getOutTx)     //获取引用所在的交易
+		l.SetFunc("verify_addr", verifyAddr) //校验地址
+		l.SetFunc("verify_sign", verifySign) //校验签名
+	} else {
+		//执行交易脚本
+		l.SetFunc("tx_info", txInfo) //获取当前交易信息
 	}
 	err := l.Exec(buf.Bytes())
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 	if l.GetTop() != 1 || !l.IsBool(-1) {
@@ -181,7 +352,6 @@ func (sr *mulsigner) ExecScript(bi *BlockIndex, wits *WitnessScript, lcks *Locke
 	//附加变量
 	ctx := xlua.NewMapContext()
 	ctx = context.WithValue(ctx, blockKey, bi)
-	ctx = context.WithValue(ctx, txKey, sr.tx)
 	ctx = context.WithValue(ctx, signerKey, sr)
 	//编译执行输入脚本
 	if err := compileExecScript(ctx, txs.ExeLimit, ExecTypeInMain, 1, wits.Exec); err != nil {

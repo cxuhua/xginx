@@ -66,6 +66,8 @@ func (tbl *table) IsArray(lp ...*int) bool {
 
 func (tbl *table) Set(k interface{}, v interface{}) ITable {
 	switch kt := k.(type) {
+	case int8:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
 	case int:
 		tbl.l.SetArray(tbl.idx, kt, v)
 	case *int:
@@ -75,6 +77,8 @@ func (tbl *table) Set(k interface{}, v interface{}) ITable {
 	case int32:
 		tbl.l.SetArray(tbl.idx, int(kt), v)
 	case int64:
+		tbl.l.SetArray(tbl.idx, int(kt), v)
+	case uint8:
 		tbl.l.SetArray(tbl.idx, int(kt), v)
 	case uint:
 		tbl.l.SetArray(tbl.idx, int(kt), v)
@@ -155,7 +159,8 @@ type ILuaState interface {
 	//获取当前执行步数
 	GetStep() int
 	//global
-	SetGlobal(name string)
+	SetGlobal(name string) ILuaState
+	SetGlobalValue(name string, v interface{}) ILuaState
 	GetGlobal(name string) int
 	GetTop() int
 	SetTop(idx int)
@@ -183,7 +188,7 @@ type ILuaState interface {
 	PushBool(v bool)
 	PushFunc(fn LuaFunc)
 	//table
-	NewTable()
+	NewTable() ITable
 	//each top stack table
 	ForEach(fn func() bool)
 	//是否是数组,并返回长度
@@ -214,6 +219,9 @@ type luastate struct {
 
 func tocharptr(str string) *C.char {
 	btr := []byte(str)
+	if len(btr) == 0 {
+		return nil
+	}
 	return (*C.char)(unsafe.Pointer(&btr[0]))
 }
 
@@ -304,12 +312,16 @@ func (l *luastate) PushValue(v interface{}) {
 	switch iv := v.(type) {
 	case int:
 		l.PushInt(int64(iv))
+	case int8:
+		l.PushInt(int64(iv))
 	case int16:
 		l.PushInt(int64(iv))
 	case int32:
 		l.PushInt(int64(iv))
 	case int64:
 		l.PushInt(iv)
+	case uint8:
+		l.PushInt(int64(iv))
 	case uint:
 		l.PushInt(int64(iv))
 	case uint16:
@@ -345,8 +357,9 @@ func (l *luastate) Pop(idx int) {
 	C.lua_settop(l.ptr, C.int(-idx-1))
 }
 
-func (l *luastate) NewTable() {
+func (l *luastate) NewTable() ITable {
 	C.lua_createtable(l.ptr, 0, 0)
+	return l.ToTable(-1)
 }
 
 func (l *luastate) GetType(idx int) int {
@@ -371,9 +384,17 @@ func (l *luastate) SetField(idx int, key string) {
 	C.lua_setfield(l.ptr, C.int(idx), str)
 }
 
-func (l *luastate) SetGlobal(name string) {
+func (l *luastate) SetGlobal(name string) ILuaState {
 	str := tocharptr(name)
 	C.lua_setglobal(l.ptr, str)
+	return l
+}
+
+func (l *luastate) SetGlobalValue(name string, v interface{}) ILuaState {
+	l.PushValue(v)
+	str := tocharptr(name)
+	C.lua_setglobal(l.ptr, str)
+	return l
 }
 
 func (l *luastate) GetGlobal(name string) int {
@@ -669,10 +690,8 @@ const (
 
 func NewLuaState(ctx context.Context, exp time.Duration, attr ...int) ILuaState {
 	l := &luastate{}
-	l.ptr = C.luaL_newstate()
-	l.ptr.goptr = unsafe.Pointer(l)
+	l.ptr = C.go_lua_newstate(unsafe.Pointer(l))
 	l.ctx, l.cancel = context.WithTimeout(ctx, exp)
-	C.go_lua_state_init(l.ptr)
 	runtime.SetFinalizer(l, func(obj interface{}) {
 		l := obj.(ILuaState)
 		l.Close()

@@ -4,7 +4,7 @@
 #include "xlua.h"
 
 static void go_lua_hook_func(lua_State *L, lua_Debug *ar) {
-    LuaOnStep(L->goptr);
+    LuaOnStep(G(L)->ud);
 }
 
 static GoString togostring(const char *v)  {
@@ -19,14 +19,54 @@ static int go_lua_at_panic(lua_State *L) {
     return 0;
 }
 
-void go_lua_state_init(lua_State *L) {
-    lua_sethook(L, go_lua_hook_func, LUA_MASKCOUNT, 1);
-    lua_atpanic(L, go_lua_at_panic);
+static void *l_alloc(void *ud, void *ptr, size_t osize, size_t nsize) {
+	(void)ud; (void)osize;  /* not used */
+	if (nsize == 0) {
+		free(ptr);
+		return NULL;
+	}
+	return realloc(ptr, nsize);
+}
+
+static void warnf(void *ud, const char *message, int tocont) {
+	int *warnstate = (int *)ud;
+	if (*warnstate != 2 && !tocont && *message == '@') {  /* control message? */
+		if (strcmp(message, "@off") == 0)
+			*warnstate = 0;
+		else if (strcmp(message, "@on") == 0)
+			*warnstate = 1;
+		return;
+	}
+	else if (*warnstate == 0)  /* warnings off? */
+		return;
+	if (*warnstate == 1)  /* previous message was the last? */
+		lua_writestringerror("%s", "Lua warning: ");  /* start a new warning */
+	lua_writestringerror("%s", message);  /* write message */
+	if (tocont)  /* not the last part? */
+		*warnstate = 2;  /* to be continued */
+	else {  /* last part */
+		lua_writestringerror("%s", "\n");  /* finish message with end-of-line */
+		*warnstate = 1;  /* ready to start a new message */
+	}
+}
+
+lua_State *go_lua_newstate(void *s) {
+	lua_State *L = lua_newstate(l_alloc, s);
+	if (L) {
+		int *warnstate;  /* space for warning state */
+		lua_atpanic(L, &go_lua_at_panic);
+		warnstate = (int *)lua_newuserdatauv(L, sizeof(int), 0);
+		luaL_ref(L, LUA_REGISTRYINDEX);  /* make sure it won't be collected */
+		*warnstate = 0;  /* default is warnings off */
+		lua_setwarnf(L, warnf, warnstate);
+		lua_sethook(L, go_lua_hook_func, LUA_MASKCOUNT, 1);
+	}
+	return L;
 }
 
 static int callgofunc(lua_State *L) {
     void *f = lua_touserdata(L,lua_upvalueindex(1));
-    return (int)CallGoFunc(L->goptr,f);
+    return (int)CallGoFunc(G(L)->ud,f);
 }
 
 void go_lua_set_global_func(lua_State *L,const char *name,void *f) {

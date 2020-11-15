@@ -59,14 +59,14 @@ func (m *Trans) Check() error {
 
 //NewTx 生成交易,不签名，不放入交易池
 //lt = tx locktime
-func (m *Trans) NewTx(exetime uint32, execs ...[]byte) (*TX, error) {
+func (m *Trans) NewTx(exeLimit uint32, execs ...[]byte) (*TX, error) {
 	if err := m.Check(); err != nil {
 		return nil, err
 	}
 	if !m.Fee.IsRange() {
 		return nil, fmt.Errorf("fee %d error", m.Fee)
 	}
-	tx := NewTx(exetime, execs...)
+	tx := NewTx(exeLimit, execs...)
 	//输出金额总计
 	sum := m.Fee
 	for _, v := range m.Amt {

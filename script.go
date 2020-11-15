@@ -207,6 +207,23 @@ func (s Script) IsLocked() bool {
 	return s.Len() >= lockedminsize && s.Len() < (lockedminsize+MaxMetaSize+MaxExecSize+4) && s[0] == ScriptLockedType
 }
 
+//获取脚本类型
+func (s Script) GetType() uint8 {
+	if s.IsCoinBase() {
+		return ScriptCoinbaseType
+	}
+	if s.IsLocked() {
+		return ScriptLockedType
+	}
+	if s.IsWitness() {
+		return ScriptWitnessType
+	}
+	if s.IsTxScript() {
+		return ScriptTxType
+	}
+	panic(fmt.Errorf("script type error"))
+}
+
 //IsTxScript 是否是交易脚本
 func (s Script) IsTxScript() bool {
 	return s.Len() >= txminsize && s.Len() < (txminsize+MaxExecSize) && s[0] == ScriptTxType
